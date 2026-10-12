@@ -265,7 +265,7 @@ void App::drawStatusBar() {
     size_t objs = 0;
     for (auto& o : m_scene.objects) if (o.visible && o.part != "WALL" && o.part != "GROUND") ++objs;
     wchar_t buf[256];
-    std::wstring mode = m_rs.raster ? L"Viewport raster" : (m_quality ? L"Path tracing" : L"PT interactif");
+    std::wstring mode = m_rs.raster ? L"Viewport raster" : m_rs.ddgi ? L"GI sondes (DDGI)" : (m_quality ? L"Path tracing" : L"PT interactif");
     swprintf(buf, 256, L"%s   ·   %zu objets   ·   %s triangles   ·   %.1f ms GPU   ·   %s", widen(m_scene.name).c_str(), objs,
              thousands(m_scene.triangleCount()).c_str(), m_renderer.gpuFrameMs(), mode.c_str());
     ui.text(buf, Rect(r.cx(), r.y, r.w * 0.5f - 12, r.h), th.textDim, 11.5f, false, Align::Right);
@@ -584,11 +584,12 @@ void App::drawRenderTab(Rect area) {
     auto row = [&]() { Rect r(x, y, w, 28); y += 30; return r; };
 
     if (section(x, y, w, L"Moteur de rendu", 3)) {
-        static const std::vector<std::wstring> q = {L"Viewport temps réel (raster)", L"Path tracing interactif", L"Path tracing qualité finale"};
-        int mode = m_rs.raster ? 0 : 1 + m_quality;
+        static const std::vector<std::wstring> q = {L"Viewport temps réel (raster)", L"Path tracing interactif", L"Path tracing qualité finale", L"GI sondes temps réel (DDGI)"};
+        int mode = m_rs.raster ? 0 : (m_rs.ddgi ? 3 : 1 + m_quality);
         if (ui.dropdown("quality", Rect(x, y, w, 28), q, mode)) {
             m_rs.raster = mode == 0;
-            if (mode > 0) m_quality = mode - 1;
+            m_rs.ddgi = mode == 3;
+            if (mode == 1 || mode == 2) m_quality = mode - 1;
             applyQuality();
             ch = true;
         }
@@ -661,6 +662,10 @@ void App::drawRenderTab(Rect area) {
         info(L"Échantillons", buf);
         swprintf(buf, 160, L"%.2f ms GPU  ·  %d spp/image", m_renderer.gpuFrameMs(), m_rs.samplesPerFrame);
         info(L"Temps", buf);
+        if (m_rs.ddgi) {
+            swprintf(buf, 160, L"%u sondes  ·  %.2f + %.2f ms", m_renderer.giProbeCount(), m_renderer.giUpdateMs(), m_renderer.giBlendMs());
+            info(L"Sondes", buf);
+        }
         y += 6;
         if (ui.button(Rect(x, y, (w - 8) / 2, 30), L"Relancer", false, 0xE72C)) ch = true;
         if (ui.button(Rect(x + (w + 8) / 2, y, (w - 8) / 2, 30), L"Capture PNG", false, 0xE722)) saveScreenshot(false);

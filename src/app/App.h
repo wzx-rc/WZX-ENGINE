@@ -52,6 +52,17 @@ struct Options {
     int quality = 1;
     bool raster = true;         // light raster viewport by default, P toggles path tracing
     std::wstring openPath;      // scene file to open at startup
+    // DDGI test
+    bool ddgi = false;          // start in the real-time probe GI mode
+    int probes = 2048;
+    int ddgiView = 0;
+    int temporal = 32;
+    float hysteresis = 0.97f;
+    std::wstring benchPath;     // benchmark: per-frame timings (CSV) then exit
+    int benchFrames = 300;
+    bool motion = false;        // benchmark: drop the image history every frame (what a moving camera gets)
+    int bounces = 0;            // path tracing: override the bounce count (0 = preset)
+    bool vsync = true;
 };
 
 class App {
@@ -218,6 +229,10 @@ private:
     uint64_t m_lastTick = 0;
     float m_frameMs = 16.0f;
     int m_frameCounter = 0;
+    struct BenchRow { float gpu, giUpdate, giBlend, flicker; };
+    std::vector<BenchRow> m_bench;
+    std::vector<uint8_t> m_benchPrev;
+    void benchFrame();
 };
 
 } // namespace app

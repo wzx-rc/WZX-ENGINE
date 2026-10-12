@@ -131,7 +131,7 @@ bool Renderer::init(HWND hwnd, uint32_t width, uint32_t height, const std::wstri
 
     D3D12_DESCRIPTOR_HEAP_DESC hd = {};
     hd.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-    hd.NumDescriptors = kTexCount + 1;  // + shadow map SRV
+    hd.NumDescriptors = kTexCount + 1 + kGITexCount;  // + shadow map SRV + DDGI UAVs
     hd.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
     m_device->CreateDescriptorHeap(&hd, IID_PPV_ARGS(&m_heap));
     m_descSize = m_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
@@ -140,10 +140,11 @@ bool Renderer::init(HWND hwnd, uint32_t width, uint32_t height, const std::wstri
     if (!createRasterPipelines(error)) return false;
 
     m_constants = createBuffer(256 * 4, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ);
+    m_giConstants = createBuffer(256, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ);
 
     D3D12_QUERY_HEAP_DESC qhd = {};
     qhd.Type = D3D12_QUERY_HEAP_TYPE_TIMESTAMP;
-    qhd.Count = 2;
+    qhd.Count = 4;   // 0 start, 1 end, 2 after DDGI probe rays, 3 after DDGI blend
     m_device->CreateQueryHeap(&qhd, IID_PPV_ARGS(&m_queryHeap));
     m_queryReadback = createBuffer(256, D3D12_HEAP_TYPE_READBACK, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST);
     UINT64 freq = 1;
@@ -159,7 +160,12 @@ bool Renderer::createPipelines(std::string* error) {
     range.NumDescriptors = kTexCount;
     range.BaseShaderRegister = 0;
 
-    D3D12_ROOT_PARAMETER p[9] = {};
+    D3D12_DESCRIPTOR_RANGE giRange = {};
+    giRange.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_UAV;
+    giRange.NumDescriptors = kGITexCount;
+    giRange.BaseShaderRegister = 6;
+
+    D3D12_ROOT_PARAMETER p[11] = {};
     p[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
     p[0].Descriptor.ShaderRegister = 0;
     p[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
@@ -172,9 +178,14 @@ bool Renderer::createPipelines(std::string* error) {
     p[8].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
     p[8].DescriptorTable.NumDescriptorRanges = 1;
     p[8].DescriptorTable.pDescriptorRanges = &range;
+    p[9].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;   // b2 DDGI constants
+    p[9].Descriptor.ShaderRegister = 2;
+    p[10].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;   // u6..u9 DDGI textures
+    p[10].DescriptorTable.NumDescriptorRanges = 1;
+    p[10].DescriptorTable.pDescriptorRanges = &giRange;
 
     D3D12_ROOT_SIGNATURE_DESC rsd = {};
-    rsd.NumParameters = 9;
+    rsd.NumParameters = 11;
     rsd.pParameters = p;
     ComPtr<ID3DBlob> blob, err;
     if (FAILED(D3D12SerializeRootSignature(&rsd, D3D_ROOT_SIGNATURE_VERSION_1, &blob, &err))) {
@@ -198,7 +209,8 @@ bool Renderer::createPipelines(std::string* error) {
         }
         return true;
     };
-    return make(L"PathTrace.cso", m_psoTrace) && make(L"Denoise.cso", m_psoDenoise) && make(L"Tonemap.cso", m_psoTonemap);
+    return make(L"PathTrace.cso", m_psoTrace) && make(L"Denoise.cso", m_psoDenoise) && make(L"Tonemap.cso", m_psoTonemap) &&
+           make(L"DDGIUpdate.cso", m_psoGIUpdate) && make(L"DDGIBlend.cso", m_psoGIBlend) && make(L"GIShade.cso", m_psoGIShade);
 }
 
 void Renderer::createTargets(uint32_t w, uint32_t h) {
@@ -504,6 +516,124 @@ void Renderer::buildTLAS(const Scene& scene, bool buildAS) {
     uavBarrier(m_tlas.res.Get());
 }
 
+// Places a regular probe grid over the scene bounds (about rs.ddgiProbeBudget probes, isotropic spacing)
+// and (re)creates the DDGI textures. Probes restart from scratch when the grid changes.
+void Renderer::setupProbeGrid(const RenderSettings& rs) {
+    int budget = std::max(8, rs.ddgiProbeBudget);
+    if (m_giTex[0] && m_giGridVersion == m_sceneGeometryVersion && m_giBudget == budget) return;
+    float3 mn(1e30f), mx(-1e30f);
+    for (const Draw& d : m_draws) {
+        if (d.flags & 2u) continue;   // light quads
+        const MeshGpu& g = m_meshes[d.mesh];
+        for (int k = 0; k < 8; ++k) {
+            float3 p((k & 1) ? g.bmax.x : g.bmin.x, (k & 2) ? g.bmax.y : g.bmin.y, (k & 4) ? g.bmax.z : g.bmin.z);
+            p = d.xf.point(p);
+            mn = minv(mn, p);
+            mx = maxv(mx, p);
+        }
+    }
+    if (mn.x > mx.x) { mn = float3(-10); mx = float3(10); }
+    float3 lim(m_sceneRadius * 2.0f);
+    mn = maxv(mn, m_sceneCenter - lim);
+    mx = minv(mx, m_sceneCenter + lim);
+    float3 ext = maxv(mx - mn, float3(1e-3f));
+    float spacing = std::cbrt(ext.x * ext.y * ext.z / (float)budget);
+    uint32_t n[3];
+    for (;;) {
+        n[0] = std::max(2u, (uint32_t)std::ceil(ext.x / spacing));
+        n[1] = std::max(2u, (uint32_t)std::ceil(ext.y / spacing));
+        n[2] = std::max(2u, (uint32_t)std::ceil(ext.z / spacing));
+        uint32_t total = n[0] * n[1] * n[2];
+        if (n[0] * n[1] * (DDGI_DIST_N + 2) <= 16384 && n[2] * (DDGI_DIST_N + 2) <= 16384 && total <= 16384) break;
+        spacing *= 1.1f;
+    }
+    float3 center = (mn + mx) * 0.5f;
+    m_giOrigin = center - float3((n[0] - 1) * 0.5f, (n[1] - 1) * 0.5f, (n[2] - 1) * 0.5f) * spacing;
+    m_giSpacing = spacing;
+    for (int i = 0; i < 3; ++i) m_giCounts[i] = n[i];
+    m_giGridVersion = m_sceneGeometryVersion;
+    m_giBudget = budget;
+    m_giFrame = 0;
+
+    uint32_t total = n[0] * n[1] * n[2];
+    struct TexDesc { uint32_t w, h; DXGI_FORMAT fmt; };
+    const TexDesc td[kGITexCount] = {
+        {n[0] * n[1] * (DDGI_IRR_N + 2), n[2] * (DDGI_IRR_N + 2), DXGI_FORMAT_R16G16B16A16_FLOAT},
+        {n[0] * n[1] * (DDGI_DIST_N + 2), n[2] * (DDGI_DIST_N + 2), DXGI_FORMAT_R16G16B16A16_FLOAT},
+        {DDGI_RAYS, total, DXGI_FORMAT_R32G32B32A32_FLOAT},
+        {total, 1, DXGI_FORMAT_R16G16B16A16_FLOAT},
+    };
+    waitIdle();
+    auto hp = heapProps(D3D12_HEAP_TYPE_DEFAULT);
+    D3D12_CPU_DESCRIPTOR_HANDLE cpu = m_heap->GetCPUDescriptorHandleForHeapStart();
+    for (int i = 0; i < kGITexCount; ++i) {
+        D3D12_RESOURCE_DESC d = {};
+        d.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+        d.Width = td[i].w;
+        d.Height = td[i].h;
+        d.DepthOrArraySize = 1;
+        d.MipLevels = 1;
+        d.Format = td[i].fmt;
+        d.SampleDesc.Count = 1;
+        d.Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
+        m_giTex[i].Reset();
+        m_device->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &d, D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+                                          nullptr, IID_PPV_ARGS(&m_giTex[i]));
+        D3D12_UNORDERED_ACCESS_VIEW_DESC u = {};
+        u.Format = td[i].fmt;
+        u.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
+        D3D12_CPU_DESCRIPTOR_HANDLE hnd = cpu;
+        hnd.ptr += (SIZE_T)(kTexCount + 1 + i) * m_descSize;
+        m_device->CreateUnorderedAccessView(m_giTex[i].Get(), nullptr, &u, hnd);
+    }
+}
+
+// Probe update (trace + blend) then the per-pixel shading into the accumulation texture.
+// Expects the compute root signature and the scene SRVs to be bound.
+void Renderer::recordDDGI(const RenderSettings& rs, UINT gx, UINT gy) {
+    setupProbeGrid(rs);
+    uint32_t total = giProbeCount();
+
+    gpu::DDGIConstants c = {};
+    c.origin = m_giOrigin;
+    c.hysteresis = rs.ddgiHysteresis;
+    c.spacing = float3(m_giSpacing);
+    c.maxDistance = m_giSpacing * 2.6f;
+    c.counts = {m_giCounts[0], m_giCounts[1], m_giCounts[2], total};
+    // Random rotation of the ray set (uniform random quaternion).
+    float u1 = m_giRng.uniform(), u2 = m_giRng.uniform() * 2 * kPi, u3 = m_giRng.uniform() * 2 * kPi;
+    float4 q(std::sqrt(1 - u1) * std::sin(u2), std::sqrt(1 - u1) * std::cos(u2), std::sqrt(u1) * std::sin(u3), std::sqrt(u1) * std::cos(u3));
+    float3 ex = qRot(q, float3(1, 0, 0)), ey = qRot(q, float3(0, 1, 0)), ez = qRot(q, float3(0, 0, 1));
+    c.rot0 = float4(ex.x, ey.x, ez.x, 0);
+    c.rot1 = float4(ex.y, ey.y, ez.y, 0);
+    c.rot2 = float4(ex.z, ey.z, ez.z, 0);
+    c.frame = m_giFrame++;
+    c.temporalMax = (uint32_t)std::max(0, rs.ddgiTemporal);
+    c.view = (uint32_t)rs.ddgiView;
+    c.normalBias = 0.06f;
+    c.viewBias = 0.24f;
+    c.energy = 1.0f;
+    memcpy(m_giConstants.mapped, &c, sizeof(c));
+
+    D3D12_GPU_DESCRIPTOR_HANDLE giTable = m_heap->GetGPUDescriptorHandleForHeapStart();
+    giTable.ptr += (UINT64)(kTexCount + 1) * m_descSize;
+    m_cmd->SetComputeRootConstantBufferView(9, m_giConstants.va());
+    m_cmd->SetComputeRootDescriptorTable(10, giTable);
+
+    m_cmd->SetPipelineState(m_psoGIUpdate.Get());
+    m_cmd->Dispatch(DDGI_RAYS / 64, total, 1);
+    uavBarrier();
+    m_cmd->EndQuery(m_queryHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 2);
+    m_cmd->SetPipelineState(m_psoGIBlend.Get());
+    m_cmd->Dispatch(total, 1, 1);
+    uavBarrier();
+    m_cmd->EndQuery(m_queryHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 3);
+    m_cmd->SetPipelineState(m_psoGIShade.Get());
+    m_cmd->Dispatch(gx, gy, 1);
+    uavBarrier();
+    m_giTimed = true;
+}
+
 void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRect& vpIn, int selectedObject,
                       bool toBackBuffer) {
     ViewRect vp = vpIn;
@@ -518,6 +648,7 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
     if (scene.geometryVersion != m_sceneGeometryVersion) setScene(scene);
 
     beginCommands();
+    m_giTimed = false;
     buildTLAS(scene, !rs.raster);
 
     const Camera& cam = scene.camera;
@@ -539,7 +670,7 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
     fc.lightCount = m_lightCount;
     fc.samplesPerFrame = (uint32_t)std::max(1, rs.samplesPerFrame);
     fc.flags = (cam.dof ? FRAME_FLAG_DOF : 0) | (rs.bevel ? FRAME_FLAG_BEVEL : 0) | (rs.denoise ? FRAME_FLAG_DENOISE : 0) |
-               (scene.env.visibleToCamera ? FRAME_FLAG_ENV_VISIBLE : 0);
+               (scene.env.visibleToCamera ? FRAME_FLAG_ENV_VISIBLE : 0) | (rs.ddgi && !rs.raster ? FRAME_FLAG_ID_EDGES : 0);
     fc.envTop = scene.env.top;
     fc.envIntensity = scene.env.intensity;
     fc.envHorizon = scene.env.horizon;
@@ -590,7 +721,11 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
 
     bool traced = false;
     m_cmd->EndQuery(m_queryHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 0);
-    if (m_sampleIndex < (uint32_t)rs.maxSamples) {
+    if (rs.ddgi) {
+        recordDDGI(rs, gx, gy);   // never converges: probes and image history keep updating
+        ++m_sampleIndex;
+        traced = true;
+    } else if (m_sampleIndex < (uint32_t)rs.maxSamples) {
         m_cmd->SetPipelineState(m_psoTrace.Get());
         m_cmd->Dispatch(gx, gy, 1);
         uavBarrier();
@@ -624,7 +759,7 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
     m_cmd->Dispatch(gx, gy, 1);
     }
     m_cmd->EndQuery(m_queryHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 1);
-    m_cmd->ResolveQueryData(m_queryHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 0, 2, m_queryReadback.res.Get(), 0);
+    m_cmd->ResolveQueryData(m_queryHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 0, m_giTimed ? 4 : 2, m_queryReadback.res.Get(), 0);
 
     if (!toBackBuffer) {
         executeAndWait();
@@ -655,10 +790,14 @@ void Renderer::present(bool vsync) {
     m_swapChain->Present(vsync ? 1 : 0, 0);
     waitIdle();
     void* p = nullptr;
-    D3D12_RANGE r = {0, 16};
+    D3D12_RANGE r = {0, 32};
     if (SUCCEEDED(m_queryReadback.res->Map(0, &r, &p))) {
         uint64_t* ts = (uint64_t*)p;
         if (ts[1] > ts[0]) m_gpuMs = (float)((ts[1] - ts[0]) * 1000.0 / m_tsFreq);
+        if (m_giTimed && ts[2] >= ts[0] && ts[3] >= ts[2]) {
+            m_giUpdateMs = (float)((ts[2] - ts[0]) * 1000.0 / m_tsFreq);
+            m_giBlendMs = (float)((ts[3] - ts[2]) * 1000.0 / m_tsFreq);
+        }
         D3D12_RANGE w = {0, 0};
         m_queryReadback.res->Unmap(0, &w);
     }

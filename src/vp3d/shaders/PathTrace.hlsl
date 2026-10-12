@@ -533,6 +533,7 @@ float3 TracePath(float3 o, float3 d, inout uint rng, inout Guides g) {
     return radiance;
 }
 
+#ifndef VP3D_NO_MAIN   // the DDGI shaders include this file for its helpers
 [numthreads(8, 8, 1)]
 void main(uint3 id : SV_DispatchThreadID) {
     if (id.x >= F.resolution.x || id.y >= F.resolution.y) return;
@@ -586,3 +587,4 @@ void main(uint3 id : SV_DispatchThreadID) {
     gTex[SLOT_ALBEDO][id.xy] = alb;
     gTex[SLOT_NORMAL][id.xy] = nd;
 }
+#endif
