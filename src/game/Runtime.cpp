@@ -31,6 +31,7 @@ void Runtime::start(Graph* g, World* w) {
     m_vars.clear();
     m_cache.clear();
     m_lastRun.clear();
+    trace.clear();
     m_timers.clear();
     m_movers.clear();
     m_doneOnce.clear();
@@ -55,7 +56,7 @@ float Runtime::lastRun(int nodeId) const {
 
 void Runtime::error(const std::string& e) {
     lastError = e;
-    log.push_back("Erreur : " + e);
+    log.push_back("Error: " + e);
     while (log.size() > 200) log.pop_front();
 }
 
@@ -137,6 +138,7 @@ void Runtime::fire(Op op, const std::function<bool(const Node&)>& filter) {
     for (int id : ids) {
         if (top) m_budget = kBudget;
         m_lastRun[id] = m_time;
+        recordRun(id);
         execFrom(id, 0);
         if (!m_graph) return;
     }
@@ -148,8 +150,8 @@ void Runtime::execFrom(int nodeId, int outPin) {
         if (l.fromNode != nodeId || l.fromPin != outPin) continue;
         Node* n = m_graph->node(l.toNode);
         if (!n) return;
-        if (--m_budget < 0) { if (m_budget == -1) error("boucle infinie stoppée (trop de noeuds exécutés)"); return; }
-        if (m_depth >= kMaxDepth) { error("chaîne d'exécution trop profonde"); return; }
+        if (--m_budget < 0) { if (m_budget == -1) error("infinite loop stopped (too many nodes executed)"); return; }
+        if (m_depth >= kMaxDepth) { error("execution chain too deep"); return; }
         ++m_depth;
         exec(*n);
         --m_depth;
@@ -179,7 +181,7 @@ Value Runtime::output(const Node& n, int pin) {
         if (it != m_cache.end() && pin < (int)it->second.size() && it->second[pin].type == t) return it->second[pin];
         return Value::None(t);
     }
-    if (m_depth >= kMaxDepth) { error("cycle dans les données"); return Value::None(t); }
+    if (m_depth >= kMaxDepth) { error("cycle in the data"); return Value::None(t); }
     ++m_depth;
     Value r = Value::None(t);
     auto F = [&](int i) { return input(n, i).asFloat(); };
@@ -254,8 +256,14 @@ Value Runtime::output(const Node& n, int pin) {
     return r.type == t ? r : convert(r, t);
 }
 
+void Runtime::recordRun(int nodeId) {
+    trace.push_back(nodeId);
+    while (trace.size() > 300) trace.pop_front();
+}
+
 void Runtime::exec(Node& n) {
     m_lastRun[n.id] = m_time;
+    recordRun(n.id);
     auto F = [&](int i) { return input(n, i).asFloat(); };
     auto V = [&](int i) { return input(n, i).asVec3(); };
     auto S = [&](int i) { return input(n, i).asString(); };
@@ -308,6 +316,7 @@ void Runtime::exec(Node& n) {
     case Op::SetColor: { int o = Ob(1); if (o >= 0) m_world->setColor(o, V(2)); break; }
     case Op::SetScale: { int o = Ob(1); if (o >= 0) m_world->setScale(o, V(2)); break; }
     case Op::Select: m_world->select(Ob(1)); break;
+    case Op::SetRtsCamera: m_world->setRtsCamera(input(n, 1).asBool()); break;
     case Op::Print: {
         std::string s = S(1);
         log.push_back(s);

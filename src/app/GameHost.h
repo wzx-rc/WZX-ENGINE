@@ -4,8 +4,11 @@
 #include "Json.h"
 #include "game/CommandServer.h"
 #include "game/NodeEditor.h"
+#include "game/Placement.h"
+#include "game/RtsCamera.h"
 #include "game/Runtime.h"
 #include "vp3d/Scene.h"
+#include <map>
 #include <string>
 #include <vector>
 
@@ -32,11 +35,15 @@ public:
     // Called by App::frame after ImGui::NewFrame. Returns true when the game layer owns the
     // keyboard this frame (App then skips its shortcuts).
     bool beginFrame();
-    bool graphOpen() const { return m_showGraph && !m_player; }   // the graph editor covers the viewport
+    bool showGraph() const;                        // the Graph tab of the editor is open (node editor)
+    void setGraphOpen(bool on);
+    bool graphOpen() const { return showGraph(); }   // the graph editor covers the viewport
+    void drawGraphWorkspace();
     void update(float dt);
     void draw();                 // after the editor UI (or alone in player mode)
     void afterDraw();            // frame complete, before present (API screenshots)
     bool playerMode() const { return m_player; }
+    bool rtsCameraOn() const { return m_rtsCam; }   // the viewport must not orbit the camera meanwhile
 
     // game::World
     int objectCount() const override;
@@ -53,11 +60,13 @@ public:
     int selected() const override;
     void select(int obj) override;
     void message(const std::string& text) override;
+    void setRtsCamera(bool on) override;
 
 private:
     void play();
     void stop();
     bool saveGraph(std::string* err = nullptr);
+    void compileGraph();
     bool loadGraph(std::string* err = nullptr);
     void defaultGraph();
     std::vector<BuildProfile> loadProfiles();
@@ -68,16 +77,44 @@ private:
     int resolveObject(const Json& t) const;
     std::string uniqueName(const std::string& base) const;
     void playInput();
+    void updateRtsCamera(float dt);
+    bool groundUnderMouse(vp3d::float3& p) const;
+    bool m_rtsCam = false;            // "Caméra RTS" node is active
+    bool m_rmbDrag = false;
+    vp3d::float3 m_rmbGrab;
+    game::RtsCamera m_cam;
     void drawToolbar();
     void drawToasts();
     void toast(const std::wstring& s);
+
+    // RTS placement (AppRts.cpp): houses on the grid, dragged in the view or out of the HUD, animated
+    // and turned into scene objects. Simulated during Play; the input and the HUD need the RTS camera.
+    game::Placement m_build;
+    std::map<int, int> m_buildMat;       // building id -> its own material
+    int m_invalidMat = -1;               // red material of an invalid drop (this Play session)
+    int m_buildHover = -1, m_buildSelected = -1, m_buildPress = -1;
+    ImVec2 m_buildPressPos;
+    bool m_buildHud = false;             // the mouse is over the RTS HUD (set by draw)
+    bool m_hudDrag = false;              // a house is dragged out of the HUD
+    ImVec2 m_hudPress;
+    bool viewVisible() const;
+    vp3d::float3 viewCentreGround() const;
+    int placeNew(int type, const vp3d::float3& at);
+    void updatePlacement(float dt);
+    void syncBuildings();
+    int invalidMaterial();
+    void finishDrag(bool cancelled);
+    void removeBuilding(int idx);
+    void clearBuildings();
+    bool isBuilding(int obj) const;
+    void drawRtsHud();
 
     App& m_app;
     game::Graph m_graph;
     game::Runtime m_rt;
     game::NodeEditor m_editor;
     game::CommandServer m_server;
-    bool m_showGraph = false;
+    bool m_graphFramed = false;      // the view was centred on the graph once
     bool m_playing = false;
     bool m_player = false;
     bool m_playerFps = false;

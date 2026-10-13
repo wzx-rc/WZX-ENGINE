@@ -55,7 +55,7 @@ enum class Op {
     // maths / logic
     Add, Sub, Mul, Div, Greater, Less, Equal, StrEqual, And, Or, Not, Random, AddVec3, ScaleVec3, Concat,
     // RTS
-    SnapGrid, CellFree, CountPart,
+    SnapGrid, CellFree, CountPart, SetRtsCamera,
 };
 
 struct NodeDef {
@@ -84,6 +84,20 @@ struct Node {
     const NodeDef* def = nullptr;    // resolved from type
 };
 
+// A labelled frame around nodes (Atelier "group"): moving it moves the nodes inside.
+struct Group {
+    std::string title = "GROUP";
+    float x = 0, y = 0, w = 400, h = 240;     // graph units (the title bar is the top 25)
+    std::string category = "Flow Control";    // colour of the frame
+};
+
+// Result of Graph::validate(): level 0 info, 1 warning, 2 error.
+struct Diagnostic {
+    int level = 0;
+    std::string text;
+    int node = 0;                             // node concerned (0 = whole graph)
+};
+
 struct Link {
     int fromNode = 0, fromPin = 0;   // output pin index
     int toNode = 0, toPin = 0;       // input pin index
@@ -94,6 +108,7 @@ public:
     std::string name = "main";
     std::vector<Node> nodes;
     std::vector<Link> links;
+    std::vector<Group> groups;
     int nextId = 1;
     uint32_t version = 1;            // bumped on every structural edit
 
@@ -109,6 +124,8 @@ public:
     const Link* inputLink(int nodeId, int pin) const;
     static bool compatible(PinType out, PinType in);
     void clear();
+    // Checks the execution flow: cycles, events without action, actions no event reaches, unconnected objects.
+    std::vector<Diagnostic> validate() const;
 
     std::string toJson() const;
     bool fromJson(const std::string& text, std::string* err = nullptr);
