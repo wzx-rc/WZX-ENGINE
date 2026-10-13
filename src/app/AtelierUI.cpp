@@ -368,9 +368,10 @@ void App::atlTopBar(float x0, float y0, float width) {
     }
     // workspaces, same positions as the Graph Editor and Material Studio headers
     float ty = y0 + 7 * s;
-    Button("workspaceScene", {x0 + 339 * s, ty, 79 * s, 24 * s}, "Scene", Icon::Scene, true);
-    if (Button("workspaceGraph", {x0 + 422 * s, ty, 96 * s, 24 * s}, "Graph", Icon::Blueprint)) m_workspace = 1;
-    if (Button("workspaceMaterials", {x0 + 522 * s, ty, 117 * s, 24 * s}, "Materials", Icon::Material)) m_workspace = 2;
+    // the active tab follows the workspace shown (the Graph tab was never highlighted before)
+    if (Button("workspaceScene", {x0 + 339 * s, ty, 79 * s, 24 * s}, "Scene", Icon::Scene, m_workspace == 0)) m_workspace = 0;
+    if (Button("workspaceGraph", {x0 + 422 * s, ty, 96 * s, 24 * s}, "Graph", Icon::Blueprint, m_workspace == 1)) m_workspace = 1;
+    if (Button("workspaceMaterials", {x0 + 522 * s, ty, 117 * s, 24 * s}, "Materials", Icon::Material, m_workspace == 2)) m_workspace = 2;
     // centre: test player (next step of the engine)
     float cx = x0 + std::max(655 * s, width / 2 - 89 * s);
     Button("buildScene", {cx, y0 + 6 * s, 103 * s, 25 * s}, "Build", Icon::Check, false, false, false);
