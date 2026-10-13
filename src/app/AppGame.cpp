@@ -46,6 +46,15 @@ static std::string readFile(const fs::path& p) {
 
 // Icon of each node type, from the Atelier icon set (the game layer only names the type).
 static void drawNodeIcon(ImDrawList* dl, const std::string& id, ImVec2 p, float size, ImU32 color) {
+    if (id == "rts.camera") {   // native C++ node: a "C++" badge in its colour, kept inside the icon slot (never over the title)
+        const float w = size * 1.3f;
+        dl->AddRectFilled(p, ImVec2(p.x + w, p.y + size), color, 3 * size / 14.0f);
+        const float fs = size * 0.62f;
+        ImFont* f = ImGui::GetFont();
+        ImVec2 ts = f->CalcTextSizeA(fs, FLT_MAX, 0, "C++");
+        dl->AddText(f, fs, ImVec2(p.x + (w - ts.x) * 0.5f, p.y + (size - ts.y) * 0.5f), IM_COL32(40, 28, 4, 255), "C++");
+        return;
+    }
     using atelier::Icon;
     static const std::unordered_map<std::string, Icon> kIcons = {
         {"event.start", Icon::Play},          {"event.tick", Icon::Refresh},        {"event.clickObject", Icon::Pin},
@@ -169,9 +178,8 @@ void GameHost::defaultGraph() {
     int start = g.addNode("event.start", float2(0, 0));
     int hello = g.addNode("action.print", float2(260, 0));
     set(hello, "Text", Value::Str("Click a unit, then the ground to move it. R: rotate, C: spawn a cube."));
-    int cam = g.addNode("rts.camera", float2(260, -120));   // the RTS camera, and the house placement, start with Play
-    L(start, "", cam, "");
-    L(cam, "", hello, "");
+    g.addNode("rts.camera", float2(0, -260));   // the native C++ RTS camera stands alone: no link, the graph does not drive it
+    L(start, "", hello, "");
 
     int click = g.addNode("event.clickObject", float2(0, 140));
     int sel = g.addNode("action.select", float2(260, 140));
