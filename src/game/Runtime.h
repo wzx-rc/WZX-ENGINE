@@ -27,6 +27,15 @@ public:
     virtual void select(int obj) = 0;
     virtual void message(const std::string& text) = 0;
     virtual void setRtsCamera(bool on) { (void)on; }   // "Caméra RTS" node: the host owns the camera
+    // RTS houses of the village. Ids are stable; a cell is the lower corner of the footprint.
+    virtual int placeHouse(int type, int cx, int cz, int rot) { (void)type; (void)cx; (void)cz; (void)rot; return -1; }   // type 0 small, 1 large
+    virtual bool removeHouse(int id) { (void)id; return false; }
+    virtual bool turnHouse(int id) { (void)id; return false; }
+    virtual int houseAt(int cx, int cz) const { (void)cx; (void)cz; return -1; }
+    virtual int houseCount() const { return 0; }
+    virtual void hudButton(const std::string& id, const std::string& label) { (void)id; (void)label; }
+    virtual void setSun(float azimuth, float height) { (void)azimuth; (void)height; }
+    virtual void cellAt(float x, float z, int& cx, int& cz) const { (void)x; (void)z; cx = cz = 0; }
 };
 
 class Runtime {
@@ -40,6 +49,8 @@ public:
     void tick(float dt);
     void fireClickObject(int obj, float3 point);
     void fireClickGround(float3 point);
+    void fireHouseClick(int house);   // house = its id
+    void fireHudButton(const std::string& id);
     // key: upper-case name as accepted by the "Touche pressée" node (A..Z, 0..9, ESPACE, ENTREE, F1..F12, HAUT, BAS, GAUCHE, DROITE).
     void fireKey(const std::string& key);
 

@@ -74,6 +74,27 @@ int Placement::add(int type, Cell cell, float dropHeight) {
     return (int)m_b.size() - 1;
 }
 
+int Placement::place(int type, Cell cell, int rot, float dropHeight) {
+    if (type < 0 || type >= (int)m_types.size()) return -1;
+    const BuildingType& t = m_types[type];
+    Building b;
+    b.id = m_next++;
+    b.type = type;
+    b.rot = rot & 3;
+    b.placed = true;
+    const int w = b.footW(t), d = b.footD(t);
+    if (!m_grid.canPlace(cell, w, d)) return -1;
+    b.cell = cell;
+    b.goal = m_grid.center(cell, w, d);
+    b.pos = b.goal;
+    b.pos.y = dropHeight;
+    b.yaw = b.yawGoal = b.rot * kPi * 0.5f;
+    b.bobPhase = (float)(b.id * 1.7);
+    m_grid.place(cell, w, d, b.id);
+    m_b.push_back(b);
+    return (int)m_b.size() - 1;
+}
+
 void Placement::remove(int idx) {
     if (idx < 0 || idx >= (int)m_b.size()) return;
     if (m_b[idx].placed) m_grid.remove(m_b[idx].id);

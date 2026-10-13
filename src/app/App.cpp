@@ -221,6 +221,7 @@ void App::loadScene(int id) {
     m_selected = -1;
     m_multi.clear();
     m_undo.clear();
+    if (m_game) m_game->resetVillage();   // the houses belong to the scene they were placed in
     m_redo.clear();
     m_rs.exposure = id == SCENE_CORNELL ? 1.0f : 1.3f;
     if (id == SCENE_CORNELL) m_scene.env.ambient = float3(0.16f, 0.15f, 0.13f);
@@ -294,6 +295,9 @@ void App::frame() {
         m_gui.viewportTexture();   // refresh the SRV (the texture is recreated when the viewport size changes)
         m_viewportRendered = true;
     }
+    // built game: the editor's viewport canvas is not drawn, so the 3D view is the background of the window
+    if (m_game && m_game->playerMode() && m_viewportRendered)
+        ImGui::GetBackgroundDrawList()->AddImage(m_gui.viewportTexture(), ImVec2(0, 0), ImGui::GetIO().DisplaySize);
     if (m_game) m_game->draw();   // graph editor / toolbar / toasts, over the viewport
     m_gui.render(m_viewportRendered);
     if (m_game) m_game->afterDraw();   // API screenshots: frame complete
@@ -423,6 +427,7 @@ void App::setViewAxis(int axis) {
 void App::handleShortcuts() {
     ImGuiIO& io = ImGui::GetIO();
     if (io.WantTextInput) return;
+    const bool placing = m_game && m_game->placementMode();   // Del, R and the arrows belong to the houses then
     bool ctrl = io.KeyCtrl;
     auto pressed = [](ImGuiKey k) { return ImGui::IsKeyPressed(k, false); };
     if (ctrl) {
@@ -430,23 +435,23 @@ void App::handleShortcuts() {
         if (pressed(ImGuiKey_O)) m_pendingAction = 2;
         if (ImGui::IsKeyPressed(ImGuiKey_Z)) undo();
         if (ImGui::IsKeyPressed(ImGuiKey_Y)) redo();
-        if (pressed(ImGuiKey_D)) duplicateSelected();
+        if (pressed(ImGuiKey_D) && !placing) duplicateSelected();
         return;
     }
     if (pressed(ImGuiKey_F1)) m_pendingScene = SCENE_CORNELL;
     if (pressed(ImGuiKey_F2)) m_pendingScene = SCENE_STUDIO;
     if (pressed(ImGuiKey_F12)) saveScreenshot(false);
     if (pressed(ImGuiKey_P)) { m_rs.raster = !m_rs.raster; markDirty(); }
-    if (pressed(ImGuiKey_Delete)) deleteSelected();
+    if (pressed(ImGuiKey_Delete) && !placing) deleteSelected();
     if (io.WantCaptureKeyboard && !ImGui::IsWindowFocused(ImGuiFocusedFlags_AnyWindow)) return;
     if (pressed(ImGuiKey_Q)) m_tool = TOOL_SELECT;
     if (pressed(ImGuiKey_W) || pressed(ImGuiKey_G)) m_tool = TOOL_MOVE;
     if (pressed(ImGuiKey_E)) m_tool = TOOL_ROTATE;
-    if (pressed(ImGuiKey_R)) m_tool = TOOL_SCALE;
+    if (pressed(ImGuiKey_R) && !placing) m_tool = TOOL_SCALE;
     if (pressed(ImGuiKey_F)) frameSelection();
     if (pressed(ImGuiKey_T)) m_turntable = !m_turntable;
     if (pressed(ImGuiKey_Escape)) select(-1);
-    if (m_selected >= 0 && !ImGui::IsAnyItemActive()) {
+    if (m_selected >= 0 && !placing && !ImGui::IsAnyItemActive()) {
         // Arrow keys move along the axis closest to the camera direction.
         float3 r, u, f;
         m_scene.camera.basis(r, u, f);

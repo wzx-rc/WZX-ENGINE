@@ -22,7 +22,7 @@ Options : `--scene cornell|studio`, `--open scene.v3d.json`, `--view N`, `--sele
 
 - **Cornell Box** (F1, par défaut) : scène de test du path tracing (shader balls, matériaux).
 - **Studio** (F2) : sol quadrillé et lumières douces, sans objets.
-- Ctrl+S / Ctrl+O : enregistrer / ouvrir une scène au format `.v3d.json` (`vp3d-scene` v1, liste `objects`).
+- Ctrl+S / Ctrl+O : enregistrer / ouvrir une scène au format `.v3d.json` (`vp3d-scene` v1, listes `objects` et `village`).
 
 ## Modes de rendu
 
@@ -51,7 +51,7 @@ ACES (fit de Hill, RRT+ODT), AgX, AgX Punchy, Standard. Espace de travail : lin�
 - `src/app/` : éditeur (espaces de travail Atelier dessinés avec Dear ImGui)
   - `App` : fenêtre, boucle, édition (annuler, sélection, ajout…) · `ImGuiLayer` : backends Win32 + DX12, polices, textures · `Theme` : couleurs et réglages
   - `AtelierUI` : espace Scene et barre du haut · `atelier/` : Material Studio, Attribute Editor, palette partagée (`atelier_style.h`)
-  - `game/` : éditeur nodal du jeu (onglet Graph : `NodeEditor`, bibliothèque `NodeLib`, exécution `Runtime`, graphe `Graph`) et bases RTS : grille `Grid`, caméra `RtsCamera`, maisons `Placement` (placées et animées dans `src/app/AppRts.cpp`, pendant Play avec le nœud « Caméra RTS »)
+  - `game/` : éditeur nodal du jeu (onglet Graph : `NodeEditor`, bibliothèque `NodeLib`, exécution `Runtime`, graphe `Graph`) et bases RTS : grille `Grid`, caméra `RtsCamera`, maisons `Placement` (placées et animées dans `src/app/AppRts.cpp`, mode village dans la vue Scene, ou pendant Play ; le village est sauvegardé dans la scène, clé `village`). Les nœuds RTS (placer, supprimer, tourner une maison, « House Clicked ») exécutent la logique des maisons ; les boutons du HUD en Play sont déclarés par des nœuds « HUD Button ». Le nœud C++ « Caméra RTS » ne fait que la caméra RTS, le cadran solaire et le soleil : il reste inactif tant qu'un lien ne l'active pas
   - `Editor` : fenêtres Settings, Controls, About et vignettes du Content Browser
   - `Viewport` : image 3D (texture du renderer), caméra, sélection, gizmo, glisser-déposer
   - `Content` : palette, matériaux, primitives, scènes · `SceneIO` : fichiers de scène
@@ -81,7 +81,7 @@ copies de travail `_ddgi-test/`, `_nodal-editor/`, `_rts-test/`, et les dossiers
   - Mode : Dark / Light (le mode clair est volontairement un peu atténué).
   - Main Color : teinte des panneaux et des fonds (Graphite = noir neutre, Blue Slate = bleuté d'origine, Midnight, Forest, Plum, Umber ou couleur libre).
   - Accent Color : sélection, boutons actifs, surlignages.
-  - Graph : Node outline (contours des nœuds, activable) et Outline weight (épaisseur, de 0,25 à 3 px).
+  - Graph : Node outline (contours des nœuds, activable, dans la couleur du node à 50 %) et Outline weight (épaisseur, de 0,1 à 3 px), et Selection outline (couleur du contour du node sélectionné).
   - Text size, Icon size, Layout size (espacement : plus compact en dessous de 100 %, plus aéré au-dessus).
 - Couleurs partagées par tous les espaces : `src/app/atelier/atelier_style.h`, recalculées à chaque image depuis ces réglages. Métriques et couleurs de base : `assets/themes/Blue 01.theme`.
 - Tests en ligne de commande (sans enregistrer) : `--light 0|1`, `--main-color r,g,b`, `--sizes texte,icônes,layout`, `--settings`.

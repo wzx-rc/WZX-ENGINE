@@ -417,7 +417,8 @@ void loadSettings(const std::wstring& file) {
         else if (k == "lockBrightness") g_settings.lockBrightness = v != "0";
         else if (k == "language") g_settings.language = v;
         else if (k == "graphOutline") g_settings.graphOutline = v != "0";
-        else if (k == "graphOutlineWeight") g_settings.graphOutlineWeight = std::clamp((float)atof(v.c_str()), 0.25f, 3.0f);
+        else if (k == "graphOutlineWeight") g_settings.graphOutlineWeight = std::clamp((float)atof(v.c_str()), 0.1f, 3.0f);
+        else if (k == "graphSelectColor") { if (parseVec(v, c, 4)) g_settings.graphSelectColor = ImVec4(c[0], c[1], c[2], 1); }
     }
 }
 
@@ -425,13 +426,15 @@ void saveSettings(const std::wstring& file) {
     std::ofstream f(file, std::ios::binary);
     if (!f) return;
     const UiSettings& s = g_settings;
-    char a[64], m[64];
+    char a[64], m[64], sc[64];
     snprintf(a, sizeof(a), "%.3f %.3f %.3f 1", s.accent.x, s.accent.y, s.accent.z);
     snprintf(m, sizeof(m), "%.3f %.3f %.3f 1", s.mainColor.x, s.mainColor.y, s.mainColor.z);
+    snprintf(sc, sizeof(sc), "%.3f %.3f %.3f 1", s.graphSelectColor.x, s.graphSelectColor.y, s.graphSelectColor.z);
     f << "light=" << (s.light ? 1 : 0) << "\nmainColor=" << m << "\ncustomAccent=" << (s.customAccent ? 1 : 0) << "\naccent=" << a
       << "\ntextScale=" << s.textScale << "\niconScale=" << s.iconScale << "\nlayoutScale=" << s.layoutScale << "\nglobalScale=" << s.globalScale
       << "\nlockBrightness=" << (s.lockBrightness ? 1 : 0) << "\nlanguage=" << s.language
-      << "\ngraphOutline=" << (s.graphOutline ? 1 : 0) << "\ngraphOutlineWeight=" << s.graphOutlineWeight << "\n";
+      << "\ngraphOutline=" << (s.graphOutline ? 1 : 0) << "\ngraphOutlineWeight=" << s.graphOutlineWeight
+      << "\ngraphSelectColor=" << sc << "\n";
 }
 
 } // namespace th

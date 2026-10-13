@@ -83,7 +83,7 @@ void App::viewportCanvas(ImVec2 p0, ImVec2 size) {
 
     viewportInput(hovered);
     dl->PushClipRect(p0, ImVec2(p0.x + size.x, p0.y + size.y), true);
-    drawGizmo(dl);
+    if (!(m_game && m_game->placementMode())) drawGizmo(dl);
     dl->PopClipRect();
 }
 
@@ -98,6 +98,7 @@ void App::viewportInput(bool hovered) {
     m_lastY = my;
     bool inView = hovered;
     bool alt = io.KeyAlt, shift = io.KeyShift;
+    const bool placing = m_game && m_game->placementMode();   // the left button places houses: no selection, no gizmo
 
     if (inView && io.MouseWheel != 0) {
         cam.distance *= std::pow(0.88f, io.MouseWheel * m_camSpeed);
@@ -129,7 +130,7 @@ void App::viewportInput(bool hovered) {
     }
 
     // axis widget (bottom-left): click an axis to look along it
-    if (inView && ImGui::IsMouseClicked(0) && !alt) {
+    if (inView && !placing && ImGui::IsMouseClicked(0) && !alt) {
         float3 r, u, f;
         cam.basis(r, u, f);
         float gx = m_rcView.x + 52 * m_dpi, gy = m_rcView.b() - 52 * m_dpi, L = 30 * m_dpi;
@@ -141,12 +142,12 @@ void App::viewportInput(bool hovered) {
         }
     }
 
-    bool gzBusy = gizmoInput(inView);
-    marqueeInput();
+    bool gzBusy = placing ? false : gizmoInput(inView);
+    if (!placing) marqueeInput();
     if (m_marq.active) gzBusy = true;
 
     // Left button: selection / tools / focus.
-    if (!gzBusy && inView && ImGui::IsMouseClicked(0) && !alt) {
+    if (!gzBusy && inView && !placing && ImGui::IsMouseClicked(0) && !alt) {
         float3 o, d;
         cameraRay(mx, my, o, d);
         PickResult pr = pick(m_scene, o, d);

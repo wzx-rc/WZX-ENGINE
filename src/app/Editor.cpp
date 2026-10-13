@@ -249,7 +249,11 @@ void App::drawSettingsWindow() {
             propLabel("Node outline", labelW);
             changed |= ImGui::Checkbox("##nodeOutline", &th::settings().graphOutline);
             propLabel("Outline weight", labelW);
-            changed |= ImGui::SliderFloat("##outlineWeight", &th::settings().graphOutlineWeight, 0.25f, 3.0f, "%.2f px");
+            changed |= ImGui::SliderFloat("##outlineWeight", &th::settings().graphOutlineWeight, 0.1f, 3.0f, "%.2f px");
+            propLabel("Selection outline", labelW);
+            ImVec4& sel = th::settings().graphSelectColor;
+            float sel3[3] = {sel.x, sel.y, sel.z};
+            if (ImGui::ColorEdit3("##selectOutline", sel3, ImGuiColorEditFlags_DisplayHex)) { sel = ImVec4(sel3[0], sel3[1], sel3[2], 1); changed = true; }
             ImGui::EndTabItem();
         }
         ImGui::EndTabBar();

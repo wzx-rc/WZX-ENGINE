@@ -1,22 +1,52 @@
 // Game layer, RTS placement: houses on the grid (game::Placement), dragged in the view or out of the
-// HUD, animated, and turned into scene objects. The houses are simulated during Play; the input and the
-// HUD need the "Caméra RTS" node (the RTS camera) and the Scene view on screen.
+// HUD, animated, and turned into scene objects. Two places to place them: the village mode of the editor
+// (Scene view, not Play) and during Play, whatever the "Caméra RTS" node does. The village is saved with the scene.
 #include "App.h"
 #include "GameHost.h"
 #include "vp3d/AssetImport.h"
+#include <algorithm>
 #include <cmath>
 #include <string>
+#include <utility>
 
 namespace app {
 
 using namespace game;
 
 namespace {
+
 const float kDropHeight = 5.0f;   // a house added from the HUD falls from this height
+
+// Ray against an axis-aligned box; `tHit` is the distance along the ray (in the units of `d`).
+bool slabHit(const float3& o, const float3& d, const float3& mn, const float3& mx, float& tHit) {
+    const float ov[3] = {o.x, o.y, o.z}, dv[3] = {d.x, d.y, d.z}, lo[3] = {mn.x, mn.y, mn.z}, hi[3] = {mx.x, mx.y, mx.z};
+    float t0 = 0.0f, t1 = 1e30f;
+    for (int i = 0; i < 3; ++i) {
+        if (std::fabs(dv[i]) < 1e-9f) {
+            if (ov[i] < lo[i] || ov[i] > hi[i]) return false;
+            continue;
+        }
+        float a = (lo[i] - ov[i]) / dv[i], b = (hi[i] - ov[i]) / dv[i];
+        if (a > b) std::swap(a, b);
+        t0 = std::max(t0, a);
+        t1 = std::min(t1, b);
+        if (t0 > t1) return false;
+    }
+    tHit = t0;
+    return true;
+}
+
+bool differs(const float3& a, const float3& b) { return a.x != b.x || a.y != b.y || a.z != b.z; }
+bool differs(const float4& a, const float4& b) { return a.x != b.x || a.y != b.y || a.z != b.z || a.w != b.w; }
+
 }
 
 // The scene view is on screen: the player, or the Scene workspace (not the Graph or the Material Studio).
 bool GameHost::viewVisible() const { return m_player || m_app.m_workspace == 0; }
+
+// The houses take the mouse and the keys: during Play (the houses of the graph), or the village mode of the editor.
+// The "Caméra RTS" node is not needed for them: it only adds the camera, the sun dial and the sun.
+bool GameHost::placeActive() const { return viewVisible() && (m_playing || m_placeMode); }
 
 // Ground point under the centre of the view (the camera target when the view looks at the sky).
 float3 GameHost::viewCentreGround() const {
@@ -64,19 +94,90 @@ void GameHost::removeBuilding(int idx) {
     m_buildHover = m_buildPress = m_buildSelected = -1;
 }
 
-// Stop: the scene is restored, so the houses and their materials go with it.
-void GameHost::clearBuildings() {
-    m_build.clear();
+// Selection, hover, drag and HUD state (the village itself is kept by the callers).
+void GameHost::resetTransient() {
     m_invalidMat = -1;
     m_buildHover = m_buildPress = m_buildSelected = -1;
     m_buildHud = m_hudDrag = false;
 }
 
-bool GameHost::isBuilding(int obj) const {
-    if (obj < 0) return false;
+// A new scene: the village is emptied (its houses went with the old scene).
+void GameHost::resetVillage() {
+    m_build.clear();
+    m_saveBuild = m_build;
+    resetTransient();
+}
+
+// The village mode of the editor: houses are placed on the Scene view, not during Play.
+void GameHost::togglePlacement() {
+    if (m_playing) {
+        toast(L"Stop Play to place houses");
+        return;
+    }
+    if (m_placeMode) {
+        finishDrag(true);
+        m_buildSelected = -1;
+        m_placeMode = false;
+        return;
+    }
+    if (!ensureHouseModel()) return;
+    m_placeMode = true;
+}
+
+// The village as saved in the scene file: the placed houses by type name, cell and turn. During Play the
+// village of the editor is saved, not the houses placed in the Play session.
+std::string GameHost::villageJson() const {
+    const Placement& v = m_playing ? m_saveBuild : m_build;
+    std::string out = "[";
+    bool first = true;
+    for (const game::Building& b : v.buildings()) {
+        if (!b.placed) continue;
+        out += first ? "\n    " : ",\n    ";
+        out += "{\"type\": \"" + jsonEscape(v.types()[b.type].name) + "\", \"cell\": [" + std::to_string(b.cell.x) + ", " +
+               std::to_string(b.cell.z) + "], \"rot\": " + std::to_string(b.rot) + "}";
+        first = false;
+    }
+    return out + (first ? "]" : "\n  ]");
+}
+
+// The village of a scene file: each house on its cell and turn. Its object follows in the next sync.
+void GameHost::loadVillage(const Json& list) {
+    m_build.clear();
+    if (list.type == Json::Array) {
+        for (const Json& e : list.a) {
+            const std::string type = e["type"].str();
+            int t = -1;
+            for (int k = 0; k < (int)m_build.types().size(); ++k)
+                if (m_build.types()[k].name == type) t = k;
+            if (t < 0) continue;
+            m_build.place(t, Cell{(int)e["cell"][0].num(0), (int)e["cell"][1].num(0)}, (int)e["rot"].num(0));
+        }
+    }
+    resetTransient();
+}
+
+bool GameHost::hasBuilding(int id) const {
     for (const game::Building& b : m_build.buildings())
-        if (b.object == obj) return true;
+        if (b.id == id) return true;
     return false;
+}
+
+// The house under the ray, from its box in the object's frame (the scene's own picking skips the houses).
+int GameHost::houseUnder(const float3& o, const float3& d, float& tHit) const {
+    int best = -1;
+    tHit = 1e30f;
+    const Scene& s = m_app.m_scene;
+    for (int i = 0; i < (int)m_build.buildings().size(); ++i) {
+        const game::Building& b = m_build.buildings()[i];
+        if (!objectAlive(b.object)) continue;
+        Affine inv = s.objects[b.object].transform().inverse();
+        float t = 0;
+        if (slabHit(inv.point(o), inv.vector(d), m_houseMin - float3(1e-3f), m_houseMax + float3(1e-3f), t) && t < tHit) {
+            tHit = t;
+            best = i;
+        }
+    }
+    return best;
 }
 
 // Red material of an invalid drop (created on first use in a Play session).
@@ -113,6 +214,7 @@ bool GameHost::ensureHouseModel() {
         mesh.bounds(mn, mx);
         float3 shift((mn.x + mx.x) * 0.5f, mn.y, (mn.z + mx.z) * 0.5f);
         for (vp3d::Vertex& v : mesh.vertices) v.pos -= shift;
+        mesh.bounds(m_houseMin, m_houseMax);
         // base colour: the image named by the .mtl, else the *basecolor* image of the folder (the export names a .bmp that is not there)
         std::wstring texPath;
         if (!info.diffuseMap.empty() && GetFileAttributesW((dir + fromUtf8(info.diffuseMap)).c_str()) != INVALID_FILE_ATTRIBUTES) {
@@ -148,48 +250,61 @@ bool GameHost::ensureHouseModel() {
     return true;
 }
 
-// Each house is a scene object: the model scaled to its type, turned, tilted and squashed by the
-// animation. A house in hand over an invalid cell turns red.
+// Each house is a scene object of part "House" (grab = its building id): the model scaled to its type,
+// turned, tilted and squashed by the animation; a house in hand over an invalid cell turns red. The objects
+// are not selectable (the village is edited from its mode only). An object whose building is gone is hidden,
+// not erased, so the indices of the other objects stay valid.
 void GameHost::syncBuildings() {
     Scene& s = m_app.m_scene;
     const std::vector<BuildingType>& types = m_build.types();
     std::vector<game::Building>& bs = m_build.buildings();
+    bool changed = false;
     for (int i = 0; i < (int)bs.size(); ++i) {
         game::Building& b = bs[i];
         const BuildingType& t = types[b.type];
-        if (!objectAlive(b.object)) {
+        const bool owned = objectAlive(b.object) && s.objects[b.object].part == "House" && s.objects[b.object].grab == b.id;
+        if (!owned) {
             if (!ensureHouseModel()) return;
             Object fresh;
             fresh.name = uniqueName(t.name);
             fresh.part = "House";
+            fresh.grab = b.id;
             fresh.mesh = m_houseMesh;
             fresh.material = m_houseMat;
             fresh.position = b.pos;
             fresh.useRot = true;
+            fresh.selectable = false;
             b.object = s.addObject(fresh);
+            changed = true;
         }
         Object& o = s.objects[b.object];
         // the model is scaled to its type; the squash widens it and flattens it, the hover grows it
         float k = b.hover * t.modelScale;
-        float sx = (1 + b.squash * 0.5f) * k;
-        float sy = (1 - b.squash) * k;
-        float sz = sx;
+        float3 scale((1 + b.squash * 0.5f) * k, (1 - b.squash) * k, (1 + b.squash * 0.5f) * k);
+        float4 rot = qMul(qAxisAngle(float3(0, 1, 0), b.yaw), qMul(qAxisAngle(float3(1, 0, 0), b.tiltX), qAxisAngle(float3(0, 0, 1), b.tiltZ)));
+        int material = (i == m_build.dragging() && !m_build.dragValid()) ? invalidMaterial() : m_houseMat;
+        if (differs(o.position, b.pos) || differs(o.scale, scale) || differs(o.rot, rot) || o.material != material) changed = true;
         o.position = b.pos;
         o.useRot = true;
-        o.rot = qMul(qAxisAngle(float3(0, 1, 0), b.yaw), qMul(qAxisAngle(float3(1, 0, 0), b.tiltX), qAxisAngle(float3(0, 0, 1), b.tiltZ)));
-        o.scale = float3(sx, sy, sz);
-        bool invalid = i == m_build.dragging() && !m_build.dragValid();
-        o.material = invalid ? invalidMaterial() : m_houseMat;
+        o.rot = rot;
+        o.scale = scale;
+        o.material = material;
     }
-    if (!bs.empty()) m_app.markDirty();
+    for (vp3d::Object& o : s.objects)
+        if (o.part == "House" && o.visible && !hasBuilding(o.grab)) {
+            o.visible = false;
+            changed = true;
+        }
+    if (changed) m_app.markDirty();
 }
 
-// Every frame of Play: the house under the cursor, the press and the drag on the grid, the keys
-// R (turn) and Del (remove), the animation and the sync with the scene.
+// Every frame: the house under the cursor, the press and the drag on the grid, the keys R (turn) and Del
+// (remove), the animation and the sync with the scene. The input works while placeActive(); the houses
+// follow their village in every mode.
 void GameHost::updatePlacement(float dt) {
     ImGuiIO& io = ImGui::GetIO();
     const ScreenRect& v = m_app.m_rcView;
-    const bool active = m_rtsCam && viewVisible();
+    const bool active = placeActive();
     const bool inView = active && !m_buildHud && v.contains(io.MousePos.x, io.MousePos.y) && !ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId);
     if (!active && m_build.dragging() >= 0) finishDrag(true);
 
@@ -197,10 +312,10 @@ void GameHost::updatePlacement(float dt) {
     if (inView && m_build.dragging() < 0 && !m_build.buildings().empty()) {
         float3 o, d;
         m_app.cameraRay(io.MousePos.x, io.MousePos.y, o, d);
-        int obj = pick(m_app.m_scene, o, d).object;
-        if (obj >= 0)
-            for (int i = 0; i < (int)m_build.buildings().size(); ++i)
-                if (m_build.buildings()[i].object == obj) hovered = i;
+        float tHouse = 0;
+        int h = houseUnder(o, d, tHouse);
+        // a house behind a nearer object of the scene is not the one under the cursor
+        if (h >= 0 && tHouse <= pick(m_app.m_scene, o, d).t) hovered = h;
     }
     m_buildHover = hovered;
 
@@ -241,7 +356,7 @@ void GameHost::updatePlacement(float dt) {
 }
 
 // RTS HUD, bottom left of the view: one button per house type. A click adds a house at the centre of
-// the view; a drag takes it from the button onto the grid.
+// the view; a drag takes it from the button onto the grid. The sun dial comes with the RTS camera (Play).
 void GameHost::drawRtsHud() {
     const ScreenRect& v = m_app.m_rcView;
     float d = m_app.m_dpi;
@@ -252,13 +367,24 @@ void GameHost::drawRtsHud() {
                                    ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_AlwaysAutoResize;
     if (ImGui::Begin("##rtshud", nullptr, flags)) {
         m_buildHud = ImGui::IsWindowHovered();
+        if (m_playing) {   // Play: the buttons declared by the graph
+            for (size_t k = 0; k < m_hudButtons.size(); ++k) {
+                ImGui::PushID((int)k);
+                const std::string label = m_hudButtons[k].second;
+                const std::string id = m_hudButtons[k].first;
+                if (ImGui::Button(label.c_str())) m_rt.fireHudButton(id);
+                ImGui::PopID();
+                ImGui::SameLine();
+            }
+            ImGui::NewLine();
+        }
         const std::vector<BuildingType>& types = m_build.types();
-        for (int t = 0; t < (int)types.size(); ++t) {
+        for (int t = 0; t < (int)types.size() && !m_playing; ++t) {   // village mode of the editor: built-in buttons
             ImGui::PushID(t);
             std::string label = "+ Add " + types[t].name;
-            ImGui::Button(label.c_str());
+            const bool clicked = ImGui::Button(label.c_str());   // true only for a click: pressed and released on the button
             if (ImGui::IsItemActivated()) m_hudPress = io.MousePos;
-            if (ImGui::IsItemActive() && !m_hudDrag && m_build.dragging() < 0) {
+            if (ImGui::IsItemActive() && ImGui::IsMouseDown(0) && !m_hudDrag && m_build.dragging() < 0) {
                 float dx = io.MousePos.x - m_hudPress.x, dy = io.MousePos.y - m_hudPress.y;
                 float3 g;
                 if (dx * dx + dy * dy > 36.0f && groundUnderMouse(g)) {
@@ -266,13 +392,11 @@ void GameHost::drawRtsHud() {
                     m_hudDrag = true;
                 }
             }
-            if (ImGui::IsItemDeactivated()) {
-                if (!m_hudDrag) {
-                    if (placeNew(t, viewCentreGround()) < 0) toast(L"No free space on the grid");
-                    else toast(L"House added");
-                }
-                m_hudDrag = false;
+            if (clicked && !m_hudDrag) {
+                if (placeNew(t, viewCentreGround()) < 0) toast(L"No free space on the grid");
+                else toast(L"House added");
             }
+            if (ImGui::IsItemDeactivated()) m_hudDrag = false;
             ImGui::PopID();
             ImGui::SameLine();
         }
@@ -280,7 +404,69 @@ void GameHost::drawRtsHud() {
         ImGui::TextDisabled("Drag a house onto the grid  ·  R rotate  ·  Del delete");
     }
     ImGui::End();
-    drawSunDial();
+    if (m_rtsCam) drawSunDial();
+}
+
+// Graph nodes of the houses (World): the ids are stable, so a node keeps its house when another is removed.
+int GameHost::houseIndex(int id) const {
+    for (int i = 0; i < (int)m_build.buildings().size(); ++i)
+        if (m_build.buildings()[i].id == id) return i;
+    return -1;
+}
+
+int GameHost::placeHouse(int type, int cx, int cz, int rot) {
+    if (type < 0 || type >= (int)m_build.types().size()) return -1;
+    int idx = m_build.place(type, Cell{cx, cz}, rot, kDropHeight);   // falls onto its cells, as the HUD houses do
+    return idx < 0 ? -1 : m_build.buildings()[idx].id;
+}
+
+bool GameHost::removeHouse(int id) {
+    int i = houseIndex(id);
+    if (i < 0) return false;
+    removeBuilding(i);
+    return true;
+}
+
+bool GameHost::turnHouse(int id) {
+    int i = houseIndex(id);
+    return i >= 0 && m_build.rotate(i);
+}
+
+int GameHost::houseAt(int cx, int cz) const {
+    for (const game::Building& b : m_build.buildings()) {
+        if (!b.placed) continue;
+        const BuildingType& t = m_build.types()[b.type];
+        if (cx >= b.cell.x && cx < b.cell.x + b.footW(t) && cz >= b.cell.z && cz < b.cell.z + b.footD(t)) return b.id;
+    }
+    return -1;
+}
+
+int GameHost::houseCount() const {
+    int n = 0;
+    for (const game::Building& b : m_build.buildings()) n += b.placed;
+    return n;
+}
+
+// HUD buttons and the sun, from the graph (Play). The buttons are declared by "HUD Button" nodes.
+void GameHost::hudButton(const std::string& id, const std::string& label) {
+    for (auto& b : m_hudButtons)
+        if (b.first == id) {
+            b.second = label;
+            return;
+        }
+    m_hudButtons.push_back({id, label});
+}
+
+void GameHost::setSun(float azimuth, float height) {
+    m_sunAzimuth = radians(azimuth);
+    m_sunElevation = radians(clampf(height, 10.0f, 85.0f));
+    updateSun();
+}
+
+void GameHost::cellAt(float x, float z, int& cx, int& cz) const {
+    Cell c = m_build.grid().snapOrigin(float3(x, 0, z), 1, 1);
+    cx = c.x;
+    cz = c.z;
 }
 
 // The sun: its direction from the azimuth (around the vertical) and the height.

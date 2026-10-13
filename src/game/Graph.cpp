@@ -201,6 +201,13 @@ void Graph::disconnectPin(int nodeId, int pin, bool output) {
     ++version;
 }
 
+void Graph::removeLink(const Link& l) {
+    links.erase(std::remove_if(links.begin(), links.end(), [&](const Link& k) {
+        return k.fromNode == l.fromNode && k.fromPin == l.fromPin && k.toNode == l.toNode && k.toPin == l.toPin;
+    }), links.end());
+    ++version;
+}
+
 const Link* Graph::inputLink(int nodeId, int pin) const {
     for (const Link& l : links) if (l.toNode == nodeId && l.toPin == pin) return &l;
     return nullptr;

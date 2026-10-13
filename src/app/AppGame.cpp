@@ -46,6 +46,15 @@ static std::string readFile(const fs::path& p) {
 
 // Icon of each node type, from the Atelier icon set (the game layer only names the type).
 static void drawNodeIcon(ImDrawList* dl, const std::string& id, ImVec2 p, float size, ImU32 color) {
+    if (id == "rts.camera") {   // native C++ node: a "C++" badge in its colour, kept inside the icon slot (never over the title)
+        const float w = size * 1.3f;
+        dl->AddRectFilled(p, ImVec2(p.x + w, p.y + size), color, 3 * size / 14.0f);
+        const float fs = size * 0.62f;
+        ImFont* f = ImGui::GetFont();
+        ImVec2 ts = f->CalcTextSizeA(fs, FLT_MAX, 0, "C++");
+        dl->AddText(f, fs, ImVec2(p.x + (w - ts.x) * 0.5f, p.y + (size - ts.y) * 0.5f), IM_COL32(40, 28, 4, 255), "C++");
+        return;
+    }
     using atelier::Icon;
     static const std::unordered_map<std::string, Icon> kIcons = {
         {"event.start", Icon::Play},          {"event.tick", Icon::Refresh},        {"event.clickObject", Icon::Pin},
@@ -67,6 +76,10 @@ static void drawNodeIcon(ImDrawList* dl, const std::string& id, ImVec2 p, float 
         {"math.random", Icon::Refresh},       {"math.addVec3", Icon::Move},         {"math.scaleVec3", Icon::Scale},
         {"math.concat", Icon::List},          {"rts.snap", Icon::Grid},             {"rts.cellFree", Icon::Grid},
         {"rts.camera", Icon::Camera},         {"rts.count", Icon::Cube},
+        {"rts.placeHouse", Icon::Plus},       {"rts.removeHouse", Icon::Trash},     {"rts.turnHouse", Icon::Rotate},
+        {"rts.houseAt", Icon::Grid},          {"rts.houseCount", Icon::Cube},       {"event.houseClicked", Icon::Pin},
+        {"rts.cellAt", Icon::Grid},           {"rts.setSun", Icon::Sun},            {"rts.hudButton", Icon::Blueprint},
+        {"event.hudButton", Icon::Pin},
     };
     auto it = kIcons.find(id);
     atelier::DrawIcon(dl, it == kIcons.end() ? Icon::Blueprint : it->second, p, size, color);
@@ -165,9 +178,8 @@ void GameHost::defaultGraph() {
     int start = g.addNode("event.start", float2(0, 0));
     int hello = g.addNode("action.print", float2(260, 0));
     set(hello, "Text", Value::Str("Click a unit, then the ground to move it. R: rotate, C: spawn a cube."));
-    int cam = g.addNode("rts.camera", float2(260, -120));   // the RTS camera, and the house placement, start with Play
-    L(start, "", cam, "");
-    L(cam, "", hello, "");
+    g.addNode("rts.camera", float2(0, -260));   // the native C++ RTS camera stands alone: no link, the graph does not drive it
+    L(start, "", hello, "");
 
     int click = g.addNode("event.clickObject", float2(0, 140));
     int sel = g.addNode("action.select", float2(260, 140));
@@ -219,10 +231,13 @@ void GameHost::defaultGraph() {
 
 void GameHost::play() {
     if (m_playing) return;
+    if (m_placeMode) togglePlacement();   // the village is placed in the editor, not during Play
+    m_hudButtons.clear();                 // the graph declares them again when Play starts
     Scene& s = m_app.m_scene;
     m_saveObjects = s.objects;
     m_saveMaterials = s.materials;
     m_saveSun = s.sun;
+    m_saveBuild = m_build;
     m_saveSelected = m_app.m_selected;
     m_saveTool = m_app.m_tool;
     m_app.m_tool = TOOL_SELECT;
@@ -238,7 +253,9 @@ void GameHost::stop() {
     m_rt.stop();
     m_playing = false;
     m_rtsCam = false;
-    clearBuildings();
+    m_hudButtons.clear();
+    m_build = m_saveBuild;   // the village of the editor comes back; the houses of the Play session go with the scene
+    resetTransient();
     Scene& s = m_app.m_scene;
     s.objects = m_saveObjects;
     s.materials = m_saveMaterials;
@@ -255,7 +272,7 @@ void GameHost::update(float dt) {
         updateRtsCamera(dt);
         updateSun();
     }
-    if (m_playing) updatePlacement(dt);
+    if (m_playing || m_placeMode || !m_build.buildings().empty()) updatePlacement(dt);
 }
 
 void GameHost::setRtsCamera(bool on) {
@@ -424,8 +441,11 @@ void GameHost::playInput() {
         float3 o, d;
         m_app.cameraRay(io.MousePos.x, io.MousePos.y, o, d);
         PickResult pr = pick(m_app.m_scene, o, d);
-        if (m_rtsCam && isBuilding(pr.object)) {
-            // a house: the RTS placement takes the click (AppRts.cpp), the graph gets no event
+        float tHouse = 0;
+        const int house = placeActive() ? houseUnder(o, d, tHouse) : -1;
+        if (house >= 0 && tHouse <= pr.t) {
+            // a house: the graph gets "House Clicked"; the RTS placement takes the drag (AppRts.cpp)
+            m_rt.fireHouseClick(m_build.buildings()[house].id);
         } else if (pr.object >= 0 && objectAlive(pr.object) && !m_app.m_scene.objects[pr.object].part.empty()) {
             m_rt.fireClickObject(pr.object, pr.position);
         } else if (std::fabs(d.y) > 1e-5f) {
@@ -556,11 +576,16 @@ void GameHost::drawGraphWorkspace() {
     ImGui::End();
 
     if (!m_graphFramed) { m_graphFramed = true; m_editor.frameAll(m_graph); }
-    m_editor.setOutline(th::settings().graphOutline, th::settings().graphOutlineWeight);
+    m_editor.setOutline(th::settings().graphOutline, th::settings().graphOutlineWeight, ImGui::ColorConvertFloat4ToU32(th::settings().graphSelectColor));
     m_editor.draw(canvasPos, canvasSize, s, m_graph, m_playing ? &m_rt : nullptr, m_playing);
     switch (m_editor.takeAction()) {
     case NodeEditor::TogglePlay: m_playing ? stop() : play(); break;
     case NodeEditor::Compile: compileGraph(); break;
+    case NodeEditor::Arrange: {
+        int moved = m_editor.arrangeOverlaps(m_graph);
+        m_editor.addMessage(moved ? 3 : 0, moved ? "Arranged " + std::to_string(moved) + " overlapping node(s)" : std::string("No overlapping node"));
+        break;
+    }
     case NodeEditor::Save: {
         std::string err;
         if (saveGraph(&err)) m_editor.addMessage(3, "Graph saved: " + toUtf8(m_graphPath));
@@ -607,7 +632,7 @@ void GameHost::draw() {
             snprintf(b, sizeof b, "%.0f FPS", 1000.0f / std::max(m_app.m_frameMs, 0.1f));
             ImGui::GetForegroundDrawList()->AddText(ImVec2(v.x + 10, v.y + 6), IM_COL32(170, 170, 170, 255), b);
         }
-        if (m_rtsCam) drawRtsHud();
+        if (placeActive()) drawRtsHud();
         drawToasts();
         return;
     }
@@ -623,7 +648,7 @@ void GameHost::draw() {
             ImVec2 ts = ImGui::CalcTextSize(tag);
             fg->AddText(ImVec2(tl.x + (240 - ts.x) * 0.5f, tl.y + (26 - ts.y) * 0.5f), IM_COL32(8, 19, 11, 255), tag);
         }
-        if (m_rtsCam && viewVisible()) drawRtsHud();
+        if (placeActive()) drawRtsHud();
         drawToolbar();
     }
     drawToasts();
@@ -817,12 +842,13 @@ static const char* kHelp =
     "\"rts.list\": \"{} -> maisons sur la grille\", \"rts.add\": \"{type: index, pos?: [x,y,z]} -> index (Play, caméra RTS)\", "
     "\"rts.move\": \"{index, pos: [x,y,z]} -> placed\", \"rts.rotate\": \"{index}\", \"rts.remove\": \"{index}\", "
     "\"sun.set\": \"{azimuth?, elevation?} (degrés) -> soleil du cadran\", "
+    "\"village.mode\": \"{on: true|false} -> mode village de l'éditeur (vue Scene)\", "
     "\"input.key\": \"{key: R|ESPACE|...} (pendant Play)\", \"input.click\": \"{target} ou {pos:[x,y,z]} (pendant Play)\", "
     "\"graph.get\": \"{}\", \"graph.set\": \"{graph: {...}}\", \"graph.clear\": \"{}\", \"graph.nodeTypes\": \"{}\", "
     "\"graph.addNode\": \"{type, x?, y?, in?: {broche: valeur}} -> id\", \"graph.removeNode\": \"{id}\", "
     "\"graph.connect\": \"{from:[id, sortie], to:[id, entree]} (nom ou index de broche)\", "
     "\"graph.disconnect\": \"{id, pin, output}\", \"graph.setInput\": \"{id, pin, value}\", "
-    "\"graph.save\": \"{}\", \"graph.load\": \"{}\", \"graph.show\": \"{open: true|false, output?: 0|1|2}\", \"graph.compile\": \"{} -> diagnostics\", "
+    "\"graph.save\": \"{}\", \"graph.load\": \"{}\", \"graph.show\": \"{open: true|false, output?: 0|1|2}\", \"graph.compile\": \"{} -> diagnostics\", \"graph.arrange\": \"{} -> nodes deplaces\", "
     "\"build\": \"{profile?, run?} -> dossier\", \"build.profiles\": \"{}\", "
     "\"screenshot\": \"{window?: true = fenetre entiere} -> fichier PNG\", \"log\": \"{} -> journal du graphe\"}}";
 
@@ -874,7 +900,7 @@ std::string GameHost::command(const Json& j, int& status) {
     if (cmd == "state")
         return ok(", \"playing\": " + std::string(m_playing ? "true" : "false") + ", \"graphOpen\": " + (showGraph() ? "true" : "false") +
                   ", \"selected\": " + std::to_string(a.m_selected) + ", \"objects\": " + std::to_string(s.objects.size()) +
-                  ", \"rtsCamera\": " + std::string(m_rtsCam ? "true" : "false") + ", \"buildings\": " + std::to_string(m_build.buildings().size()) +
+                  ", \"rtsCamera\": " + std::string(m_rtsCam ? "true" : "false") + ", \"buildings\": " + std::to_string(m_build.buildings().size()) + ", \"placement\": " + std::string(m_placeMode ? "true" : "false") +
                   ", \"graphNodes\": " + std::to_string(m_graph.nodes.size()) + ", \"graphPath\": " + jstr(toUtf8(m_graphPath)) +
                   ", \"projectDir\": " + jstr(toUtf8(m_projectDir)) + ", \"lastBuild\": " + jstr(m_lastBuild) +
                   ", \"mouse\": [" + num(ImGui::GetIO().MousePos.x / m_app.m_dpi) + ", " + num(ImGui::GetIO().MousePos.y / m_app.m_dpi) + "], \"viewport\": [" + num(m_app.m_rcView.x) + ", " + num(m_app.m_rcView.y) + ", " + num(m_app.m_rcView.w) + ", " + num(m_app.m_rcView.h) + "]");
@@ -991,6 +1017,10 @@ std::string GameHost::command(const Json& j, int& status) {
         updateSun();
         return ok(", \"azimuth\": " + num(degrees(m_sunAzimuth)) + ", \"elevation\": " + num(degrees(m_sunElevation)));
     }
+    if (cmd == "village.mode") {
+        if (j["on"].type == Json::Bool && j["on"].b != m_placeMode) togglePlacement();
+        return ok(", \"placement\": " + std::string(m_placeMode ? "true" : "false"));
+    }
     // RTS placement (AppRts.cpp): the houses, for tests and scripts
     if (cmd == "rts.list") {
         const std::vector<game::Building>& bs = m_build.buildings();
@@ -1010,7 +1040,7 @@ std::string GameHost::command(const Json& j, int& status) {
         return js.str();
     }
     if (cmd.rfind("rts.", 0) == 0) {
-        if (!m_playing || !m_rtsCam) return fail("Play avec le noeud Caméra RTS requis");
+        if (!placeActive()) return fail("mode village (vue Scene) ou Play requis");
         if (cmd == "rts.add") {
             float3 at;
             if (!readVec(j["pos"], at)) at = viewCentreGround();
@@ -1169,6 +1199,9 @@ std::string GameHost::command(const Json& j, int& status) {
     if (cmd == "graph.compile") {
         compileGraph();
         return ok();
+    }
+    if (cmd == "graph.arrange") {
+        return ok(", \"moved\": " + std::to_string(m_editor.arrangeOverlaps(m_graph)));
     }
     // build / output
     if (cmd == "build.profiles") {

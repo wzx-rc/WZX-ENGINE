@@ -2,6 +2,7 @@
 // Graph Editor (atelier/archive/atelier-graph/former Atelier graph.cpp): same header, panel titles, buttons, metrics (1600 x 900 reference)
 // and the shared Atelier palette (atelier/atelier_style.h), fed by the theme settings.
 #include "App.h"
+#include "GameHost.h"
 #include "AtelierIcons.h"
 #include "Icons.h"
 #include "atelier/atelier_style.h"
@@ -571,6 +572,11 @@ void App::atlViewport(float x, float y, float w, float h) {
             if (o.part == "GROUND" && o.material >= 0 && o.material < (int)m_scene.materials.size()) gridOn = (m_scene.materials[o.material].flags & 1u) != 0;
         if (Button("atlGrid", {right(28 * s), by, 28 * s, 24 * s}, "", Icon::Grid, gridOn, true)) toggleGroundGrid();
         Tip("Ground grid");
+    }
+    {
+        const bool placing = m_game && m_game->placementMode();
+        if (Button("atlVillage", {right(28 * s), by, 28 * s, 24 * s}, "", Icon::Cube, placing, true) && m_game) m_game->togglePlacement();
+        Tip("RTS village: place houses on the grid (stop Play first)");
     }
     if (Button("atlFrame", {right(28 * s), by, 28 * s, 24 * s}, "", Icon::Home, false, true)) frameSelection();
     Tip("Frame selection (F)");

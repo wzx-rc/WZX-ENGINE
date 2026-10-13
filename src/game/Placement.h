@@ -52,6 +52,9 @@ public:
 
     // A building on the free cell nearest to `cell`, dropped from `dropHeight`. Returns its index or -1.
     int add(int type, Cell cell, float dropHeight);
+    // A building on `cell` with the turn `rot`. Its position starts at `dropHeight` (0 = at once, as on a scene load).
+    // Returns its index or -1 when the cells are taken.
+    int place(int type, Cell cell, int rot, float dropHeight = 0.0f);
     // Removes a building; its scene object must already be gone. Indices after it move down by one.
     void remove(int idx);
     // Turns a building a quarter turn (in hand, or on the grid when the new footprint is free).

@@ -75,6 +75,7 @@ static ImU32 catColor(const std::string& c) {
     if (c == "Data") return IM_COL32(186, 132, 203, 255);
     if (c == "Math") return IM_COL32(134, 189, 144, 255);
     if (c == "RTS") return IM_COL32(178, 146, 223, 255);
+    if (c == "Native C++") return IM_COL32(255, 190, 40, 255);   // gold: the C++ node stands out
     return IM_COL32(150, 156, 166, 255);
 }
 
@@ -277,6 +278,44 @@ void NodeEditor::undo(Graph& g) {
     m_sel.clear();
     m_selGroup = -1;
     m_modified = true;
+}
+
+// Arrange: two cards that overlap are separated by moving the lower one under the upper one (with a gap).
+// Only the overlapping nodes move, and only downwards, so the layout of the others is kept.
+int NodeEditor::arrangeOverlaps(Graph& g) {
+    const float gap = 16.0f;   // graph units between the moved card and the one above it
+    std::string before = g.toJson();
+    std::vector<float> y0;
+    for (const Node& n : g.nodes) y0.push_back(n.pos.y);
+    auto height = [&](const Node& n) { return kPinTop + rowCount(n) * kRow + kFooter; };
+    std::vector<Node*> order;
+    for (Node& n : g.nodes) order.push_back(&n);
+    for (int pass = 0; pass < 64; ++pass) {
+        std::stable_sort(order.begin(), order.end(), [](const Node* a, const Node* b) {
+            return a->pos.y != b->pos.y ? a->pos.y < b->pos.y : a->pos.x < b->pos.x;
+        });
+        bool any = false;
+        for (size_t i = 0; i < order.size(); ++i)
+            for (size_t j = i + 1; j < order.size(); ++j) {
+                const Node& a = *order[i];
+                Node& b = *order[j];
+                bool side = b.pos.x < a.pos.x + nodeWidth(a) && a.pos.x < b.pos.x + nodeWidth(b);
+                bool stacked = b.pos.y < a.pos.y + height(a) && a.pos.y < b.pos.y + height(b);
+                if (side && stacked) {
+                    b.pos.y = a.pos.y + height(a) + gap;
+                    any = true;
+                }
+            }
+        if (!any) break;
+    }
+    int moved = 0;
+    for (size_t k = 0; k < g.nodes.size(); ++k) if (g.nodes[k].pos.y != y0[k]) ++moved;
+    if (moved) {
+        m_undo.push_back(before);
+        if (m_undo.size() > 100) m_undo.erase(m_undo.begin());
+        m_modified = true;
+    }
+    return moved;
 }
 
 void NodeEditor::deleteSelection(Graph& g) {
@@ -573,9 +612,14 @@ void NodeEditor::drawNode(Graph& g, Node& n, const Runtime* rt) {
     }
 
     // outline from the Graph settings; the selected node in cyan, a node that just ran in yellow
-    if (sel) dl->AddRect(p0, p1, kCyan, 5 * s, 0, 2 * m_outlineWeight * s);
-    else if (m_outline) dl->AddRect(p0, p1, kBorderC, 5 * s, 0, m_outlineWeight * s);
-    if (hot) dl->AddRect(p0, p1, IM_COL32(255, 210, 74, 255), 5 * s, 0, 2 * m_outlineWeight * s);
+    // the stroke lies outside the node: its inner edge sits on the node border, in the node's category colour
+    auto outside = [&](ImU32 c, float w) {
+        float h = w * 0.5f;
+        dl->AddRect(ImVec2(p0.x - h, p0.y - h), ImVec2(p1.x + h, p1.y + h), c, 5 * s + h, 0, w);
+    };
+    if (sel) outside(m_selectColor, 2 * m_outlineWeight * s);
+    else if (m_outline) outside(withA(color, 128), m_outlineWeight * s);   // the node colour, half transparent
+    if (hot) outside(IM_COL32(255, 210, 74, 255), 2 * m_outlineWeight * s);
 
     // outputs: labels on the inner side of the pin
     for (int i = 0; i < (int)n.def->outs.size(); ++i) {
@@ -690,12 +734,13 @@ void NodeEditor::drawToolbar(ImVec2 pos, float width, bool playing) {
     canvasText(dl, m_font, 11 * d, ImVec2(a.x + 172 * d, cy), kMuted, "Event Graph");
     if (!status.empty()) canvasText(dl, m_font, 11 * d, ImVec2(a.x + 290 * d, cy), kMuted, status);
 
-    float x = b.x - (103 + 71 + 72 + 28 + 4 * 6 + 12) * d, y0 = a.y + 6 * d, h = 25 * d;
+    float x = b.x - (84 + 103 + 71 + 72 + 28 + 5 * 6 + 12) * d, y0 = a.y + 6 * d, h = 25 * d;
     auto btn = [&](const char* id, float w, uint32_t icon, const char* label, bool active) {
         bool pressed = barButton(dl, m_font, id, ImVec2(x, y0), ImVec2(x + w * d, y0 + h), icon, label, active, d);
         x += (w + 6) * d;
         return pressed;
     };
+    if (btn("##tb_arrange", 84, 0xE8CB, "Arrange", false)) m_action = Arrange;
     if (btn("##tb_compile", 103, 0xE73E, "Compile", false)) m_action = Compile;
     if (btn("##tb_play", 71, playing ? 0xE71A : 0xE768, playing ? "Stop" : "Run", playing)) m_action = TogglePlay;
     if (btn("##tb_build", 72, 0xE7B8, "Build", false)) m_action = Build;
@@ -924,7 +969,7 @@ void NodeEditor::drawInspectorGraph(Graph& g, const Runtime* rt, float w) {
     ImGui::TextDisabled("CANVAS CONTROLS");
     ImGui::TextDisabled("Wheel to zoom, middle drag to pan");
     ImGui::TextDisabled("Right click to add a node");
-    ImGui::TextDisabled("Drag pins to connect, Alt+click to detach");
+    ImGui::TextDisabled("Drag pins to connect, drag a linked input to detach it, Alt+click to detach");
     ImGui::TextDisabled("Click a group title to move it with its nodes");
 
     ImGui::Spacing();
@@ -1194,20 +1239,21 @@ void NodeEditor::handleInput(Graph& g, bool inArea, bool overWidget) {
         m_dragMoved = false;
         PinRef p = hitPin(g, mouse);
         if (p.pin >= 0) {
-            const Node* n = g.node(p.node);
             if (alt) {
                 pushUndo(g);
                 g.disconnectPin(p.node, p.pin, p.output);
-            } else if (!p.output && n->def->ins[p.pin].type != PinType::Exec && g.inputLink(p.node, p.pin)) {
-                // pick up an existing data link from its input end
-                const Link* l = g.inputLink(p.node, p.pin);
-                PinRef src{l->fromNode, l->fromPin, true};
+            } else if (!p.output && g.inputLink(p.node, p.pin)) {
+                // pick up an existing link (data or flow) from its input end: dragged out, it detaches
+                m_picked = *g.inputLink(p.node, p.pin);
+                PinRef src{m_picked.fromNode, m_picked.fromPin, true};
                 pushUndo(g);
-                g.disconnectPin(p.node, p.pin, false);
+                g.removeLink(m_picked);
                 m_linkFrom = src;
+                m_linkPicked = true;
                 m_drag = DragLink;
             } else {
                 m_linkFrom = p;
+                m_linkPicked = false;
                 m_drag = DragLink;
             }
         } else if (int id = hitNode(g, mouse)) {
@@ -1280,16 +1326,23 @@ void NodeEditor::handleInput(Graph& g, bool inArea, bool overWidget) {
         if (!io.MouseDown[0]) {
             m_drag = DragNone;
             PinRef t = hitPin(g, mouse);
+            bool connected = false;
             if (t.pin >= 0 && t.output != m_linkFrom.output) {
                 std::string err;
                 pushUndo(g);
                 bool ok = m_linkFrom.output ? g.connect(m_linkFrom.node, m_linkFrom.pin, t.node, t.pin, &err)
                                             : g.connect(t.node, t.pin, m_linkFrom.node, m_linkFrom.pin, &err);
                 if (!ok) { m_undo.pop_back(); status = "Connection impossible: " + err; }
-                else status.clear();
-            } else if (t.pin < 0 && !hitNode(g, mouse) && inArea) {
+                else { status.clear(); connected = true; }
+            }
+            if (m_linkPicked) {
+                // taken from an input: on a pin that refuses it, it goes back; anywhere else it stays detached
+                if (!connected && t.pin >= 0) g.connect(m_picked.fromNode, m_picked.fromPin, m_picked.toNode, m_picked.toPin);
+                else if (!connected) status = "Link detached";
+            } else if (!connected && t.pin < 0 && !hitNode(g, mouse) && inArea) {
                 openMenu(mouse, m_linkFrom);   // dropped in the void: pick a node to connect
             }
+            m_linkPicked = false;
         }
         break;
     case DragPan:
