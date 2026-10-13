@@ -332,17 +332,11 @@ void buildStudioScene(Scene& s) {
         s.addObject(o);
     }
 
-    // Lights: big soft key, rim and top fill (hidden from camera).
-    AreaLight key;
-    key.name = "Key Softbox";
-    key.position = {-28, 34, 30};
-    key.target = {0, 2, 0};
-    key.width = 26;
-    key.height = 20;
-    key.color = float3(1.0f, 0.95f, 0.88f);
-    key.intensity = 24.0f;
-    key.visibleToCamera = false;
-    s.lights.push_back(key);
+    // Key: a directional sun (sharp shadows, as in a sunny day); rim and top fill are soft area lights (hidden from camera).
+    s.sun.enabled = true;
+    s.sun.direction = normalize(float3(-28.0f, 34.0f, 30.0f));   // towards the sun
+    s.sun.color = float3(1.0f, 0.95f, 0.88f);
+    s.sun.intensity = 4.0f;
     AreaLight rim;
     rim.name = "Rim Light";
     rim.position = {26, 22, -30};

@@ -553,16 +553,10 @@ void App::atlViewport(float x, float y, float w, float h) {
     // tools (right to left): shading, view | stats, grid, frame | snapping, axes, scale, rotate, move
     float bx = hr.x + hr.w - 8 * s, by = hr.y + 6 * s;
     auto right = [&](float bw) { bx -= bw; float r0 = bx; bx -= 6 * s; return r0; };
-    static const char* modes[] = {"Lit", "Path", "Final", "GI"};
-    int mode = m_rs.raster ? 0 : (m_rs.ddgi ? 3 : 1 + m_quality);
-    if (Combo("atlShading", {right(82 * s), by, 82 * s, 24 * s}, mode, modes, 4, Icon::Sun)) {
-        m_rs.raster = mode == 0;
-        m_rs.ddgi = mode == 3;
-        if (mode == 1 || mode == 2) m_quality = mode - 1;
-        applyQuality();
-        markDirty();
-    }
-    Tip("Lit: real-time raster · Path: path tracing · Final: path tracing, high quality · GI: real-time probes (DDGI)");
+    static const char* modes[] = {"Lit", "Interactive", "Reference", "GI"};
+    int mode = renderMode();
+    if (Combo("atlShading", {right(96 * s), by, 96 * s, 24 * s}, mode, modes, 4, Icon::Sun)) setRenderMode(mode);
+    Tip("Lit: real-time raster · Interactive: path tracing with temporal accumulation and denoiser · Reference: progressive path tracing, no denoiser · GI: real-time probes (DDGI)");
     if (Combo("atlView", {right(118 * s), by, 118 * s, 24 * s}, m_viewMode, views, 6, Icon::Camera)) setViewAxis(m_viewMode);
     bx -= 6 * s;
     if (Button("atlStats", {right(28 * s), by, 28 * s, 24 * s}, "", Icon::Monitor, m_showStats, true)) m_showStats = !m_showStats;
@@ -674,7 +668,8 @@ void App::atlViewport(float x, float y, float w, float h) {
     Text(fx + 13 * s, fr.y + 6 * s, m_magnet ? "Snapping" : "Free", P().muted, 9);
     std::string info = std::to_string(objs) + " objects  /  " + triText + " triangles";
     Text(fr.x + fr.w - 290 * s, fr.y + 6 * s, info, P().muted, 9);
-    Text(fr.x + fr.w - 116 * s, fr.y + 6 * s, m_rs.raster ? "●  Real time" : (m_rs.ddgi ? "●  GI probes" : "●  Path tracing"), m_rs.raster ? kGreen : P().accent, 9);
+    static const char* modeNames[] = {"●  Real time", "●  Interactive PT", "●  Reference PT", "●  GI probes"};
+    Text(fr.x + fr.w - 116 * s, fr.y + 6 * s, modeNames[renderMode()], m_rs.raster ? kGreen : P().accent, 9);
 }
 
 // --------------------------------------------------------------------------- bottom panel (former Atelier graph Output)
@@ -1167,15 +1162,9 @@ void App::atlInspectorWorld(float x, float y, float w, float) {
     y += 35 * s;
     Text(x, y, "Rendering", P().muted, 11);
     y += 19 * s;
-    static const char* modes[] = {"Real time", "Path tracing", "Path tracing (final)", "GI probes (DDGI)"};
-    int mode = m_rs.raster ? 0 : (m_rs.ddgi ? 3 : 1 + m_quality);
-    if (Combo("worldRender", {x, y, w, 27 * s}, mode, modes, 4, Icon::Sun)) {
-        m_rs.raster = mode == 0;
-        m_rs.ddgi = mode == 3;
-        if (mode == 1 || mode == 2) m_quality = mode - 1;
-        applyQuality();
-        markDirty();
-    }
+    static const char* modes[] = {"Real time", "Interactive path tracing", "Reference path tracing (no denoiser)", "GI probes (DDGI)"};
+    int mode = renderMode();
+    if (Combo("worldRender", {x, y, w, 27 * s}, mode, modes, 4, Icon::Sun)) setRenderMode(mode);
     y += 43 * s;
     Label(x, y, "SCENE SUMMARY");
     y += 25 * s;

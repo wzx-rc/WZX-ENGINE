@@ -36,8 +36,13 @@ bool slabHit(const float3& o, const float3& d, const float3& mn, const float3& m
     return true;
 }
 
-bool differs(const float3& a, const float3& b) { return a.x != b.x || a.y != b.y || a.z != b.z; }
-bool differs(const float4& a, const float4& b) { return a.x != b.x || a.y != b.y || a.z != b.z || a.w != b.w; }
+// A spring settles asymptotically: an exact comparison would find a change every frame and keep the view reset.
+bool differs(const float3& a, const float3& b) {
+    return std::fabs(a.x - b.x) > 1e-5f || std::fabs(a.y - b.y) > 1e-5f || std::fabs(a.z - b.z) > 1e-5f;
+}
+bool differs(const float4& a, const float4& b) {
+    return std::fabs(a.x - b.x) > 1e-6f || std::fabs(a.y - b.y) > 1e-6f || std::fabs(a.z - b.z) > 1e-6f || std::fabs(a.w - b.w) > 1e-6f;
+}
 
 }
 

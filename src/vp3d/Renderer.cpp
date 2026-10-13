@@ -235,7 +235,8 @@ bool Renderer::createPipelines(std::string* error) {
         return true;
     };
     return make(L"PathTrace.cso", m_psoTrace) && make(L"Denoise.cso", m_psoDenoise) && make(L"Tonemap.cso", m_psoTonemap) &&
-           make(L"DDGIUpdate.cso", m_psoGIUpdate) && make(L"DDGIBlend.cso", m_psoGIBlend) && make(L"GIShade.cso", m_psoGIShade);
+           make(L"DDGIUpdate.cso", m_psoGIUpdate) && make(L"DDGIBlend.cso", m_psoGIBlend) && make(L"GIShade.cso", m_psoGIShade) &&
+           make(L"PathTraceTemporal.cso", m_psoTraceTemporal);
 }
 
 void Renderer::createTargets(uint32_t w, uint32_t h) {
@@ -611,7 +612,7 @@ void Renderer::buildTLAS(const Scene& scene, bool buildAS) {
     }
     // Path tracing: the sun becomes a small area light far away (hidden from the camera), with the same irradiance.
     if (scene.sun.enabled && scene.sun.intensity > 0) {
-        const float dist = 2000.0f, size = 60.0f;
+        const float dist = 2000.0f, size = 20.0f;   // a side of 20 at 2000: about half a degree, as the real sun (sharp shadows)
         AreaLight sl;
         sl.position = normalize(scene.sun.direction) * dist;
         sl.target = float3(0, 0, 0);
@@ -843,6 +844,7 @@ uint32_t renderSignature(const RenderSettings& rs) {
     };
     mix(&rs.raster, sizeof(bool));
     mix(&rs.ddgi, sizeof(bool));
+    mix(&rs.temporal, sizeof(bool));
     mix(&rs.ddgiView, sizeof(int));
     mix(&rs.ddgiShowProbes, sizeof(bool));
     mix(&rs.ddgiProbeBudget, sizeof(int));
@@ -898,12 +900,25 @@ uint32_t Renderer::sceneSignature(const Scene& s) const {
     mix(&s.env.horizon, sizeof(s.env.horizon));
     mix(&s.env.bottom, sizeof(s.env.bottom));
     mix(&s.env.intensity, sizeof(float));
+    // Transforms are quantized (1e-4): a settling spring must not change the signature every frame, but a moved
+    // object does, so the history that saw its old place (its light and shadow on the ground) is dropped.
+    auto mixQ = [&](float v) {
+        const int32_t q = (int32_t)std::lround(v * 1e4f);
+        mix(&q, sizeof(q));
+    };
     for (const Object& o : s.objects) {
         mix(&o.material, sizeof(o.material));
         mix(&o.mesh, sizeof(o.mesh));
         mix(&o.visible, sizeof(bool));
         mix(&o.ghost, sizeof(bool));
+        mixQ(o.position.x); mixQ(o.position.y); mixQ(o.position.z);
+        mixQ(o.scale.x); mixQ(o.scale.y); mixQ(o.scale.z);
+        mixQ(o.rot.x); mixQ(o.rot.y); mixQ(o.rot.z); mixQ(o.rot.w);
+        mix(&o.useRot, sizeof(bool));
     }
+    mixQ(s.sun.direction.x); mixQ(s.sun.direction.y); mixQ(s.sun.direction.z);
+    mixQ(s.sun.intensity);
+    mix(&s.sun.enabled, sizeof(bool));
     mix(&s.gridScale, sizeof(float));
     return h;
 }
@@ -925,7 +940,7 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
         m_sceneSignature = sig;
         m_historyValid = false;
     }
-    const bool useHistory = rs.ddgi && !rs.raster;
+    const bool useHistory = (rs.temporal || rs.ddgi) && !rs.raster;
 
     beginCommands();
     m_giTimed = false;
@@ -950,7 +965,8 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
     fc.lightCount = m_lightCount;
     fc.samplesPerFrame = (uint32_t)std::max(1, rs.samplesPerFrame);
     fc.flags = (cam.dof ? FRAME_FLAG_DOF : 0) | (rs.bevel ? FRAME_FLAG_BEVEL : 0) | (rs.denoise ? FRAME_FLAG_DENOISE : 0) |
-               (scene.env.visibleToCamera ? FRAME_FLAG_ENV_VISIBLE : 0) | (rs.ddgi && !rs.raster ? FRAME_FLAG_ID_EDGES : 0);
+               (scene.env.visibleToCamera ? FRAME_FLAG_ENV_VISIBLE : 0) | (rs.ddgi && !rs.raster ? FRAME_FLAG_ID_EDGES : 0) |
+               (rs.temporal && !rs.raster ? (FRAME_FLAG_CENTRE_VALID | FRAME_FLAG_TEMPORAL) : 0u);
     fc.envTop = scene.env.top;
     fc.envIntensity = scene.env.intensity;
     fc.envHorizon = scene.env.horizon;
@@ -1015,6 +1031,12 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
     m_cmd->EndQuery(m_queryHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 0);
     if (rs.ddgi) {
         recordDDGI(rs, gx, gy);   // never converges: probes and image history keep updating
+        ++m_sampleIndex;
+        traced = true;
+    } else if (rs.temporal) {
+        m_cmd->SetPipelineState(m_psoTraceTemporal.Get());   // no convergence limit: the history keeps refining
+        m_cmd->Dispatch(gx, gy, 1);
+        uavBarrier();
         ++m_sampleIndex;
         traced = true;
     } else if (m_sampleIndex < (uint32_t)rs.maxSamples) {

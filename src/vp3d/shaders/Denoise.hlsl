@@ -19,6 +19,8 @@ void main(uint3 id : SV_DispatchThreadID) {
     if (id.x >= F.resolution.x || id.y >= F.resolution.y) return;
     int2 p = int2(id.xy);
     float spp = max(gTex[SLOT_ACCUM][p].w, 1.0);
+    // Interactive: the history count drops at every change; a bounded strength keeps the image from breathing.
+    if (F.flags & FRAME_FLAG_TEMPORAL) spp = clamp(spp, 16.0, 256.0);
     float3 c = LoadColor(p);
     float4 nd = gTex[SLOT_NORMAL][p];
     float3 n = normalize(nd.xyz + 1e-6);

@@ -34,6 +34,9 @@ struct RenderSettings {
     float vignette = 0.12f;
     bool raster = false;
     int tonemapper = 0;           // 0 ACES (Hill fit), 1 AgX, 2 AgX Punchy, 3 Standard (clip)          // light raster viewport instead of path tracing
+    // Interactive path tracing: one path per pixel per frame, blended into the history of the previous frames.
+    // Off = progressive accumulation (reference, reset on every change).
+    bool temporal = false;
     // Real-time GI test: DDGI probe volume instead of path tracing (when raster is false).
     bool ddgi = false;
     int ddgiProbeBudget = 2048;   // target probe count over the scene bounds
@@ -150,6 +153,7 @@ private:
     ComPtr<ID3D12RootSignature> m_rootSig;
     ComPtr<ID3D12PipelineState> m_psoTrace, m_psoDenoise, m_psoTonemap;
     ComPtr<ID3D12PipelineState> m_psoGIUpdate, m_psoGIBlend, m_psoGIShade;
+    ComPtr<ID3D12PipelineState> m_psoTraceTemporal;
     ComPtr<ID3D12DescriptorHeap> m_heap;
     uint32_t m_descSize = 0;
 
