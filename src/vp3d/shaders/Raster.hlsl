@@ -35,6 +35,8 @@ StructuredBuffer<GpuMaterial> gMats : register(t0);
 Texture2D<float> gShadow : register(t1);
 StructuredBuffer<GpuLight> gLights : register(t2);
 SamplerComparisonState gShadowCmp : register(s0);
+Texture2D<float4> gTextures[MAX_TEXTURES] : register(t0, space1);
+SamplerState gLinearWrap : register(s1);
 
 static const float PI = 3.14159265;
 #define DRAW_GHOST 1u
@@ -43,12 +45,14 @@ static const float PI = 3.14159265;
 struct VSIn {
     float3 pos : POSITION;
     float3 nrm : NORMAL;
+    float2 uv : TEXCOORD;
 };
 
 struct VSOut {
     float4 pos : SV_Position;
     float3 wpos : WORLDPOS;
     float3 nrm : NORMAL;
+    float2 uv : TEXCOORD;
 };
 
 float3 ToWorld(float3 p) {
@@ -61,6 +65,7 @@ VSOut VSMain(VSIn i) {
     o.wpos = ToWorld(i.pos);
     float3 n = float3(dot(D.row0.xyz, i.nrm), dot(D.row1.xyz, i.nrm), dot(D.row2.xyz, i.nrm));
     o.nrm = normalize(n);
+    o.uv = i.uv;
     o.pos = mul(R.viewProj, float4(o.wpos, 1));
     return o;
 }
@@ -156,6 +161,7 @@ float4 Shade(VSOut i, bool ghost) {
     if (dot(N, V) < 0) N = -N;
     float3 base = m.baseColor;
     float3 emission = m.emission;
+    if (m.baseColorTex != NO_TEXTURE) base *= gTextures[NonUniformResourceIndex(m.baseColorTex)].Sample(gLinearWrap, i.uv).rgb;
     if (m.flags & MAT_FLAG_GRID) base = GridColor(base, i.wpos, emission);
     if (D.flags & DRAW_LIGHT) return float4(m.emission * R.lightScale, 1);
 

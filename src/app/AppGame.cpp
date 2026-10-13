@@ -266,7 +266,11 @@ void GameHost::setRtsCamera(bool on) {
     m_rtsCam = on;
     m_rmbDrag = false;
     m_app.m_scene.sun.enabled = on;   // the RTS game is lit by its sun
-    if (on) updateSun();
+    if (on) {
+        m_houseFailed = false;
+        ensureHouseModel();   // the houses need their model: loaded once, then kept by the scene
+        updateSun();
+    }
 }
 
 bool GameHost::groundUnderMouse(float3& p) const {

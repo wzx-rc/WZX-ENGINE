@@ -108,6 +108,8 @@ private:
     void createRasterTargets(uint32_t w, uint32_t h);
     void recordRaster(const Scene& scene, const RenderSettings& rs, const ViewRect& vp);
     void createTargets(uint32_t w, uint32_t h);
+    void uploadTextures(const Scene& scene);
+    D3D12_GPU_DESCRIPTOR_HANDLE textureTable() const;
     Buffer createBuffer(uint64_t size, D3D12_HEAP_TYPE heap, D3D12_RESOURCE_FLAGS flags, D3D12_RESOURCE_STATES state);
     void ensureUpload(Buffer& b, uint64_t size);
     void buildTLAS(const Scene& scene, bool buildAS);
@@ -137,6 +139,9 @@ private:
 
     // Render targets (UAV textures), see shaders for the slot meaning.
     static constexpr int kTexCount = 6;
+    // Material textures: SRVs after the render targets and the shadow map in m_heap (unused slots = null views).
+    static constexpr uint32_t kMaxTextures = 16;
+    std::vector<ComPtr<ID3D12Resource>> m_materialTex;
     ComPtr<ID3D12Resource> m_tex[kTexCount];
     uint32_t m_rtW = 0, m_rtH = 0;
 

@@ -12,6 +12,7 @@ struct BuildingType {
     std::string name = "House";
     int w = 1, d = 1;                       // footprint in cells
     float height = 1.2f;                    // metres
+    float modelScale = 1.0f;                // scale of the house model (its units are centimetres)
     float3 color{0.80f, 0.60f, 0.42f};      // base colour (0..1, sRGB)
 };
 

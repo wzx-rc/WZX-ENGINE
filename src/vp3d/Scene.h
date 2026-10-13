@@ -22,6 +22,7 @@ struct Material {
     float coat = 0.0f;
     float coatRoughness = 0.05f;
     uint32_t flags = 0;            // MAT_FLAG_*
+    int baseColorTex = -1;         // index in Scene::textures multiplied with baseColor (-1 = none)
     int preset = 0;                // app-defined preset id (UI only)
     int colorId = -1;              // app-defined palette colour id (UI only)
 };
@@ -79,6 +80,13 @@ struct AreaLight {
     void basis(float3& U, float3& V, float3& N) const;
 };
 
+// Image used by materials (RGBA8, sRGB encoded, mip 0 only: the renderer builds the mip chain).
+struct Texture {
+    std::string name;
+    uint32_t width = 0, height = 0;
+    std::vector<uint8_t> rgba;
+};
+
 // Distant sun (directional light). Raster: key light with the shadow map. Path tracing: a small, far area light.
 struct SunLight {
     bool enabled = false;
@@ -120,6 +128,7 @@ struct Scene {
     std::vector<Material> materials;
     std::vector<Object> objects;
     std::vector<AreaLight> lights;
+    std::vector<Texture> textures;   // material textures, see Material::baseColorTex
     SunLight sun;                // distant sun: the RTS play turns it on (off by default)
     Environment env;
     Camera camera;               // default camera
@@ -136,6 +145,11 @@ struct Scene {
     int findMesh(const std::string& n) const {
         for (size_t i = 0; i < meshNames.size(); ++i) if (meshNames[i] == n) return (int)i;
         return -1;
+    }
+    int addTexture(Texture t) {
+        textures.push_back(std::move(t));
+        ++geometryVersion;
+        return (int)textures.size() - 1;
     }
     int addMaterial(const Material& m) { materials.push_back(m); return (int)materials.size() - 1; }
     int addObject(const Object& o) { objects.push_back(o); return (int)objects.size() - 1; }

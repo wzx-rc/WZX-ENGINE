@@ -11,6 +11,7 @@ struct Hit {
     float3 Ng;   // geometric normal, facing the incoming ray side
     uint inst;
     bool front;  // ray hit the outward side
+    float2 uv;   // texture coordinates of the hit point
 };
 
 struct Surf {
@@ -77,6 +78,12 @@ bool TraceClosest(float3 o, float3 d, float tmax, uint mask, out Hit h) {
     if (dot(ns, -d) <= 0.0) ns = ng;
     h.P = o + d * h.t;
     h.N = ns;
+    {
+        GpuVertex v0, v1, v2;
+        FetchTriangle(h.inst, q.CommittedPrimitiveIndex(), v0, v1, v2);
+        float2 bc = q.CommittedTriangleBarycentrics();
+        h.uv = v0.uv * (1.0 - bc.x - bc.y) + v1.uv * bc.x + v2.uv * bc.y;
+    }
     h.Ng = ng;
     return true;
 }
@@ -172,6 +179,8 @@ float3 BevelNormal(Hit h, float radius, uint samples, inout uint rng) {
 Surf MakeSurf(GpuMaterial m, Hit h) {
     Surf s;
     s.base = m.baseColor;
+    if (m.baseColorTex != NO_TEXTURE)
+        s.base *= gTextures[NonUniformResourceIndex(m.baseColorTex)].SampleLevel(gLinearWrap, h.uv, 0).rgb;
     s.rough = m.roughness;
     s.metal = m.metallic;
     s.spec = m.specular;

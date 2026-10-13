@@ -3,6 +3,7 @@
 // HUD need the "Caméra RTS" node (the RTS camera) and the Scene view on screen.
 #include "App.h"
 #include "GameHost.h"
+#include "vp3d/AssetImport.h"
 #include <cmath>
 #include <string>
 
@@ -59,7 +60,6 @@ void GameHost::removeBuilding(int idx) {
     std::vector<game::Building>& bs = m_build.buildings();
     if (idx < 0 || idx >= (int)bs.size()) return;
     if (objectAlive(bs[idx].object)) destroy(bs[idx].object);
-    m_buildMat.erase(bs[idx].id);
     m_build.remove(idx);
     m_buildHover = m_buildPress = m_buildSelected = -1;
 }
@@ -67,7 +67,6 @@ void GameHost::removeBuilding(int idx) {
 // Stop: the scene is restored, so the houses and their materials go with it.
 void GameHost::clearBuildings() {
     m_build.clear();
-    m_buildMat.clear();
     m_invalidMat = -1;
     m_buildHover = m_buildPress = m_buildSelected = -1;
     m_buildHud = m_hudDrag = false;
@@ -93,8 +92,64 @@ int GameHost::invalidMaterial() {
     return m_invalidMat;
 }
 
-// Each house is a scene object: a CUBE scaled to the footprint and the height, turned, tilted and
-// squashed by the animation. A house in hand over an invalid cell turns red.
+// The house model of the RTS starter (assets/HOUSE): the OBJ, its base colour image and one material for
+// every house. The mesh and the image stay in the scene; the material is made again after each Stop,
+// which restores the materials of the scene.
+bool GameHost::ensureHouseModel() {
+    Scene& s = m_app.m_scene;
+    const bool loaded = m_houseMesh >= 0 && m_houseMesh < (int)s.meshNames.size() && s.meshNames[m_houseMesh] == "House01_low";
+    if (!loaded) {
+        std::wstring dir = m_app.m_exeDir + L"\\assets\\HOUSE\\";
+        vp3d::MeshData mesh;
+        vp3d::ObjInfo info;
+        std::string err;
+        if (!vp3d::loadObj(dir + L"House01_low.obj", mesh, &info, &err)) {
+            if (!m_houseFailed) toast(L"House model not loaded: " + fromUtf8(err));
+            m_houseFailed = true;
+            return false;
+        }
+        // centimetres; the base on y = 0 and centred on x / z (the pivot of a house is its footprint centre)
+        float3 mn, mx;
+        mesh.bounds(mn, mx);
+        float3 shift((mn.x + mx.x) * 0.5f, mn.y, (mn.z + mx.z) * 0.5f);
+        for (vp3d::Vertex& v : mesh.vertices) v.pos -= shift;
+        // base colour: the image named by the .mtl, else the *basecolor* image of the folder (the export names a .bmp that is not there)
+        std::wstring texPath;
+        if (!info.diffuseMap.empty() && GetFileAttributesW((dir + fromUtf8(info.diffuseMap)).c_str()) != INVALID_FILE_ATTRIBUTES) {
+            texPath = dir + fromUtf8(info.diffuseMap);
+        } else {
+            WIN32_FIND_DATAW fd;
+            HANDLE h = FindFirstFileW((dir + L"*basecolor*.*").c_str(), &fd);
+            if (h != INVALID_HANDLE_VALUE) {
+                texPath = dir + fd.cFileName;
+                FindClose(h);
+            }
+        }
+        m_houseTex = -1;
+        if (!texPath.empty()) {
+            vp3d::Texture tex;
+            std::string terr;
+            if (vp3d::loadImage(texPath, tex, &terr, 2048)) m_houseTex = s.addTexture(std::move(tex));
+            else toast(L"Texture not loaded: " + fromUtf8(terr));
+        }
+        m_houseMesh = s.addMesh("House01_low", std::move(mesh));
+    }
+    if (m_houseMat < 0 || m_houseMat >= (int)s.materials.size() || s.materials[m_houseMat].name != "House") {
+        Material hm;
+        hm.name = "House";
+        hm.baseColor = float3(1, 1, 1);
+        hm.roughness = 0.75f;
+        hm.specular = 0.3f;
+        hm.baseColorTex = m_houseTex;
+        if (m_houseTex < 0) hm.baseColor = float3(0.6f, 0.45f, 0.35f);
+        m_houseMat = s.addMaterial(hm);
+    }
+    m_houseFailed = false;
+    return true;
+}
+
+// Each house is a scene object: the model scaled to its type, turned, tilted and squashed by the
+// animation. A house in hand over an invalid cell turns red.
 void GameHost::syncBuildings() {
     Scene& s = m_app.m_scene;
     const std::vector<BuildingType>& types = m_build.types();
@@ -103,24 +158,28 @@ void GameHost::syncBuildings() {
         game::Building& b = bs[i];
         const BuildingType& t = types[b.type];
         if (!objectAlive(b.object)) {
-            b.object = spawn("CUBE", b.pos, t.color);
-            if (b.object < 0) continue;
-            s.objects[b.object].name = uniqueName(t.name);
-            m_buildMat[b.id] = s.objects[b.object].material;
+            if (!ensureHouseModel()) return;
+            Object fresh;
+            fresh.name = uniqueName(t.name);
+            fresh.part = "House";
+            fresh.mesh = m_houseMesh;
+            fresh.material = m_houseMat;
+            fresh.position = b.pos;
+            fresh.useRot = true;
+            b.object = s.addObject(fresh);
         }
         Object& o = s.objects[b.object];
-        // the CUBE part is 6 units wide and stands on y = 0; the house fills 90 % of its cells
-        float k = b.hover;
-        float sx = (1 + b.squash * 0.5f) * k * b.footW(t) * 0.9f / 6.0f;
-        float sz = (1 + b.squash * 0.5f) * k * b.footD(t) * 0.9f / 6.0f;
-        float sy = (1 - b.squash) * k * t.height / 6.0f;
+        // the model is scaled to its type; the squash widens it and flattens it, the hover grows it
+        float k = b.hover * t.modelScale;
+        float sx = (1 + b.squash * 0.5f) * k;
+        float sy = (1 - b.squash) * k;
+        float sz = sx;
         o.position = b.pos;
         o.useRot = true;
         o.rot = qMul(qAxisAngle(float3(0, 1, 0), b.yaw), qMul(qAxisAngle(float3(1, 0, 0), b.tiltX), qAxisAngle(float3(0, 0, 1), b.tiltZ)));
         o.scale = float3(sx, sy, sz);
         bool invalid = i == m_build.dragging() && !m_build.dragValid();
-        auto own = m_buildMat.find(b.id);
-        o.material = invalid ? invalidMaterial() : (own != m_buildMat.end() ? own->second : o.material);
+        o.material = invalid ? invalidMaterial() : m_houseMat;
     }
     if (!bs.empty()) m_app.markDirty();
 }

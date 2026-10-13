@@ -65,7 +65,13 @@ bool Renderer::createRasterPipelines(std::string* error) {
     range.NumDescriptors = 1;
     range.BaseShaderRegister = 1;
 
-    D3D12_ROOT_PARAMETER p[5] = {};
+    D3D12_DESCRIPTOR_RANGE texRange = {};
+    texRange.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+    texRange.NumDescriptors = kMaxTextures;
+    texRange.BaseShaderRegister = 0;
+    texRange.RegisterSpace = 1;
+
+    D3D12_ROOT_PARAMETER p[6] = {};
     p[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
     p[0].Descriptor.ShaderRegister = 0;
     p[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
@@ -79,6 +85,10 @@ bool Renderer::createRasterPipelines(std::string* error) {
     p[4].DescriptorTable.NumDescriptorRanges = 1;
     p[4].DescriptorTable.pDescriptorRanges = &range;
     p[4].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+    p[5].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+    p[5].DescriptorTable.NumDescriptorRanges = 1;
+    p[5].DescriptorTable.pDescriptorRanges = &texRange;
+    p[5].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
 
     D3D12_STATIC_SAMPLER_DESC ss = {};
     ss.Filter = D3D12_FILTER_COMPARISON_MIN_MAG_LINEAR_MIP_POINT;
@@ -88,12 +98,20 @@ bool Renderer::createRasterPipelines(std::string* error) {
     ss.MaxLOD = D3D12_FLOAT32_MAX;
     ss.ShaderRegister = 0;
     ss.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+    D3D12_STATIC_SAMPLER_DESC samplers[2] = {ss, {}};
+    D3D12_STATIC_SAMPLER_DESC& ts = samplers[1];   // material textures: anisotropic, wrap
+    ts.Filter = D3D12_FILTER_ANISOTROPIC;
+    ts.MaxAnisotropy = 8;
+    ts.AddressU = ts.AddressV = ts.AddressW = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+    ts.MaxLOD = D3D12_FLOAT32_MAX;
+    ts.ShaderRegister = 1;
+    ts.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
 
     D3D12_ROOT_SIGNATURE_DESC rsd = {};
-    rsd.NumParameters = 5;
+    rsd.NumParameters = 6;
     rsd.pParameters = p;
-    rsd.NumStaticSamplers = 1;
-    rsd.pStaticSamplers = &ss;
+    rsd.NumStaticSamplers = 2;
+    rsd.pStaticSamplers = samplers;
     rsd.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
     ComPtr<ID3DBlob> blob, err;
     if (FAILED(D3D12SerializeRootSignature(&rsd, D3D_ROOT_SIGNATURE_VERSION_1, &blob, &err))) {
@@ -119,11 +137,12 @@ bool Renderer::createRasterPipelines(std::string* error) {
     D3D12_INPUT_ELEMENT_DESC layout[] = {
         {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
         {"NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+        {"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 24, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
     };
     auto base = [&]() {
         D3D12_GRAPHICS_PIPELINE_STATE_DESC d = {};
         d.pRootSignature = m_rasterRoot.Get();
-        d.InputLayout = {layout, 2};
+        d.InputLayout = {layout, 3};
         d.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
         d.RasterizerState.FillMode = D3D12_FILL_MODE_SOLID;
         d.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
@@ -354,6 +373,7 @@ void Renderer::recordRaster(const Scene& scene, const RenderSettings& rs, const 
     D3D12_GPU_DESCRIPTOR_HANDLE shadowSrv = m_heap->GetGPUDescriptorHandleForHeapStart();
     shadowSrv.ptr += (UINT64)kTexCount * m_descSize;
     m_cmd->SetGraphicsRootDescriptorTable(4, shadowSrv);
+    m_cmd->SetGraphicsRootDescriptorTable(5, textureTable());
 
     D3D12_VERTEX_BUFFER_VIEW vbv = {m_vb.va(), (UINT)m_vb.size, sizeof(gpu::GpuVertex)};
     D3D12_INDEX_BUFFER_VIEW ibv = {m_ib.va(), (UINT)m_ib.size, DXGI_FORMAT_R32_UINT};

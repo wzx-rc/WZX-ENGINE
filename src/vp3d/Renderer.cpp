@@ -131,7 +131,7 @@ bool Renderer::init(HWND hwnd, uint32_t width, uint32_t height, const std::wstri
 
     D3D12_DESCRIPTOR_HEAP_DESC hd = {};
     hd.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-    hd.NumDescriptors = kTexCount + 1;  // + shadow map SRV
+    hd.NumDescriptors = kTexCount + 1 + kMaxTextures;  // + shadow map SRV + material textures
     hd.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
     m_device->CreateDescriptorHeap(&hd, IID_PPV_ARGS(&m_heap));
     m_descSize = m_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
@@ -159,7 +159,13 @@ bool Renderer::createPipelines(std::string* error) {
     range.NumDescriptors = kTexCount;
     range.BaseShaderRegister = 0;
 
-    D3D12_ROOT_PARAMETER p[9] = {};
+    D3D12_DESCRIPTOR_RANGE texRange = {};
+    texRange.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+    texRange.NumDescriptors = kMaxTextures;
+    texRange.BaseShaderRegister = 0;
+    texRange.RegisterSpace = 1;
+
+    D3D12_ROOT_PARAMETER p[10] = {};
     p[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
     p[0].Descriptor.ShaderRegister = 0;
     p[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
@@ -172,10 +178,21 @@ bool Renderer::createPipelines(std::string* error) {
     p[8].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
     p[8].DescriptorTable.NumDescriptorRanges = 1;
     p[8].DescriptorTable.pDescriptorRanges = &range;
+    p[9].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+    p[9].DescriptorTable.NumDescriptorRanges = 1;
+    p[9].DescriptorTable.pDescriptorRanges = &texRange;
+
+    D3D12_STATIC_SAMPLER_DESC ss = {};   // gLinearWrap (s0) of the path tracer
+    ss.Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
+    ss.AddressU = ss.AddressV = ss.AddressW = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+    ss.MaxLOD = D3D12_FLOAT32_MAX;
+    ss.ShaderRegister = 0;
 
     D3D12_ROOT_SIGNATURE_DESC rsd = {};
-    rsd.NumParameters = 9;
+    rsd.NumParameters = 10;
     rsd.pParameters = p;
+    rsd.NumStaticSamplers = 1;
+    rsd.pStaticSamplers = &ss;
     ComPtr<ID3DBlob> blob, err;
     if (FAILED(D3D12SerializeRootSignature(&rsd, D3D_ROOT_SIGNATURE_VERSION_1, &blob, &err))) {
         if (error) *error = err ? (const char*)err->GetBufferPointer() : "root signature";
@@ -306,7 +323,7 @@ void Renderer::setScene(const Scene& scene) {
         g.indexCount = (uint32_t)m.indices.size();
         g.vertexCount = (uint32_t)m.vertices.size();
         m.bounds(g.bmin, g.bmax);
-        for (auto& v : m.vertices) verts.push_back({v.pos, v.nrm});
+        for (auto& v : m.vertices) verts.push_back({v.pos, v.nrm, v.uv});
         inds.insert(inds.end(), m.indices.begin(), m.indices.end());
         m_meshes.push_back(g);
     };
@@ -364,7 +381,103 @@ void Renderer::setScene(const Scene& scene) {
     }
     uavBarrier();
     executeAndWait();
+    uploadTextures(scene);
     m_sampleIndex = 0;
+}
+
+// Descriptor table of the material textures (after the render targets and the shadow map in m_heap).
+D3D12_GPU_DESCRIPTOR_HANDLE Renderer::textureTable() const {
+    D3D12_GPU_DESCRIPTOR_HANDLE h = m_heap->GetGPUDescriptorHandleForHeapStart();
+    h.ptr += (UINT64)(kTexCount + 1) * m_descSize;
+    return h;
+}
+
+// Uploads Scene::textures (RGBA8 sRGB) with a box-filtered mip chain into the texture table.
+void Renderer::uploadTextures(const Scene& scene) {
+    m_materialTex.clear();
+    D3D12_CPU_DESCRIPTOR_HANDLE base = m_heap->GetCPUDescriptorHandleForHeapStart();
+    base.ptr += (SIZE_T)(kTexCount + 1) * m_descSize;
+    D3D12_SHADER_RESOURCE_VIEW_DESC sv = {};
+    sv.Format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
+    sv.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+    sv.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+    sv.Texture2D.MipLevels = 1;
+    for (uint32_t i = 0; i < kMaxTextures; ++i) {
+        D3D12_CPU_DESCRIPTOR_HANDLE h = base;
+        h.ptr += (SIZE_T)i * m_descSize;
+        m_device->CreateShaderResourceView(nullptr, &sv, h);   // null view
+    }
+    auto hp = heapProps(D3D12_HEAP_TYPE_DEFAULT);
+    for (size_t ti = 0; ti < scene.textures.size() && ti < kMaxTextures; ++ti) {
+        const Texture& t = scene.textures[ti];
+        if (t.width == 0 || t.height == 0 || t.rgba.size() < (size_t)t.width * t.height * 4) {
+            m_materialTex.push_back(nullptr);
+            continue;
+        }
+        // mip chain on the CPU
+        std::vector<std::vector<uint8_t>> mips(1, t.rgba);
+        std::vector<uint32_t> mw(1, t.width), mh(1, t.height);
+        while (mw.back() > 1 || mh.back() > 1) {
+            uint32_t w0 = mw.back(), h0 = mh.back(), w1 = std::max(1u, w0 / 2), h1 = std::max(1u, h0 / 2);
+            const std::vector<uint8_t>& s = mips.back();
+            std::vector<uint8_t> d((size_t)w1 * h1 * 4);
+            for (uint32_t y = 0; y < h1; ++y)
+                for (uint32_t x = 0; x < w1; ++x) {
+                    uint32_t x0 = std::min(x * 2, w0 - 1), x1 = std::min(x * 2 + 1, w0 - 1);
+                    uint32_t y0 = std::min(y * 2, h0 - 1), y1 = std::min(y * 2 + 1, h0 - 1);
+                    for (int c = 0; c < 4; ++c) {
+                        uint32_t sum = s[((size_t)y0 * w0 + x0) * 4 + c] + s[((size_t)y0 * w0 + x1) * 4 + c] +
+                                       s[((size_t)y1 * w0 + x0) * 4 + c] + s[((size_t)y1 * w0 + x1) * 4 + c];
+                        d[((size_t)y * w1 + x) * 4 + c] = (uint8_t)((sum + 2) / 4);
+                    }
+                }
+            mips.push_back(std::move(d));
+            mw.push_back(w1);
+            mh.push_back(h1);
+        }
+        UINT levels = (UINT)mips.size();
+        D3D12_RESOURCE_DESC d = {};
+        d.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+        d.Width = t.width;
+        d.Height = t.height;
+        d.DepthOrArraySize = 1;
+        d.MipLevels = (UINT16)levels;
+        d.Format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
+        d.SampleDesc.Count = 1;
+        ComPtr<ID3D12Resource> tex;
+        if (FAILED(m_device->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &d, D3D12_RESOURCE_STATE_COPY_DEST, nullptr,
+                                                     IID_PPV_ARGS(&tex)))) {
+            m_materialTex.push_back(nullptr);
+            continue;
+        }
+        std::vector<D3D12_PLACED_SUBRESOURCE_FOOTPRINT> fp(levels);
+        UINT64 total = 0;
+        m_device->GetCopyableFootprints(&d, 0, levels, 0, fp.data(), nullptr, nullptr, &total);
+        Buffer stage = createBuffer(total, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ);
+        for (UINT l = 0; l < levels; ++l)
+            for (uint32_t y = 0; y < mh[l]; ++y)
+                memcpy((uint8_t*)stage.mapped + fp[l].Offset + (size_t)y * fp[l].Footprint.RowPitch,
+                       &mips[l][(size_t)y * mw[l] * 4], (size_t)mw[l] * 4);
+        beginCommands();
+        for (UINT l = 0; l < levels; ++l) {
+            D3D12_TEXTURE_COPY_LOCATION dl = {}, sl = {};
+            dl.pResource = tex.Get();
+            dl.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+            dl.SubresourceIndex = l;
+            sl.pResource = stage.res.Get();
+            sl.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
+            sl.PlacedFootprint = fp[l];
+            m_cmd->CopyTextureRegion(&dl, 0, 0, 0, &sl, nullptr);
+        }
+        transition(tex.Get(), D3D12_RESOURCE_STATE_COPY_DEST,
+                   D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+        executeAndWait();
+        sv.Texture2D.MipLevels = levels;
+        D3D12_CPU_DESCRIPTOR_HANDLE h = base;
+        h.ptr += (SIZE_T)ti * m_descSize;
+        m_device->CreateShaderResourceView(tex.Get(), &sv, h);
+        m_materialTex.push_back(tex);
+    }
 }
 
 void Renderer::buildTLAS(const Scene& scene, bool buildAS) {
@@ -390,9 +503,14 @@ void Renderer::buildTLAS(const Scene& scene, bool buildAS) {
         g.specular = m.specular;
         g.coat = m.coat;
         g.coatRoughness = m.coatRoughness;
+        g.baseColorTex = NO_TEXTURE;
+        if (m.baseColorTex >= 0 && m.baseColorTex < (int)m_materialTex.size() && m_materialTex[m.baseColorTex])
+            g.baseColorTex = (uint32_t)m.baseColorTex;
         mats.push_back(g);
     }
-    if (mats.empty()) mats.push_back(gpu::GpuMaterial{});
+    gpu::GpuMaterial none = {};
+    none.baseColorTex = NO_TEXTURE;
+    if (mats.empty()) mats.push_back(none);
 
     auto addInstance = [&](int meshIdx, const Affine& xf, uint32_t matId, uint32_t lightId, uint32_t mask) -> int {
         if (meshIdx < 0 || meshIdx >= (int)m_meshes.size() || !m_meshes[meshIdx].blas.res) return -1;
@@ -427,6 +545,7 @@ void Renderer::buildTLAS(const Scene& scene, bool buildAS) {
         float3 U, V, N;
         l.basis(U, V, N);
         gpu::GpuMaterial lm = {};
+        lm.baseColorTex = NO_TEXTURE;
         lm.emission = l.color * l.intensity;
         lm.roughness = 1.0f;
         lm.ior = 1.5f;
@@ -455,6 +574,7 @@ void Renderer::buildTLAS(const Scene& scene, bool buildAS) {
         sl.basis(U, V, N);
         float3 radiance = scene.sun.color * (scene.sun.intensity * dist * dist / (size * size));
         gpu::GpuMaterial lm = {};
+        lm.baseColorTex = NO_TEXTURE;
         lm.emission = radiance;
         lm.roughness = 1.0f;
         lm.ior = 1.5f;
@@ -616,6 +736,7 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
     m_cmd->SetComputeRootShaderResourceView(6, m_materials.va());
     m_cmd->SetComputeRootShaderResourceView(7, m_lights.va());
     m_cmd->SetComputeRootDescriptorTable(8, m_heap->GetGPUDescriptorHandleForHeapStart());
+    m_cmd->SetComputeRootDescriptorTable(9, textureTable());
 
     bool traced = false;
     m_cmd->EndQuery(m_queryHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 0);
