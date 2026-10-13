@@ -682,6 +682,34 @@ void Renderer::copyHistory() {
     }
 }
 
+// Hash of the render settings that change the accumulated radiance (not tone mapping or denoising).
+// A change drops the history, otherwise the old image would stay on screen for up to the history length.
+uint32_t renderSignature(const RenderSettings& rs) {
+    uint32_t h = 2166136261u;
+    auto mix = [&](const void* p, size_t n) {
+        const unsigned char* b = static_cast<const unsigned char*>(p);
+        for (size_t i = 0; i < n; ++i) {
+            h ^= b[i];
+            h *= 16777619u;
+        }
+    };
+    mix(&rs.raster, sizeof(bool));
+    mix(&rs.temporal, sizeof(bool));
+    mix(&rs.ddgi, sizeof(bool));
+    mix(&rs.ddgiView, sizeof(int));
+    mix(&rs.ddgiShowProbes, sizeof(bool));
+    mix(&rs.ddgiProbeBudget, sizeof(int));
+    mix(&rs.ddgiHysteresis, sizeof(float));
+    mix(&rs.maxBounces, sizeof(int));
+    mix(&rs.bevel, sizeof(bool));
+    mix(&rs.bevelScale, sizeof(float));
+    mix(&rs.bevelSamples, sizeof(int));
+    mix(&rs.fireflyClamp, sizeof(float));
+    mix(&rs.sssScale, sizeof(float));
+    mix(&rs.lightScale, sizeof(float));
+    return h;
+}
+
 // Hash of everything that changes the lighting of a frame except the camera and the object transforms, which
 // the reprojection handles. A change here drops the history.
 uint32_t Renderer::sceneSignature(const Scene& s) const {
@@ -745,7 +773,7 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
         createTargets(vp.w, vp.h);
     }
     if (scene.geometryVersion != m_sceneGeometryVersion) setScene(scene);
-    const uint32_t sig = sceneSignature(scene);
+    const uint32_t sig = sceneSignature(scene) ^ (renderSignature(rs) * 16777619u);
     if (sig != m_sceneSignature) {
         m_sceneSignature = sig;
         m_historyValid = false;
@@ -796,7 +824,7 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
     fc.lightScale = rs.lightScale;
     fc.vignette = rs.vignette;
     fc.bevelSamples = (float)std::max(1, rs.bevelSamples);
-    fc.historyValid = (useHistory && m_historyValid) ? 1u : 0u;
+    fc.historyValid = (useHistory && m_historyValid && !(rs.ddgi && rs.ddgiShowProbes)) ? 1u : 0u;
     fc.historyCap = (float)std::max(1, rs.temporalCap);
     fc.prevCamPos = m_prevCam.pos;
     fc.prevCamRight = m_prevCam.right;

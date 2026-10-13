@@ -38,6 +38,8 @@ struct Viewer {
     // Automated capture: --shot file.png --frames N
     std::wstring shotPath;
     int shotFrames = 120, frameCount = 0;
+    struct ScriptKey { int frame; int vk; };
+    std::vector<ScriptKey> script;   // test: key presses at given frames (--script 60:V,120:P)
     bool vsync = true;
     double gpuSum = 0;            // mean GPU time over the second half of an automated run
     int gpuN = 0;
@@ -148,6 +150,11 @@ void Viewer::frame() {
     RECT cr;
     GetClientRect(hwnd, &cr);
     int pw = std::max(16, (int)(cr.right - cr.left)), ph = std::max(16, (int)(cr.bottom - cr.top));
+    // Scripted key presses: down on the frame, up on the next one (same path as the keyboard).
+    for (const ScriptKey& k : script) {
+        if (k.frame == frameCount) ui.onKey(k.vk, true);
+        if (k.frame + 1 == frameCount) ui.onKey(k.vk, false);
+    }
     ui.newFrame(dpi, pw / dpi, ph / dpi);
 
     // Camera
@@ -338,6 +345,21 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         else if (a == L"--anim") v.animSphere = v.animLight = _wtoi(next().c_str()) != 0;
         else if (a == L"--light-anim") v.animLight = _wtoi(next().c_str()) != 0;
         else if (a == L"--cap") v.rs.temporalCap = _wtoi(next().c_str());
+        else if (a == L"--script") {
+            std::wstring s = next();
+            size_t pos = 0;
+            while (pos < s.size()) {
+                size_t colon = s.find(L':', pos);
+                if (colon == std::wstring::npos || colon + 1 >= s.size()) break;
+                size_t comma = s.find(L',', colon);
+                if (comma == std::wstring::npos) comma = s.size();
+                int frame = _wtoi(s.substr(pos, colon - pos).c_str());
+                wchar_t c = s[colon + 1];
+                int vk = c == L'+' ? VK_OEM_PLUS : c == L'-' ? VK_OEM_MINUS : (int)towupper(c);
+                v.script.push_back({frame, vk});
+                pos = comma + 1;
+            }
+        }
         else if (a == L"--vsync") v.vsync = _wtoi(next().c_str()) != 0;
     }
     LocalFree(argv);
