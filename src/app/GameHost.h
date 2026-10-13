@@ -102,7 +102,7 @@ private:
     void toast(const std::wstring& s);
 
     // RTS placement (AppRts.cpp): houses on the grid, dragged in the view or out of the HUD, animated
-    // and turned into scene objects. Simulated during Play; the input and the HUD need the RTS camera.
+    // and turned into scene objects. Simulated during Play; the input and the HUD work in Play and in the village mode.
     game::Placement m_build;             // the village being edited (or played)
     game::Placement m_saveBuild;         // the village at the start of Play, restored on Stop
     bool m_placeMode = false;            // village mode of the editor

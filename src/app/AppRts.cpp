@@ -1,6 +1,6 @@
 // Game layer, RTS placement: houses on the grid (game::Placement), dragged in the view or out of the
 // HUD, animated, and turned into scene objects. Two places to place them: the village mode of the editor
-// (Scene view, not Play) and Play with the "Caméra RTS" node. The village is saved with the scene.
+// (Scene view, not Play) and during Play, whatever the "Caméra RTS" node does. The village is saved with the scene.
 #include "App.h"
 #include "GameHost.h"
 #include "vp3d/AssetImport.h"
@@ -44,8 +44,9 @@ bool differs(const float4& a, const float4& b) { return a.x != b.x || a.y != b.y
 // The scene view is on screen: the player, or the Scene workspace (not the Graph or the Material Studio).
 bool GameHost::viewVisible() const { return m_player || m_app.m_workspace == 0; }
 
-// The houses take the mouse and the keys: Play with the RTS camera, or the village mode of the editor.
-bool GameHost::placeActive() const { return viewVisible() && (m_rtsCam || m_placeMode); }
+// The houses take the mouse and the keys: during Play (the houses of the graph), or the village mode of the editor.
+// The "Caméra RTS" node is not needed for them: it only adds the camera, the sun dial and the sun.
+bool GameHost::placeActive() const { return viewVisible() && (m_playing || m_placeMode); }
 
 // Ground point under the centre of the view (the camera target when the view looks at the sky).
 float3 GameHost::viewCentreGround() const {
@@ -415,7 +416,7 @@ int GameHost::houseIndex(int id) const {
 
 int GameHost::placeHouse(int type, int cx, int cz, int rot) {
     if (type < 0 || type >= (int)m_build.types().size()) return -1;
-    int idx = m_build.place(type, Cell{cx, cz}, rot);
+    int idx = m_build.place(type, Cell{cx, cz}, rot, kDropHeight);   // falls onto its cells, as the HUD houses do
     return idx < 0 ? -1 : m_build.buildings()[idx].id;
 }
 

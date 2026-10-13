@@ -442,7 +442,7 @@ void GameHost::playInput() {
         m_app.cameraRay(io.MousePos.x, io.MousePos.y, o, d);
         PickResult pr = pick(m_app.m_scene, o, d);
         float tHouse = 0;
-        const int house = m_rtsCam ? houseUnder(o, d, tHouse) : -1;
+        const int house = placeActive() ? houseUnder(o, d, tHouse) : -1;
         if (house >= 0 && tHouse <= pr.t) {
             // a house: the graph gets "House Clicked"; the RTS placement takes the drag (AppRts.cpp)
             m_rt.fireHouseClick(m_build.buildings()[house].id);
@@ -632,7 +632,7 @@ void GameHost::draw() {
             snprintf(b, sizeof b, "%.0f FPS", 1000.0f / std::max(m_app.m_frameMs, 0.1f));
             ImGui::GetForegroundDrawList()->AddText(ImVec2(v.x + 10, v.y + 6), IM_COL32(170, 170, 170, 255), b);
         }
-        if (m_rtsCam) drawRtsHud();
+        if (placeActive()) drawRtsHud();
         drawToasts();
         return;
     }
@@ -648,7 +648,7 @@ void GameHost::draw() {
             ImVec2 ts = ImGui::CalcTextSize(tag);
             fg->AddText(ImVec2(tl.x + (240 - ts.x) * 0.5f, tl.y + (26 - ts.y) * 0.5f), IM_COL32(8, 19, 11, 255), tag);
         }
-        if ((m_rtsCam || m_placeMode) && viewVisible()) drawRtsHud();
+        if (placeActive()) drawRtsHud();
         drawToolbar();
     }
     drawToasts();
@@ -1040,7 +1040,7 @@ std::string GameHost::command(const Json& j, int& status) {
         return js.str();
     }
     if (cmd.rfind("rts.", 0) == 0) {
-        if (!placeActive()) return fail("mode village (vue Scene) ou Play avec le noeud Caméra RTS requis");
+        if (!placeActive()) return fail("mode village (vue Scene) ou Play requis");
         if (cmd == "rts.add") {
             float3 at;
             if (!readVec(j["pos"], at)) at = viewCentreGround();
