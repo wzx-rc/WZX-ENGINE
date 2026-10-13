@@ -1,4 +1,5 @@
 #include "App.h"
+#include "GameHost.h"
 #include "backends/imgui_impl_win32.h"
 #include "vp3d/shaders/Shared.h"
 #include "atelier/graph_ui.h"
@@ -118,6 +119,8 @@ bool App::init(HINSTANCE inst, const Options& opt) {
     if (!opt.openPath.empty()) loadSceneFile(opt.openPath);
     if (opt.select >= 0 && opt.select < (int)m_scene.objects.size()) m_selected = opt.select;
     if (opt.tool >= 0 && opt.tool <= TOOL_ROTATE) m_tool = (Tool)opt.tool;
+    m_game = new GameHost(*this);   // node graph, Play, builds, command API
+    m_game->init();
     markDirty();
     return true;
 }
@@ -135,6 +138,8 @@ int App::run() {
         frame();
     }
     m_renderer.waitIdle();
+    delete m_game;
+    m_game = nullptr;
     atelier::material::Shutdown();
     atelier::graph::Shutdown();
     m_gui.shutdown();
@@ -254,8 +259,11 @@ void App::frame() {
 
     m_gui.newFrame();
     m_interacting = false;
-    if (m_workspace == 0) handleShortcuts();   // Graph / Material Studio have their own shortcuts
-    drawEditor();
+    // game layer first: it owns the keys and the graph overlay (drawn after the editor, below)
+    bool gameKeys = m_game && m_game->beginFrame();
+    if (!gameKeys && m_workspace == 0) handleShortcuts();   // Graph / Material Studio have their own shortcuts
+    if (!m_game || !m_game->playerMode()) drawEditor();
+    if (m_game) m_game->update(m_dt);
     if (m_turntable) {
         m_scene.camera.yaw += 0.006f;
         cameraChanged();
@@ -271,6 +279,12 @@ void App::frame() {
     }
     m_rs.samplesPerFrame = m_adaptiveSpp;
 
+    if (m_game && m_game->playerMode()) {   // built game: the 3D view fills the window
+        ImVec2 ds = ImGui::GetIO().DisplaySize;
+        m_rcView = {0, 0, ds.x, ds.y};
+        m_vpPx = {0, 0, std::max(16, (int)ds.x), std::max(16, (int)ds.y)};
+        m_viewportVisible = true;
+    }
     m_viewportRendered = false;
     if (m_workspace == 2 && m_matHost.want) {
         m_matHost.want = false;
@@ -283,7 +297,9 @@ void App::frame() {
         m_gui.viewportTexture();   // refresh the SRV (the texture is recreated when the viewport size changes)
         m_viewportRendered = true;
     }
+    if (m_game) m_game->draw();   // graph editor / toolbar / toasts, over the viewport
     m_gui.render(m_viewportRendered);
+    if (m_game) m_game->afterDraw();   // API screenshots: frame complete
 
     // Refresh the thumbnail of the active bookmark once the path traced image is clean.
     if (m_activeView >= 0 && m_activeView < (int)m_views.size() && !m_thumbFresh && !m_rs.raster && m_renderer.sampleCount() >= 128) {

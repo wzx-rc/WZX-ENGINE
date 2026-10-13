@@ -47,6 +47,7 @@ static std::string readFile(const fs::path& p) {
 GameHost::~GameHost() { m_server.stop(); }
 
 void GameHost::init() {
+    m_ui.setFonts(m_app.m_gui.fontSmall, m_app.m_gui.fontBold);
     fs::path exe(m_app.m_exeDir);
     std::error_code ec;
     if (fs::exists(exe / "game.json")) {
@@ -306,11 +307,10 @@ static const struct { int vk; const char* name; } kKeys[] = {
 
 void GameHost::playInput() {
     App& a = m_app;
-    UI& ui = a.m_ui;
-    if (ui.mousePressed[0] && a.m_rcView.contains(ui.mx, ui.my) && !ui.popupOpen() && !a.overPanels(ui.mx, ui.my) &&
-        (m_player || !a.overViewportWidgets(ui.mx, ui.my))) {
+    UI& ui = m_ui;
+    if (ui.mousePressed[0] && viewRect().contains(ui.mx, ui.my) && !ui.popupOpen()) {
         float3 o, d;
-        a.cameraRay(ui.mx, ui.my, o, d);
+        a.cameraRay(ui.mx * ui.dpi, ui.my * ui.dpi, o, d);
         PickResult pr = pick(a.m_scene, o, d);
         if (pr.object >= 0 && objectAlive(pr.object) && !a.m_scene.objects[pr.object].part.empty()) {
             m_rt.fireClickObject(pr.object, pr.position);
@@ -332,10 +332,11 @@ static bool s_stashPressed[3], s_stashDouble;
 static float s_stashWheel;
 static bool s_stashed = false;
 
-bool GameHost::beginFrame(bool& skipViewport) {
+bool GameHost::beginFrame() {
     handleRequests();
-    UI& ui = m_app.m_ui;
-    skipViewport = false;
+    ImVec2 ds = ImGui::GetIO().DisplaySize;
+    m_ui.newFrame(m_app.m_dpi, ds.x / m_app.m_dpi, ds.y / m_app.m_dpi);
+    UI& ui = m_ui;
     if (!ui.textFocused()) {
         if (!m_player) {
             if (ui.keyPressed(VK_F3)) {
@@ -370,8 +371,7 @@ bool GameHost::beginFrame(bool& skipViewport) {
 
     s_stashed = false;
     if (m_showGraph && !m_player) {
-        skipViewport = true;
-        if (m_app.m_rcView.contains(ui.mx, ui.my)) {
+        if (viewRect().contains(ui.mx, ui.my)) {
             for (int i = 0; i < 3; ++i) { s_stashPressed[i] = ui.mousePressed[i]; ui.mousePressed[i] = false; }
             s_stashDouble = ui.mouseDoubleClick;
             s_stashWheel = ui.wheel;
@@ -391,8 +391,8 @@ bool GameHost::beginFrame(bool& skipViewport) {
 // --------------------------------------------------------------------------- drawing
 
 void GameHost::drawToolbar() {
-    UI& ui = m_app.m_ui;
-    const Rect& v = m_app.m_rcView;
+    UI& ui = m_ui;
+    const vp3d::Rect v = viewRect();
     const float bw = 116, bh = 30, gap = 6;
     float x = v.cx() - (bw * 3 + gap * 2) * 0.5f, y = v.b() - bh - 12;
     m_toolbar.clear();
@@ -405,10 +405,10 @@ void GameHost::drawToolbar() {
 }
 
 void GameHost::drawToasts() {
-    UI& ui = m_app.m_ui;
+    UI& ui = m_ui;
     uint64_t now = GetTickCount64();
     m_toasts.erase(std::remove_if(m_toasts.begin(), m_toasts.end(), [&](const Toast& t) { return now - t.t > 5000; }), m_toasts.end());
-    const Rect& v = m_app.m_rcView;
+    const vp3d::Rect v = viewRect();
     float y = v.y + (m_showGraph ? 46 : 48);
     for (const Toast& t : m_toasts) {
         float w = std::min(ui.textWidth(t.text, 13) + 32, v.w - 40);
@@ -422,8 +422,8 @@ void GameHost::drawToasts() {
 }
 
 void GameHost::draw() {
-    UI& ui = m_app.m_ui;
-    const Rect& v = m_app.m_rcView;
+    UI& ui = m_ui;
+    const vp3d::Rect v = viewRect();
     if (m_player) {
         if (m_playerFps) {
             wchar_t b[64];
@@ -431,6 +431,7 @@ void GameHost::draw() {
             ui.text(b, Rect(v.x + 10, v.y + 6, 120, 20), ui.theme.textDim, 12);
         }
         drawToasts();
+        m_ui.end();
         return;
     }
     if (m_showGraph) {
@@ -462,6 +463,7 @@ void GameHost::draw() {
         drawToolbar();
     }
     drawToasts();
+    m_ui.end();
 }
 
 void GameHost::afterDraw() {
@@ -670,7 +672,7 @@ std::string GameHost::command(const Json& j, int& status) {
                   ", \"selected\": " + std::to_string(a.m_selected) + ", \"objects\": " + std::to_string(s.objects.size()) +
                   ", \"graphNodes\": " + std::to_string(m_graph.nodes.size()) + ", \"graphPath\": " + jstr(toUtf8(m_graphPath)) +
                   ", \"projectDir\": " + jstr(toUtf8(m_projectDir)) + ", \"lastBuild\": " + jstr(m_lastBuild) +
-                  ", \"mouse\": [" + num(a.m_ui.mx) + ", " + num(a.m_ui.my) + "], \"viewport\": [" + num(a.m_rcView.x) + ", " + num(a.m_rcView.y) + ", " + num(a.m_rcView.w) + ", " + num(a.m_rcView.h) + "]");
+                  ", \"mouse\": [" + num(m_ui.mx) + ", " + num(m_ui.my) + "], \"viewport\": [" + num(a.m_rcView.x) + ", " + num(a.m_rcView.y) + ", " + num(a.m_rcView.w) + ", " + num(a.m_rcView.h) + "]");
     if (cmd == "scene.get") return sceneJson();
     if (cmd == "scene.new") {
         if (m_playing) stop();

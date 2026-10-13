@@ -3,6 +3,7 @@
 #pragma once
 #include "Json.h"
 #include "game/CommandServer.h"
+#include "game/GameUI.h"
 #include "game/NodeEditor.h"
 #include "game/Runtime.h"
 #include "vp3d/Scene.h"
@@ -29,10 +30,10 @@ public:
     ~GameHost() override;
     void init();
 
-    // Called by App::frame after UI::newFrame. Returns true when the game layer owns the
-    // keyboard this frame (App then skips its shortcuts); viewportInput is skipped when
-    // skipViewport is set (graph editor open).
-    bool beginFrame(bool& skipViewport);
+    // Called by App::frame after ImGui::NewFrame. Returns true when the game layer owns the
+    // keyboard this frame (App then skips its shortcuts).
+    bool beginFrame();
+    bool graphOpen() const { return m_showGraph && !m_player; }   // the graph editor covers the viewport
     void update(float dt);
     void draw();                 // after the editor UI (or alone in player mode)
     void afterDraw();            // frame complete, before present (API screenshots)
@@ -73,6 +74,8 @@ private:
     void toast(const std::wstring& s);
 
     App& m_app;
+    vp3d::UI m_ui;               // immediate widgets on the ImGui foreground list (game/GameUI.h)
+    vp3d::Rect viewRect() const { return vp3d::Rect(m_app.m_rcView.x / m_ui.dpi, m_app.m_rcView.y / m_ui.dpi, m_app.m_rcView.w / m_ui.dpi, m_app.m_rcView.h / m_ui.dpi); }   // DIPs
     game::Graph m_graph;
     game::Runtime m_rt;
     game::NodeEditor m_editor;

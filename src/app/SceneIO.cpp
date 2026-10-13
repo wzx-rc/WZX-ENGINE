@@ -32,7 +32,7 @@ bool App::saveSceneFile(const std::wstring& path) {
         js << (first ? "\n" : ",\n") << "    {\"part\": \"" << jsonEscape(o.part) << "\", \"color\": " << m.colorId
            << ", \"rgb\": [" << linToSrgb(m.baseColor.x) << ", " << linToSrgb(m.baseColor.y) << ", " << linToSrgb(m.baseColor.z) << "]"
            << ", \"material\": " << m.preset << ", \"pos\": [" << o.position.x << ", " << o.position.y << ", " << o.position.z
-           << "], \"yaw\": " << yawDeg << ", \"rot\": [" << q.x << ", " << q.y << ", " << q.z << ", " << q.w << "]}";
+           << "], \"yaw\": " << yawDeg << ", \"rot\": [" << q.x << ", " << q.y << ", " << q.z << ", " << q.w << "], \"name\": \"" << jsonEscape(o.name) << "\"}";
         first = false;
         ++count;
     }
@@ -77,6 +77,7 @@ bool App::loadSceneFile(const std::wstring& path) {
                 ob.useRot = true;
             }
         }
+        if (b["name"].type == Json::String) m_scene.objects[idx].name = b["name"].s;
         Material& m = m_scene.materials[m_scene.objects[idx].material];
         if (color < 0 && b["rgb"].type == Json::Array)
             m.baseColor = float3(srgbToLinear((float)b["rgb"][0].num()), srgbToLinear((float)b["rgb"][1].num()), srgbToLinear((float)b["rgb"][2].num()));
