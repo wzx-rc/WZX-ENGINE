@@ -1,0 +1,588 @@
+// vp3d progressive path tracer (inline ray tracing, DXR 1.1).
+// Features: GGX/Lambert BSDF with VNDF sampling, area lights with MIS,
+// rough dielectrics, random-walk subsurface scattering, Cycles-style bevel
+// normals, thin-lens depth of field, procedural ground grid.
+#include "Common.hlsli"
+
+struct Hit {
+    float t;
+    float3 P;
+    float3 N;    // shading normal, facing the incoming ray side
+    float3 Ng;   // geometric normal, facing the incoming ray side
+    uint inst;
+    bool front;  // ray hit the outward side
+};
+
+struct Surf {
+    float3 base;
+    float rough;
+    float metal;
+    float spec;
+    float trans;
+    float ior;
+    float sss;
+    float3 sssR;
+    float3 emission;
+    float bevel;
+    float coat;
+    float coatRough;
+    uint flags;
+};
+
+// ---------------------------------------------------------------------------
+// Geometry
+
+float3 OffsetRay(float3 p, float3 n) {
+    float s = 1e-4 * (1.0 + max(abs(p.x), max(abs(p.y), abs(p.z))));
+    return p + n * s;
+}
+
+void FetchTriangle(uint inst, uint prim, out GpuVertex v0, out GpuVertex v1, out GpuVertex v2) {
+    GpuInstance gi = gInst[inst];
+    uint b = gi.indexOffset + prim * 3;
+    v0 = gVerts[gIndices[b + 0] + gi.vertexOffset];
+    v1 = gVerts[gIndices[b + 1] + gi.vertexOffset];
+    v2 = gVerts[gIndices[b + 2] + gi.vertexOffset];
+}
+
+// Interpolated object normal transformed to world space (outward, unflipped).
+float3 WorldNormal(uint inst, uint prim, float2 bc, float3x4 w2o, out float3 ngOut) {
+    GpuVertex v0, v1, v2;
+    FetchTriangle(inst, prim, v0, v1, v2);
+    float3 ns = v0.nrm * (1.0 - bc.x - bc.y) + v1.nrm * bc.x + v2.nrm * bc.y;
+    float3 ng = cross(v1.pos - v0.pos, v2.pos - v0.pos);
+    float3x3 m = (float3x3)w2o;
+    ns = normalize(mul(ns, m));
+    ng = normalize(mul(ng, m));
+    if (dot(ng, ns) < 0) ng = -ng;
+    ngOut = ng;
+    return ns;
+}
+
+bool TraceClosest(float3 o, float3 d, float tmax, uint mask, out Hit h) {
+    RayQuery<RAY_FLAG_FORCE_OPAQUE> q;
+    RayDesc r;
+    r.Origin = o; r.Direction = d; r.TMin = 0.0; r.TMax = tmax;
+    q.TraceRayInline(gScene, RAY_FLAG_NONE, mask, r);
+    q.Proceed();
+    h = (Hit)0;
+    if (q.CommittedStatus() != COMMITTED_TRIANGLE_HIT) return false;
+    h.t = q.CommittedRayT();
+    h.inst = q.CommittedInstanceID();
+    float3 ng;
+    float3 ns = WorldNormal(h.inst, q.CommittedPrimitiveIndex(), q.CommittedTriangleBarycentrics(),
+                            q.CommittedWorldToObject3x4(), ng);
+    h.front = dot(ng, d) < 0;
+    if (!h.front) { ng = -ng; ns = -ns; }
+    if (dot(ns, -d) <= 0.0) ns = ng;
+    h.P = o + d * h.t;
+    h.N = ns;
+    h.Ng = ng;
+    return true;
+}
+
+bool Occluded(float3 o, float3 d, float tmax) {
+    RayQuery<RAY_FLAG_FORCE_OPAQUE | RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH> q;
+    RayDesc r;
+    r.Origin = o; r.Direction = d; r.TMin = 0.0; r.TMax = tmax;
+    q.TraceRayInline(gScene, RAY_FLAG_NONE, MASK_OPAQUE, r);
+    q.Proceed();
+    return q.CommittedStatus() == COMMITTED_TRIANGLE_HIT;
+}
+
+void Basis(float3 n, out float3 t, out float3 b) {
+    float s = n.z >= 0 ? 1.0 : -1.0;
+    float a = -1.0 / (s + n.z);
+    float c = n.x * n.y * a;
+    t = float3(1.0 + s * n.x * n.x * a, s * c, -s * n.x);
+    b = float3(c, s + n.y * n.y * a, -n.y);
+}
+
+float3 CosineHemisphere(float3 n, float2 u) {
+    float r = sqrt(u.x), phi = 2.0 * PI * u.y;
+    float3 t, b;
+    Basis(n, t, b);
+    return normalize(t * (r * cos(phi)) + b * (r * sin(phi)) + n * sqrt(max(0.0, 1.0 - u.x)));
+}
+
+float3 UniformSphere(float2 u) {
+    float z = 1.0 - 2.0 * u.x;
+    float r = sqrt(max(0.0, 1.0 - z * z));
+    float phi = 2.0 * PI * u.y;
+    return float3(r * cos(phi), r * sin(phi), z);
+}
+
+float2 ConcentricDisk(float2 u) {
+    float2 o = 2.0 * u - 1.0;
+    if (o.x == 0 && o.y == 0) return 0;
+    float r, th;
+    if (abs(o.x) > abs(o.y)) { r = o.x; th = (PI / 4.0) * (o.y / o.x); }
+    else { r = o.y; th = PI / 2.0 - (PI / 4.0) * (o.x / o.y); }
+    return r * float2(cos(th), sin(th));
+}
+
+// ---------------------------------------------------------------------------
+// Bevel shader: estimates a rounded-edge normal by probing the same object
+// around the shading point along three axes (similar to Cycles' Bevel node).
+
+float3 BevelNormal(Hit h, float radius, uint samples, inout uint rng) {
+    float3 Ng = h.Ng;
+    float3 T, B;
+    Basis(Ng, T, B);
+    float3 sum = 0;
+    for (uint i = 0; i < samples; ++i) {
+        float u = Rnd(rng);
+        float3 axis, a1, a2;
+        if (u < 0.5) { axis = Ng; a1 = T; a2 = B; }
+        else if (u < 0.75) { axis = T; a1 = B; a2 = Ng; }
+        else { axis = B; a1 = Ng; a2 = T; }
+        float2 dsk = ConcentricDisk(Rnd2(rng)) * radius;
+        float3 o = h.P + a1 * dsk.x + a2 * dsk.y + axis * radius;
+
+        RayQuery<RAY_FLAG_FORCE_NON_OPAQUE> q;
+        RayDesc r;
+        r.Origin = o; r.Direction = -axis; r.TMin = 0.0; r.TMax = 2.0 * radius;
+        q.TraceRayInline(gScene, RAY_FLAG_NONE, MASK_OPAQUE | MASK_GLASS, r);
+        while (q.Proceed()) {
+            if (q.CandidateType() == CANDIDATE_NON_OPAQUE_TRIANGLE && q.CandidateInstanceID() == h.inst)
+                q.CommitNonOpaqueTriangleHit();
+        }
+        if (q.CommittedStatus() != COMMITTED_TRIANGLE_HIT) continue;
+        float3 hp = o - axis * q.CommittedRayT();
+        float d = length(hp - h.P);
+        if (d > radius) continue;
+        float3 ng;
+        float3 nh = WorldNormal(h.inst, q.CommittedPrimitiveIndex(), q.CommittedTriangleBarycentrics(),
+                                q.CommittedWorldToObject3x4(), ng);
+        if (!h.front) nh = -nh;
+        float pN = 0.5 * abs(dot(Ng, nh)), pT = 0.25 * abs(dot(T, nh)), pB = 0.25 * abs(dot(B, nh));
+        float w = (1.0 - d / radius) / max(pN + pT + pB, 1e-4);
+        sum += nh * w;
+    }
+    if (dot(sum, sum) < 1e-12) return h.N;
+    float3 n = normalize(sum);
+    // Keep the original smooth shading contribution for curved surfaces.
+    n = normalize(n + h.N * 0.15);
+    return dot(n, Ng) > 0.05 ? n : h.N;
+}
+
+// ---------------------------------------------------------------------------
+// Materials
+
+Surf MakeSurf(GpuMaterial m, Hit h) {
+    Surf s;
+    s.base = m.baseColor;
+    s.rough = m.roughness;
+    s.metal = m.metallic;
+    s.spec = m.specular;
+    s.trans = m.transmission;
+    s.ior = m.ior;
+    s.sss = m.subsurface;
+    s.sssR = m.sssRadius;
+    s.emission = m.emission;
+    s.bevel = m.bevelRadius;
+    s.coat = m.coat;
+    s.coatRough = m.coatRoughness;
+    s.flags = m.flags;
+    if (m.flags & MAT_FLAG_GRID) {
+        float g = F.gridScale;
+        float dist = length(h.P - F.camPos);
+        float lw = max(0.02, 0.0009 * dist / g);
+        float2 p = h.P.xz / g;
+        float2 d = abs(frac(p + 0.5) - 0.5);
+        float2 dm = abs(frac(p / 10.0 + 0.5) - 0.5) * 10.0;
+        float minor = (min(d.x, d.y) < lw) ? 1.0 : 0.0;
+        float major = (min(dm.x, dm.y) < lw * 1.6) ? 1.0 : 0.0;
+        float fade = saturate(1.0 - dist / (g * 160.0));
+        s.base = lerp(s.base, s.base * 2.2 + 0.015, max(minor * 0.55, major) * fade);
+        float axisW = lw * 1.8 * g;
+        if (abs(h.P.z) < axisW) { s.base = float3(0.5, 0.06, 0.05); s.emission += float3(0.25, 0.02, 0.02); }
+        if (abs(h.P.x) < axisW) { s.base = float3(0.06, 0.12, 0.6); s.emission += float3(0.02, 0.05, 0.3); }
+    }
+    return s;
+}
+
+float3 SchlickF(float3 f0, float c) {
+    float t = pow(saturate(1.0 - c), 5.0);
+    return f0 + (1.0 - f0) * t;
+}
+
+float D_GGX(float NoH, float a) {
+    float a2 = a * a;
+    float d = NoH * NoH * (a2 - 1.0) + 1.0;
+    return a2 / (PI * d * d + 1e-12);
+}
+
+float G1_Smith(float NoX, float a) {
+    float a2 = a * a;
+    return 2.0 * NoX / (NoX + sqrt(a2 + (1.0 - a2) * NoX * NoX));
+}
+
+float G2_Smith(float NoL, float NoV, float a) {
+    float a2 = a * a;
+    float l = NoV * sqrt(a2 + (1.0 - a2) * NoL * NoL);
+    float v = NoL * sqrt(a2 + (1.0 - a2) * NoV * NoV);
+    return 2.0 * NoL * NoV / (l + v + 1e-12);
+}
+
+// Heitz 2018 visible normal sampling, local frame (z = normal).
+float3 SampleVNDF(float3 Ve, float a, float2 u) {
+    float3 Vh = normalize(float3(a * Ve.x, a * Ve.y, Ve.z));
+    float lensq = Vh.x * Vh.x + Vh.y * Vh.y;
+    float3 T1 = lensq > 0 ? float3(-Vh.y, Vh.x, 0) * rsqrt(lensq) : float3(1, 0, 0);
+    float3 T2 = cross(Vh, T1);
+    float r = sqrt(u.x), phi = 2.0 * PI * u.y;
+    float t1 = r * cos(phi), t2 = r * sin(phi);
+    float s = 0.5 * (1.0 + Vh.z);
+    t2 = (1.0 - s) * sqrt(max(0.0, 1.0 - t1 * t1)) + s * t2;
+    float3 Nh = t1 * T1 + t2 * T2 + sqrt(max(0.0, 1.0 - t1 * t1 - t2 * t2)) * Vh;
+    return normalize(float3(a * Nh.x, a * Nh.y, max(1e-6, Nh.z)));
+}
+
+float3 SampleGGXHalf(float3 N, float3 V, float a, float2 u) {
+    float3 T, B;
+    Basis(N, T, B);
+    float3 Vl = float3(dot(V, T), dot(V, B), dot(V, N));
+    float3 Hl = SampleVNDF(Vl, a, u);
+    return normalize(T * Hl.x + B * Hl.y + N * Hl.z);
+}
+
+float Alpha(float r) { return max(r * r, 0.0015); }
+float3 SpecF0(Surf s) { return lerp(0.08 * s.spec.xxx, s.base, s.metal); }
+float DiffuseWeight(Surf s) { return (1.0 - s.metal) * (1.0 - s.trans); }
+
+float CoatProbability(Surf s) { return s.coat > 0 ? 0.2 * s.coat : 0.0; }
+
+float SpecularProbability(Surf s, float NoV) {
+    float ws = Luminance(SchlickF(SpecF0(s), NoV)) + s.coat * 0.04;
+    float wd = Luminance(s.base) * DiffuseWeight(s);
+    if (wd <= 0.0) return 1.0;
+    return clamp(ws / (ws + wd), 0.08, 0.92);
+}
+
+// Returns f * cos(theta_l); pdf is the solid-angle pdf of the lobe mixture.
+float3 EvalBSDF(Surf s, float3 N, float3 V, float3 L, out float pdf) {
+    pdf = 0;
+    float NoL = dot(N, L), NoV = dot(N, V);
+    if (NoL <= 0 || NoV <= 0) return 0;
+    float3 H = normalize(V + L);
+    float NoH = saturate(dot(N, H)), VoH = saturate(dot(V, H));
+    float a = Alpha(s.rough);
+    float D = D_GGX(NoH, a);
+    float3 Fr = SchlickF(SpecF0(s), VoH);
+    float3 spec = D * G2_Smith(NoL, NoV, a) * Fr / (4.0 * NoL * NoV);
+    float3 diff = s.base * DiffuseWeight(s) * (1.0 - s.sss) / PI * (1.0 - Fr);
+    float pSpec = SpecularProbability(s, NoV);
+    float pdfSpec = D * G1_Smith(NoV, a) / (4.0 * NoV);
+    float pdfDiff = NoL / PI;
+    pdf = pSpec * pdfSpec + (1.0 - pSpec) * (1.0 - s.sss) * pdfDiff;
+    float3 coat = 0;
+    if (s.coat > 0) {
+        float ac = Alpha(s.coatRough);
+        float Dc = D_GGX(NoH, ac);
+        float pCoat = CoatProbability(s);
+        pdf = pCoat * Dc * G1_Smith(NoV, ac) / (4.0 * NoV) + (1.0 - pCoat) * pdf;
+        float Fc = SchlickF(0.04.xxx, VoH).x * s.coat;
+        coat = Dc * G2_Smith(NoL, NoV, ac) * Fc / (4.0 * NoL * NoV);
+        spec *= 1.0 - Fc;
+        diff *= 1.0 - Fc;
+    }
+    return (diff + spec + coat) * NoL;
+}
+
+float FresnelDielectric(float cosI, float eta) {
+    float sinT2 = eta * eta * (1.0 - cosI * cosI);
+    if (sinT2 > 1.0) return 1.0;
+    float cosT = sqrt(1.0 - sinT2);
+    float rs = (eta * cosI - cosT) / (eta * cosI + cosT);
+    float rp = (cosI - eta * cosT) / (cosI + eta * cosT);
+    return 0.5 * (rs * rs + rp * rp);
+}
+
+float PowerHeuristic(float a, float b) {
+    float a2 = a * a;
+    return a2 / (a2 + b * b + 1e-20);
+}
+
+// ---------------------------------------------------------------------------
+// Lights & environment
+
+float3 Environment(float3 d) {
+    float y = d.y;
+    float3 c = y > 0 ? lerp(F.envHorizon, F.envTop, pow(saturate(y), 0.6))
+                     : lerp(F.envHorizon, F.envBottom, pow(saturate(-y), 0.4));
+    return c * F.envIntensity;
+}
+
+bool SampleLight(float3 P, inout uint rng, out float3 L, out float dist, out float3 Le, out float pdf) {
+    L = 0; dist = 0; Le = 0; pdf = 0;
+    if (F.lightCount == 0) return false;
+    uint li = min((uint)(Rnd(rng) * F.lightCount), F.lightCount - 1);
+    GpuLight l = gLights[li];
+    float2 u = Rnd2(rng);
+    float3 X = l.corner + l.edgeU * u.x + l.edgeV * u.y;
+    float3 d = X - P;
+    dist = length(d);
+    L = d / dist;
+    float3 Nl = normalize(cross(l.edgeU, l.edgeV));
+    float cosL = dot(-L, Nl);
+    if (cosL <= 1e-4) return false;
+    pdf = dist * dist / (cosL * l.area) / F.lightCount;
+    Le = l.radiance * F.lightScale;
+    return true;
+}
+
+float LightPdf(uint lightId, float3 dir, float t) {
+    GpuLight l = gLights[lightId];
+    float3 Nl = normalize(cross(l.edgeU, l.edgeV));
+    float cosL = abs(dot(dir, Nl));
+    return t * t / (max(cosL, 1e-4) * l.area) / F.lightCount;
+}
+
+// Next-event estimation from a surface point (returns MIS-weighted radiance).
+float3 DirectLight(Surf s, Hit h, float3 V, bool lambertOnly, inout uint rng) {
+    float3 L, Le;
+    float dist, lpdf;
+    if (!SampleLight(h.P, rng, L, dist, Le, lpdf)) return 0;
+    if (dot(L, h.Ng) <= 0) return 0;
+    float bpdf;
+    float3 f;
+    if (lambertOnly) {
+        float c = dot(h.N, L);
+        if (c <= 0) return 0;
+        f = c / PI;
+        bpdf = c / PI;
+    } else {
+        f = EvalBSDF(s, h.N, V, L, bpdf);
+    }
+    if (all(f <= 0)) return 0;
+    if (Occluded(OffsetRay(h.P, h.Ng), L, dist * 0.999)) return 0;
+    return f * Le / lpdf * PowerHeuristic(lpdf, bpdf);
+}
+
+// ---------------------------------------------------------------------------
+// Random-walk subsurface scattering. On success `h` becomes the exit point,
+// with normals facing outwards.
+
+bool RandomWalk(inout Hit h, Surf s, inout float3 thr, inout uint rng) {
+    float3 radius = max(s.sssR * F.sssScale, 1e-4);
+    float3 sigmaT = 1.0 / radius;
+    float3 A = saturate(s.base);
+    float3 k = 4.09712 + 4.20863 * A - sqrt(9.59217 + 41.6808 * A + 17.7126 * A * A);
+    float3 alpha = saturate(1.0 - k * k);
+    float3 sigmaS = sigmaT * alpha;
+
+    float3 pos = OffsetRay(h.P, -h.Ng);
+    float3 dir = CosineHemisphere(-h.Ng, Rnd2(rng));
+    for (uint i = 0; i < 96; ++i) {
+        uint c = min((uint)(Rnd(rng) * 3.0), 2u);
+        float st = c == 0 ? sigmaT.x : (c == 1 ? sigmaT.y : sigmaT.z);
+        float t = -log(max(1.0 - Rnd(rng), 1e-7)) / st;
+        Hit e;
+        if (TraceClosest(pos, dir, t, MASK_OPAQUE, e)) {
+            float3 T = exp(-sigmaT * e.t);
+            float pdf = (T.x + T.y + T.z) / 3.0;
+            thr *= T / max(pdf, 1e-8);
+            // e normals face the ray (inwards); flip to outward.
+            e.N = -e.N;
+            e.Ng = -e.Ng;
+            e.front = true;
+            h = e;
+            return true;
+        }
+        pos += dir * t;
+        float3 T = exp(-sigmaT * t);
+        float pdf = dot(sigmaT * T, 1.0 / 3.0);
+        thr *= sigmaS * T / max(pdf, 1e-8);
+        dir = UniformSphere(Rnd2(rng));
+        if (i > 8) {
+            float p = saturate(max(thr.x, max(thr.y, thr.z)));
+            if (Rnd(rng) > p) return false;
+            thr /= max(p, 1e-4);
+        }
+    }
+    return false;
+}
+
+// ---------------------------------------------------------------------------
+
+struct Guides {
+    float3 albedo;
+    float3 normal;
+    float depth;
+    uint id;
+};
+
+float3 TracePath(float3 o, float3 d, inout uint rng, inout Guides g) {
+    float3 radiance = 0, thr = 1;
+    bool specPrev = true;
+    float prevPdf = 0;
+    uint mask = 0xFF & ~MASK_LIGHT_HIDDEN;
+    for (uint bounce = 0; bounce <= F.maxBounces; ++bounce) {
+        Hit h;
+        if (!TraceClosest(o, d, 1e30, mask, h)) {
+            float3 env = Environment(d);
+            radiance += thr * env;
+            if (bounce == 0) { g.albedo = 1; g.normal = -d; g.depth = 1e6; g.id = 0; }
+            break;
+        }
+        GpuInstance gi = gInst[h.inst];
+        GpuMaterial gm = gMats[gi.materialId];
+
+        if (gi.lightId != NO_LIGHT) {
+            if (h.front) {
+                float3 Le = gLights[gi.lightId].radiance * F.lightScale;
+                float w = specPrev ? 1.0 : PowerHeuristic(prevPdf, LightPdf(gi.lightId, d, h.t));
+                radiance += thr * Le * w;
+            }
+            if (bounce == 0) { g.albedo = 1; g.normal = h.N; g.depth = h.t; g.id = h.inst + 1; }
+            break;
+        }
+
+        Surf s = MakeSurf(gm, h);
+        if (h.front) radiance += thr * s.emission;
+
+        if ((F.flags & FRAME_FLAG_BEVEL) && s.bevel > 0 && h.front) {
+            uint ns = bounce == 0 ? (uint)F.bevelSamples : 1u;
+            h.N = BevelNormal(h, s.bevel * F.bevelScale, ns, rng);
+        }
+        float3 V = -d;
+        if (dot(h.N, V) <= 0) h.N = h.Ng;
+
+        if (bounce == 0) {
+            g.albedo = s.trans > 0.5 ? 1.0.xxx : lerp(s.base, SpecF0(s) + 0.2, s.metal);
+            g.normal = h.N;
+            g.depth = h.t;
+            g.id = h.inst + 1;
+        }
+        if (bounce == F.maxBounces) break;
+
+        // --- Dielectric (glass / transparent plastic)
+        if (s.trans > 0.5) {
+            float eta = h.front ? 1.0 / s.ior : s.ior;
+            float3 H = s.rough > 0.02 ? SampleGGXHalf(h.N, V, Alpha(s.rough), Rnd2(rng)) : h.N;
+            float cosI = saturate(dot(V, H));
+            float Fr = FresnelDielectric(cosI, eta);
+            float3 L;
+            bool reflected = Rnd(rng) < Fr;
+            if (!reflected) {
+                L = refract(-V, H, eta);
+                if (dot(L, L) < 1e-6) reflected = true;
+            }
+            if (reflected) {
+                L = reflect(-V, H);
+                if (dot(L, h.Ng) <= 0) break;
+                o = OffsetRay(h.P, h.Ng);
+            } else {
+                if (dot(L, h.Ng) >= 0) break;
+                o = OffsetRay(h.P, -h.Ng);
+                if (h.front) thr *= s.base;
+            }
+            d = normalize(L);
+            specPrev = true;
+            mask = 0xFF;
+            continue;
+        }
+
+        // --- Next-event estimation
+        radiance += thr * DirectLight(s, h, V, false, rng);
+
+        // --- Sample the BSDF
+        float NoV = dot(h.N, V);
+        float pSpec = SpecularProbability(s, NoV);
+        float3 L;
+        float u = Rnd(rng);
+        if (u >= pSpec && s.sss > 0 && Rnd(rng) < s.sss) {
+            // Subsurface: enter, random walk, exit.
+            float3 Fv = SchlickF(SpecF0(s), NoV);
+            thr *= DiffuseWeight(s) * (1.0 - Fv) / (1.0 - pSpec);
+            if (!RandomWalk(h, s, thr, rng)) break;
+            Surf exitSurf = s;
+            radiance += thr * DirectLight(exitSurf, h, h.N, true, rng);
+            L = CosineHemisphere(h.N, Rnd2(rng));
+            prevPdf = max(dot(h.N, L), 1e-4) / PI;
+        } else {
+            float pCoat = CoatProbability(s);
+            if (Rnd(rng) < pCoat) {
+                float3 H = SampleGGXHalf(h.N, V, Alpha(s.coatRough), Rnd2(rng));
+                L = reflect(-V, H);
+            } else if (u < pSpec) {
+                float3 H = SampleGGXHalf(h.N, V, Alpha(s.rough), Rnd2(rng));
+                L = reflect(-V, H);
+            } else {
+                L = CosineHemisphere(h.N, Rnd2(rng));
+            }
+            if (dot(L, h.Ng) <= 0) break;
+            float pdf;
+            float3 f = EvalBSDF(s, h.N, V, L, pdf);
+            if (pdf <= 0) break;
+            thr *= f / pdf;
+            prevPdf = pdf;
+        }
+        specPrev = false;
+        o = OffsetRay(h.P, h.Ng);
+        d = L;
+        mask = 0xFF;
+
+        if (bounce >= 3) {
+            float p = clamp(max(thr.x, max(thr.y, thr.z)), 0.05, 0.95);
+            if (Rnd(rng) > p) break;
+            thr /= p;
+        }
+    }
+    return radiance;
+}
+
+[numthreads(8, 8, 1)]
+void main(uint3 id : SV_DispatchThreadID) {
+    if (id.x >= F.resolution.x || id.y >= F.resolution.y) return;
+    uint rng = Hash(id.x + id.y * 65521u + Hash(F.frameIndex * 9781u + 1u));
+
+    float3 sum = 0;
+    Guides gAcc = (Guides)0;
+    float3 albedoSum = 0, normalSum = 0;
+    float depthSum = 0;
+    uint primaryId = 0;
+
+    for (uint sIdx = 0; sIdx < F.samplesPerFrame; ++sIdx) {
+        float2 jitter = (F.sampleIndex == 0 && sIdx == 0) ? float2(0.5, 0.5) : Rnd2(rng);
+        float2 uv = (float2(id.xy) + jitter) / float2(F.resolution);
+        float2 ndc = float2(2.0 * uv.x - 1.0, 1.0 - 2.0 * uv.y);
+        float3 dir = normalize(F.camFwd + F.camRight * (ndc.x * F.aspect * F.tanHalfFovY) + F.camUp * (ndc.y * F.tanHalfFovY));
+        float3 org = F.camPos;
+        if ((F.flags & FRAME_FLAG_DOF) && F.aperture > 0) {
+            float3 focal = org + dir * (F.focusDist / dot(dir, F.camFwd));
+            float2 lens = ConcentricDisk(Rnd2(rng)) * F.aperture;
+            org += F.camRight * lens.x + F.camUp * lens.y;
+            dir = normalize(focal - org);
+        }
+        Guides g = (Guides)0;
+        float3 L = TracePath(org, dir, rng, g);
+        if (any(isnan(L)) || any(isinf(L))) L = 0;
+        float lum = Luminance(L);
+        if (lum > F.fireflyClamp) L *= F.fireflyClamp / lum;
+        sum += L;
+        albedoSum += g.albedo;
+        normalSum += g.normal;
+        depthSum += g.depth;
+        if (sIdx == 0) primaryId = g.id;
+    }
+
+    float n = (float)F.samplesPerFrame;
+    float4 acc = F.sampleIndex == 0 ? 0 : gTex[SLOT_ACCUM][id.xy];
+    gTex[SLOT_ACCUM][id.xy] = acc + float4(sum, n);
+
+    float prevN = (float)F.sampleIndex;
+    float4 alb = gTex[SLOT_ALBEDO][id.xy];
+    float4 nd = gTex[SLOT_NORMAL][id.xy];
+    if (F.sampleIndex == 0) {
+        alb = float4(albedoSum / n, (float)primaryId);
+        nd = float4(normalSum / n, depthSum / n);
+    } else {
+        float k = n / (prevN + n);
+        alb.rgb = lerp(alb.rgb, albedoSum / n, k);
+        nd = lerp(nd, float4(normalSum / n, depthSum / n), k);
+    }
+    gTex[SLOT_ALBEDO][id.xy] = alb;
+    gTex[SLOT_NORMAL][id.xy] = nd;
+}

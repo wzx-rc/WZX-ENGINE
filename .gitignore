@@ -1,0 +1,23 @@
+# Sorties de build et fichiers générés
+build/
+builds/
+__pycache__/
+*.pyc
+
+# Captures d'écran et rendus de test
+captures/
+
+# Copies de travail locales (historique dans leurs propres dépôts / branches)
+_backup/
+_ddgi-test/
+_nodal-editor/
+_rts-test/
+
+# Dossiers d'échange locaux (références, dépôts pour Claude)
+00 - REFERENCES/
+01 - INBOX/
+
+# Fichiers de préférences générés à l'exécution
+*.ini
+vp3d_prefs.txt
+*.lnk

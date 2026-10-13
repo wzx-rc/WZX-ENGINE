@@ -1,0 +1,7497 @@
+{
+  "schemaVersion": "1.0.0",
+  "id": "atelier.inspector.inspecteur",
+  "variant": "Inspecteur",
+  "scope": "Standalone attribute inspector",
+  "theme": "../theme.json",
+  "actions": "../actions.json",
+  "icons": "../icons/catalog.json",
+  "nativeHeader": "../../src/inspector.h",
+  "referenceCanvas": {
+    "width": 342,
+    "height": 920
+  },
+  "panel": {
+    "x": 12,
+    "y": 12,
+    "width": 318,
+    "height": 896,
+    "outerMargin": 12
+  },
+  "coordinateRules": {
+    "root": "canvas coordinates",
+    "children": "rects relative to parent component",
+    "scroll": "Section rects are in unscrolled content space, clipped by scroll viewport.",
+    "defaultSnapshot": "Properties selected, no search, picker closed, approved disclosure state.",
+    "reflow": "Sections follow tab flow order with 8 px gap. Expanding/collapsing changes height and reflows subsequent sections. Search reveals matching controls and reflows visible rows.",
+    "resize": "At scale1: panel318px centered at (clientWidth-318)/2, top12, height max(240,clientHeight-24). ApplyTheme(scale) scales style and explicit geometry; DrawInspector accepts physical client dimensions and converts to logical units. All contract rects are logical 1x px; ControlRect reports physical px.",
+    "filter": "Native search matches section title/keyword list, forces matching sections open, and displays all controls inside each matching section. No Document values are cleared."
+  },
+  "defaultState": {
+    "tab": 0,
+    "expanded": {
+      "surface": true,
+      "detail": true,
+      "coat": false,
+      "emission": false,
+      "uv": true,
+      "transparency": false,
+      "rendering": true,
+      "studio": true,
+      "camera": true,
+      "map": true
+    },
+    "search": "",
+    "pickerOpen": false,
+    "document": {
+      "name": "M_Copper_Brushed",
+      "shader": 0,
+      "baseColor": [
+        0.7215686274509804,
+        0.2901960784313726,
+        0.12941176470588237,
+        1
+      ],
+      "emissionColor": [
+        1,
+        0.4,
+        0.10196078431372549,
+        1
+      ],
+      "pattern": 1,
+      "texturePath": "",
+      "textureEnabled": false
+    }
+  },
+  "tabs": [
+    {
+      "id": "properties",
+      "value": 0,
+      "flow": [
+        "surface",
+        "detail",
+        "coat",
+        "emission",
+        "uv",
+        "transparency",
+        "rendering"
+      ],
+      "referenceContentHeight": 950,
+      "trailingPaddingPx": 13
+    },
+    {
+      "id": "stage",
+      "value": 1,
+      "flow": [
+        "studio",
+        "camera"
+      ],
+      "referenceContentHeight": 672,
+      "dataOnly": true,
+      "trailingPaddingPx": 13
+    },
+    {
+      "id": "texture",
+      "value": 2,
+      "flow": [
+        "map"
+      ],
+      "referenceContentHeight": 429,
+      "dataOnly": true,
+      "trailingPaddingPx": 13
+    }
+  ],
+  "controlContracts": {
+    "scalar": {
+      "height": 48,
+      "valueRect": [
+        188,
+        0,
+        76,
+        28
+      ],
+      "resetRect": [
+        272,
+        0,
+        22,
+        28
+      ],
+      "sliderHitRect": [
+        0,
+        31,
+        264,
+        16
+      ],
+      "synchronization": "Number and slider bind the same Document field and clamp to ScalarSpecs()."
+    },
+    "color": {
+      "rgb": "six-digit hex",
+      "alpha": "separate 0–100 percent",
+      "checker": "8 px tile",
+      "picker": "draft only until Apply",
+      "opacity": "separate Document.opacity",
+      "storedColorSpace": "Display sRGB values normalized to 0..1; host engine applies its own linear conversion."
+    },
+    "vector": {
+      "channels": [
+        "U",
+        "V"
+      ],
+      "independent": true
+    },
+    "texture": {
+      "path": "UTF-8 native filename",
+      "symbolicThumbnail": true,
+      "decoderIncluded": false
+    }
+  },
+  "components": [
+    {
+      "id": "panel",
+      "type": "panel",
+      "parent": null,
+      "rect": {
+        "x": 12,
+        "y": 12,
+        "width": 318,
+        "height": 896,
+        "units": "px"
+      },
+      "label": "Atelier Inspector",
+      "typography": "typography.number",
+      "colors": {
+        "background": "panel",
+        "border": "border"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "coordinateSpace": "canvas",
+      "radius": 5,
+      "nativeControlId": null
+    },
+    {
+      "id": "tabs",
+      "type": "tab_strip",
+      "parent": "panel",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 318,
+        "height": 38,
+        "units": "px"
+      },
+      "label": "Inspector views",
+      "typography": "typography.number",
+      "colors": {
+        "background": "tabBar",
+        "border": "border"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "nativeControlId": null
+    },
+    {
+      "id": "tabs.properties",
+      "type": "tab",
+      "parent": "tabs",
+      "rect": {
+        "x": 4,
+        "y": 4,
+        "width": 102,
+        "height": 30,
+        "units": "px"
+      },
+      "label": "Properties",
+      "typography": "typography.tab",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": "properties",
+      "action": "tab.properties",
+      "enabled": true,
+      "selected": true,
+      "selectedWhen": "state.tab == 0",
+      "accessibility": {
+        "role": "tab"
+      },
+      "nativeControlId": "tab.0"
+    },
+    {
+      "id": "tabs.stage",
+      "type": "tab",
+      "parent": "tabs",
+      "rect": {
+        "x": 108,
+        "y": 4,
+        "width": 102,
+        "height": 30,
+        "units": "px"
+      },
+      "label": "Stage",
+      "typography": "typography.tab",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": "sun",
+      "action": "tab.stage",
+      "enabled": true,
+      "selected": false,
+      "selectedWhen": "state.tab == 1",
+      "accessibility": {
+        "role": "tab"
+      },
+      "nativeControlId": "tab.1"
+    },
+    {
+      "id": "tabs.texture",
+      "type": "tab",
+      "parent": "tabs",
+      "rect": {
+        "x": 212,
+        "y": 4,
+        "width": 102,
+        "height": 30,
+        "units": "px"
+      },
+      "label": "Texture",
+      "typography": "typography.tab",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": "image",
+      "action": "tab.texture",
+      "enabled": true,
+      "selected": false,
+      "selectedWhen": "state.tab == 2",
+      "accessibility": {
+        "role": "tab"
+      },
+      "nativeControlId": "tab.2"
+    },
+    {
+      "id": "identity",
+      "type": "identity",
+      "parent": "panel",
+      "rect": {
+        "x": 12,
+        "y": 50,
+        "width": 294,
+        "height": 40,
+        "units": "px"
+      },
+      "label": "",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "nativeControlId": null
+    },
+    {
+      "id": "identity.symbol",
+      "type": "material_symbol",
+      "parent": "identity",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 40,
+        "height": 40,
+        "units": "px"
+      },
+      "label": "Material color symbol",
+      "typography": "typography.number",
+      "colors": {
+        "background": "input",
+        "border": "border"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "binding": "Document.baseColor",
+      "rendering": "Decorative swatch/gradient symbol only; no rendered material preview.",
+      "nativeControlId": null
+    },
+    {
+      "id": "identity.name",
+      "type": "text_input",
+      "parent": "identity",
+      "rect": {
+        "x": 50,
+        "y": 0,
+        "width": 212,
+        "height": 22,
+        "units": "px"
+      },
+      "label": "Material name",
+      "typography": "typography.identity",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": null,
+      "action": "property.set.name",
+      "enabled": true,
+      "binding": "Document.name",
+      "overflow": "ellipsis; tooltip shows full name",
+      "nativeControlId": "name"
+    },
+    {
+      "id": "identity.caption",
+      "type": "label",
+      "parent": "identity",
+      "rect": {
+        "x": 50,
+        "y": 27,
+        "width": 212,
+        "height": 15,
+        "units": "px"
+      },
+      "label": "Material · Opaque",
+      "typography": "typography.secondary",
+      "colors": {
+        "text": "secondaryText"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "binding": "Document.shader",
+      "nativeControlId": null
+    },
+    {
+      "id": "identity.reset_all",
+      "type": "icon_button",
+      "parent": "identity",
+      "rect": {
+        "x": 272,
+        "y": 6,
+        "width": 22,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Restore material defaults",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": "reset",
+      "action": "document.reset_all",
+      "enabled": false,
+      "enabledWhen": "!Equal(state.value,state.defaults)",
+      "nativeControlId": "reset.all"
+    },
+    {
+      "id": "shader.label",
+      "type": "label",
+      "parent": "panel",
+      "rect": {
+        "x": 12,
+        "y": 102,
+        "width": 52,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Shader",
+      "typography": "typography.sizePx",
+      "colors": {
+        "text": "secondaryText"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "nativeControlId": null
+    },
+    {
+      "id": "shader",
+      "type": "combo",
+      "parent": "panel",
+      "rect": {
+        "x": 74,
+        "y": 102,
+        "width": 232,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Shader",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "input",
+        "border": "border"
+      },
+      "icon": "chevron_down",
+      "action": "property.set.shader",
+      "enabled": true,
+      "binding": "Document.shader",
+      "options": [
+        "Opaque",
+        "Cutout",
+        "Transparent",
+        "Unlit"
+      ],
+      "nativeControlId": "shader"
+    },
+    {
+      "id": "search",
+      "type": "search",
+      "parent": "panel",
+      "rect": {
+        "x": 12,
+        "y": 140,
+        "width": 294,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Search attributes…",
+      "typography": "typography.secondary",
+      "colors": {
+        "text": "text",
+        "background": "input",
+        "border": "border"
+      },
+      "icon": "search",
+      "action": "search.set",
+      "enabled": true,
+      "binding": "InspectorState.search",
+      "history": false,
+      "nativeControlId": "search"
+    },
+    {
+      "id": "scroll",
+      "type": "scroll_view",
+      "parent": "panel",
+      "rect": {
+        "x": 0,
+        "y": 181,
+        "width": 318,
+        "height": 681,
+        "units": "px"
+      },
+      "label": "Attribute sections",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "clip": true,
+      "heightRule": "panel.height - 215",
+      "contentWidth": 294,
+      "scrollbars": "vertical as needed",
+      "filter": "Match section title and keyword list case-insensitively; show every control of matching sections.",
+      "nativeControlId": null
+    },
+    {
+      "id": "footer",
+      "type": "footer",
+      "parent": "panel",
+      "rect": {
+        "x": 0,
+        "y": 862,
+        "width": 318,
+        "height": 34,
+        "units": "px"
+      },
+      "label": "Change status",
+      "typography": "typography.secondary",
+      "colors": {
+        "text": "secondaryText",
+        "border": "border"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "anchor": "panel bottom",
+      "nativeControlId": null
+    },
+    {
+      "id": "footer.modified",
+      "type": "modified_dot",
+      "parent": "footer",
+      "rect": {
+        "x": 12,
+        "y": 15,
+        "width": 4,
+        "height": 4,
+        "units": "px"
+      },
+      "label": "Modified",
+      "typography": "typography.number",
+      "colors": {
+        "background": "modified"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "visibleWhen": "state.ModifiedCount() > 0",
+      "nativeControlId": null
+    },
+    {
+      "id": "footer.status",
+      "type": "label",
+      "parent": "footer",
+      "rect": {
+        "x": 23,
+        "y": 11,
+        "width": 222,
+        "height": 16,
+        "units": "px"
+      },
+      "label": "No changes",
+      "typography": "typography.secondary",
+      "colors": {
+        "text": "secondaryText"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "binding": "InspectorState.status / ModifiedCount()",
+      "nativeControlId": null
+    },
+    {
+      "id": "footer.undo",
+      "type": "icon_button",
+      "parent": "footer",
+      "rect": {
+        "x": 258,
+        "y": 3,
+        "width": 22,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Undo",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": "undo",
+      "action": "history.undo",
+      "enabled": false,
+      "enabledWhen": "!state.undo.empty() || state.editing",
+      "nativeControlId": "undo"
+    },
+    {
+      "id": "footer.redo",
+      "type": "icon_button",
+      "parent": "footer",
+      "rect": {
+        "x": 284,
+        "y": 3,
+        "width": 22,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Redo",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": "redo",
+      "action": "history.redo",
+      "enabled": false,
+      "enabledWhen": "!state.redo.empty()",
+      "nativeControlId": "redo"
+    },
+    {
+      "id": "section.surface",
+      "type": "section",
+      "parent": "scroll",
+      "rect": {
+        "x": 12,
+        "y": 8,
+        "width": 294,
+        "height": 295,
+        "units": "px"
+      },
+      "label": "Surface",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "tab": "properties",
+      "defaultExpanded": true,
+      "expandedBinding": "InspectorState.sections[0]",
+      "heightExpanded": 295,
+      "heightCollapsed": 28,
+      "flowMarginBefore": 8,
+      "nativeControlId": null
+    },
+    {
+      "id": "section.surface.header",
+      "type": "section_header",
+      "parent": "section.surface",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 294,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Surface",
+      "typography": "typography.section",
+      "colors": {
+        "text": "text",
+        "background": "raised"
+      },
+      "icon": "chevron_down",
+      "action": "section.toggle.surface",
+      "enabled": true,
+      "iconExpanded": "chevron_down",
+      "iconCollapsed": "chevron_right",
+      "caption": "PBR",
+      "nativeControlId": "section.surface"
+    },
+    {
+      "id": "section.surface.body",
+      "type": "section_body",
+      "parent": "section.surface",
+      "rect": {
+        "x": 0,
+        "y": 38,
+        "width": 294,
+        "height": 255,
+        "units": "px"
+      },
+      "label": "Surface",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "visible": true,
+      "visibleWhen": "Section is expanded, or current search matches its title/keyword list.",
+      "nativeControlId": null
+    },
+    {
+      "id": "baseColor",
+      "type": "color",
+      "parent": "section.surface.body",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 294,
+        "height": 63,
+        "units": "px"
+      },
+      "label": "Base Color",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "binding": "Document.baseColor",
+      "alphaSeparateFromOpacity": true,
+      "nativeControlId": null
+    },
+    {
+      "id": "baseColor.label",
+      "type": "label",
+      "parent": "baseColor",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 294,
+        "height": 20,
+        "units": "px"
+      },
+      "label": "Base Color",
+      "typography": "typography.sizePx",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "nativeControlId": null
+    },
+    {
+      "id": "baseColor.swatch",
+      "type": "color_swatch",
+      "parent": "baseColor",
+      "rect": {
+        "x": 0,
+        "y": 23,
+        "width": 34,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Choose Base Color",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": null,
+      "action": "color.open.baseColor",
+      "enabled": true,
+      "binding": "Document.baseColor",
+      "checker": true,
+      "nativeControlId": "baseColor.swatch"
+    },
+    {
+      "id": "baseColor.hex",
+      "type": "hex",
+      "parent": "baseColor",
+      "rect": {
+        "x": 42,
+        "y": 23,
+        "width": 134,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "RGB Hex",
+      "typography": "typography.hex",
+      "colors": {
+        "text": "text",
+        "background": "input",
+        "border": "border"
+      },
+      "icon": null,
+      "action": "color.set_hex.baseColor",
+      "enabled": true,
+      "binding": "Document.baseColor[0..2]",
+      "format": "#RRGGBB",
+      "preserveAlpha": true,
+      "nativeControlId": "baseColor.hex"
+    },
+    {
+      "id": "baseColor.alpha",
+      "type": "numeric",
+      "parent": "baseColor",
+      "rect": {
+        "x": 184,
+        "y": 23,
+        "width": 80,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "A %",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "input",
+        "border": "border"
+      },
+      "icon": null,
+      "action": "color.set_alpha.baseColor",
+      "enabled": true,
+      "binding": "Document.baseColor[3]",
+      "displayTransform": "value × 100",
+      "range": [
+        0,
+        100
+      ],
+      "unit": "%",
+      "decimals": 0,
+      "nativeControlId": "baseColor.alpha"
+    },
+    {
+      "id": "baseColor.reset",
+      "type": "icon_button",
+      "parent": "baseColor",
+      "rect": {
+        "x": 272,
+        "y": 23,
+        "width": 22,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Reset Base Color",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": "reset",
+      "action": "property.reset.baseColor",
+      "enabled": false,
+      "enabledWhen": "document.baseColor differs from defaults.baseColor",
+      "nativeControlId": "baseColor.reset"
+    },
+    {
+      "id": "roughness",
+      "type": "scalar",
+      "parent": "section.surface.body",
+      "rect": {
+        "x": 0,
+        "y": 63,
+        "width": 294,
+        "height": 48,
+        "units": "px"
+      },
+      "label": "Roughness",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "binding": "Document.roughness",
+      "default": 0.27,
+      "range": [
+        0.02,
+        1
+      ],
+      "decimals": 3,
+      "unit": "",
+      "enabledWhen": "true",
+      "disabledReason": null,
+      "nativeControlId": null
+    },
+    {
+      "id": "roughness.label",
+      "type": "label",
+      "parent": "roughness",
+      "rect": {
+        "x": 10,
+        "y": 0,
+        "width": 170,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Roughness",
+      "typography": "typography.sizePx",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "nativeControlId": null
+    },
+    {
+      "id": "roughness.modified",
+      "type": "modified_dot",
+      "parent": "roughness",
+      "rect": {
+        "x": 0,
+        "y": 12,
+        "width": 4,
+        "height": 4,
+        "units": "px"
+      },
+      "label": "",
+      "typography": "typography.number",
+      "colors": {
+        "background": "modified"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "visibleWhen": "document.roughness differs from defaults.roughness",
+      "nativeControlId": null
+    },
+    {
+      "id": "roughness.value",
+      "type": "numeric",
+      "parent": "roughness",
+      "rect": {
+        "x": 188,
+        "y": 0,
+        "width": 76,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Roughness",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "input",
+        "border": "border"
+      },
+      "icon": null,
+      "action": "property.set.roughness",
+      "enabled": true,
+      "binding": "Document.roughness",
+      "range": [
+        0.02,
+        1
+      ],
+      "decimals": 3,
+      "unit": "",
+      "enabledWhen": "true",
+      "nativeControlId": "roughness.value"
+    },
+    {
+      "id": "roughness.slider",
+      "type": "slider",
+      "parent": "roughness",
+      "rect": {
+        "x": 0,
+        "y": 31,
+        "width": 264,
+        "height": 16,
+        "units": "px"
+      },
+      "label": "Roughness",
+      "typography": "typography.number",
+      "colors": {
+        "track": "sliderTrack",
+        "fill": "focus",
+        "thumb": "sliderThumb"
+      },
+      "icon": null,
+      "action": "property.set.roughness",
+      "enabled": true,
+      "binding": "Document.roughness",
+      "range": [
+        0.02,
+        1
+      ],
+      "trackRect": {
+        "x": 0,
+        "y": 6,
+        "width": 264,
+        "height": 3
+      },
+      "thumbSize": [
+        7,
+        11
+      ],
+      "enabledWhen": "true",
+      "nativeControlId": "roughness.slider"
+    },
+    {
+      "id": "roughness.reset",
+      "type": "icon_button",
+      "parent": "roughness",
+      "rect": {
+        "x": 272,
+        "y": 0,
+        "width": 22,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Reset Roughness",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": "reset",
+      "action": "property.reset.roughness",
+      "enabled": false,
+      "enabledWhen": "(true) && document.roughness differs from defaults.roughness",
+      "nativeControlId": "roughness.reset"
+    },
+    {
+      "id": "metallic",
+      "type": "scalar",
+      "parent": "section.surface.body",
+      "rect": {
+        "x": 0,
+        "y": 111,
+        "width": 294,
+        "height": 48,
+        "units": "px"
+      },
+      "label": "Metallic",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "binding": "Document.metallic",
+      "default": 1,
+      "range": [
+        0,
+        1
+      ],
+      "decimals": 3,
+      "unit": "",
+      "enabledWhen": "true",
+      "disabledReason": null,
+      "nativeControlId": null
+    },
+    {
+      "id": "metallic.label",
+      "type": "label",
+      "parent": "metallic",
+      "rect": {
+        "x": 10,
+        "y": 0,
+        "width": 170,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Metallic",
+      "typography": "typography.sizePx",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "nativeControlId": null
+    },
+    {
+      "id": "metallic.modified",
+      "type": "modified_dot",
+      "parent": "metallic",
+      "rect": {
+        "x": 0,
+        "y": 12,
+        "width": 4,
+        "height": 4,
+        "units": "px"
+      },
+      "label": "",
+      "typography": "typography.number",
+      "colors": {
+        "background": "modified"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "visibleWhen": "document.metallic differs from defaults.metallic",
+      "nativeControlId": null
+    },
+    {
+      "id": "metallic.value",
+      "type": "numeric",
+      "parent": "metallic",
+      "rect": {
+        "x": 188,
+        "y": 0,
+        "width": 76,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Metallic",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "input",
+        "border": "border"
+      },
+      "icon": null,
+      "action": "property.set.metallic",
+      "enabled": true,
+      "binding": "Document.metallic",
+      "range": [
+        0,
+        1
+      ],
+      "decimals": 3,
+      "unit": "",
+      "enabledWhen": "true",
+      "nativeControlId": "metallic.value"
+    },
+    {
+      "id": "metallic.slider",
+      "type": "slider",
+      "parent": "metallic",
+      "rect": {
+        "x": 0,
+        "y": 31,
+        "width": 264,
+        "height": 16,
+        "units": "px"
+      },
+      "label": "Metallic",
+      "typography": "typography.number",
+      "colors": {
+        "track": "sliderTrack",
+        "fill": "focus",
+        "thumb": "sliderThumb"
+      },
+      "icon": null,
+      "action": "property.set.metallic",
+      "enabled": true,
+      "binding": "Document.metallic",
+      "range": [
+        0,
+        1
+      ],
+      "trackRect": {
+        "x": 0,
+        "y": 6,
+        "width": 264,
+        "height": 3
+      },
+      "thumbSize": [
+        7,
+        11
+      ],
+      "enabledWhen": "true",
+      "nativeControlId": "metallic.slider"
+    },
+    {
+      "id": "metallic.reset",
+      "type": "icon_button",
+      "parent": "metallic",
+      "rect": {
+        "x": 272,
+        "y": 0,
+        "width": 22,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Reset Metallic",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": "reset",
+      "action": "property.reset.metallic",
+      "enabled": false,
+      "enabledWhen": "(true) && document.metallic differs from defaults.metallic",
+      "nativeControlId": "metallic.reset"
+    },
+    {
+      "id": "normalStrength",
+      "type": "scalar",
+      "parent": "section.surface.body",
+      "rect": {
+        "x": 0,
+        "y": 159,
+        "width": 294,
+        "height": 48,
+        "units": "px"
+      },
+      "label": "Normal strength",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "binding": "Document.normalStrength",
+      "default": 0.3,
+      "range": [
+        0,
+        2
+      ],
+      "decimals": 3,
+      "unit": "",
+      "enabledWhen": "true",
+      "disabledReason": null,
+      "nativeControlId": null
+    },
+    {
+      "id": "normalStrength.label",
+      "type": "label",
+      "parent": "normalStrength",
+      "rect": {
+        "x": 10,
+        "y": 0,
+        "width": 170,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Normal strength",
+      "typography": "typography.sizePx",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "nativeControlId": null
+    },
+    {
+      "id": "normalStrength.modified",
+      "type": "modified_dot",
+      "parent": "normalStrength",
+      "rect": {
+        "x": 0,
+        "y": 12,
+        "width": 4,
+        "height": 4,
+        "units": "px"
+      },
+      "label": "",
+      "typography": "typography.number",
+      "colors": {
+        "background": "modified"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "visibleWhen": "document.normalStrength differs from defaults.normalStrength",
+      "nativeControlId": null
+    },
+    {
+      "id": "normalStrength.value",
+      "type": "numeric",
+      "parent": "normalStrength",
+      "rect": {
+        "x": 188,
+        "y": 0,
+        "width": 76,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Normal strength",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "input",
+        "border": "border"
+      },
+      "icon": null,
+      "action": "property.set.normalStrength",
+      "enabled": true,
+      "binding": "Document.normalStrength",
+      "range": [
+        0,
+        2
+      ],
+      "decimals": 3,
+      "unit": "",
+      "enabledWhen": "true",
+      "nativeControlId": "normalStrength.value"
+    },
+    {
+      "id": "normalStrength.slider",
+      "type": "slider",
+      "parent": "normalStrength",
+      "rect": {
+        "x": 0,
+        "y": 31,
+        "width": 264,
+        "height": 16,
+        "units": "px"
+      },
+      "label": "Normal strength",
+      "typography": "typography.number",
+      "colors": {
+        "track": "sliderTrack",
+        "fill": "focus",
+        "thumb": "sliderThumb"
+      },
+      "icon": null,
+      "action": "property.set.normalStrength",
+      "enabled": true,
+      "binding": "Document.normalStrength",
+      "range": [
+        0,
+        2
+      ],
+      "trackRect": {
+        "x": 0,
+        "y": 6,
+        "width": 264,
+        "height": 3
+      },
+      "thumbSize": [
+        7,
+        11
+      ],
+      "enabledWhen": "true",
+      "nativeControlId": "normalStrength.slider"
+    },
+    {
+      "id": "normalStrength.reset",
+      "type": "icon_button",
+      "parent": "normalStrength",
+      "rect": {
+        "x": 272,
+        "y": 0,
+        "width": 22,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Reset Normal strength",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": "reset",
+      "action": "property.reset.normalStrength",
+      "enabled": false,
+      "enabledWhen": "(true) && document.normalStrength differs from defaults.normalStrength",
+      "nativeControlId": "normalStrength.reset"
+    },
+    {
+      "id": "ao",
+      "type": "scalar",
+      "parent": "section.surface.body",
+      "rect": {
+        "x": 0,
+        "y": 207,
+        "width": 294,
+        "height": 48,
+        "units": "px"
+      },
+      "label": "Ambient occlusion",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "binding": "Document.ao",
+      "default": 1,
+      "range": [
+        0,
+        1
+      ],
+      "decimals": 3,
+      "unit": "",
+      "enabledWhen": "true",
+      "disabledReason": null,
+      "nativeControlId": null
+    },
+    {
+      "id": "ao.label",
+      "type": "label",
+      "parent": "ao",
+      "rect": {
+        "x": 10,
+        "y": 0,
+        "width": 170,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Ambient occlusion",
+      "typography": "typography.sizePx",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "nativeControlId": null
+    },
+    {
+      "id": "ao.modified",
+      "type": "modified_dot",
+      "parent": "ao",
+      "rect": {
+        "x": 0,
+        "y": 12,
+        "width": 4,
+        "height": 4,
+        "units": "px"
+      },
+      "label": "",
+      "typography": "typography.number",
+      "colors": {
+        "background": "modified"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "visibleWhen": "document.ao differs from defaults.ao",
+      "nativeControlId": null
+    },
+    {
+      "id": "ao.value",
+      "type": "numeric",
+      "parent": "ao",
+      "rect": {
+        "x": 188,
+        "y": 0,
+        "width": 76,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Ambient occlusion",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "input",
+        "border": "border"
+      },
+      "icon": null,
+      "action": "property.set.ao",
+      "enabled": true,
+      "binding": "Document.ao",
+      "range": [
+        0,
+        1
+      ],
+      "decimals": 3,
+      "unit": "",
+      "enabledWhen": "true",
+      "nativeControlId": "ao.value"
+    },
+    {
+      "id": "ao.slider",
+      "type": "slider",
+      "parent": "ao",
+      "rect": {
+        "x": 0,
+        "y": 31,
+        "width": 264,
+        "height": 16,
+        "units": "px"
+      },
+      "label": "Ambient occlusion",
+      "typography": "typography.number",
+      "colors": {
+        "track": "sliderTrack",
+        "fill": "focus",
+        "thumb": "sliderThumb"
+      },
+      "icon": null,
+      "action": "property.set.ao",
+      "enabled": true,
+      "binding": "Document.ao",
+      "range": [
+        0,
+        1
+      ],
+      "trackRect": {
+        "x": 0,
+        "y": 6,
+        "width": 264,
+        "height": 3
+      },
+      "thumbSize": [
+        7,
+        11
+      ],
+      "enabledWhen": "true",
+      "nativeControlId": "ao.slider"
+    },
+    {
+      "id": "ao.reset",
+      "type": "icon_button",
+      "parent": "ao",
+      "rect": {
+        "x": 272,
+        "y": 0,
+        "width": 22,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Reset Ambient occlusion",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": "reset",
+      "action": "property.reset.ao",
+      "enabled": false,
+      "enabledWhen": "(true) && document.ao differs from defaults.ao",
+      "nativeControlId": "ao.reset"
+    },
+    {
+      "id": "section.detail",
+      "type": "section",
+      "parent": "scroll",
+      "rect": {
+        "x": 12,
+        "y": 311,
+        "width": 294,
+        "height": 132,
+        "units": "px"
+      },
+      "label": "Surface Detail",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "tab": "properties",
+      "defaultExpanded": true,
+      "expandedBinding": "InspectorState.sections[1]",
+      "heightExpanded": 132,
+      "heightCollapsed": 28,
+      "flowMarginBefore": 8,
+      "nativeControlId": null
+    },
+    {
+      "id": "section.detail.header",
+      "type": "section_header",
+      "parent": "section.detail",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 294,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Surface Detail",
+      "typography": "typography.section",
+      "colors": {
+        "text": "text",
+        "background": "raised"
+      },
+      "icon": "chevron_down",
+      "action": "section.toggle.detail",
+      "enabled": true,
+      "iconExpanded": "chevron_down",
+      "iconCollapsed": "chevron_right",
+      "caption": "",
+      "nativeControlId": "section.detail"
+    },
+    {
+      "id": "section.detail.body",
+      "type": "section_body",
+      "parent": "section.detail",
+      "rect": {
+        "x": 0,
+        "y": 38,
+        "width": 294,
+        "height": 92,
+        "units": "px"
+      },
+      "label": "Surface Detail",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "visible": true,
+      "visibleWhen": "Section is expanded, or current search matches its title/keyword list.",
+      "nativeControlId": null
+    },
+    {
+      "id": "pattern.row",
+      "type": "combo_row",
+      "parent": "section.detail.body",
+      "rect": {
+        "x": 0,
+        "y": 8,
+        "width": 294,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Pattern",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "binding": "Document.pattern",
+      "nativeControlId": null
+    },
+    {
+      "id": "pattern.label",
+      "type": "label",
+      "parent": "pattern.row",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 106,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Pattern",
+      "typography": "typography.sizePx",
+      "colors": {
+        "text": "secondaryText"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "nativeControlId": null
+    },
+    {
+      "id": "pattern",
+      "type": "combo",
+      "parent": "pattern.row",
+      "rect": {
+        "x": 116,
+        "y": 0,
+        "width": 178,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Pattern",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "input",
+        "border": "border"
+      },
+      "icon": "chevron_down",
+      "action": "property.set.pattern",
+      "enabled": true,
+      "binding": "Document.pattern",
+      "options": [
+        "Smooth",
+        "Brushed Metal",
+        "Ancient Stone",
+        "Wood Grain",
+        "Checker",
+        "Woven Fabric"
+      ],
+      "default": 1,
+      "nativeControlId": "pattern"
+    },
+    {
+      "id": "patternScale",
+      "type": "scalar",
+      "parent": "section.detail.body",
+      "rect": {
+        "x": 0,
+        "y": 44,
+        "width": 294,
+        "height": 48,
+        "units": "px"
+      },
+      "label": "Pattern scale",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "binding": "Document.patternScale",
+      "default": 8,
+      "range": [
+        1,
+        40
+      ],
+      "decimals": 1,
+      "unit": "×",
+      "enabledWhen": "true",
+      "disabledReason": null,
+      "nativeControlId": null
+    },
+    {
+      "id": "patternScale.label",
+      "type": "label",
+      "parent": "patternScale",
+      "rect": {
+        "x": 10,
+        "y": 0,
+        "width": 170,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Pattern scale",
+      "typography": "typography.sizePx",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "nativeControlId": null
+    },
+    {
+      "id": "patternScale.modified",
+      "type": "modified_dot",
+      "parent": "patternScale",
+      "rect": {
+        "x": 0,
+        "y": 12,
+        "width": 4,
+        "height": 4,
+        "units": "px"
+      },
+      "label": "",
+      "typography": "typography.number",
+      "colors": {
+        "background": "modified"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "visibleWhen": "document.patternScale differs from defaults.patternScale",
+      "nativeControlId": null
+    },
+    {
+      "id": "patternScale.value",
+      "type": "numeric",
+      "parent": "patternScale",
+      "rect": {
+        "x": 188,
+        "y": 0,
+        "width": 76,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Pattern scale",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "input",
+        "border": "border"
+      },
+      "icon": null,
+      "action": "property.set.patternScale",
+      "enabled": true,
+      "binding": "Document.patternScale",
+      "range": [
+        1,
+        40
+      ],
+      "decimals": 1,
+      "unit": "×",
+      "enabledWhen": "true",
+      "nativeControlId": "patternScale.value"
+    },
+    {
+      "id": "patternScale.slider",
+      "type": "slider",
+      "parent": "patternScale",
+      "rect": {
+        "x": 0,
+        "y": 31,
+        "width": 264,
+        "height": 16,
+        "units": "px"
+      },
+      "label": "Pattern scale",
+      "typography": "typography.number",
+      "colors": {
+        "track": "sliderTrack",
+        "fill": "focus",
+        "thumb": "sliderThumb"
+      },
+      "icon": null,
+      "action": "property.set.patternScale",
+      "enabled": true,
+      "binding": "Document.patternScale",
+      "range": [
+        1,
+        40
+      ],
+      "trackRect": {
+        "x": 0,
+        "y": 6,
+        "width": 264,
+        "height": 3
+      },
+      "thumbSize": [
+        7,
+        11
+      ],
+      "enabledWhen": "true",
+      "nativeControlId": "patternScale.slider"
+    },
+    {
+      "id": "patternScale.reset",
+      "type": "icon_button",
+      "parent": "patternScale",
+      "rect": {
+        "x": 272,
+        "y": 0,
+        "width": 22,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Reset Pattern scale",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": "reset",
+      "action": "property.reset.patternScale",
+      "enabled": false,
+      "enabledWhen": "(true) && document.patternScale differs from defaults.patternScale",
+      "nativeControlId": "patternScale.reset"
+    },
+    {
+      "id": "section.coat",
+      "type": "section",
+      "parent": "scroll",
+      "rect": {
+        "x": 12,
+        "y": 451,
+        "width": 294,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Coat & Anisotropy",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "tab": "properties",
+      "defaultExpanded": false,
+      "expandedBinding": "InspectorState.sections[2]",
+      "heightExpanded": 232,
+      "heightCollapsed": 28,
+      "flowMarginBefore": 8,
+      "nativeControlId": null
+    },
+    {
+      "id": "section.coat.header",
+      "type": "section_header",
+      "parent": "section.coat",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 294,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Coat & Anisotropy",
+      "typography": "typography.section",
+      "colors": {
+        "text": "text",
+        "background": "raised"
+      },
+      "icon": "chevron_right",
+      "action": "section.toggle.coat",
+      "enabled": true,
+      "iconExpanded": "chevron_down",
+      "iconCollapsed": "chevron_right",
+      "caption": "",
+      "nativeControlId": "section.coat"
+    },
+    {
+      "id": "section.coat.body",
+      "type": "section_body",
+      "parent": "section.coat",
+      "rect": {
+        "x": 0,
+        "y": 38,
+        "width": 294,
+        "height": 192,
+        "units": "px"
+      },
+      "label": "Coat & Anisotropy",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "visible": false,
+      "visibleWhen": "Section is expanded, or current search matches its title/keyword list.",
+      "nativeControlId": null
+    },
+    {
+      "id": "clearcoat",
+      "type": "scalar",
+      "parent": "section.coat.body",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 294,
+        "height": 48,
+        "units": "px"
+      },
+      "label": "Clearcoat",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "binding": "Document.clearcoat",
+      "default": 0.35,
+      "range": [
+        0,
+        1
+      ],
+      "decimals": 3,
+      "unit": "",
+      "enabledWhen": "true",
+      "disabledReason": null,
+      "nativeControlId": null
+    },
+    {
+      "id": "clearcoat.label",
+      "type": "label",
+      "parent": "clearcoat",
+      "rect": {
+        "x": 10,
+        "y": 0,
+        "width": 170,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Clearcoat",
+      "typography": "typography.sizePx",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "nativeControlId": null
+    },
+    {
+      "id": "clearcoat.modified",
+      "type": "modified_dot",
+      "parent": "clearcoat",
+      "rect": {
+        "x": 0,
+        "y": 12,
+        "width": 4,
+        "height": 4,
+        "units": "px"
+      },
+      "label": "",
+      "typography": "typography.number",
+      "colors": {
+        "background": "modified"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "visibleWhen": "document.clearcoat differs from defaults.clearcoat",
+      "nativeControlId": null
+    },
+    {
+      "id": "clearcoat.value",
+      "type": "numeric",
+      "parent": "clearcoat",
+      "rect": {
+        "x": 188,
+        "y": 0,
+        "width": 76,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Clearcoat",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "input",
+        "border": "border"
+      },
+      "icon": null,
+      "action": "property.set.clearcoat",
+      "enabled": true,
+      "binding": "Document.clearcoat",
+      "range": [
+        0,
+        1
+      ],
+      "decimals": 3,
+      "unit": "",
+      "enabledWhen": "true",
+      "nativeControlId": "clearcoat.value"
+    },
+    {
+      "id": "clearcoat.slider",
+      "type": "slider",
+      "parent": "clearcoat",
+      "rect": {
+        "x": 0,
+        "y": 31,
+        "width": 264,
+        "height": 16,
+        "units": "px"
+      },
+      "label": "Clearcoat",
+      "typography": "typography.number",
+      "colors": {
+        "track": "sliderTrack",
+        "fill": "focus",
+        "thumb": "sliderThumb"
+      },
+      "icon": null,
+      "action": "property.set.clearcoat",
+      "enabled": true,
+      "binding": "Document.clearcoat",
+      "range": [
+        0,
+        1
+      ],
+      "trackRect": {
+        "x": 0,
+        "y": 6,
+        "width": 264,
+        "height": 3
+      },
+      "thumbSize": [
+        7,
+        11
+      ],
+      "enabledWhen": "true",
+      "nativeControlId": "clearcoat.slider"
+    },
+    {
+      "id": "clearcoat.reset",
+      "type": "icon_button",
+      "parent": "clearcoat",
+      "rect": {
+        "x": 272,
+        "y": 0,
+        "width": 22,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Reset Clearcoat",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": "reset",
+      "action": "property.reset.clearcoat",
+      "enabled": false,
+      "enabledWhen": "(true) && document.clearcoat differs from defaults.clearcoat",
+      "nativeControlId": "clearcoat.reset"
+    },
+    {
+      "id": "coatRoughness",
+      "type": "scalar",
+      "parent": "section.coat.body",
+      "rect": {
+        "x": 0,
+        "y": 48,
+        "width": 294,
+        "height": 48,
+        "units": "px"
+      },
+      "label": "Coat roughness",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "binding": "Document.coatRoughness",
+      "default": 0.16,
+      "range": [
+        0.02,
+        1
+      ],
+      "decimals": 3,
+      "unit": "",
+      "enabledWhen": "true",
+      "disabledReason": null,
+      "nativeControlId": null
+    },
+    {
+      "id": "coatRoughness.label",
+      "type": "label",
+      "parent": "coatRoughness",
+      "rect": {
+        "x": 10,
+        "y": 0,
+        "width": 170,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Coat roughness",
+      "typography": "typography.sizePx",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "nativeControlId": null
+    },
+    {
+      "id": "coatRoughness.modified",
+      "type": "modified_dot",
+      "parent": "coatRoughness",
+      "rect": {
+        "x": 0,
+        "y": 12,
+        "width": 4,
+        "height": 4,
+        "units": "px"
+      },
+      "label": "",
+      "typography": "typography.number",
+      "colors": {
+        "background": "modified"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "visibleWhen": "document.coatRoughness differs from defaults.coatRoughness",
+      "nativeControlId": null
+    },
+    {
+      "id": "coatRoughness.value",
+      "type": "numeric",
+      "parent": "coatRoughness",
+      "rect": {
+        "x": 188,
+        "y": 0,
+        "width": 76,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Coat roughness",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "input",
+        "border": "border"
+      },
+      "icon": null,
+      "action": "property.set.coatRoughness",
+      "enabled": true,
+      "binding": "Document.coatRoughness",
+      "range": [
+        0.02,
+        1
+      ],
+      "decimals": 3,
+      "unit": "",
+      "enabledWhen": "true",
+      "nativeControlId": "coatRoughness.value"
+    },
+    {
+      "id": "coatRoughness.slider",
+      "type": "slider",
+      "parent": "coatRoughness",
+      "rect": {
+        "x": 0,
+        "y": 31,
+        "width": 264,
+        "height": 16,
+        "units": "px"
+      },
+      "label": "Coat roughness",
+      "typography": "typography.number",
+      "colors": {
+        "track": "sliderTrack",
+        "fill": "focus",
+        "thumb": "sliderThumb"
+      },
+      "icon": null,
+      "action": "property.set.coatRoughness",
+      "enabled": true,
+      "binding": "Document.coatRoughness",
+      "range": [
+        0.02,
+        1
+      ],
+      "trackRect": {
+        "x": 0,
+        "y": 6,
+        "width": 264,
+        "height": 3
+      },
+      "thumbSize": [
+        7,
+        11
+      ],
+      "enabledWhen": "true",
+      "nativeControlId": "coatRoughness.slider"
+    },
+    {
+      "id": "coatRoughness.reset",
+      "type": "icon_button",
+      "parent": "coatRoughness",
+      "rect": {
+        "x": 272,
+        "y": 0,
+        "width": 22,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Reset Coat roughness",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": "reset",
+      "action": "property.reset.coatRoughness",
+      "enabled": false,
+      "enabledWhen": "(true) && document.coatRoughness differs from defaults.coatRoughness",
+      "nativeControlId": "coatRoughness.reset"
+    },
+    {
+      "id": "anisotropy",
+      "type": "scalar",
+      "parent": "section.coat.body",
+      "rect": {
+        "x": 0,
+        "y": 96,
+        "width": 294,
+        "height": 48,
+        "units": "px"
+      },
+      "label": "Anisotropy",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "binding": "Document.anisotropy",
+      "default": 0.42,
+      "range": [
+        0,
+        1
+      ],
+      "decimals": 3,
+      "unit": "",
+      "enabledWhen": "true",
+      "disabledReason": null,
+      "nativeControlId": null
+    },
+    {
+      "id": "anisotropy.label",
+      "type": "label",
+      "parent": "anisotropy",
+      "rect": {
+        "x": 10,
+        "y": 0,
+        "width": 170,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Anisotropy",
+      "typography": "typography.sizePx",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "nativeControlId": null
+    },
+    {
+      "id": "anisotropy.modified",
+      "type": "modified_dot",
+      "parent": "anisotropy",
+      "rect": {
+        "x": 0,
+        "y": 12,
+        "width": 4,
+        "height": 4,
+        "units": "px"
+      },
+      "label": "",
+      "typography": "typography.number",
+      "colors": {
+        "background": "modified"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "visibleWhen": "document.anisotropy differs from defaults.anisotropy",
+      "nativeControlId": null
+    },
+    {
+      "id": "anisotropy.value",
+      "type": "numeric",
+      "parent": "anisotropy",
+      "rect": {
+        "x": 188,
+        "y": 0,
+        "width": 76,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Anisotropy",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "input",
+        "border": "border"
+      },
+      "icon": null,
+      "action": "property.set.anisotropy",
+      "enabled": true,
+      "binding": "Document.anisotropy",
+      "range": [
+        0,
+        1
+      ],
+      "decimals": 3,
+      "unit": "",
+      "enabledWhen": "true",
+      "nativeControlId": "anisotropy.value"
+    },
+    {
+      "id": "anisotropy.slider",
+      "type": "slider",
+      "parent": "anisotropy",
+      "rect": {
+        "x": 0,
+        "y": 31,
+        "width": 264,
+        "height": 16,
+        "units": "px"
+      },
+      "label": "Anisotropy",
+      "typography": "typography.number",
+      "colors": {
+        "track": "sliderTrack",
+        "fill": "focus",
+        "thumb": "sliderThumb"
+      },
+      "icon": null,
+      "action": "property.set.anisotropy",
+      "enabled": true,
+      "binding": "Document.anisotropy",
+      "range": [
+        0,
+        1
+      ],
+      "trackRect": {
+        "x": 0,
+        "y": 6,
+        "width": 264,
+        "height": 3
+      },
+      "thumbSize": [
+        7,
+        11
+      ],
+      "enabledWhen": "true",
+      "nativeControlId": "anisotropy.slider"
+    },
+    {
+      "id": "anisotropy.reset",
+      "type": "icon_button",
+      "parent": "anisotropy",
+      "rect": {
+        "x": 272,
+        "y": 0,
+        "width": 22,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Reset Anisotropy",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": "reset",
+      "action": "property.reset.anisotropy",
+      "enabled": false,
+      "enabledWhen": "(true) && document.anisotropy differs from defaults.anisotropy",
+      "nativeControlId": "anisotropy.reset"
+    },
+    {
+      "id": "sheen",
+      "type": "scalar",
+      "parent": "section.coat.body",
+      "rect": {
+        "x": 0,
+        "y": 144,
+        "width": 294,
+        "height": 48,
+        "units": "px"
+      },
+      "label": "Sheen",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "binding": "Document.sheen",
+      "default": 0,
+      "range": [
+        0,
+        1
+      ],
+      "decimals": 3,
+      "unit": "",
+      "enabledWhen": "true",
+      "disabledReason": null,
+      "nativeControlId": null
+    },
+    {
+      "id": "sheen.label",
+      "type": "label",
+      "parent": "sheen",
+      "rect": {
+        "x": 10,
+        "y": 0,
+        "width": 170,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Sheen",
+      "typography": "typography.sizePx",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "nativeControlId": null
+    },
+    {
+      "id": "sheen.modified",
+      "type": "modified_dot",
+      "parent": "sheen",
+      "rect": {
+        "x": 0,
+        "y": 12,
+        "width": 4,
+        "height": 4,
+        "units": "px"
+      },
+      "label": "",
+      "typography": "typography.number",
+      "colors": {
+        "background": "modified"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "visibleWhen": "document.sheen differs from defaults.sheen",
+      "nativeControlId": null
+    },
+    {
+      "id": "sheen.value",
+      "type": "numeric",
+      "parent": "sheen",
+      "rect": {
+        "x": 188,
+        "y": 0,
+        "width": 76,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Sheen",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "input",
+        "border": "border"
+      },
+      "icon": null,
+      "action": "property.set.sheen",
+      "enabled": true,
+      "binding": "Document.sheen",
+      "range": [
+        0,
+        1
+      ],
+      "decimals": 3,
+      "unit": "",
+      "enabledWhen": "true",
+      "nativeControlId": "sheen.value"
+    },
+    {
+      "id": "sheen.slider",
+      "type": "slider",
+      "parent": "sheen",
+      "rect": {
+        "x": 0,
+        "y": 31,
+        "width": 264,
+        "height": 16,
+        "units": "px"
+      },
+      "label": "Sheen",
+      "typography": "typography.number",
+      "colors": {
+        "track": "sliderTrack",
+        "fill": "focus",
+        "thumb": "sliderThumb"
+      },
+      "icon": null,
+      "action": "property.set.sheen",
+      "enabled": true,
+      "binding": "Document.sheen",
+      "range": [
+        0,
+        1
+      ],
+      "trackRect": {
+        "x": 0,
+        "y": 6,
+        "width": 264,
+        "height": 3
+      },
+      "thumbSize": [
+        7,
+        11
+      ],
+      "enabledWhen": "true",
+      "nativeControlId": "sheen.slider"
+    },
+    {
+      "id": "sheen.reset",
+      "type": "icon_button",
+      "parent": "sheen",
+      "rect": {
+        "x": 272,
+        "y": 0,
+        "width": 22,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Reset Sheen",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": "reset",
+      "action": "property.reset.sheen",
+      "enabled": false,
+      "enabledWhen": "(true) && document.sheen differs from defaults.sheen",
+      "nativeControlId": "sheen.reset"
+    },
+    {
+      "id": "section.emission",
+      "type": "section",
+      "parent": "scroll",
+      "rect": {
+        "x": 12,
+        "y": 487,
+        "width": 294,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Emission",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "tab": "properties",
+      "defaultExpanded": false,
+      "expandedBinding": "InspectorState.sections[3]",
+      "heightExpanded": 151,
+      "heightCollapsed": 28,
+      "flowMarginBefore": 8,
+      "nativeControlId": null
+    },
+    {
+      "id": "section.emission.header",
+      "type": "section_header",
+      "parent": "section.emission",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 294,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Emission",
+      "typography": "typography.section",
+      "colors": {
+        "text": "text",
+        "background": "raised"
+      },
+      "icon": "chevron_right",
+      "action": "section.toggle.emission",
+      "enabled": true,
+      "iconExpanded": "chevron_down",
+      "iconCollapsed": "chevron_right",
+      "caption": "",
+      "nativeControlId": "section.emission"
+    },
+    {
+      "id": "section.emission.body",
+      "type": "section_body",
+      "parent": "section.emission",
+      "rect": {
+        "x": 0,
+        "y": 38,
+        "width": 294,
+        "height": 111,
+        "units": "px"
+      },
+      "label": "Emission",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "visible": false,
+      "visibleWhen": "Section is expanded, or current search matches its title/keyword list.",
+      "nativeControlId": null
+    },
+    {
+      "id": "emissionColor",
+      "type": "color",
+      "parent": "section.emission.body",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 294,
+        "height": 63,
+        "units": "px"
+      },
+      "label": "Emission Color",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "binding": "Document.emissionColor",
+      "alphaSeparateFromOpacity": true,
+      "nativeControlId": null
+    },
+    {
+      "id": "emissionColor.label",
+      "type": "label",
+      "parent": "emissionColor",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 294,
+        "height": 20,
+        "units": "px"
+      },
+      "label": "Emission Color",
+      "typography": "typography.sizePx",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "nativeControlId": null
+    },
+    {
+      "id": "emissionColor.swatch",
+      "type": "color_swatch",
+      "parent": "emissionColor",
+      "rect": {
+        "x": 0,
+        "y": 23,
+        "width": 34,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Choose Emission Color",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": null,
+      "action": "color.open.emissionColor",
+      "enabled": true,
+      "binding": "Document.emissionColor",
+      "checker": true,
+      "nativeControlId": "emissionColor.swatch"
+    },
+    {
+      "id": "emissionColor.hex",
+      "type": "hex",
+      "parent": "emissionColor",
+      "rect": {
+        "x": 42,
+        "y": 23,
+        "width": 222,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "RGB Hex",
+      "typography": "typography.hex",
+      "colors": {
+        "text": "text",
+        "background": "input",
+        "border": "border"
+      },
+      "icon": null,
+      "action": "color.set_hex.emissionColor",
+      "enabled": true,
+      "binding": "Document.emissionColor[0..2]",
+      "format": "#RRGGBB",
+      "preserveAlpha": true,
+      "nativeControlId": "emissionColor.hex"
+    },
+    {
+      "id": "emissionColor.reset",
+      "type": "icon_button",
+      "parent": "emissionColor",
+      "rect": {
+        "x": 272,
+        "y": 23,
+        "width": 22,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Reset Emission Color",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": "reset",
+      "action": "property.reset.emissionColor",
+      "enabled": false,
+      "enabledWhen": "document.emissionColor differs from defaults.emissionColor",
+      "nativeControlId": "emissionColor.reset"
+    },
+    {
+      "id": "emissionStrength",
+      "type": "scalar",
+      "parent": "section.emission.body",
+      "rect": {
+        "x": 0,
+        "y": 63,
+        "width": 294,
+        "height": 48,
+        "units": "px"
+      },
+      "label": "Emission strength",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "binding": "Document.emissionStrength",
+      "default": 0,
+      "range": [
+        0,
+        12
+      ],
+      "decimals": 2,
+      "unit": "",
+      "enabledWhen": "true",
+      "disabledReason": null,
+      "nativeControlId": null
+    },
+    {
+      "id": "emissionStrength.label",
+      "type": "label",
+      "parent": "emissionStrength",
+      "rect": {
+        "x": 10,
+        "y": 0,
+        "width": 170,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Emission strength",
+      "typography": "typography.sizePx",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "nativeControlId": null
+    },
+    {
+      "id": "emissionStrength.modified",
+      "type": "modified_dot",
+      "parent": "emissionStrength",
+      "rect": {
+        "x": 0,
+        "y": 12,
+        "width": 4,
+        "height": 4,
+        "units": "px"
+      },
+      "label": "",
+      "typography": "typography.number",
+      "colors": {
+        "background": "modified"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "visibleWhen": "document.emissionStrength differs from defaults.emissionStrength",
+      "nativeControlId": null
+    },
+    {
+      "id": "emissionStrength.value",
+      "type": "numeric",
+      "parent": "emissionStrength",
+      "rect": {
+        "x": 188,
+        "y": 0,
+        "width": 76,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Emission strength",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "input",
+        "border": "border"
+      },
+      "icon": null,
+      "action": "property.set.emissionStrength",
+      "enabled": true,
+      "binding": "Document.emissionStrength",
+      "range": [
+        0,
+        12
+      ],
+      "decimals": 2,
+      "unit": "",
+      "enabledWhen": "true",
+      "nativeControlId": "emissionStrength.value"
+    },
+    {
+      "id": "emissionStrength.slider",
+      "type": "slider",
+      "parent": "emissionStrength",
+      "rect": {
+        "x": 0,
+        "y": 31,
+        "width": 264,
+        "height": 16,
+        "units": "px"
+      },
+      "label": "Emission strength",
+      "typography": "typography.number",
+      "colors": {
+        "track": "sliderTrack",
+        "fill": "focus",
+        "thumb": "sliderThumb"
+      },
+      "icon": null,
+      "action": "property.set.emissionStrength",
+      "enabled": true,
+      "binding": "Document.emissionStrength",
+      "range": [
+        0,
+        12
+      ],
+      "trackRect": {
+        "x": 0,
+        "y": 6,
+        "width": 264,
+        "height": 3
+      },
+      "thumbSize": [
+        7,
+        11
+      ],
+      "enabledWhen": "true",
+      "nativeControlId": "emissionStrength.slider"
+    },
+    {
+      "id": "emissionStrength.reset",
+      "type": "icon_button",
+      "parent": "emissionStrength",
+      "rect": {
+        "x": 272,
+        "y": 0,
+        "width": 22,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Reset Emission strength",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": "reset",
+      "action": "property.reset.emissionStrength",
+      "enabled": false,
+      "enabledWhen": "(true) && document.emissionStrength differs from defaults.emissionStrength",
+      "nativeControlId": "emissionStrength.reset"
+    },
+    {
+      "id": "section.uv",
+      "type": "section",
+      "parent": "scroll",
+      "rect": {
+        "x": 12,
+        "y": 523,
+        "width": 294,
+        "height": 243,
+        "units": "px"
+      },
+      "label": "UV Mapping",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "tab": "properties",
+      "defaultExpanded": true,
+      "expandedBinding": "InspectorState.sections[4]",
+      "heightExpanded": 243,
+      "heightCollapsed": 28,
+      "flowMarginBefore": 8,
+      "nativeControlId": null
+    },
+    {
+      "id": "section.uv.header",
+      "type": "section_header",
+      "parent": "section.uv",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 294,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "UV Mapping",
+      "typography": "typography.section",
+      "colors": {
+        "text": "text",
+        "background": "raised"
+      },
+      "icon": "chevron_down",
+      "action": "section.toggle.uv",
+      "enabled": true,
+      "iconExpanded": "chevron_down",
+      "iconCollapsed": "chevron_right",
+      "caption": "",
+      "nativeControlId": "section.uv"
+    },
+    {
+      "id": "section.uv.body",
+      "type": "section_body",
+      "parent": "section.uv",
+      "rect": {
+        "x": 0,
+        "y": 38,
+        "width": 294,
+        "height": 203,
+        "units": "px"
+      },
+      "label": "UV Mapping",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "visible": true,
+      "visibleWhen": "Section is expanded, or current search matches its title/keyword list.",
+      "nativeControlId": null
+    },
+    {
+      "id": "uvScale",
+      "type": "vector",
+      "parent": "section.uv.body",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 294,
+        "height": 63,
+        "units": "px"
+      },
+      "label": "Scale",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "binding": "Document.uvScale",
+      "default": [
+        1,
+        1
+      ],
+      "linkedEditing": false,
+      "nativeControlId": null
+    },
+    {
+      "id": "uvScale.label",
+      "type": "label",
+      "parent": "uvScale",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 294,
+        "height": 20,
+        "units": "px"
+      },
+      "label": "Scale",
+      "typography": "typography.sizePx",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "nativeControlId": null
+    },
+    {
+      "id": "uvScale.u",
+      "type": "vector_channel",
+      "parent": "uvScale",
+      "rect": {
+        "x": 0,
+        "y": 24,
+        "width": 128,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "U",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "axis": "axisU",
+        "background": "input",
+        "border": "border"
+      },
+      "icon": null,
+      "action": "property.set.uvScale",
+      "enabled": true,
+      "binding": "Document.uvScale[0]",
+      "payload": {
+        "axis": 0
+      },
+      "range": [
+        0.01,
+        40
+      ],
+      "decimals": 2,
+      "unit": "×",
+      "nativeControlId": "uvScale.u"
+    },
+    {
+      "id": "uvScale.v",
+      "type": "vector_channel",
+      "parent": "uvScale",
+      "rect": {
+        "x": 136,
+        "y": 24,
+        "width": 128,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "V",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "axis": "axisV",
+        "background": "input",
+        "border": "border"
+      },
+      "icon": null,
+      "action": "property.set.uvScale",
+      "enabled": true,
+      "binding": "Document.uvScale[1]",
+      "payload": {
+        "axis": 1
+      },
+      "range": [
+        0.01,
+        40
+      ],
+      "decimals": 2,
+      "unit": "×",
+      "nativeControlId": "uvScale.v"
+    },
+    {
+      "id": "uvScale.reset",
+      "type": "icon_button",
+      "parent": "uvScale",
+      "rect": {
+        "x": 272,
+        "y": 24,
+        "width": 22,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Reset Scale",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": "reset",
+      "action": "property.reset.uvScale",
+      "enabled": false,
+      "enabledWhen": "document.uvScale differs from defaults.uvScale",
+      "nativeControlId": "uvScale.reset"
+    },
+    {
+      "id": "uvOffset",
+      "type": "vector",
+      "parent": "section.uv.body",
+      "rect": {
+        "x": 0,
+        "y": 63,
+        "width": 294,
+        "height": 63,
+        "units": "px"
+      },
+      "label": "Offset",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "binding": "Document.uvOffset",
+      "default": [
+        0,
+        0
+      ],
+      "linkedEditing": false,
+      "nativeControlId": null
+    },
+    {
+      "id": "uvOffset.label",
+      "type": "label",
+      "parent": "uvOffset",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 294,
+        "height": 20,
+        "units": "px"
+      },
+      "label": "Offset",
+      "typography": "typography.sizePx",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "nativeControlId": null
+    },
+    {
+      "id": "uvOffset.u",
+      "type": "vector_channel",
+      "parent": "uvOffset",
+      "rect": {
+        "x": 0,
+        "y": 24,
+        "width": 128,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "U",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "axis": "axisU",
+        "background": "input",
+        "border": "border"
+      },
+      "icon": null,
+      "action": "property.set.uvOffset",
+      "enabled": true,
+      "binding": "Document.uvOffset[0]",
+      "payload": {
+        "axis": 0
+      },
+      "range": [
+        -20,
+        20
+      ],
+      "decimals": 2,
+      "unit": "",
+      "nativeControlId": "uvOffset.u"
+    },
+    {
+      "id": "uvOffset.v",
+      "type": "vector_channel",
+      "parent": "uvOffset",
+      "rect": {
+        "x": 136,
+        "y": 24,
+        "width": 128,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "V",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "axis": "axisV",
+        "background": "input",
+        "border": "border"
+      },
+      "icon": null,
+      "action": "property.set.uvOffset",
+      "enabled": true,
+      "binding": "Document.uvOffset[1]",
+      "payload": {
+        "axis": 1
+      },
+      "range": [
+        -20,
+        20
+      ],
+      "decimals": 2,
+      "unit": "",
+      "nativeControlId": "uvOffset.v"
+    },
+    {
+      "id": "uvOffset.reset",
+      "type": "icon_button",
+      "parent": "uvOffset",
+      "rect": {
+        "x": 272,
+        "y": 24,
+        "width": 22,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Reset Offset",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": "reset",
+      "action": "property.reset.uvOffset",
+      "enabled": false,
+      "enabledWhen": "document.uvOffset differs from defaults.uvOffset",
+      "nativeControlId": "uvOffset.reset"
+    },
+    {
+      "id": "uvRotation",
+      "type": "scalar",
+      "parent": "section.uv.body",
+      "rect": {
+        "x": 0,
+        "y": 126,
+        "width": 294,
+        "height": 48,
+        "units": "px"
+      },
+      "label": "Rotation",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "binding": "Document.uvRotation",
+      "default": 0,
+      "range": [
+        -180,
+        180
+      ],
+      "decimals": 1,
+      "unit": "°",
+      "enabledWhen": "true",
+      "disabledReason": null,
+      "nativeControlId": null
+    },
+    {
+      "id": "uvRotation.label",
+      "type": "label",
+      "parent": "uvRotation",
+      "rect": {
+        "x": 10,
+        "y": 0,
+        "width": 170,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Rotation",
+      "typography": "typography.sizePx",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "nativeControlId": null
+    },
+    {
+      "id": "uvRotation.modified",
+      "type": "modified_dot",
+      "parent": "uvRotation",
+      "rect": {
+        "x": 0,
+        "y": 12,
+        "width": 4,
+        "height": 4,
+        "units": "px"
+      },
+      "label": "",
+      "typography": "typography.number",
+      "colors": {
+        "background": "modified"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "visibleWhen": "document.uvRotation differs from defaults.uvRotation",
+      "nativeControlId": null
+    },
+    {
+      "id": "uvRotation.value",
+      "type": "numeric",
+      "parent": "uvRotation",
+      "rect": {
+        "x": 188,
+        "y": 0,
+        "width": 76,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Rotation",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "input",
+        "border": "border"
+      },
+      "icon": null,
+      "action": "property.set.uvRotation",
+      "enabled": true,
+      "binding": "Document.uvRotation",
+      "range": [
+        -180,
+        180
+      ],
+      "decimals": 1,
+      "unit": "°",
+      "enabledWhen": "true",
+      "nativeControlId": "uvRotation.value"
+    },
+    {
+      "id": "uvRotation.slider",
+      "type": "slider",
+      "parent": "uvRotation",
+      "rect": {
+        "x": 0,
+        "y": 31,
+        "width": 264,
+        "height": 16,
+        "units": "px"
+      },
+      "label": "Rotation",
+      "typography": "typography.number",
+      "colors": {
+        "track": "sliderTrack",
+        "fill": "focus",
+        "thumb": "sliderThumb"
+      },
+      "icon": null,
+      "action": "property.set.uvRotation",
+      "enabled": true,
+      "binding": "Document.uvRotation",
+      "range": [
+        -180,
+        180
+      ],
+      "trackRect": {
+        "x": 0,
+        "y": 6,
+        "width": 264,
+        "height": 3
+      },
+      "thumbSize": [
+        7,
+        11
+      ],
+      "enabledWhen": "true",
+      "nativeControlId": "uvRotation.slider"
+    },
+    {
+      "id": "uvRotation.reset",
+      "type": "icon_button",
+      "parent": "uvRotation",
+      "rect": {
+        "x": 272,
+        "y": 0,
+        "width": 22,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Reset Rotation",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": "reset",
+      "action": "property.reset.uvRotation",
+      "enabled": false,
+      "enabledWhen": "(true) && document.uvRotation differs from defaults.uvRotation",
+      "nativeControlId": "uvRotation.reset"
+    },
+    {
+      "id": "tiling",
+      "type": "checkbox_row",
+      "parent": "section.uv.body",
+      "rect": {
+        "x": 0,
+        "y": 174,
+        "width": 294,
+        "height": 29,
+        "units": "px"
+      },
+      "label": "Repeat textures",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "input",
+        "border": "hoverBorder",
+        "checked": "focus"
+      },
+      "icon": "check",
+      "action": "property.set.tiling",
+      "enabled": true,
+      "binding": "Document.tiling",
+      "default": true,
+      "checkboxRect": {
+        "x": 280,
+        "y": 7,
+        "width": 14,
+        "height": 14
+      },
+      "nativeControlId": "tiling"
+    },
+    {
+      "id": "section.transparency",
+      "type": "section",
+      "parent": "scroll",
+      "rect": {
+        "x": 12,
+        "y": 774,
+        "width": 294,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Transparency",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "tab": "properties",
+      "defaultExpanded": false,
+      "expandedBinding": "InspectorState.sections[5]",
+      "heightExpanded": 136,
+      "heightCollapsed": 28,
+      "flowMarginBefore": 8,
+      "nativeControlId": null
+    },
+    {
+      "id": "section.transparency.header",
+      "type": "section_header",
+      "parent": "section.transparency",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 294,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Transparency",
+      "typography": "typography.section",
+      "colors": {
+        "text": "text",
+        "background": "raised"
+      },
+      "icon": "chevron_right",
+      "action": "section.toggle.transparency",
+      "enabled": true,
+      "iconExpanded": "chevron_down",
+      "iconCollapsed": "chevron_right",
+      "caption": "",
+      "nativeControlId": "section.transparency"
+    },
+    {
+      "id": "section.transparency.body",
+      "type": "section_body",
+      "parent": "section.transparency",
+      "rect": {
+        "x": 0,
+        "y": 38,
+        "width": 294,
+        "height": 96,
+        "units": "px"
+      },
+      "label": "Transparency",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "visible": false,
+      "visibleWhen": "Section is expanded, or current search matches its title/keyword list.",
+      "nativeControlId": null
+    },
+    {
+      "id": "opacity",
+      "type": "scalar",
+      "parent": "section.transparency.body",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 294,
+        "height": 48,
+        "units": "px"
+      },
+      "label": "Opacity",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": false,
+      "binding": "Document.opacity",
+      "default": 1,
+      "range": [
+        0,
+        1
+      ],
+      "decimals": 3,
+      "unit": "",
+      "enabledWhen": "document.shader == 1 || document.shader == 2",
+      "disabledReason": "Opacity belongs to Cutout and Transparent data.",
+      "nativeControlId": null
+    },
+    {
+      "id": "opacity.label",
+      "type": "label",
+      "parent": "opacity",
+      "rect": {
+        "x": 10,
+        "y": 0,
+        "width": 170,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Opacity",
+      "typography": "typography.sizePx",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "nativeControlId": null
+    },
+    {
+      "id": "opacity.modified",
+      "type": "modified_dot",
+      "parent": "opacity",
+      "rect": {
+        "x": 0,
+        "y": 12,
+        "width": 4,
+        "height": 4,
+        "units": "px"
+      },
+      "label": "",
+      "typography": "typography.number",
+      "colors": {
+        "background": "modified"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "visibleWhen": "document.opacity differs from defaults.opacity",
+      "nativeControlId": null
+    },
+    {
+      "id": "opacity.value",
+      "type": "numeric",
+      "parent": "opacity",
+      "rect": {
+        "x": 188,
+        "y": 0,
+        "width": 76,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Opacity",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "input",
+        "border": "border"
+      },
+      "icon": null,
+      "action": "property.set.opacity",
+      "enabled": false,
+      "binding": "Document.opacity",
+      "range": [
+        0,
+        1
+      ],
+      "decimals": 3,
+      "unit": "",
+      "enabledWhen": "document.shader == 1 || document.shader == 2",
+      "nativeControlId": "opacity.value"
+    },
+    {
+      "id": "opacity.slider",
+      "type": "slider",
+      "parent": "opacity",
+      "rect": {
+        "x": 0,
+        "y": 31,
+        "width": 264,
+        "height": 16,
+        "units": "px"
+      },
+      "label": "Opacity",
+      "typography": "typography.number",
+      "colors": {
+        "track": "sliderTrack",
+        "fill": "focus",
+        "thumb": "sliderThumb"
+      },
+      "icon": null,
+      "action": "property.set.opacity",
+      "enabled": false,
+      "binding": "Document.opacity",
+      "range": [
+        0,
+        1
+      ],
+      "trackRect": {
+        "x": 0,
+        "y": 6,
+        "width": 264,
+        "height": 3
+      },
+      "thumbSize": [
+        7,
+        11
+      ],
+      "enabledWhen": "document.shader == 1 || document.shader == 2",
+      "nativeControlId": "opacity.slider"
+    },
+    {
+      "id": "opacity.reset",
+      "type": "icon_button",
+      "parent": "opacity",
+      "rect": {
+        "x": 272,
+        "y": 0,
+        "width": 22,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Reset Opacity",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": "reset",
+      "action": "property.reset.opacity",
+      "enabled": false,
+      "enabledWhen": "(document.shader == 1 || document.shader == 2) && document.opacity differs from defaults.opacity",
+      "nativeControlId": "opacity.reset"
+    },
+    {
+      "id": "ior",
+      "type": "scalar",
+      "parent": "section.transparency.body",
+      "rect": {
+        "x": 0,
+        "y": 48,
+        "width": 294,
+        "height": 48,
+        "units": "px"
+      },
+      "label": "Index of refraction",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "binding": "Document.ior",
+      "default": 1.5,
+      "range": [
+        1,
+        2.5
+      ],
+      "decimals": 2,
+      "unit": "",
+      "enabledWhen": "true",
+      "disabledReason": null,
+      "nativeControlId": null
+    },
+    {
+      "id": "ior.label",
+      "type": "label",
+      "parent": "ior",
+      "rect": {
+        "x": 10,
+        "y": 0,
+        "width": 170,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Index of refraction",
+      "typography": "typography.sizePx",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "nativeControlId": null
+    },
+    {
+      "id": "ior.modified",
+      "type": "modified_dot",
+      "parent": "ior",
+      "rect": {
+        "x": 0,
+        "y": 12,
+        "width": 4,
+        "height": 4,
+        "units": "px"
+      },
+      "label": "",
+      "typography": "typography.number",
+      "colors": {
+        "background": "modified"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "visibleWhen": "document.ior differs from defaults.ior",
+      "nativeControlId": null
+    },
+    {
+      "id": "ior.value",
+      "type": "numeric",
+      "parent": "ior",
+      "rect": {
+        "x": 188,
+        "y": 0,
+        "width": 76,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Index of refraction",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "input",
+        "border": "border"
+      },
+      "icon": null,
+      "action": "property.set.ior",
+      "enabled": true,
+      "binding": "Document.ior",
+      "range": [
+        1,
+        2.5
+      ],
+      "decimals": 2,
+      "unit": "",
+      "enabledWhen": "true",
+      "nativeControlId": "ior.value"
+    },
+    {
+      "id": "ior.slider",
+      "type": "slider",
+      "parent": "ior",
+      "rect": {
+        "x": 0,
+        "y": 31,
+        "width": 264,
+        "height": 16,
+        "units": "px"
+      },
+      "label": "Index of refraction",
+      "typography": "typography.number",
+      "colors": {
+        "track": "sliderTrack",
+        "fill": "focus",
+        "thumb": "sliderThumb"
+      },
+      "icon": null,
+      "action": "property.set.ior",
+      "enabled": true,
+      "binding": "Document.ior",
+      "range": [
+        1,
+        2.5
+      ],
+      "trackRect": {
+        "x": 0,
+        "y": 6,
+        "width": 264,
+        "height": 3
+      },
+      "thumbSize": [
+        7,
+        11
+      ],
+      "enabledWhen": "true",
+      "nativeControlId": "ior.slider"
+    },
+    {
+      "id": "ior.reset",
+      "type": "icon_button",
+      "parent": "ior",
+      "rect": {
+        "x": 272,
+        "y": 0,
+        "width": 22,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Reset Index of refraction",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": "reset",
+      "action": "property.reset.ior",
+      "enabled": false,
+      "enabledWhen": "(true) && document.ior differs from defaults.ior",
+      "nativeControlId": "ior.reset"
+    },
+    {
+      "id": "section.rendering",
+      "type": "section",
+      "parent": "scroll",
+      "rect": {
+        "x": 12,
+        "y": 810,
+        "width": 294,
+        "height": 127,
+        "units": "px"
+      },
+      "label": "Rendering",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "tab": "properties",
+      "defaultExpanded": true,
+      "expandedBinding": "InspectorState.sections[6]",
+      "heightExpanded": 127,
+      "heightCollapsed": 28,
+      "flowMarginBefore": 8,
+      "nativeControlId": null
+    },
+    {
+      "id": "section.rendering.header",
+      "type": "section_header",
+      "parent": "section.rendering",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 294,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Rendering",
+      "typography": "typography.section",
+      "colors": {
+        "text": "text",
+        "background": "raised"
+      },
+      "icon": "chevron_down",
+      "action": "section.toggle.rendering",
+      "enabled": true,
+      "iconExpanded": "chevron_down",
+      "iconCollapsed": "chevron_right",
+      "caption": "",
+      "nativeControlId": "section.rendering"
+    },
+    {
+      "id": "section.rendering.body",
+      "type": "section_body",
+      "parent": "section.rendering",
+      "rect": {
+        "x": 0,
+        "y": 38,
+        "width": 294,
+        "height": 87,
+        "units": "px"
+      },
+      "label": "Rendering",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "visible": true,
+      "visibleWhen": "Section is expanded, or current search matches its title/keyword list.",
+      "nativeControlId": null
+    },
+    {
+      "id": "twoSided",
+      "type": "checkbox_row",
+      "parent": "section.rendering.body",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 294,
+        "height": 29,
+        "units": "px"
+      },
+      "label": "Two sided",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "input",
+        "border": "hoverBorder",
+        "checked": "focus"
+      },
+      "icon": "check",
+      "action": "property.set.twoSided",
+      "enabled": true,
+      "binding": "Document.twoSided",
+      "default": false,
+      "checkboxRect": {
+        "x": 280,
+        "y": 7,
+        "width": 14,
+        "height": 14
+      },
+      "nativeControlId": "twoSided"
+    },
+    {
+      "id": "castShadows",
+      "type": "checkbox_row",
+      "parent": "section.rendering.body",
+      "rect": {
+        "x": 0,
+        "y": 29,
+        "width": 294,
+        "height": 29,
+        "units": "px"
+      },
+      "label": "Cast shadows",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "input",
+        "border": "hoverBorder",
+        "checked": "focus"
+      },
+      "icon": "check",
+      "action": "property.set.castShadows",
+      "enabled": true,
+      "binding": "Document.castShadows",
+      "default": true,
+      "checkboxRect": {
+        "x": 280,
+        "y": 7,
+        "width": 14,
+        "height": 14
+      },
+      "nativeControlId": "castShadows"
+    },
+    {
+      "id": "receiveShadows",
+      "type": "checkbox_row",
+      "parent": "section.rendering.body",
+      "rect": {
+        "x": 0,
+        "y": 58,
+        "width": 294,
+        "height": 29,
+        "units": "px"
+      },
+      "label": "Receive shadows",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "input",
+        "border": "hoverBorder",
+        "checked": "focus"
+      },
+      "icon": "check",
+      "action": "property.set.receiveShadows",
+      "enabled": true,
+      "binding": "Document.receiveShadows",
+      "default": true,
+      "checkboxRect": {
+        "x": 280,
+        "y": 7,
+        "width": 14,
+        "height": 14
+      },
+      "nativeControlId": "receiveShadows"
+    },
+    {
+      "id": "section.studio",
+      "type": "section",
+      "parent": "scroll",
+      "rect": {
+        "x": 12,
+        "y": 8,
+        "width": 294,
+        "height": 372,
+        "units": "px"
+      },
+      "label": "Lighting",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "tab": "stage",
+      "defaultExpanded": true,
+      "expandedBinding": "InspectorState.sections[7]",
+      "heightExpanded": 372,
+      "heightCollapsed": 28,
+      "flowMarginBefore": 8,
+      "nativeControlId": null
+    },
+    {
+      "id": "section.studio.header",
+      "type": "section_header",
+      "parent": "section.studio",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 294,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Lighting",
+      "typography": "typography.section",
+      "colors": {
+        "text": "text",
+        "background": "raised"
+      },
+      "icon": "chevron_down",
+      "action": "section.toggle.studio",
+      "enabled": true,
+      "iconExpanded": "chevron_down",
+      "iconCollapsed": "chevron_right",
+      "caption": "",
+      "nativeControlId": "section.studio"
+    },
+    {
+      "id": "section.studio.body",
+      "type": "section_body",
+      "parent": "section.studio",
+      "rect": {
+        "x": 0,
+        "y": 38,
+        "width": 294,
+        "height": 332,
+        "units": "px"
+      },
+      "label": "Lighting",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "visible": true,
+      "visibleWhen": "Section is expanded, or current search matches its title/keyword list.",
+      "nativeControlId": null
+    },
+    {
+      "id": "environment.row",
+      "type": "combo_row",
+      "parent": "section.studio.body",
+      "rect": {
+        "x": 0,
+        "y": 8,
+        "width": 294,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Environment",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "binding": "Document.environment",
+      "nativeControlId": null
+    },
+    {
+      "id": "environment.label",
+      "type": "label",
+      "parent": "environment.row",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 106,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Environment",
+      "typography": "typography.sizePx",
+      "colors": {
+        "text": "secondaryText"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "nativeControlId": null
+    },
+    {
+      "id": "environment",
+      "type": "combo",
+      "parent": "environment.row",
+      "rect": {
+        "x": 116,
+        "y": 0,
+        "width": 178,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Environment",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "input",
+        "border": "border"
+      },
+      "icon": "chevron_down",
+      "action": "property.set.environment",
+      "enabled": true,
+      "binding": "Document.environment",
+      "options": [
+        "Studio",
+        "Sunset",
+        "Warehouse"
+      ],
+      "default": 0,
+      "nativeControlId": "environment"
+    },
+    {
+      "id": "environmentRotation",
+      "type": "scalar",
+      "parent": "section.studio.body",
+      "rect": {
+        "x": 0,
+        "y": 44,
+        "width": 294,
+        "height": 48,
+        "units": "px"
+      },
+      "label": "Environment rotation",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "binding": "Document.environmentRotation",
+      "default": 0,
+      "range": [
+        -180,
+        180
+      ],
+      "decimals": 0,
+      "unit": "°",
+      "enabledWhen": "true",
+      "disabledReason": null,
+      "nativeControlId": null
+    },
+    {
+      "id": "environmentRotation.label",
+      "type": "label",
+      "parent": "environmentRotation",
+      "rect": {
+        "x": 10,
+        "y": 0,
+        "width": 170,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Environment rotation",
+      "typography": "typography.sizePx",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "nativeControlId": null
+    },
+    {
+      "id": "environmentRotation.modified",
+      "type": "modified_dot",
+      "parent": "environmentRotation",
+      "rect": {
+        "x": 0,
+        "y": 12,
+        "width": 4,
+        "height": 4,
+        "units": "px"
+      },
+      "label": "",
+      "typography": "typography.number",
+      "colors": {
+        "background": "modified"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "visibleWhen": "document.environmentRotation differs from defaults.environmentRotation",
+      "nativeControlId": null
+    },
+    {
+      "id": "environmentRotation.value",
+      "type": "numeric",
+      "parent": "environmentRotation",
+      "rect": {
+        "x": 188,
+        "y": 0,
+        "width": 76,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Environment rotation",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "input",
+        "border": "border"
+      },
+      "icon": null,
+      "action": "property.set.environmentRotation",
+      "enabled": true,
+      "binding": "Document.environmentRotation",
+      "range": [
+        -180,
+        180
+      ],
+      "decimals": 0,
+      "unit": "°",
+      "enabledWhen": "true",
+      "nativeControlId": "environmentRotation.value"
+    },
+    {
+      "id": "environmentRotation.slider",
+      "type": "slider",
+      "parent": "environmentRotation",
+      "rect": {
+        "x": 0,
+        "y": 31,
+        "width": 264,
+        "height": 16,
+        "units": "px"
+      },
+      "label": "Environment rotation",
+      "typography": "typography.number",
+      "colors": {
+        "track": "sliderTrack",
+        "fill": "focus",
+        "thumb": "sliderThumb"
+      },
+      "icon": null,
+      "action": "property.set.environmentRotation",
+      "enabled": true,
+      "binding": "Document.environmentRotation",
+      "range": [
+        -180,
+        180
+      ],
+      "trackRect": {
+        "x": 0,
+        "y": 6,
+        "width": 264,
+        "height": 3
+      },
+      "thumbSize": [
+        7,
+        11
+      ],
+      "enabledWhen": "true",
+      "nativeControlId": "environmentRotation.slider"
+    },
+    {
+      "id": "environmentRotation.reset",
+      "type": "icon_button",
+      "parent": "environmentRotation",
+      "rect": {
+        "x": 272,
+        "y": 0,
+        "width": 22,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Reset Environment rotation",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": "reset",
+      "action": "property.reset.environmentRotation",
+      "enabled": false,
+      "enabledWhen": "(true) && document.environmentRotation differs from defaults.environmentRotation",
+      "nativeControlId": "environmentRotation.reset"
+    },
+    {
+      "id": "exposure",
+      "type": "scalar",
+      "parent": "section.studio.body",
+      "rect": {
+        "x": 0,
+        "y": 92,
+        "width": 294,
+        "height": 48,
+        "units": "px"
+      },
+      "label": "Exposure",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "binding": "Document.exposure",
+      "default": 0,
+      "range": [
+        -3,
+        3
+      ],
+      "decimals": 2,
+      "unit": "EV",
+      "enabledWhen": "true",
+      "disabledReason": null,
+      "nativeControlId": null
+    },
+    {
+      "id": "exposure.label",
+      "type": "label",
+      "parent": "exposure",
+      "rect": {
+        "x": 10,
+        "y": 0,
+        "width": 170,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Exposure",
+      "typography": "typography.sizePx",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "nativeControlId": null
+    },
+    {
+      "id": "exposure.modified",
+      "type": "modified_dot",
+      "parent": "exposure",
+      "rect": {
+        "x": 0,
+        "y": 12,
+        "width": 4,
+        "height": 4,
+        "units": "px"
+      },
+      "label": "",
+      "typography": "typography.number",
+      "colors": {
+        "background": "modified"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "visibleWhen": "document.exposure differs from defaults.exposure",
+      "nativeControlId": null
+    },
+    {
+      "id": "exposure.value",
+      "type": "numeric",
+      "parent": "exposure",
+      "rect": {
+        "x": 188,
+        "y": 0,
+        "width": 76,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Exposure",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "input",
+        "border": "border"
+      },
+      "icon": null,
+      "action": "property.set.exposure",
+      "enabled": true,
+      "binding": "Document.exposure",
+      "range": [
+        -3,
+        3
+      ],
+      "decimals": 2,
+      "unit": "EV",
+      "enabledWhen": "true",
+      "nativeControlId": "exposure.value"
+    },
+    {
+      "id": "exposure.slider",
+      "type": "slider",
+      "parent": "exposure",
+      "rect": {
+        "x": 0,
+        "y": 31,
+        "width": 264,
+        "height": 16,
+        "units": "px"
+      },
+      "label": "Exposure",
+      "typography": "typography.number",
+      "colors": {
+        "track": "sliderTrack",
+        "fill": "focus",
+        "thumb": "sliderThumb"
+      },
+      "icon": null,
+      "action": "property.set.exposure",
+      "enabled": true,
+      "binding": "Document.exposure",
+      "range": [
+        -3,
+        3
+      ],
+      "trackRect": {
+        "x": 0,
+        "y": 6,
+        "width": 264,
+        "height": 3
+      },
+      "thumbSize": [
+        7,
+        11
+      ],
+      "enabledWhen": "true",
+      "nativeControlId": "exposure.slider"
+    },
+    {
+      "id": "exposure.reset",
+      "type": "icon_button",
+      "parent": "exposure",
+      "rect": {
+        "x": 272,
+        "y": 0,
+        "width": 22,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Reset Exposure",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": "reset",
+      "action": "property.reset.exposure",
+      "enabled": false,
+      "enabledWhen": "(true) && document.exposure differs from defaults.exposure",
+      "nativeControlId": "exposure.reset"
+    },
+    {
+      "id": "intensity",
+      "type": "scalar",
+      "parent": "section.studio.body",
+      "rect": {
+        "x": 0,
+        "y": 140,
+        "width": 294,
+        "height": 48,
+        "units": "px"
+      },
+      "label": "Environment intensity",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "binding": "Document.intensity",
+      "default": 1,
+      "range": [
+        0.1,
+        3
+      ],
+      "decimals": 2,
+      "unit": "",
+      "enabledWhen": "true",
+      "disabledReason": null,
+      "nativeControlId": null
+    },
+    {
+      "id": "intensity.label",
+      "type": "label",
+      "parent": "intensity",
+      "rect": {
+        "x": 10,
+        "y": 0,
+        "width": 170,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Environment intensity",
+      "typography": "typography.sizePx",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "nativeControlId": null
+    },
+    {
+      "id": "intensity.modified",
+      "type": "modified_dot",
+      "parent": "intensity",
+      "rect": {
+        "x": 0,
+        "y": 12,
+        "width": 4,
+        "height": 4,
+        "units": "px"
+      },
+      "label": "",
+      "typography": "typography.number",
+      "colors": {
+        "background": "modified"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "visibleWhen": "document.intensity differs from defaults.intensity",
+      "nativeControlId": null
+    },
+    {
+      "id": "intensity.value",
+      "type": "numeric",
+      "parent": "intensity",
+      "rect": {
+        "x": 188,
+        "y": 0,
+        "width": 76,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Environment intensity",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "input",
+        "border": "border"
+      },
+      "icon": null,
+      "action": "property.set.intensity",
+      "enabled": true,
+      "binding": "Document.intensity",
+      "range": [
+        0.1,
+        3
+      ],
+      "decimals": 2,
+      "unit": "",
+      "enabledWhen": "true",
+      "nativeControlId": "intensity.value"
+    },
+    {
+      "id": "intensity.slider",
+      "type": "slider",
+      "parent": "intensity",
+      "rect": {
+        "x": 0,
+        "y": 31,
+        "width": 264,
+        "height": 16,
+        "units": "px"
+      },
+      "label": "Environment intensity",
+      "typography": "typography.number",
+      "colors": {
+        "track": "sliderTrack",
+        "fill": "focus",
+        "thumb": "sliderThumb"
+      },
+      "icon": null,
+      "action": "property.set.intensity",
+      "enabled": true,
+      "binding": "Document.intensity",
+      "range": [
+        0.1,
+        3
+      ],
+      "trackRect": {
+        "x": 0,
+        "y": 6,
+        "width": 264,
+        "height": 3
+      },
+      "thumbSize": [
+        7,
+        11
+      ],
+      "enabledWhen": "true",
+      "nativeControlId": "intensity.slider"
+    },
+    {
+      "id": "intensity.reset",
+      "type": "icon_button",
+      "parent": "intensity",
+      "rect": {
+        "x": 272,
+        "y": 0,
+        "width": 22,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Reset Environment intensity",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": "reset",
+      "action": "property.reset.intensity",
+      "enabled": false,
+      "enabledWhen": "(true) && document.intensity differs from defaults.intensity",
+      "nativeControlId": "intensity.reset"
+    },
+    {
+      "id": "keyIntensity",
+      "type": "scalar",
+      "parent": "section.studio.body",
+      "rect": {
+        "x": 0,
+        "y": 188,
+        "width": 294,
+        "height": 48,
+        "units": "px"
+      },
+      "label": "Key light",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "binding": "Document.keyIntensity",
+      "default": 1,
+      "range": [
+        0,
+        3
+      ],
+      "decimals": 2,
+      "unit": "",
+      "enabledWhen": "true",
+      "disabledReason": null,
+      "nativeControlId": null
+    },
+    {
+      "id": "keyIntensity.label",
+      "type": "label",
+      "parent": "keyIntensity",
+      "rect": {
+        "x": 10,
+        "y": 0,
+        "width": 170,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Key light",
+      "typography": "typography.sizePx",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "nativeControlId": null
+    },
+    {
+      "id": "keyIntensity.modified",
+      "type": "modified_dot",
+      "parent": "keyIntensity",
+      "rect": {
+        "x": 0,
+        "y": 12,
+        "width": 4,
+        "height": 4,
+        "units": "px"
+      },
+      "label": "",
+      "typography": "typography.number",
+      "colors": {
+        "background": "modified"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "visibleWhen": "document.keyIntensity differs from defaults.keyIntensity",
+      "nativeControlId": null
+    },
+    {
+      "id": "keyIntensity.value",
+      "type": "numeric",
+      "parent": "keyIntensity",
+      "rect": {
+        "x": 188,
+        "y": 0,
+        "width": 76,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Key light",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "input",
+        "border": "border"
+      },
+      "icon": null,
+      "action": "property.set.keyIntensity",
+      "enabled": true,
+      "binding": "Document.keyIntensity",
+      "range": [
+        0,
+        3
+      ],
+      "decimals": 2,
+      "unit": "",
+      "enabledWhen": "true",
+      "nativeControlId": "keyIntensity.value"
+    },
+    {
+      "id": "keyIntensity.slider",
+      "type": "slider",
+      "parent": "keyIntensity",
+      "rect": {
+        "x": 0,
+        "y": 31,
+        "width": 264,
+        "height": 16,
+        "units": "px"
+      },
+      "label": "Key light",
+      "typography": "typography.number",
+      "colors": {
+        "track": "sliderTrack",
+        "fill": "focus",
+        "thumb": "sliderThumb"
+      },
+      "icon": null,
+      "action": "property.set.keyIntensity",
+      "enabled": true,
+      "binding": "Document.keyIntensity",
+      "range": [
+        0,
+        3
+      ],
+      "trackRect": {
+        "x": 0,
+        "y": 6,
+        "width": 264,
+        "height": 3
+      },
+      "thumbSize": [
+        7,
+        11
+      ],
+      "enabledWhen": "true",
+      "nativeControlId": "keyIntensity.slider"
+    },
+    {
+      "id": "keyIntensity.reset",
+      "type": "icon_button",
+      "parent": "keyIntensity",
+      "rect": {
+        "x": 272,
+        "y": 0,
+        "width": 22,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Reset Key light",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": "reset",
+      "action": "property.reset.keyIntensity",
+      "enabled": false,
+      "enabledWhen": "(true) && document.keyIntensity differs from defaults.keyIntensity",
+      "nativeControlId": "keyIntensity.reset"
+    },
+    {
+      "id": "fillIntensity",
+      "type": "scalar",
+      "parent": "section.studio.body",
+      "rect": {
+        "x": 0,
+        "y": 236,
+        "width": 294,
+        "height": 48,
+        "units": "px"
+      },
+      "label": "Fill light",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "binding": "Document.fillIntensity",
+      "default": 0.65,
+      "range": [
+        0,
+        3
+      ],
+      "decimals": 2,
+      "unit": "",
+      "enabledWhen": "true",
+      "disabledReason": null,
+      "nativeControlId": null
+    },
+    {
+      "id": "fillIntensity.label",
+      "type": "label",
+      "parent": "fillIntensity",
+      "rect": {
+        "x": 10,
+        "y": 0,
+        "width": 170,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Fill light",
+      "typography": "typography.sizePx",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "nativeControlId": null
+    },
+    {
+      "id": "fillIntensity.modified",
+      "type": "modified_dot",
+      "parent": "fillIntensity",
+      "rect": {
+        "x": 0,
+        "y": 12,
+        "width": 4,
+        "height": 4,
+        "units": "px"
+      },
+      "label": "",
+      "typography": "typography.number",
+      "colors": {
+        "background": "modified"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "visibleWhen": "document.fillIntensity differs from defaults.fillIntensity",
+      "nativeControlId": null
+    },
+    {
+      "id": "fillIntensity.value",
+      "type": "numeric",
+      "parent": "fillIntensity",
+      "rect": {
+        "x": 188,
+        "y": 0,
+        "width": 76,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Fill light",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "input",
+        "border": "border"
+      },
+      "icon": null,
+      "action": "property.set.fillIntensity",
+      "enabled": true,
+      "binding": "Document.fillIntensity",
+      "range": [
+        0,
+        3
+      ],
+      "decimals": 2,
+      "unit": "",
+      "enabledWhen": "true",
+      "nativeControlId": "fillIntensity.value"
+    },
+    {
+      "id": "fillIntensity.slider",
+      "type": "slider",
+      "parent": "fillIntensity",
+      "rect": {
+        "x": 0,
+        "y": 31,
+        "width": 264,
+        "height": 16,
+        "units": "px"
+      },
+      "label": "Fill light",
+      "typography": "typography.number",
+      "colors": {
+        "track": "sliderTrack",
+        "fill": "focus",
+        "thumb": "sliderThumb"
+      },
+      "icon": null,
+      "action": "property.set.fillIntensity",
+      "enabled": true,
+      "binding": "Document.fillIntensity",
+      "range": [
+        0,
+        3
+      ],
+      "trackRect": {
+        "x": 0,
+        "y": 6,
+        "width": 264,
+        "height": 3
+      },
+      "thumbSize": [
+        7,
+        11
+      ],
+      "enabledWhen": "true",
+      "nativeControlId": "fillIntensity.slider"
+    },
+    {
+      "id": "fillIntensity.reset",
+      "type": "icon_button",
+      "parent": "fillIntensity",
+      "rect": {
+        "x": 272,
+        "y": 0,
+        "width": 22,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Reset Fill light",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": "reset",
+      "action": "property.reset.fillIntensity",
+      "enabled": false,
+      "enabledWhen": "(true) && document.fillIntensity differs from defaults.fillIntensity",
+      "nativeControlId": "fillIntensity.reset"
+    },
+    {
+      "id": "rimIntensity",
+      "type": "scalar",
+      "parent": "section.studio.body",
+      "rect": {
+        "x": 0,
+        "y": 284,
+        "width": 294,
+        "height": 48,
+        "units": "px"
+      },
+      "label": "Rim light",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "binding": "Document.rimIntensity",
+      "default": 1,
+      "range": [
+        0,
+        3
+      ],
+      "decimals": 2,
+      "unit": "",
+      "enabledWhen": "true",
+      "disabledReason": null,
+      "nativeControlId": null
+    },
+    {
+      "id": "rimIntensity.label",
+      "type": "label",
+      "parent": "rimIntensity",
+      "rect": {
+        "x": 10,
+        "y": 0,
+        "width": 170,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Rim light",
+      "typography": "typography.sizePx",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "nativeControlId": null
+    },
+    {
+      "id": "rimIntensity.modified",
+      "type": "modified_dot",
+      "parent": "rimIntensity",
+      "rect": {
+        "x": 0,
+        "y": 12,
+        "width": 4,
+        "height": 4,
+        "units": "px"
+      },
+      "label": "",
+      "typography": "typography.number",
+      "colors": {
+        "background": "modified"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "visibleWhen": "document.rimIntensity differs from defaults.rimIntensity",
+      "nativeControlId": null
+    },
+    {
+      "id": "rimIntensity.value",
+      "type": "numeric",
+      "parent": "rimIntensity",
+      "rect": {
+        "x": 188,
+        "y": 0,
+        "width": 76,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Rim light",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "input",
+        "border": "border"
+      },
+      "icon": null,
+      "action": "property.set.rimIntensity",
+      "enabled": true,
+      "binding": "Document.rimIntensity",
+      "range": [
+        0,
+        3
+      ],
+      "decimals": 2,
+      "unit": "",
+      "enabledWhen": "true",
+      "nativeControlId": "rimIntensity.value"
+    },
+    {
+      "id": "rimIntensity.slider",
+      "type": "slider",
+      "parent": "rimIntensity",
+      "rect": {
+        "x": 0,
+        "y": 31,
+        "width": 264,
+        "height": 16,
+        "units": "px"
+      },
+      "label": "Rim light",
+      "typography": "typography.number",
+      "colors": {
+        "track": "sliderTrack",
+        "fill": "focus",
+        "thumb": "sliderThumb"
+      },
+      "icon": null,
+      "action": "property.set.rimIntensity",
+      "enabled": true,
+      "binding": "Document.rimIntensity",
+      "range": [
+        0,
+        3
+      ],
+      "trackRect": {
+        "x": 0,
+        "y": 6,
+        "width": 264,
+        "height": 3
+      },
+      "thumbSize": [
+        7,
+        11
+      ],
+      "enabledWhen": "true",
+      "nativeControlId": "rimIntensity.slider"
+    },
+    {
+      "id": "rimIntensity.reset",
+      "type": "icon_button",
+      "parent": "rimIntensity",
+      "rect": {
+        "x": 272,
+        "y": 0,
+        "width": 22,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Reset Rim light",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": "reset",
+      "action": "property.reset.rimIntensity",
+      "enabled": false,
+      "enabledWhen": "(true) && document.rimIntensity differs from defaults.rimIntensity",
+      "nativeControlId": "rimIntensity.reset"
+    },
+    {
+      "id": "section.camera",
+      "type": "section",
+      "parent": "scroll",
+      "rect": {
+        "x": 12,
+        "y": 388,
+        "width": 294,
+        "height": 271,
+        "units": "px"
+      },
+      "label": "Camera",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "tab": "stage",
+      "defaultExpanded": true,
+      "expandedBinding": "InspectorState.sections[8]",
+      "heightExpanded": 271,
+      "heightCollapsed": 28,
+      "flowMarginBefore": 8,
+      "nativeControlId": null
+    },
+    {
+      "id": "section.camera.header",
+      "type": "section_header",
+      "parent": "section.camera",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 294,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Camera",
+      "typography": "typography.section",
+      "colors": {
+        "text": "text",
+        "background": "raised"
+      },
+      "icon": "chevron_down",
+      "action": "section.toggle.camera",
+      "enabled": true,
+      "iconExpanded": "chevron_down",
+      "iconCollapsed": "chevron_right",
+      "caption": "",
+      "nativeControlId": "section.camera"
+    },
+    {
+      "id": "section.camera.body",
+      "type": "section_body",
+      "parent": "section.camera",
+      "rect": {
+        "x": 0,
+        "y": 38,
+        "width": 294,
+        "height": 231,
+        "units": "px"
+      },
+      "label": "Camera",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "visible": true,
+      "visibleWhen": "Section is expanded, or current search matches its title/keyword list.",
+      "nativeControlId": null
+    },
+    {
+      "id": "yaw",
+      "type": "scalar",
+      "parent": "section.camera.body",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 294,
+        "height": 48,
+        "units": "px"
+      },
+      "label": "Orbit",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "binding": "Document.yaw",
+      "default": 28,
+      "range": [
+        -180,
+        180
+      ],
+      "decimals": 1,
+      "unit": "°",
+      "enabledWhen": "true",
+      "disabledReason": null,
+      "nativeControlId": null
+    },
+    {
+      "id": "yaw.label",
+      "type": "label",
+      "parent": "yaw",
+      "rect": {
+        "x": 10,
+        "y": 0,
+        "width": 170,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Orbit",
+      "typography": "typography.sizePx",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "nativeControlId": null
+    },
+    {
+      "id": "yaw.modified",
+      "type": "modified_dot",
+      "parent": "yaw",
+      "rect": {
+        "x": 0,
+        "y": 12,
+        "width": 4,
+        "height": 4,
+        "units": "px"
+      },
+      "label": "",
+      "typography": "typography.number",
+      "colors": {
+        "background": "modified"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "visibleWhen": "document.yaw differs from defaults.yaw",
+      "nativeControlId": null
+    },
+    {
+      "id": "yaw.value",
+      "type": "numeric",
+      "parent": "yaw",
+      "rect": {
+        "x": 188,
+        "y": 0,
+        "width": 76,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Orbit",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "input",
+        "border": "border"
+      },
+      "icon": null,
+      "action": "property.set.yaw",
+      "enabled": true,
+      "binding": "Document.yaw",
+      "range": [
+        -180,
+        180
+      ],
+      "decimals": 1,
+      "unit": "°",
+      "enabledWhen": "true",
+      "nativeControlId": "yaw.value"
+    },
+    {
+      "id": "yaw.slider",
+      "type": "slider",
+      "parent": "yaw",
+      "rect": {
+        "x": 0,
+        "y": 31,
+        "width": 264,
+        "height": 16,
+        "units": "px"
+      },
+      "label": "Orbit",
+      "typography": "typography.number",
+      "colors": {
+        "track": "sliderTrack",
+        "fill": "focus",
+        "thumb": "sliderThumb"
+      },
+      "icon": null,
+      "action": "property.set.yaw",
+      "enabled": true,
+      "binding": "Document.yaw",
+      "range": [
+        -180,
+        180
+      ],
+      "trackRect": {
+        "x": 0,
+        "y": 6,
+        "width": 264,
+        "height": 3
+      },
+      "thumbSize": [
+        7,
+        11
+      ],
+      "enabledWhen": "true",
+      "nativeControlId": "yaw.slider"
+    },
+    {
+      "id": "yaw.reset",
+      "type": "icon_button",
+      "parent": "yaw",
+      "rect": {
+        "x": 272,
+        "y": 0,
+        "width": 22,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Reset Orbit",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": "reset",
+      "action": "property.reset.yaw",
+      "enabled": false,
+      "enabledWhen": "(true) && document.yaw differs from defaults.yaw",
+      "nativeControlId": "yaw.reset"
+    },
+    {
+      "id": "pitch",
+      "type": "scalar",
+      "parent": "section.camera.body",
+      "rect": {
+        "x": 0,
+        "y": 48,
+        "width": 294,
+        "height": 48,
+        "units": "px"
+      },
+      "label": "Elevation",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "binding": "Document.pitch",
+      "default": 12,
+      "range": [
+        -60,
+        60
+      ],
+      "decimals": 1,
+      "unit": "°",
+      "enabledWhen": "true",
+      "disabledReason": null,
+      "nativeControlId": null
+    },
+    {
+      "id": "pitch.label",
+      "type": "label",
+      "parent": "pitch",
+      "rect": {
+        "x": 10,
+        "y": 0,
+        "width": 170,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Elevation",
+      "typography": "typography.sizePx",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "nativeControlId": null
+    },
+    {
+      "id": "pitch.modified",
+      "type": "modified_dot",
+      "parent": "pitch",
+      "rect": {
+        "x": 0,
+        "y": 12,
+        "width": 4,
+        "height": 4,
+        "units": "px"
+      },
+      "label": "",
+      "typography": "typography.number",
+      "colors": {
+        "background": "modified"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "visibleWhen": "document.pitch differs from defaults.pitch",
+      "nativeControlId": null
+    },
+    {
+      "id": "pitch.value",
+      "type": "numeric",
+      "parent": "pitch",
+      "rect": {
+        "x": 188,
+        "y": 0,
+        "width": 76,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Elevation",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "input",
+        "border": "border"
+      },
+      "icon": null,
+      "action": "property.set.pitch",
+      "enabled": true,
+      "binding": "Document.pitch",
+      "range": [
+        -60,
+        60
+      ],
+      "decimals": 1,
+      "unit": "°",
+      "enabledWhen": "true",
+      "nativeControlId": "pitch.value"
+    },
+    {
+      "id": "pitch.slider",
+      "type": "slider",
+      "parent": "pitch",
+      "rect": {
+        "x": 0,
+        "y": 31,
+        "width": 264,
+        "height": 16,
+        "units": "px"
+      },
+      "label": "Elevation",
+      "typography": "typography.number",
+      "colors": {
+        "track": "sliderTrack",
+        "fill": "focus",
+        "thumb": "sliderThumb"
+      },
+      "icon": null,
+      "action": "property.set.pitch",
+      "enabled": true,
+      "binding": "Document.pitch",
+      "range": [
+        -60,
+        60
+      ],
+      "trackRect": {
+        "x": 0,
+        "y": 6,
+        "width": 264,
+        "height": 3
+      },
+      "thumbSize": [
+        7,
+        11
+      ],
+      "enabledWhen": "true",
+      "nativeControlId": "pitch.slider"
+    },
+    {
+      "id": "pitch.reset",
+      "type": "icon_button",
+      "parent": "pitch",
+      "rect": {
+        "x": 272,
+        "y": 0,
+        "width": 22,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Reset Elevation",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": "reset",
+      "action": "property.reset.pitch",
+      "enabled": false,
+      "enabledWhen": "(true) && document.pitch differs from defaults.pitch",
+      "nativeControlId": "pitch.reset"
+    },
+    {
+      "id": "distance",
+      "type": "scalar",
+      "parent": "section.camera.body",
+      "rect": {
+        "x": 0,
+        "y": 96,
+        "width": 294,
+        "height": 48,
+        "units": "px"
+      },
+      "label": "Distance",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "binding": "Document.distance",
+      "default": 3.7,
+      "range": [
+        1.7,
+        7
+      ],
+      "decimals": 2,
+      "unit": "m",
+      "enabledWhen": "true",
+      "disabledReason": null,
+      "nativeControlId": null
+    },
+    {
+      "id": "distance.label",
+      "type": "label",
+      "parent": "distance",
+      "rect": {
+        "x": 10,
+        "y": 0,
+        "width": 170,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Distance",
+      "typography": "typography.sizePx",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "nativeControlId": null
+    },
+    {
+      "id": "distance.modified",
+      "type": "modified_dot",
+      "parent": "distance",
+      "rect": {
+        "x": 0,
+        "y": 12,
+        "width": 4,
+        "height": 4,
+        "units": "px"
+      },
+      "label": "",
+      "typography": "typography.number",
+      "colors": {
+        "background": "modified"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "visibleWhen": "document.distance differs from defaults.distance",
+      "nativeControlId": null
+    },
+    {
+      "id": "distance.value",
+      "type": "numeric",
+      "parent": "distance",
+      "rect": {
+        "x": 188,
+        "y": 0,
+        "width": 76,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Distance",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "input",
+        "border": "border"
+      },
+      "icon": null,
+      "action": "property.set.distance",
+      "enabled": true,
+      "binding": "Document.distance",
+      "range": [
+        1.7,
+        7
+      ],
+      "decimals": 2,
+      "unit": "m",
+      "enabledWhen": "true",
+      "nativeControlId": "distance.value"
+    },
+    {
+      "id": "distance.slider",
+      "type": "slider",
+      "parent": "distance",
+      "rect": {
+        "x": 0,
+        "y": 31,
+        "width": 264,
+        "height": 16,
+        "units": "px"
+      },
+      "label": "Distance",
+      "typography": "typography.number",
+      "colors": {
+        "track": "sliderTrack",
+        "fill": "focus",
+        "thumb": "sliderThumb"
+      },
+      "icon": null,
+      "action": "property.set.distance",
+      "enabled": true,
+      "binding": "Document.distance",
+      "range": [
+        1.7,
+        7
+      ],
+      "trackRect": {
+        "x": 0,
+        "y": 6,
+        "width": 264,
+        "height": 3
+      },
+      "thumbSize": [
+        7,
+        11
+      ],
+      "enabledWhen": "true",
+      "nativeControlId": "distance.slider"
+    },
+    {
+      "id": "distance.reset",
+      "type": "icon_button",
+      "parent": "distance",
+      "rect": {
+        "x": 272,
+        "y": 0,
+        "width": 22,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Reset Distance",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": "reset",
+      "action": "property.reset.distance",
+      "enabled": false,
+      "enabledWhen": "(true) && document.distance differs from defaults.distance",
+      "nativeControlId": "distance.reset"
+    },
+    {
+      "id": "grid",
+      "type": "checkbox_row",
+      "parent": "section.camera.body",
+      "rect": {
+        "x": 0,
+        "y": 144,
+        "width": 294,
+        "height": 29,
+        "units": "px"
+      },
+      "label": "Ground grid",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "input",
+        "border": "hoverBorder",
+        "checked": "focus"
+      },
+      "icon": "check",
+      "action": "property.set.grid",
+      "enabled": true,
+      "binding": "Document.grid",
+      "default": true,
+      "checkboxRect": {
+        "x": 280,
+        "y": 7,
+        "width": 14,
+        "height": 14
+      },
+      "nativeControlId": "grid"
+    },
+    {
+      "id": "shadows",
+      "type": "checkbox_row",
+      "parent": "section.camera.body",
+      "rect": {
+        "x": 0,
+        "y": 173,
+        "width": 294,
+        "height": 29,
+        "units": "px"
+      },
+      "label": "Contact shadows",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "input",
+        "border": "hoverBorder",
+        "checked": "focus"
+      },
+      "icon": "check",
+      "action": "property.set.shadows",
+      "enabled": true,
+      "binding": "Document.shadows",
+      "default": true,
+      "checkboxRect": {
+        "x": 280,
+        "y": 7,
+        "width": 14,
+        "height": 14
+      },
+      "nativeControlId": "shadows"
+    },
+    {
+      "id": "turntable",
+      "type": "checkbox_row",
+      "parent": "section.camera.body",
+      "rect": {
+        "x": 0,
+        "y": 202,
+        "width": 294,
+        "height": 29,
+        "units": "px"
+      },
+      "label": "Turntable",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "input",
+        "border": "hoverBorder",
+        "checked": "focus"
+      },
+      "icon": "check",
+      "action": "property.set.turntable",
+      "enabled": true,
+      "binding": "Document.turntable",
+      "default": false,
+      "checkboxRect": {
+        "x": 280,
+        "y": 7,
+        "width": 14,
+        "height": 14
+      },
+      "nativeControlId": "turntable"
+    },
+    {
+      "id": "section.map",
+      "type": "section",
+      "parent": "scroll",
+      "rect": {
+        "x": 12,
+        "y": 8,
+        "width": 294,
+        "height": 408,
+        "units": "px"
+      },
+      "label": "Base Color map",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "tab": "texture",
+      "defaultExpanded": true,
+      "expandedBinding": "InspectorState.sections[9]",
+      "heightExpanded": 408,
+      "heightCollapsed": 28,
+      "flowMarginBefore": 8,
+      "nativeControlId": null
+    },
+    {
+      "id": "section.map.header",
+      "type": "section_header",
+      "parent": "section.map",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 294,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Base Color map",
+      "typography": "typography.section",
+      "colors": {
+        "text": "text",
+        "background": "raised"
+      },
+      "icon": "chevron_down",
+      "action": "section.toggle.map",
+      "enabled": true,
+      "iconExpanded": "chevron_down",
+      "iconCollapsed": "chevron_right",
+      "caption": "",
+      "nativeControlId": "section.map"
+    },
+    {
+      "id": "section.map.body",
+      "type": "section_body",
+      "parent": "section.map",
+      "rect": {
+        "x": 0,
+        "y": 38,
+        "width": 294,
+        "height": 370,
+        "units": "px"
+      },
+      "label": "Base Color map",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "visible": true,
+      "visibleWhen": "Section is expanded, or current search matches its title/keyword list.",
+      "nativeControlId": null
+    },
+    {
+      "id": "texture.symbol",
+      "type": "texture_placeholder",
+      "parent": "section.map.body",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 294,
+        "height": 144,
+        "units": "px"
+      },
+      "label": "Texture path data",
+      "typography": "typography.number",
+      "colors": {
+        "background": "input",
+        "border": "border",
+        "text": "secondaryText"
+      },
+      "icon": "image",
+      "action": null,
+      "enabled": true,
+      "rendering": "Symbolic checker/glyph. The standalone inspector does not decode or render texture images.",
+      "nativeControlId": null
+    },
+    {
+      "id": "texture.identity",
+      "type": "texture_identity",
+      "parent": "section.map.body",
+      "rect": {
+        "x": 0,
+        "y": 156,
+        "width": 294,
+        "height": 40,
+        "units": "px"
+      },
+      "label": "Assigned texture path",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "nativeControlId": null
+    },
+    {
+      "id": "texture.thumbnail",
+      "type": "texture_placeholder",
+      "parent": "texture.identity",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 40,
+        "height": 40,
+        "units": "px"
+      },
+      "label": "Texture symbol",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": "image",
+      "action": null,
+      "enabled": true,
+      "checker": true,
+      "nativeControlId": null
+    },
+    {
+      "id": "texture.name",
+      "type": "label",
+      "parent": "texture.identity",
+      "rect": {
+        "x": 50,
+        "y": 4,
+        "width": 184,
+        "height": 22,
+        "units": "px"
+      },
+      "label": "No texture assigned",
+      "typography": "typography.sizePx",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "binding": "Document.texturePath",
+      "overflow": "ellipsize filename; full UTF-8 path in tooltip",
+      "nativeControlId": null
+    },
+    {
+      "id": "texture.caption",
+      "type": "label",
+      "parent": "texture.identity",
+      "rect": {
+        "x": 50,
+        "y": 24,
+        "width": 184,
+        "height": 16,
+        "units": "px"
+      },
+      "label": "Base Color · RGB",
+      "typography": "typography.secondary",
+      "colors": {
+        "text": "secondaryText"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "binding": null,
+      "nativeControlId": null
+    },
+    {
+      "id": "texture.choose",
+      "type": "icon_button",
+      "parent": "texture.identity",
+      "rect": {
+        "x": 246,
+        "y": 5,
+        "width": 22,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Choose local texture",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": "folder_open",
+      "action": "texture.choose",
+      "enabled": true,
+      "nativeControlId": "texture.choose"
+    },
+    {
+      "id": "texture.clear",
+      "type": "icon_button",
+      "parent": "texture.identity",
+      "rect": {
+        "x": 272,
+        "y": 5,
+        "width": 22,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Clear texture path",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": "clear",
+      "action": "texture.clear",
+      "enabled": false,
+      "enabledWhen": "document.texturePath is not empty",
+      "nativeControlId": "texture.clear"
+    },
+    {
+      "id": "textureEnabled",
+      "type": "checkbox_row",
+      "parent": "section.map.body",
+      "rect": {
+        "x": 0,
+        "y": 204,
+        "width": 294,
+        "height": 29,
+        "units": "px"
+      },
+      "label": "Enable texture",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "input",
+        "border": "hoverBorder",
+        "checked": "focus"
+      },
+      "icon": "check",
+      "action": "property.set.textureEnabled",
+      "enabled": true,
+      "binding": "Document.textureEnabled",
+      "default": false,
+      "checkboxRect": {
+        "x": 280,
+        "y": 7,
+        "width": 14,
+        "height": 14
+      },
+      "nativeControlId": "textureEnabled"
+    },
+    {
+      "id": "textureStrength",
+      "type": "scalar",
+      "parent": "section.map.body",
+      "rect": {
+        "x": 0,
+        "y": 233,
+        "width": 294,
+        "height": 48,
+        "units": "px"
+      },
+      "label": "Texture strength",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": false,
+      "binding": "Document.textureStrength",
+      "default": 1,
+      "range": [
+        0,
+        1
+      ],
+      "decimals": 3,
+      "unit": "",
+      "enabledWhen": "document.textureEnabled && document.texturePath is not empty",
+      "disabledReason": "Choose and enable a texture path first.",
+      "nativeControlId": null
+    },
+    {
+      "id": "textureStrength.label",
+      "type": "label",
+      "parent": "textureStrength",
+      "rect": {
+        "x": 10,
+        "y": 0,
+        "width": 170,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Texture strength",
+      "typography": "typography.sizePx",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "nativeControlId": null
+    },
+    {
+      "id": "textureStrength.modified",
+      "type": "modified_dot",
+      "parent": "textureStrength",
+      "rect": {
+        "x": 0,
+        "y": 12,
+        "width": 4,
+        "height": 4,
+        "units": "px"
+      },
+      "label": "",
+      "typography": "typography.number",
+      "colors": {
+        "background": "modified"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "visibleWhen": "document.textureStrength differs from defaults.textureStrength",
+      "nativeControlId": null
+    },
+    {
+      "id": "textureStrength.value",
+      "type": "numeric",
+      "parent": "textureStrength",
+      "rect": {
+        "x": 188,
+        "y": 0,
+        "width": 76,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Texture strength",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "input",
+        "border": "border"
+      },
+      "icon": null,
+      "action": "property.set.textureStrength",
+      "enabled": false,
+      "binding": "Document.textureStrength",
+      "range": [
+        0,
+        1
+      ],
+      "decimals": 3,
+      "unit": "",
+      "enabledWhen": "document.textureEnabled && document.texturePath is not empty",
+      "nativeControlId": "textureStrength.value"
+    },
+    {
+      "id": "textureStrength.slider",
+      "type": "slider",
+      "parent": "textureStrength",
+      "rect": {
+        "x": 0,
+        "y": 31,
+        "width": 264,
+        "height": 16,
+        "units": "px"
+      },
+      "label": "Texture strength",
+      "typography": "typography.number",
+      "colors": {
+        "track": "sliderTrack",
+        "fill": "focus",
+        "thumb": "sliderThumb"
+      },
+      "icon": null,
+      "action": "property.set.textureStrength",
+      "enabled": false,
+      "binding": "Document.textureStrength",
+      "range": [
+        0,
+        1
+      ],
+      "trackRect": {
+        "x": 0,
+        "y": 6,
+        "width": 264,
+        "height": 3
+      },
+      "thumbSize": [
+        7,
+        11
+      ],
+      "enabledWhen": "document.textureEnabled && document.texturePath is not empty",
+      "nativeControlId": "textureStrength.slider"
+    },
+    {
+      "id": "textureStrength.reset",
+      "type": "icon_button",
+      "parent": "textureStrength",
+      "rect": {
+        "x": 272,
+        "y": 0,
+        "width": 22,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Reset Texture strength",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": "reset",
+      "action": "property.reset.textureStrength",
+      "enabled": false,
+      "enabledWhen": "(document.textureEnabled && document.texturePath is not empty) && document.textureStrength differs from defaults.textureStrength",
+      "nativeControlId": "textureStrength.reset"
+    },
+    {
+      "id": "textureChannel.row",
+      "type": "combo_row",
+      "parent": "section.map.body",
+      "rect": {
+        "x": 0,
+        "y": 289,
+        "width": 294,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Channel",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "binding": "Document.textureChannel",
+      "nativeControlId": null
+    },
+    {
+      "id": "textureChannel.label",
+      "type": "label",
+      "parent": "textureChannel.row",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 106,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Channel",
+      "typography": "typography.sizePx",
+      "colors": {
+        "text": "secondaryText"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "nativeControlId": null
+    },
+    {
+      "id": "textureChannel",
+      "type": "combo",
+      "parent": "textureChannel.row",
+      "rect": {
+        "x": 116,
+        "y": 0,
+        "width": 178,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Channel",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "input",
+        "border": "border"
+      },
+      "icon": "chevron_down",
+      "action": "property.set.textureChannel",
+      "enabled": true,
+      "binding": "Document.textureChannel",
+      "options": [
+        "RGB",
+        "Red",
+        "Green",
+        "Blue",
+        "Alpha"
+      ],
+      "default": 0,
+      "nativeControlId": "textureChannel"
+    },
+    {
+      "id": "texture.path",
+      "type": "path_text",
+      "parent": "section.map.body",
+      "rect": {
+        "x": 0,
+        "y": 325,
+        "width": 294,
+        "height": 34,
+        "units": "px"
+      },
+      "label": "Default material value",
+      "typography": "typography.secondary",
+      "colors": {
+        "background": "input",
+        "border": "border",
+        "text": "secondaryText"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "binding": "Document.texturePath",
+      "wrap": true,
+      "nativeControlId": null,
+      "heightRule": "max(34, wrapped text height + 16)"
+    },
+    {
+      "id": "picker",
+      "type": "popover",
+      "parent": null,
+      "rect": {
+        "x": 16,
+        "y": 220,
+        "width": 310,
+        "height": 578,
+        "units": "px"
+      },
+      "label": "Color picker",
+      "typography": "typography.sizePx",
+      "colors": {
+        "background": "raised",
+        "border": "hoverBorder"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "coordinateSpace": "canvas; child rects picker-relative",
+      "visible": false,
+      "visibleWhen": "state.pickerOpen",
+      "placement": {
+        "anchor": "selected color swatch",
+        "preferredSide": "right, then left",
+        "gapPx": 10,
+        "clampTo": "8px horizontal inset; popup height min(578, clientHeight-24); y clamped to clientHeight-popupHeight-8",
+        "fallback": "overlay inspector if client width cannot fit alongside"
+      },
+      "radius": 6,
+      "nativeControlId": null
+    },
+    {
+      "id": "picker.header",
+      "type": "label",
+      "parent": "picker",
+      "rect": {
+        "x": 12,
+        "y": 10,
+        "width": 258,
+        "height": 20,
+        "units": "px"
+      },
+      "label": "Base Color",
+      "typography": "typography.section",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "binding": "InspectorState.pickerTarget",
+      "nativeControlId": null
+    },
+    {
+      "id": "picker.close",
+      "type": "icon_button",
+      "parent": "picker",
+      "rect": {
+        "x": 276,
+        "y": 4,
+        "width": 22,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Cancel and close",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": "clear",
+      "action": "picker.cancel",
+      "enabled": true,
+      "nativeControlId": "picker.close"
+    },
+    {
+      "id": "picker.rgb",
+      "type": "segment",
+      "parent": "picker",
+      "rect": {
+        "x": 12,
+        "y": 48,
+        "width": 49,
+        "height": 27,
+        "units": "px"
+      },
+      "label": "RGB",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": null,
+      "action": "picker.mode",
+      "enabled": true,
+      "payload": {
+        "mode": 0
+      },
+      "selected": true,
+      "nativeControlId": "picker.mode.rgb"
+    },
+    {
+      "id": "picker.hsv",
+      "type": "segment",
+      "parent": "picker",
+      "rect": {
+        "x": 61,
+        "y": 48,
+        "width": 49,
+        "height": 27,
+        "units": "px"
+      },
+      "label": "HSV",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": null,
+      "action": "picker.mode",
+      "enabled": true,
+      "payload": {
+        "mode": 1
+      },
+      "nativeControlId": "picker.mode.hsv"
+    },
+    {
+      "id": "picker.mode_caption",
+      "type": "label",
+      "parent": "picker",
+      "rect": {
+        "x": 188,
+        "y": 56,
+        "width": 110,
+        "height": 16,
+        "units": "px"
+      },
+      "label": "RGB · 0–255",
+      "typography": "typography.secondary",
+      "colors": {
+        "text": "secondaryText"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "nativeControlId": null
+    },
+    {
+      "id": "picker.sv",
+      "type": "saturation_value_plane",
+      "parent": "picker",
+      "rect": {
+        "x": 12,
+        "y": 85,
+        "width": 260,
+        "height": 177,
+        "units": "px"
+      },
+      "label": "Saturation and brightness",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": null,
+      "action": "picker.sv",
+      "enabled": true,
+      "range": {
+        "s": [
+          0,
+          100
+        ],
+        "v": [
+          0,
+          100
+        ]
+      },
+      "binding": "InspectorState.pickerHSV[1..2]",
+      "markerSizePx": 10,
+      "nativeControlId": "picker.sv",
+      "displayTransform": "pickerHSV[1..2] x 100; stored saturation/value are normalized 0..1"
+    },
+    {
+      "id": "picker.hue",
+      "type": "hue_strip",
+      "parent": "picker",
+      "rect": {
+        "x": 282,
+        "y": 85,
+        "width": 16,
+        "height": 177,
+        "units": "px"
+      },
+      "label": "Hue",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": null,
+      "action": "picker.hue",
+      "enabled": true,
+      "range": [
+        0,
+        360
+      ],
+      "binding": "InspectorState.pickerHSV[0]",
+      "markerHeightPx": 5,
+      "nativeControlId": "picker.hue",
+      "displayTransform": "pickerHSV[0] x 360; stored hue is normalized 0..1"
+    },
+    {
+      "id": "picker.alpha",
+      "type": "alpha_slider",
+      "parent": "picker",
+      "rect": {
+        "x": 32,
+        "y": 275,
+        "width": 215,
+        "height": 20,
+        "units": "px"
+      },
+      "label": "A",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": null,
+      "action": "picker.alpha",
+      "enabled": true,
+      "range": [
+        0,
+        100
+      ],
+      "checker": true,
+      "binding": "InspectorState.pickerDraft[3]",
+      "displayTransform": "value × 100",
+      "enabledWhen": "state.pickerTarget == 0",
+      "nativeControlId": "picker.alpha"
+    },
+    {
+      "id": "picker.alpha_value",
+      "type": "label",
+      "parent": "picker",
+      "rect": {
+        "x": 255,
+        "y": 275,
+        "width": 43,
+        "height": 20,
+        "units": "px"
+      },
+      "label": "100%",
+      "typography": "typography.secondary",
+      "colors": {
+        "text": "secondaryText"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "binding": "InspectorState.pickerDraft[3]",
+      "nativeControlId": null
+    },
+    {
+      "id": "picker.channel.0.label",
+      "type": "label",
+      "parent": "picker",
+      "rect": {
+        "x": 12,
+        "y": 307,
+        "width": 67,
+        "height": 16,
+        "units": "px"
+      },
+      "label": "R",
+      "typography": "typography.secondary",
+      "colors": {
+        "text": "secondaryText"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "modeLabels": {
+        "rgb": "R",
+        "hsv": "H °"
+      },
+      "nativeControlId": null
+    },
+    {
+      "id": "picker.channel.0",
+      "type": "numeric",
+      "parent": "picker",
+      "rect": {
+        "x": 12,
+        "y": 324,
+        "width": 67,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Red",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "input",
+        "border": "border"
+      },
+      "icon": null,
+      "action": "picker.rgb",
+      "enabled": true,
+      "payload": {
+        "channel": 0
+      },
+      "hsvAction": "picker.hsv",
+      "ranges": {
+        "rgb": [
+          0,
+          255
+        ],
+        "hsv": [
+          0,
+          360
+        ]
+      },
+      "decimals": 0,
+      "enabledWhen": "true",
+      "nativeControlId": "picker.channel.0"
+    },
+    {
+      "id": "picker.channel.1.label",
+      "type": "label",
+      "parent": "picker",
+      "rect": {
+        "x": 85,
+        "y": 307,
+        "width": 67,
+        "height": 16,
+        "units": "px"
+      },
+      "label": "G",
+      "typography": "typography.secondary",
+      "colors": {
+        "text": "secondaryText"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "modeLabels": {
+        "rgb": "G",
+        "hsv": "S %"
+      },
+      "nativeControlId": null
+    },
+    {
+      "id": "picker.channel.1",
+      "type": "numeric",
+      "parent": "picker",
+      "rect": {
+        "x": 85,
+        "y": 324,
+        "width": 67,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Green",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "input",
+        "border": "border"
+      },
+      "icon": null,
+      "action": "picker.rgb",
+      "enabled": true,
+      "payload": {
+        "channel": 1
+      },
+      "hsvAction": "picker.hsv",
+      "ranges": {
+        "rgb": [
+          0,
+          255
+        ],
+        "hsv": [
+          0,
+          100
+        ]
+      },
+      "decimals": 0,
+      "enabledWhen": "true",
+      "nativeControlId": "picker.channel.1"
+    },
+    {
+      "id": "picker.channel.2.label",
+      "type": "label",
+      "parent": "picker",
+      "rect": {
+        "x": 158,
+        "y": 307,
+        "width": 67,
+        "height": 16,
+        "units": "px"
+      },
+      "label": "B",
+      "typography": "typography.secondary",
+      "colors": {
+        "text": "secondaryText"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "modeLabels": {
+        "rgb": "B",
+        "hsv": "V %"
+      },
+      "nativeControlId": null
+    },
+    {
+      "id": "picker.channel.2",
+      "type": "numeric",
+      "parent": "picker",
+      "rect": {
+        "x": 158,
+        "y": 324,
+        "width": 67,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Blue",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "input",
+        "border": "border"
+      },
+      "icon": null,
+      "action": "picker.rgb",
+      "enabled": true,
+      "payload": {
+        "channel": 2
+      },
+      "hsvAction": "picker.hsv",
+      "ranges": {
+        "rgb": [
+          0,
+          255
+        ],
+        "hsv": [
+          0,
+          100
+        ]
+      },
+      "decimals": 0,
+      "enabledWhen": "true",
+      "nativeControlId": "picker.channel.2"
+    },
+    {
+      "id": "picker.channel.3.label",
+      "type": "label",
+      "parent": "picker",
+      "rect": {
+        "x": 231,
+        "y": 307,
+        "width": 67,
+        "height": 16,
+        "units": "px"
+      },
+      "label": "A %",
+      "typography": "typography.secondary",
+      "colors": {
+        "text": "secondaryText"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "modeLabels": {
+        "rgb": "A %",
+        "hsv": "A %"
+      },
+      "nativeControlId": null
+    },
+    {
+      "id": "picker.channel.3",
+      "type": "numeric",
+      "parent": "picker",
+      "rect": {
+        "x": 231,
+        "y": 324,
+        "width": 67,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Alpha",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "input",
+        "border": "border"
+      },
+      "icon": null,
+      "action": "picker.alpha",
+      "enabled": true,
+      "payload": {
+        "channel": 3
+      },
+      "hsvAction": "picker.alpha",
+      "ranges": {
+        "rgb": [
+          0,
+          100
+        ],
+        "hsv": [
+          0,
+          100
+        ]
+      },
+      "decimals": 0,
+      "enabledWhen": "state.pickerTarget == 0",
+      "nativeControlId": "picker.channel.3"
+    },
+    {
+      "id": "picker.hex_label",
+      "type": "label",
+      "parent": "picker",
+      "rect": {
+        "x": 12,
+        "y": 362,
+        "width": 33,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "Hex",
+      "typography": "typography.secondary",
+      "colors": {
+        "text": "secondaryText"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "nativeControlId": null
+    },
+    {
+      "id": "picker.hex",
+      "type": "hex",
+      "parent": "picker",
+      "rect": {
+        "x": 53,
+        "y": 362,
+        "width": 245,
+        "height": 28,
+        "units": "px"
+      },
+      "label": "RGB Hex",
+      "typography": "typography.hex",
+      "colors": {
+        "text": "text",
+        "background": "input",
+        "border": "border"
+      },
+      "icon": null,
+      "action": "picker.hex",
+      "enabled": true,
+      "format": "#RRGGBB",
+      "preserveAlpha": true,
+      "nativeControlId": "picker.hex"
+    },
+    {
+      "id": "picker.original_label",
+      "type": "label",
+      "parent": "picker",
+      "rect": {
+        "x": 12,
+        "y": 416,
+        "width": 138,
+        "height": 15,
+        "units": "px"
+      },
+      "label": "Original",
+      "typography": "typography.secondary",
+      "colors": {
+        "text": "secondaryText"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "nativeControlId": null
+    },
+    {
+      "id": "picker.original",
+      "type": "color_swatch",
+      "parent": "picker",
+      "rect": {
+        "x": 12,
+        "y": 436,
+        "width": 138,
+        "height": 24,
+        "units": "px"
+      },
+      "label": "Restore original color",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": null,
+      "action": "picker.restore_original",
+      "enabled": true,
+      "checker": true,
+      "binding": "InspectorState.pickerOriginal",
+      "nativeControlId": "picker.original"
+    },
+    {
+      "id": "picker.current_label",
+      "type": "label",
+      "parent": "picker",
+      "rect": {
+        "x": 160,
+        "y": 416,
+        "width": 138,
+        "height": 15,
+        "units": "px"
+      },
+      "label": "Current",
+      "typography": "typography.secondary",
+      "colors": {
+        "text": "secondaryText"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "nativeControlId": null
+    },
+    {
+      "id": "picker.current",
+      "type": "color_swatch",
+      "parent": "picker",
+      "rect": {
+        "x": 160,
+        "y": 436,
+        "width": 138,
+        "height": 24,
+        "units": "px"
+      },
+      "label": "Current draft",
+      "typography": "typography.number",
+      "colors": {
+        "text": "text",
+        "background": "transparent",
+        "border": "transparent"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "checker": true,
+      "binding": "InspectorState.pickerDraft",
+      "nativeControlId": null
+    },
+    {
+      "id": "picker.palette_label",
+      "type": "label",
+      "parent": "picker",
+      "rect": {
+        "x": 12,
+        "y": 476,
+        "width": 40,
+        "height": 19,
+        "units": "px"
+      },
+      "label": "Palette",
+      "typography": "typography.secondary",
+      "colors": {
+        "text": "secondaryText"
+      },
+      "icon": null,
+      "action": null,
+      "enabled": true,
+      "nativeControlId": null
+    },
+    {
+      "id": "picker.palette.0",
+      "type": "palette_swatch",
+      "parent": "picker",
+      "rect": {
+        "x": 62,
+        "y": 472,
+        "width": 19,
+        "height": 19,
+        "units": "px"
+      },
+      "label": "#B84A21",
+      "typography": "typography.number",
+      "colors": {
+        "background": "#B84A21",
+        "border": "swatchBorder"
+      },
+      "icon": null,
+      "action": "picker.palette",
+      "enabled": true,
+      "payload": {
+        "hex": "#B84A21"
+      },
+      "preserveAlpha": true,
+      "nativeControlId": "picker.palette.0"
+    },
+    {
+      "id": "picker.palette.1",
+      "type": "palette_swatch",
+      "parent": "picker",
+      "rect": {
+        "x": 87,
+        "y": 472,
+        "width": 19,
+        "height": 19,
+        "units": "px"
+      },
+      "label": "#A68D68",
+      "typography": "typography.number",
+      "colors": {
+        "background": "#A68D68",
+        "border": "swatchBorder"
+      },
+      "icon": null,
+      "action": "picker.palette",
+      "enabled": true,
+      "payload": {
+        "hex": "#A68D68"
+      },
+      "preserveAlpha": true,
+      "nativeControlId": "picker.palette.1"
+    },
+    {
+      "id": "picker.palette.2",
+      "type": "palette_swatch",
+      "parent": "picker",
+      "rect": {
+        "x": 112,
+        "y": 472,
+        "width": 19,
+        "height": 19,
+        "units": "px"
+      },
+      "label": "#2E548A",
+      "typography": "typography.number",
+      "colors": {
+        "background": "#2E548A",
+        "border": "swatchBorder"
+      },
+      "icon": null,
+      "action": "picker.palette",
+      "enabled": true,
+      "payload": {
+        "hex": "#2E548A"
+      },
+      "preserveAlpha": true,
+      "nativeControlId": "picker.palette.2"
+    },
+    {
+      "id": "picker.palette.3",
+      "type": "palette_swatch",
+      "parent": "picker",
+      "rect": {
+        "x": 137,
+        "y": 472,
+        "width": 19,
+        "height": 19,
+        "units": "px"
+      },
+      "label": "#677D6F",
+      "typography": "typography.number",
+      "colors": {
+        "background": "#677D6F",
+        "border": "swatchBorder"
+      },
+      "icon": null,
+      "action": "picker.palette",
+      "enabled": true,
+      "payload": {
+        "hex": "#677D6F"
+      },
+      "preserveAlpha": true,
+      "nativeControlId": "picker.palette.3"
+    },
+    {
+      "id": "picker.palette.4",
+      "type": "palette_swatch",
+      "parent": "picker",
+      "rect": {
+        "x": 162,
+        "y": 472,
+        "width": 19,
+        "height": 19,
+        "units": "px"
+      },
+      "label": "#B0C0CA",
+      "typography": "typography.number",
+      "colors": {
+        "background": "#B0C0CA",
+        "border": "swatchBorder"
+      },
+      "icon": null,
+      "action": "picker.palette",
+      "enabled": true,
+      "payload": {
+        "hex": "#B0C0CA"
+      },
+      "preserveAlpha": true,
+      "nativeControlId": "picker.palette.4"
+    },
+    {
+      "id": "picker.palette.5",
+      "type": "palette_swatch",
+      "parent": "picker",
+      "rect": {
+        "x": 187,
+        "y": 472,
+        "width": 19,
+        "height": 19,
+        "units": "px"
+      },
+      "label": "#383E45",
+      "typography": "typography.number",
+      "colors": {
+        "background": "#383E45",
+        "border": "swatchBorder"
+      },
+      "icon": null,
+      "action": "picker.palette",
+      "enabled": true,
+      "payload": {
+        "hex": "#383E45"
+      },
+      "preserveAlpha": true,
+      "nativeControlId": "picker.palette.5"
+    },
+    {
+      "id": "picker.cancel",
+      "type": "button",
+      "parent": "picker",
+      "rect": {
+        "x": 150,
+        "y": 541,
+        "width": 70,
+        "height": 27,
+        "units": "px"
+      },
+      "label": "Cancel",
+      "typography": "typography.number",
+      "colors": {
+        "background": "raised",
+        "border": "hoverBorder",
+        "text": "text"
+      },
+      "icon": null,
+      "action": "picker.cancel",
+      "enabled": true,
+      "nativeControlId": "picker.cancel"
+    },
+    {
+      "id": "picker.apply",
+      "type": "button",
+      "parent": "picker",
+      "rect": {
+        "x": 228,
+        "y": 541,
+        "width": 70,
+        "height": 27,
+        "units": "px"
+      },
+      "label": "Apply",
+      "typography": "typography.number",
+      "colors": {
+        "background": "selection",
+        "border": "primaryBorder",
+        "text": "primaryText"
+      },
+      "icon": null,
+      "action": "picker.apply",
+      "enabled": true,
+      "nativeControlId": "picker.apply"
+    }
+  ],
+  "styleInheritance": "All components inherit theme.typography family/weight and default size. Component typography references override the corresponding theme style.",
+  "componentCount": 266
+}

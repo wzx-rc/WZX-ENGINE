@@ -1,0 +1,367 @@
+{
+  "scope": "standalone inspector only",
+  "references": [
+    {
+      "id": "properties",
+      "view": "Properties",
+      "annotated": "properties.svg",
+      "nativePng": "../../validation/inspector.png",
+      "nativePngSha256": "858684cb8db69518d4f7958e3c14725f3d28704feb1122844f20f25e47f8bf0a",
+      "referenceCanvas": {
+        "width": 342,
+        "height": 920
+      },
+      "scale": 1,
+      "zoneDimensions": [
+        {
+          "label": "Panneau",
+          "rect": {
+            "x": 12,
+            "y": 12,
+            "width": 318,
+            "height": 896
+          }
+        },
+        {
+          "label": "Onglets",
+          "rect": {
+            "x": 12,
+            "y": 12,
+            "width": 318,
+            "height": 38
+          }
+        },
+        {
+          "label": "Identité",
+          "rect": {
+            "x": 24,
+            "y": 62,
+            "width": 294,
+            "height": 40
+          }
+        },
+        {
+          "label": "Shader",
+          "rect": {
+            "x": 86,
+            "y": 114,
+            "width": 232,
+            "height": 28
+          }
+        },
+        {
+          "label": "Recherche",
+          "rect": {
+            "x": 24,
+            "y": 152,
+            "width": 294,
+            "height": 28
+          }
+        },
+        {
+          "label": "Attributs défilants",
+          "rect": {
+            "x": 12,
+            "y": 193,
+            "width": 318,
+            "height": 681
+          }
+        },
+        {
+          "label": "Historique",
+          "rect": {
+            "x": 12,
+            "y": 874,
+            "width": 318,
+            "height": 34
+          }
+        },
+        {
+          "label": "Couleur",
+          "rect": {
+            "x": 24,
+            "y": 262,
+            "width": 294,
+            "height": 28
+          }
+        },
+        {
+          "label": "Valeur",
+          "rect": {
+            "x": 212,
+            "y": 302,
+            "width": 76,
+            "height": 28
+          }
+        },
+        {
+          "label": "Slider",
+          "rect": {
+            "x": 24,
+            "y": 333,
+            "width": 264,
+            "height": 16
+          }
+        },
+        {
+          "label": "UV U / V",
+          "rect": {
+            "x": 24,
+            "y": 778,
+            "width": 294,
+            "height": 28
+          }
+        }
+      ]
+    },
+    {
+      "id": "stage",
+      "view": "Stage",
+      "annotated": "stage.svg",
+      "nativePng": "../../validation/ui/stage.png",
+      "nativePngSha256": "e633277c6a90c35169eefe276ba867087993492abe57a265547704e098a5e308",
+      "referenceCanvas": {
+        "width": 342,
+        "height": 920
+      },
+      "scale": 1,
+      "zoneDimensions": [
+        {
+          "label": "Panneau",
+          "rect": {
+            "x": 12,
+            "y": 12,
+            "width": 318,
+            "height": 896
+          }
+        },
+        {
+          "label": "Onglets",
+          "rect": {
+            "x": 12,
+            "y": 12,
+            "width": 318,
+            "height": 38
+          }
+        },
+        {
+          "label": "Identité",
+          "rect": {
+            "x": 24,
+            "y": 62,
+            "width": 294,
+            "height": 40
+          }
+        },
+        {
+          "label": "Shader",
+          "rect": {
+            "x": 86,
+            "y": 114,
+            "width": 232,
+            "height": 28
+          }
+        },
+        {
+          "label": "Recherche",
+          "rect": {
+            "x": 24,
+            "y": 152,
+            "width": 294,
+            "height": 28
+          }
+        },
+        {
+          "label": "Attributs défilants",
+          "rect": {
+            "x": 12,
+            "y": 193,
+            "width": 318,
+            "height": 681
+          }
+        },
+        {
+          "label": "Historique",
+          "rect": {
+            "x": 12,
+            "y": 874,
+            "width": 318,
+            "height": 34
+          }
+        }
+      ]
+    },
+    {
+      "id": "texture",
+      "view": "Texture",
+      "annotated": "texture.svg",
+      "nativePng": "../../validation/ui/texture.png",
+      "nativePngSha256": "00bd048deaa1fc1d984364314d7cb57ebb2fad921ca638119a7b5432689f33e3",
+      "referenceCanvas": {
+        "width": 342,
+        "height": 920
+      },
+      "scale": 1,
+      "zoneDimensions": [
+        {
+          "label": "Panneau",
+          "rect": {
+            "x": 12,
+            "y": 12,
+            "width": 318,
+            "height": 896
+          }
+        },
+        {
+          "label": "Onglets",
+          "rect": {
+            "x": 12,
+            "y": 12,
+            "width": 318,
+            "height": 38
+          }
+        },
+        {
+          "label": "Identité",
+          "rect": {
+            "x": 24,
+            "y": 62,
+            "width": 294,
+            "height": 40
+          }
+        },
+        {
+          "label": "Shader",
+          "rect": {
+            "x": 86,
+            "y": 114,
+            "width": 232,
+            "height": 28
+          }
+        },
+        {
+          "label": "Recherche",
+          "rect": {
+            "x": 24,
+            "y": 152,
+            "width": 294,
+            "height": 28
+          }
+        },
+        {
+          "label": "Attributs défilants",
+          "rect": {
+            "x": 12,
+            "y": 193,
+            "width": 318,
+            "height": 681
+          }
+        },
+        {
+          "label": "Historique",
+          "rect": {
+            "x": 12,
+            "y": 874,
+            "width": 318,
+            "height": 34
+          }
+        },
+        {
+          "label": "Fichier texture",
+          "rect": {
+            "x": 24,
+            "y": 239,
+            "width": 294,
+            "height": 144
+          }
+        },
+        {
+          "label": "Vignette et actions",
+          "rect": {
+            "x": 24,
+            "y": 395,
+            "width": 294,
+            "height": 40
+          }
+        }
+      ]
+    },
+    {
+      "id": "color-picker",
+      "view": "Color picker",
+      "annotated": "color-picker.svg",
+      "nativePng": "../../validation/ui/picker.png",
+      "nativePngSha256": "690a581d7285f72d62c638ebbf43b2c7ad4beb7750185ff144648cdb40d4c52a",
+      "referenceCanvas": {
+        "width": 342,
+        "height": 920
+      },
+      "scale": 1,
+      "zoneDimensions": [
+        {
+          "label": "Picker",
+          "rect": {
+            "x": 16,
+            "y": 220,
+            "width": 310,
+            "height": 578
+          }
+        },
+        {
+          "label": "RGB / HSV",
+          "rect": {
+            "x": 28,
+            "y": 256,
+            "width": 98,
+            "height": 27
+          }
+        },
+        {
+          "label": "Saturation / valeur",
+          "rect": {
+            "x": 28,
+            "y": 293,
+            "width": 260,
+            "height": 177
+          }
+        },
+        {
+          "label": "Alpha",
+          "rect": {
+            "x": 48,
+            "y": 487,
+            "width": 215,
+            "height": 12
+          }
+        },
+        {
+          "label": "Canaux",
+          "rect": {
+            "x": 28,
+            "y": 533,
+            "width": 286,
+            "height": 28
+          }
+        },
+        {
+          "label": "Comparaison",
+          "rect": {
+            "x": 28,
+            "y": 644,
+            "width": 286,
+            "height": 24
+          }
+        },
+        {
+          "label": "Validation",
+          "rect": {
+            "x": 16,
+            "y": 751,
+            "width": 310,
+            "height": 47
+          }
+        }
+      ]
+    }
+  ]
+}

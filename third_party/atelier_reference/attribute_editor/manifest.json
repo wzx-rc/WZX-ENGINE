@@ -1,0 +1,319 @@
+{
+  "package": "Atelier-Inspector-Standalone",
+  "version": "1.0",
+  "createdUtc": "2026-10-13T11:07:53.503988+00:00",
+  "scope": "standalone inspector only",
+  "nativeUi": "Dear ImGui / Win32 / DirectX 11",
+  "files": [
+    {
+      "path": "Atelier-Inspector.exe",
+      "bytes": 1076736,
+      "sha256": "f1dc107a28fe55bc7f08653f06e340a10eb3c1021ea97501d6642042deb4e584"
+    },
+    {
+      "path": "CMakeLists.txt",
+      "bytes": 2077,
+      "sha256": "86f9589f7a726f344f360a1b2cc7ae2d44a3eafe3e69d49615c301d08728a2fd"
+    },
+    {
+      "path": "Dear-ImGui-LICENSE.txt",
+      "bytes": 1104,
+      "sha256": "f20418b409e53c8c9f4e90917ff395554a60320d4dfbf833da89b339cad8628a"
+    },
+    {
+      "path": "Launch-Inspector.cmd",
+      "bytes": 171,
+      "sha256": "884a1e8a176c03a562af2898ef85ac815e7a55be336dea18c1ea7fc5eefbd308"
+    },
+    {
+      "path": "README.md",
+      "bytes": 3673,
+      "sha256": "e959f5ba07f6707b1d8a5c7677ed545568b721a8926fcb73440767690a8ed8cd"
+    },
+    {
+      "path": "VALIDATION.md",
+      "bytes": 1799,
+      "sha256": "11df4e29487e79fc2dcdcd5f80571ce844f6627a06daed747989d66eea20baee"
+    },
+    {
+      "path": "build.ps1",
+      "bytes": 3279,
+      "sha256": "9d39bba9e480eac87f712627393cc455ca9482c8fd57a8c353a4641779ce801b"
+    },
+    {
+      "path": "design/actions.json",
+      "bytes": 46459,
+      "sha256": "dbf60a43521d8bbdaa6e6383eb660bb12406cd021dbaa208ea018cc6219dea6a"
+    },
+    {
+      "path": "design/contract-validation.json",
+      "bytes": 477,
+      "sha256": "c1df3cb72812c3037ecd2480df205be277e67b1acd9b9ca2afca8a38af2e002c"
+    },
+    {
+      "path": "design/icons/catalog.json",
+      "bytes": 13929,
+      "sha256": "321177bd9564715a14f2a35a18fe5998e90c752e65b6303c78b38bbb6171b987"
+    },
+    {
+      "path": "design/icons/check.svg",
+      "bytes": 316,
+      "sha256": "143e5dd5d1488ffa0a8c3940a5b8e6c7356f5ed6ea11394fb90d02c652201ad8"
+    },
+    {
+      "path": "design/icons/chevron_down.svg",
+      "bytes": 318,
+      "sha256": "a79e01fa4f62ef712eba4511bf6785851d68a692b0803c821ffd10a32c1f2617"
+    },
+    {
+      "path": "design/icons/chevron_right.svg",
+      "bytes": 319,
+      "sha256": "81f34f0cbfbb7ff213d1d28fcb0738d20f367fc3be4c7bc0fcfbeeffd9cc911d"
+    },
+    {
+      "path": "design/icons/clear.svg",
+      "bytes": 316,
+      "sha256": "fc91c92c09e9f56b14e9ddef586ddacfc0372cf43ca3e0b2e29f808f599460b7"
+    },
+    {
+      "path": "design/icons/folder_open.svg",
+      "bytes": 691,
+      "sha256": "6947b4adc826c0ba94df7a5eb724c771e4fd75a633bed742b84d6f6f0f117059"
+    },
+    {
+      "path": "design/icons/image.svg",
+      "bytes": 530,
+      "sha256": "f9d339f9ecac92644e7b5e363e7ac37ff6269df494fe15ee86de467aa76c6559"
+    },
+    {
+      "path": "design/icons/properties.svg",
+      "bytes": 565,
+      "sha256": "73733f51ecf96ae588dd81c02fb7f4b67ccb04f9366ee34abee522db08998fd7"
+    },
+    {
+      "path": "design/icons/redo.svg",
+      "bytes": 378,
+      "sha256": "4bee03e198c4c4c8f819ff16421b67582eaff43ad1ae9ae611a0d2d014220d19"
+    },
+    {
+      "path": "design/icons/reset.svg",
+      "bytes": 380,
+      "sha256": "56329371b154ef9a087667c3b762e1462d383363bc0753df51b2fb2dcb35529c"
+    },
+    {
+      "path": "design/icons/search.svg",
+      "bytes": 310,
+      "sha256": "50896172d7308deb54ce7b8365de283ab391c8f6e6dd61027d2a6178a9450a41"
+    },
+    {
+      "path": "design/icons/sun.svg",
+      "bytes": 681,
+      "sha256": "bcb9496376d24d51aaf878d91ea1750ccfacc263ef3f3b336af6b0635d011f59"
+    },
+    {
+      "path": "design/icons/undo.svg",
+      "bytes": 376,
+      "sha256": "3ae0300bd4b054a00b65a967ded955e9c2382ef0d595c0e6e3e4cad24a0f2e7b"
+    },
+    {
+      "path": "design/layouts/inspector.json",
+      "bytes": 180687,
+      "sha256": "2ad7fc829c9c8ff8aa33a98c416fda7ffd8ba0bab80448568f8eb498fe50a2a1"
+    },
+    {
+      "path": "design/references/color-picker.svg",
+      "bytes": 75892,
+      "sha256": "10f9c033b8071551c8f24602c48df111c44e961a31c44efd0236bc6d00f3dd00"
+    },
+    {
+      "path": "design/references/index.json",
+      "bytes": 8048,
+      "sha256": "53e871fafbdffac37a1a130681bcaa4b60766b9311235175f069b98d900c1973"
+    },
+    {
+      "path": "design/references/properties.svg",
+      "bytes": 60501,
+      "sha256": "9658502f4942620e2626ffc86c4a743064391124299e93d032eee2b423bafa13"
+    },
+    {
+      "path": "design/references/stage.svg",
+      "bytes": 57016,
+      "sha256": "d3dc57320028ef7e6e7d6c802a909ff2f3897e9cacd3be159d27ea989e807bd1"
+    },
+    {
+      "path": "design/references/texture.svg",
+      "bytes": 42981,
+      "sha256": "e3026f3bfab69cfdd22287204888823d9ee11abaaabd46590b806609524997e0"
+    },
+    {
+      "path": "design/theme.json",
+      "bytes": 3912,
+      "sha256": "4e32071142b0429e7c62a81735e78645c884d99b4d1a0bf93343d370684fa276"
+    },
+    {
+      "path": "docs/INTEGRATION.md",
+      "bytes": 9359,
+      "sha256": "4f36c6458b0c324158821967b9c934ba4c814d9ec374aff7fa3e74203942d8db"
+    },
+    {
+      "path": "src/inspector.cpp",
+      "bytes": 36040,
+      "sha256": "618987bffc12607c24fbe3b03baeac7da2db3d10ab2ef9ef7074c589694c4909"
+    },
+    {
+      "path": "src/inspector.h",
+      "bytes": 2758,
+      "sha256": "1e4ac4db5524f24d7203b546b126cc765ed3ce5fd33147311da5b7374aadabf1"
+    },
+    {
+      "path": "src/inspector_icons.h",
+      "bytes": 3039,
+      "sha256": "e6116695d4ce320e21dd186a3e6770fc33a183797b90a34f4a5f726062ceecf0"
+    },
+    {
+      "path": "src/inspector_model.cpp",
+      "bytes": 20987,
+      "sha256": "2d64eddffcf30fe522c148d692933a09c4496032f3a61ef95c8e17a24aa21e78"
+    },
+    {
+      "path": "src/main.cpp",
+      "bytes": 27953,
+      "sha256": "4ed278ba6f31f074808ec822d37b8c6d29f8cbc8d4c8383c1d4d88a887dfb8bd"
+    },
+    {
+      "path": "validation/controls-dpi125.json",
+      "bytes": 4492,
+      "sha256": "866703638cbad484620e2c968ab46e92a66f7db754e6fc9b70aeb33542ed57da"
+    },
+    {
+      "path": "validation/controls.json",
+      "bytes": 4153,
+      "sha256": "a4bd5c6ff7e45df203aa7b3a5b7becebb9c1d8b9443d5394e395722bbc1e47d4"
+    },
+    {
+      "path": "validation/delivery-checks.json",
+      "bytes": 2414,
+      "sha256": "210d122fabd89c1d1fb348e36a24187765801e052ed7d75b2d85b44ffdf45df3"
+    },
+    {
+      "path": "validation/inspector-dpi125.png",
+      "bytes": 59045,
+      "sha256": "01beca3873d445342f100042b104c196d3cb2ab24c0c992c123654742d33e626"
+    },
+    {
+      "path": "validation/inspector.png",
+      "bytes": 41942,
+      "sha256": "858684cb8db69518d4f7958e3c14725f3d28704feb1122844f20f25e47f8bf0a"
+    },
+    {
+      "path": "validation/model-tests.json",
+      "bytes": 1527,
+      "sha256": "663f5545a7584e8fb427fc6607756c7adb653247eaa0049b69935d1a8c8ce5c5"
+    },
+    {
+      "path": "validation/picker-small-window.png",
+      "bytes": 34115,
+      "sha256": "d908dbaa8f3735c260dfa10c96b813a4d31c61816390dd9e733b1db28e756b3d"
+    },
+    {
+      "path": "validation/ui/default.png",
+      "bytes": 41942,
+      "sha256": "858684cb8db69518d4f7958e3c14725f3d28704feb1122844f20f25e47f8bf0a"
+    },
+    {
+      "path": "validation/ui/picker.png",
+      "bytes": 54520,
+      "sha256": "690a581d7285f72d62c638ebbf43b2c7ad4beb7750185ff144648cdb40d4c52a"
+    },
+    {
+      "path": "validation/ui/stage.png",
+      "bytes": 40463,
+      "sha256": "e633277c6a90c35169eefe276ba867087993492abe57a265547704e098a5e308"
+    },
+    {
+      "path": "validation/ui/texture.png",
+      "bytes": 29375,
+      "sha256": "00bd048deaa1fc1d984364314d7cb57ebb2fad921ca638119a7b5432689f33e3"
+    },
+    {
+      "path": "validation/ui/ui-test.json",
+      "bytes": 2017,
+      "sha256": "f802ad92a41fb1ed4d33ad9ef9789d80b501d24d83bf4a91b9047172fe9200d7"
+    },
+    {
+      "path": "vendor/imgui/LICENSE.txt",
+      "bytes": 1104,
+      "sha256": "f20418b409e53c8c9f4e90917ff395554a60320d4dfbf833da89b339cad8628a"
+    },
+    {
+      "path": "vendor/imgui/backends/imgui_impl_dx11.cpp",
+      "bytes": 44505,
+      "sha256": "88ae35976ece3d259b875257137c24ab1c85b7fe08e206e820235dc95f02d630"
+    },
+    {
+      "path": "vendor/imgui/backends/imgui_impl_dx11.h",
+      "bytes": 3125,
+      "sha256": "cc0f8ea3cc0571611ab052872e0ce906a577367a158e09c809e97b62ccb7b731"
+    },
+    {
+      "path": "vendor/imgui/backends/imgui_impl_win32.cpp",
+      "bytes": 83332,
+      "sha256": "ae7a390a0286b0325293937c5fc3458cf07ec92f6be2b02c4485dd1840cc47dc"
+    },
+    {
+      "path": "vendor/imgui/backends/imgui_impl_win32.h",
+      "bytes": 3672,
+      "sha256": "2f6c01267b71042a549bca90b2bc461bee8365b4290c4d44167ca037ddb7c325"
+    },
+    {
+      "path": "vendor/imgui/imconfig.h",
+      "bytes": 12849,
+      "sha256": "58ca417d54cc576fb89e69b24880b9d2ad4b380b2acdb149386c417ff36d7cdc"
+    },
+    {
+      "path": "vendor/imgui/imgui.cpp",
+      "bytes": 1320405,
+      "sha256": "383f78783499ea7698f04afc899ad931ba9f1be65a3b825738168adc672c6cfa"
+    },
+    {
+      "path": "vendor/imgui/imgui.h",
+      "bytes": 472249,
+      "sha256": "1e28aacd8a819f19dad5bd10431d40c9d2c0b2f5c5cc3aae903bb41d1064795a"
+    },
+    {
+      "path": "vendor/imgui/imgui_draw.cpp",
+      "bytes": 389811,
+      "sha256": "add2bfa5d4a039331e13330f6c555cb58228d373628ba15d6393a3b0d60ed36d"
+    },
+    {
+      "path": "vendor/imgui/imgui_internal.h",
+      "bytes": 341468,
+      "sha256": "20a334e08ef1eb0e4e09405ab3cbc07f4aeeb421bfd2c0bc1b51ec5c8d87c6a9"
+    },
+    {
+      "path": "vendor/imgui/imgui_tables.cpp",
+      "bytes": 275454,
+      "sha256": "a0e7e3e874abb06da252cb8bf2b7ac87941aa176eeec51d9d81335d937851e0c"
+    },
+    {
+      "path": "vendor/imgui/imgui_widgets.cpp",
+      "bytes": 573969,
+      "sha256": "12e17d8f3d36e3713e7e27eeea04c11c8249d5d113070b431b94b62e763731cd"
+    },
+    {
+      "path": "vendor/imgui/imstb_rectpack.h",
+      "bytes": 20973,
+      "sha256": "7f9bffb8ac5e79d20787fdc20d29d29f7474dca673f64d4a9a8a9f9373e40972"
+    },
+    {
+      "path": "vendor/imgui/imstb_textedit.h",
+      "bytes": 61638,
+      "sha256": "24a8db00354af8f4057417841635a1b6dfd8986f1608336fe6f10d6fd9769aaa"
+    },
+    {
+      "path": "vendor/imgui/imstb_truetype.h",
+      "bytes": 204588,
+      "sha256": "a4131c7a2e324c0625250830af6976adb5732b453f0fc6e8bc5ad70065bc2b79"
+    }
+  ]
+}

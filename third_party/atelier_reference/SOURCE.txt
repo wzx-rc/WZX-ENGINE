@@ -1,0 +1,5 @@
+Atelier sources integrated in the WZX Engine (reference copies, not compiled from here).
+- Atelier-Design-Deliverable (design handoff v1.0, 2026-10-13): src/, docs/ here. Graph / Material modules copied to src/app/atelier; material preview rendered by the WZX renderer.
+- Atelier-Design-AttributEditor (2026-10-13): attribute_editor/. inspector.* copied to src/app/atelier, used as the Material Studio right panel.
+Colours of the copied modules come from src/app/atelier/atelier_style.h (theme settings).
+Kept as the base for comparing future versions.

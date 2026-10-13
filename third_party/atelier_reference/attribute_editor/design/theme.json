@@ -1,0 +1,154 @@
+{
+  "schemaVersion": "1.0.0",
+  "name": "Atelier Inspector — approved Inspecteur",
+  "variant": "Inspecteur",
+  "scope": "Standalone attribute inspector and color picker",
+  "reference": {
+    "canvasPx": [
+      342,
+      920
+    ],
+    "panelPx": [
+      318,
+      896
+    ],
+    "outerMarginPx": 12,
+    "pixelScale": 1,
+    "scaling": "1x logical coordinates; native ApplyTheme(scale) multiplies geometry, typography and stroke sizes."
+  },
+  "sourceReference": "Approved attributes-v2 Inspecteur design",
+  "colors": {
+    "canvas": "#171c20",
+    "panel": "#1c2126",
+    "tabBar": "#1a1f24",
+    "input": "#171c20",
+    "raised": "#252b31",
+    "border": "#313940",
+    "hoverBorder": "#46545f",
+    "text": "#c9d0d8",
+    "secondaryText": "#99a5b1",
+    "focus": "#66bad0",
+    "selection": "#2b4858",
+    "modified": "#d0946e",
+    "sliderTrack": "#35404a",
+    "sliderThumb": "#d6dee5",
+    "focusInput": "#1b2930",
+    "checkerLight": "#78818a",
+    "checkerDark": "#434c55",
+    "axisU": "#677e8c",
+    "axisV": "#799181",
+    "swatchBorder": "#5a626a",
+    "pickerHeader": "#20272e",
+    "primaryText": "#dbeaf0",
+    "primaryBorder": "#4c7485"
+  },
+  "typography": {
+    "family": "Segoe UI",
+    "fallback": "sans-serif",
+    "sizePx": 12,
+    "weight": 400,
+    "lineHeight": 1.4,
+    "section": {
+      "sizePx": 12,
+      "weight": 500,
+      "nativeFontWeight": 400
+    },
+    "identity": {
+      "sizePx": 13,
+      "weight": 500,
+      "nativeFontWeight": 400
+    },
+    "secondary": {
+      "sizePx": 11,
+      "weight": 400
+    },
+    "number": {
+      "sizePx": 12,
+      "weight": 400,
+      "tabular": true,
+      "align": "right"
+    },
+    "tab": {
+      "sizePx": 11,
+      "weight": 400
+    },
+    "hex": {
+      "sizePx": 12,
+      "weight": 400,
+      "letterSpacingPx": 0.2
+    },
+    "nativeNote": "The design requests weight500 for section/identity; the supplied native host uses Segoe UI Regular400. Size, spacing and colors are matched; font weight is an approximation."
+  },
+  "geometry": {
+    "panelPaddingPx": 12,
+    "panelBorderPx": 1,
+    "panelRadiusPx": 5,
+    "inputHeightPx": 28,
+    "inputRadiusPx": 4,
+    "inputBorderPx": 1,
+    "sectionHeaderHeightPx": 28,
+    "sectionGapPx": 8,
+    "sectionBodyTopPx": 10,
+    "controlGapPx": 8,
+    "scalarRowHeightPx": 48,
+    "numericWidthPx": 76,
+    "resetWidthPx": 22,
+    "sliderTrackHeightPx": 3,
+    "sliderHitHeightPx": 16,
+    "sliderThumbPx": [
+      7,
+      11
+    ],
+    "colorSwatchWidthPx": 34,
+    "colorAlphaWidthPx": 80,
+    "vectorHeightPx": 28,
+    "checkboxPx": 14,
+    "iconPx": 12,
+    "tabIconPx": 12,
+    "pickerWidthPx": 310,
+    "pickerPlaneHeightPx": 177,
+    "pickerHueWidthPx": 16,
+    "textureThumbnailPx": 40,
+    "checkerTilePx": 8,
+    "checkerSquarePx": 4
+  },
+  "states": {
+    "default": {
+      "opacity": 1
+    },
+    "hover": {
+      "inputBorder": "hoverBorder"
+    },
+    "focused": {
+      "inputBorder": "focus",
+      "inputBackground": "focusInput"
+    },
+    "modified": {
+      "dotColor": "modified",
+      "dotDiameterPx": 4,
+      "valueText": "text",
+      "resetEnabled": true
+    },
+    "disabled": {
+      "opacity": 0.45,
+      "preserveValue": true
+    },
+    "unmodifiedReset": {
+      "opacity": 0.24,
+      "enabled": false
+    },
+    "selectedTab": {
+      "background": "raised",
+      "text": "text",
+      "underline": "focus",
+      "underlineHeightPx": 2
+    }
+  },
+  "integration": {
+    "consumption": "Contract JSON; native Dear ImGui code does not parse or load these files.",
+    "icons": "icons/catalog.json",
+    "layout": "layouts/inspector.json",
+    "actions": "actions.json",
+    "colorValues": "Document colors are normalized float RGBA. Hex represents RGB only; alpha is separate."
+  }
+}

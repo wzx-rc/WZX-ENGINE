@@ -1,0 +1,1308 @@
+{
+  "schemaVersion": "1.0.0",
+  "name": "Atelier Inspector fixed action catalog",
+  "scope": "Document and InspectorState only",
+  "nativeHeader": "../src/inspector.h",
+  "noRendererActions": true,
+  "dispatch": "IDs describe the stable handoff contract. Native UI uses explicit C++ widget handlers; it does not dispatch or interpret this JSON.",
+  "historyRules": {
+    "continuous": "Number, slider, vector and drag edits commit once on editing end.",
+    "discrete": "Checkbox/combo/reset/file edits commit once.",
+    "picker": "Preview draft in popup only; Apply commits one color transaction; Cancel commits nothing.",
+    "view": "Search, tabs, disclosure and RGB/HSV mode do not change Document."
+  },
+  "count": 116,
+  "actions": [
+    {
+      "id": "search.set",
+      "kind": "view_edit",
+      "scope": "local_inspector",
+      "binding": "InspectorState.search",
+      "implementedBy": "inspector-only/src",
+      "payload": {
+        "text": "UTF-8 text"
+      },
+      "history": false,
+      "enabled": true
+    },
+    {
+      "id": "tab.properties",
+      "kind": "view_selection",
+      "scope": "local_inspector",
+      "binding": "InspectorState.tab",
+      "implementedBy": "inspector-only/src",
+      "value": 0,
+      "history": false,
+      "enabled": true
+    },
+    {
+      "id": "tab.stage",
+      "kind": "view_selection",
+      "scope": "local_inspector",
+      "binding": "InspectorState.tab",
+      "implementedBy": "inspector-only/src",
+      "value": 1,
+      "history": false,
+      "enabled": true
+    },
+    {
+      "id": "tab.texture",
+      "kind": "view_selection",
+      "scope": "local_inspector",
+      "binding": "InspectorState.tab",
+      "implementedBy": "inspector-only/src",
+      "value": 2,
+      "history": false,
+      "enabled": true
+    },
+    {
+      "id": "section.toggle.surface",
+      "kind": "view_toggle",
+      "scope": "local_inspector",
+      "binding": "InspectorState.sections[0]",
+      "implementedBy": "inspector-only/src",
+      "history": false,
+      "enabled": true
+    },
+    {
+      "id": "section.toggle.detail",
+      "kind": "view_toggle",
+      "scope": "local_inspector",
+      "binding": "InspectorState.sections[1]",
+      "implementedBy": "inspector-only/src",
+      "history": false,
+      "enabled": true
+    },
+    {
+      "id": "section.toggle.coat",
+      "kind": "view_toggle",
+      "scope": "local_inspector",
+      "binding": "InspectorState.sections[2]",
+      "implementedBy": "inspector-only/src",
+      "history": false,
+      "enabled": true
+    },
+    {
+      "id": "section.toggle.emission",
+      "kind": "view_toggle",
+      "scope": "local_inspector",
+      "binding": "InspectorState.sections[3]",
+      "implementedBy": "inspector-only/src",
+      "history": false,
+      "enabled": true
+    },
+    {
+      "id": "section.toggle.uv",
+      "kind": "view_toggle",
+      "scope": "local_inspector",
+      "binding": "InspectorState.sections[4]",
+      "implementedBy": "inspector-only/src",
+      "history": false,
+      "enabled": true
+    },
+    {
+      "id": "section.toggle.transparency",
+      "kind": "view_toggle",
+      "scope": "local_inspector",
+      "binding": "InspectorState.sections[5]",
+      "implementedBy": "inspector-only/src",
+      "history": false,
+      "enabled": true
+    },
+    {
+      "id": "section.toggle.rendering",
+      "kind": "view_toggle",
+      "scope": "local_inspector",
+      "binding": "InspectorState.sections[6]",
+      "implementedBy": "inspector-only/src",
+      "history": false,
+      "enabled": true
+    },
+    {
+      "id": "section.toggle.studio",
+      "kind": "view_toggle",
+      "scope": "local_inspector",
+      "binding": "InspectorState.sections[7]",
+      "implementedBy": "inspector-only/src",
+      "history": false,
+      "enabled": true
+    },
+    {
+      "id": "section.toggle.camera",
+      "kind": "view_toggle",
+      "scope": "local_inspector",
+      "binding": "InspectorState.sections[8]",
+      "implementedBy": "inspector-only/src",
+      "history": false,
+      "enabled": true
+    },
+    {
+      "id": "section.toggle.map",
+      "kind": "view_toggle",
+      "scope": "local_inspector",
+      "binding": "InspectorState.sections[9]",
+      "implementedBy": "inspector-only/src",
+      "history": false,
+      "enabled": true
+    },
+    {
+      "id": "history.undo",
+      "kind": "history",
+      "scope": "local_inspector",
+      "binding": "InspectorState::Undo()",
+      "implementedBy": "inspector-only/src",
+      "enabledWhen": "!state.undo.empty() || state.editing",
+      "enabled": true
+    },
+    {
+      "id": "history.redo",
+      "kind": "history",
+      "scope": "local_inspector",
+      "binding": "InspectorState::Redo()",
+      "implementedBy": "inspector-only/src",
+      "enabledWhen": "!state.redo.empty()",
+      "enabled": true
+    },
+    {
+      "id": "document.reset_all",
+      "kind": "document_edit",
+      "scope": "local_inspector",
+      "binding": "InspectorState::Reset(\"all\")",
+      "implementedBy": "inspector-only/src",
+      "history": "one entry if value changed",
+      "enabled": true
+    },
+    {
+      "id": "document.save",
+      "kind": "persistence",
+      "scope": "local_inspector",
+      "binding": "InspectorState::Save(path)",
+      "implementedBy": "inspector-only/src",
+      "payload": {
+        "path": "UTF-8 filesystem path"
+      },
+      "effect": "Write inspector Document JSON only.",
+      "enabled": true
+    },
+    {
+      "id": "document.load",
+      "kind": "persistence",
+      "scope": "local_inspector",
+      "binding": "InspectorState::Load(path)",
+      "implementedBy": "inspector-only/src",
+      "payload": {
+        "path": "UTF-8 filesystem path"
+      },
+      "effect": "Read and clamp inspector Document JSON only; no engine action.",
+      "enabled": true
+    },
+    {
+      "id": "property.set.name",
+      "kind": "document_edit",
+      "scope": "local_inspector",
+      "binding": "Document.name",
+      "implementedBy": "inspector-only/src",
+      "transaction": "BeginEdit(before) → clamp/edit → EndEdit() for continuous controls; Commit(before) for discrete controls.",
+      "payload": {
+        "value": "typed property value"
+      },
+      "enabled": true
+    },
+    {
+      "id": "property.reset.name",
+      "kind": "property_reset",
+      "scope": "local_inspector",
+      "binding": "InspectorState::Reset(\"name\")",
+      "implementedBy": "inspector-only/src",
+      "enabledWhen": "document.name differs from defaults.name",
+      "history": "one entry",
+      "effect": "Restore the field from state.defaults.",
+      "enabled": true
+    },
+    {
+      "id": "property.set.shader",
+      "kind": "document_edit",
+      "scope": "local_inspector",
+      "binding": "Document.shader",
+      "implementedBy": "inspector-only/src",
+      "transaction": "BeginEdit(before) → clamp/edit → EndEdit() for continuous controls; Commit(before) for discrete controls.",
+      "payload": {
+        "value": "typed property value"
+      },
+      "enabled": true
+    },
+    {
+      "id": "property.reset.shader",
+      "kind": "property_reset",
+      "scope": "local_inspector",
+      "binding": "InspectorState::Reset(\"shader\")",
+      "implementedBy": "inspector-only/src",
+      "enabledWhen": "document.shader differs from defaults.shader",
+      "history": "one entry",
+      "effect": "Restore the field from state.defaults.",
+      "enabled": true
+    },
+    {
+      "id": "property.set.pattern",
+      "kind": "document_edit",
+      "scope": "local_inspector",
+      "binding": "Document.pattern",
+      "implementedBy": "inspector-only/src",
+      "transaction": "BeginEdit(before) → clamp/edit → EndEdit() for continuous controls; Commit(before) for discrete controls.",
+      "payload": {
+        "value": "typed property value"
+      },
+      "enabled": true
+    },
+    {
+      "id": "property.reset.pattern",
+      "kind": "property_reset",
+      "scope": "local_inspector",
+      "binding": "InspectorState::Reset(\"pattern\")",
+      "implementedBy": "inspector-only/src",
+      "enabledWhen": "document.pattern differs from defaults.pattern",
+      "history": "one entry",
+      "effect": "Restore the field from state.defaults.",
+      "enabled": true
+    },
+    {
+      "id": "property.set.environment",
+      "kind": "document_edit",
+      "scope": "local_inspector",
+      "binding": "Document.environment",
+      "implementedBy": "inspector-only/src",
+      "transaction": "BeginEdit(before) → clamp/edit → EndEdit() for continuous controls; Commit(before) for discrete controls.",
+      "payload": {
+        "value": "typed property value"
+      },
+      "enabled": true
+    },
+    {
+      "id": "property.reset.environment",
+      "kind": "property_reset",
+      "scope": "local_inspector",
+      "binding": "InspectorState::Reset(\"environment\")",
+      "implementedBy": "inspector-only/src",
+      "enabledWhen": "document.environment differs from defaults.environment",
+      "history": "one entry",
+      "effect": "Restore the field from state.defaults.",
+      "enabled": true
+    },
+    {
+      "id": "property.set.textureChannel",
+      "kind": "document_edit",
+      "scope": "local_inspector",
+      "binding": "Document.textureChannel",
+      "implementedBy": "inspector-only/src",
+      "transaction": "BeginEdit(before) → clamp/edit → EndEdit() for continuous controls; Commit(before) for discrete controls.",
+      "payload": {
+        "value": "typed property value"
+      },
+      "enabled": true
+    },
+    {
+      "id": "property.reset.textureChannel",
+      "kind": "property_reset",
+      "scope": "local_inspector",
+      "binding": "InspectorState::Reset(\"textureChannel\")",
+      "implementedBy": "inspector-only/src",
+      "enabledWhen": "document.textureChannel differs from defaults.textureChannel",
+      "history": "one entry",
+      "effect": "Restore the field from state.defaults.",
+      "enabled": true
+    },
+    {
+      "id": "property.set.roughness",
+      "kind": "document_edit",
+      "scope": "local_inspector",
+      "binding": "Document.roughness",
+      "implementedBy": "inspector-only/src",
+      "transaction": "BeginEdit(before) → clamp/edit → EndEdit() for continuous controls; Commit(before) for discrete controls.",
+      "payload": {
+        "value": "typed property value"
+      },
+      "enabled": true
+    },
+    {
+      "id": "property.reset.roughness",
+      "kind": "property_reset",
+      "scope": "local_inspector",
+      "binding": "InspectorState::Reset(\"roughness\")",
+      "implementedBy": "inspector-only/src",
+      "enabledWhen": "document.roughness differs from defaults.roughness",
+      "history": "one entry",
+      "effect": "Restore the field from state.defaults.",
+      "enabled": true
+    },
+    {
+      "id": "property.set.metallic",
+      "kind": "document_edit",
+      "scope": "local_inspector",
+      "binding": "Document.metallic",
+      "implementedBy": "inspector-only/src",
+      "transaction": "BeginEdit(before) → clamp/edit → EndEdit() for continuous controls; Commit(before) for discrete controls.",
+      "payload": {
+        "value": "typed property value"
+      },
+      "enabled": true
+    },
+    {
+      "id": "property.reset.metallic",
+      "kind": "property_reset",
+      "scope": "local_inspector",
+      "binding": "InspectorState::Reset(\"metallic\")",
+      "implementedBy": "inspector-only/src",
+      "enabledWhen": "document.metallic differs from defaults.metallic",
+      "history": "one entry",
+      "effect": "Restore the field from state.defaults.",
+      "enabled": true
+    },
+    {
+      "id": "property.set.normalStrength",
+      "kind": "document_edit",
+      "scope": "local_inspector",
+      "binding": "Document.normalStrength",
+      "implementedBy": "inspector-only/src",
+      "transaction": "BeginEdit(before) → clamp/edit → EndEdit() for continuous controls; Commit(before) for discrete controls.",
+      "payload": {
+        "value": "typed property value"
+      },
+      "enabled": true
+    },
+    {
+      "id": "property.reset.normalStrength",
+      "kind": "property_reset",
+      "scope": "local_inspector",
+      "binding": "InspectorState::Reset(\"normalStrength\")",
+      "implementedBy": "inspector-only/src",
+      "enabledWhen": "document.normalStrength differs from defaults.normalStrength",
+      "history": "one entry",
+      "effect": "Restore the field from state.defaults.",
+      "enabled": true
+    },
+    {
+      "id": "property.set.ao",
+      "kind": "document_edit",
+      "scope": "local_inspector",
+      "binding": "Document.ao",
+      "implementedBy": "inspector-only/src",
+      "transaction": "BeginEdit(before) → clamp/edit → EndEdit() for continuous controls; Commit(before) for discrete controls.",
+      "payload": {
+        "value": "typed property value"
+      },
+      "enabled": true
+    },
+    {
+      "id": "property.reset.ao",
+      "kind": "property_reset",
+      "scope": "local_inspector",
+      "binding": "InspectorState::Reset(\"ao\")",
+      "implementedBy": "inspector-only/src",
+      "enabledWhen": "document.ao differs from defaults.ao",
+      "history": "one entry",
+      "effect": "Restore the field from state.defaults.",
+      "enabled": true
+    },
+    {
+      "id": "property.set.patternScale",
+      "kind": "document_edit",
+      "scope": "local_inspector",
+      "binding": "Document.patternScale",
+      "implementedBy": "inspector-only/src",
+      "transaction": "BeginEdit(before) → clamp/edit → EndEdit() for continuous controls; Commit(before) for discrete controls.",
+      "payload": {
+        "value": "typed property value"
+      },
+      "enabled": true
+    },
+    {
+      "id": "property.reset.patternScale",
+      "kind": "property_reset",
+      "scope": "local_inspector",
+      "binding": "InspectorState::Reset(\"patternScale\")",
+      "implementedBy": "inspector-only/src",
+      "enabledWhen": "document.patternScale differs from defaults.patternScale",
+      "history": "one entry",
+      "effect": "Restore the field from state.defaults.",
+      "enabled": true
+    },
+    {
+      "id": "property.set.clearcoat",
+      "kind": "document_edit",
+      "scope": "local_inspector",
+      "binding": "Document.clearcoat",
+      "implementedBy": "inspector-only/src",
+      "transaction": "BeginEdit(before) → clamp/edit → EndEdit() for continuous controls; Commit(before) for discrete controls.",
+      "payload": {
+        "value": "typed property value"
+      },
+      "enabled": true
+    },
+    {
+      "id": "property.reset.clearcoat",
+      "kind": "property_reset",
+      "scope": "local_inspector",
+      "binding": "InspectorState::Reset(\"clearcoat\")",
+      "implementedBy": "inspector-only/src",
+      "enabledWhen": "document.clearcoat differs from defaults.clearcoat",
+      "history": "one entry",
+      "effect": "Restore the field from state.defaults.",
+      "enabled": true
+    },
+    {
+      "id": "property.set.coatRoughness",
+      "kind": "document_edit",
+      "scope": "local_inspector",
+      "binding": "Document.coatRoughness",
+      "implementedBy": "inspector-only/src",
+      "transaction": "BeginEdit(before) → clamp/edit → EndEdit() for continuous controls; Commit(before) for discrete controls.",
+      "payload": {
+        "value": "typed property value"
+      },
+      "enabled": true
+    },
+    {
+      "id": "property.reset.coatRoughness",
+      "kind": "property_reset",
+      "scope": "local_inspector",
+      "binding": "InspectorState::Reset(\"coatRoughness\")",
+      "implementedBy": "inspector-only/src",
+      "enabledWhen": "document.coatRoughness differs from defaults.coatRoughness",
+      "history": "one entry",
+      "effect": "Restore the field from state.defaults.",
+      "enabled": true
+    },
+    {
+      "id": "property.set.anisotropy",
+      "kind": "document_edit",
+      "scope": "local_inspector",
+      "binding": "Document.anisotropy",
+      "implementedBy": "inspector-only/src",
+      "transaction": "BeginEdit(before) → clamp/edit → EndEdit() for continuous controls; Commit(before) for discrete controls.",
+      "payload": {
+        "value": "typed property value"
+      },
+      "enabled": true
+    },
+    {
+      "id": "property.reset.anisotropy",
+      "kind": "property_reset",
+      "scope": "local_inspector",
+      "binding": "InspectorState::Reset(\"anisotropy\")",
+      "implementedBy": "inspector-only/src",
+      "enabledWhen": "document.anisotropy differs from defaults.anisotropy",
+      "history": "one entry",
+      "effect": "Restore the field from state.defaults.",
+      "enabled": true
+    },
+    {
+      "id": "property.set.sheen",
+      "kind": "document_edit",
+      "scope": "local_inspector",
+      "binding": "Document.sheen",
+      "implementedBy": "inspector-only/src",
+      "transaction": "BeginEdit(before) → clamp/edit → EndEdit() for continuous controls; Commit(before) for discrete controls.",
+      "payload": {
+        "value": "typed property value"
+      },
+      "enabled": true
+    },
+    {
+      "id": "property.reset.sheen",
+      "kind": "property_reset",
+      "scope": "local_inspector",
+      "binding": "InspectorState::Reset(\"sheen\")",
+      "implementedBy": "inspector-only/src",
+      "enabledWhen": "document.sheen differs from defaults.sheen",
+      "history": "one entry",
+      "effect": "Restore the field from state.defaults.",
+      "enabled": true
+    },
+    {
+      "id": "property.set.emissionStrength",
+      "kind": "document_edit",
+      "scope": "local_inspector",
+      "binding": "Document.emissionStrength",
+      "implementedBy": "inspector-only/src",
+      "transaction": "BeginEdit(before) → clamp/edit → EndEdit() for continuous controls; Commit(before) for discrete controls.",
+      "payload": {
+        "value": "typed property value"
+      },
+      "enabled": true
+    },
+    {
+      "id": "property.reset.emissionStrength",
+      "kind": "property_reset",
+      "scope": "local_inspector",
+      "binding": "InspectorState::Reset(\"emissionStrength\")",
+      "implementedBy": "inspector-only/src",
+      "enabledWhen": "document.emissionStrength differs from defaults.emissionStrength",
+      "history": "one entry",
+      "effect": "Restore the field from state.defaults.",
+      "enabled": true
+    },
+    {
+      "id": "property.set.uvRotation",
+      "kind": "document_edit",
+      "scope": "local_inspector",
+      "binding": "Document.uvRotation",
+      "implementedBy": "inspector-only/src",
+      "transaction": "BeginEdit(before) → clamp/edit → EndEdit() for continuous controls; Commit(before) for discrete controls.",
+      "payload": {
+        "value": "typed property value"
+      },
+      "enabled": true
+    },
+    {
+      "id": "property.reset.uvRotation",
+      "kind": "property_reset",
+      "scope": "local_inspector",
+      "binding": "InspectorState::Reset(\"uvRotation\")",
+      "implementedBy": "inspector-only/src",
+      "enabledWhen": "document.uvRotation differs from defaults.uvRotation",
+      "history": "one entry",
+      "effect": "Restore the field from state.defaults.",
+      "enabled": true
+    },
+    {
+      "id": "property.set.opacity",
+      "kind": "document_edit",
+      "scope": "local_inspector",
+      "binding": "Document.opacity",
+      "implementedBy": "inspector-only/src",
+      "transaction": "BeginEdit(before) → clamp/edit → EndEdit() for continuous controls; Commit(before) for discrete controls.",
+      "payload": {
+        "value": "typed property value"
+      },
+      "enabled": true
+    },
+    {
+      "id": "property.reset.opacity",
+      "kind": "property_reset",
+      "scope": "local_inspector",
+      "binding": "InspectorState::Reset(\"opacity\")",
+      "implementedBy": "inspector-only/src",
+      "enabledWhen": "document.opacity differs from defaults.opacity",
+      "history": "one entry",
+      "effect": "Restore the field from state.defaults.",
+      "enabled": true
+    },
+    {
+      "id": "property.set.ior",
+      "kind": "document_edit",
+      "scope": "local_inspector",
+      "binding": "Document.ior",
+      "implementedBy": "inspector-only/src",
+      "transaction": "BeginEdit(before) → clamp/edit → EndEdit() for continuous controls; Commit(before) for discrete controls.",
+      "payload": {
+        "value": "typed property value"
+      },
+      "enabled": true
+    },
+    {
+      "id": "property.reset.ior",
+      "kind": "property_reset",
+      "scope": "local_inspector",
+      "binding": "InspectorState::Reset(\"ior\")",
+      "implementedBy": "inspector-only/src",
+      "enabledWhen": "document.ior differs from defaults.ior",
+      "history": "one entry",
+      "effect": "Restore the field from state.defaults.",
+      "enabled": true
+    },
+    {
+      "id": "property.set.exposure",
+      "kind": "document_edit",
+      "scope": "local_inspector",
+      "binding": "Document.exposure",
+      "implementedBy": "inspector-only/src",
+      "transaction": "BeginEdit(before) → clamp/edit → EndEdit() for continuous controls; Commit(before) for discrete controls.",
+      "payload": {
+        "value": "typed property value"
+      },
+      "enabled": true
+    },
+    {
+      "id": "property.reset.exposure",
+      "kind": "property_reset",
+      "scope": "local_inspector",
+      "binding": "InspectorState::Reset(\"exposure\")",
+      "implementedBy": "inspector-only/src",
+      "enabledWhen": "document.exposure differs from defaults.exposure",
+      "history": "one entry",
+      "effect": "Restore the field from state.defaults.",
+      "enabled": true
+    },
+    {
+      "id": "property.set.environmentRotation",
+      "kind": "document_edit",
+      "scope": "local_inspector",
+      "binding": "Document.environmentRotation",
+      "implementedBy": "inspector-only/src",
+      "transaction": "BeginEdit(before) → clamp/edit → EndEdit() for continuous controls; Commit(before) for discrete controls.",
+      "payload": {
+        "value": "typed property value"
+      },
+      "enabled": true
+    },
+    {
+      "id": "property.reset.environmentRotation",
+      "kind": "property_reset",
+      "scope": "local_inspector",
+      "binding": "InspectorState::Reset(\"environmentRotation\")",
+      "implementedBy": "inspector-only/src",
+      "enabledWhen": "document.environmentRotation differs from defaults.environmentRotation",
+      "history": "one entry",
+      "effect": "Restore the field from state.defaults.",
+      "enabled": true
+    },
+    {
+      "id": "property.set.intensity",
+      "kind": "document_edit",
+      "scope": "local_inspector",
+      "binding": "Document.intensity",
+      "implementedBy": "inspector-only/src",
+      "transaction": "BeginEdit(before) → clamp/edit → EndEdit() for continuous controls; Commit(before) for discrete controls.",
+      "payload": {
+        "value": "typed property value"
+      },
+      "enabled": true
+    },
+    {
+      "id": "property.reset.intensity",
+      "kind": "property_reset",
+      "scope": "local_inspector",
+      "binding": "InspectorState::Reset(\"intensity\")",
+      "implementedBy": "inspector-only/src",
+      "enabledWhen": "document.intensity differs from defaults.intensity",
+      "history": "one entry",
+      "effect": "Restore the field from state.defaults.",
+      "enabled": true
+    },
+    {
+      "id": "property.set.keyIntensity",
+      "kind": "document_edit",
+      "scope": "local_inspector",
+      "binding": "Document.keyIntensity",
+      "implementedBy": "inspector-only/src",
+      "transaction": "BeginEdit(before) → clamp/edit → EndEdit() for continuous controls; Commit(before) for discrete controls.",
+      "payload": {
+        "value": "typed property value"
+      },
+      "enabled": true
+    },
+    {
+      "id": "property.reset.keyIntensity",
+      "kind": "property_reset",
+      "scope": "local_inspector",
+      "binding": "InspectorState::Reset(\"keyIntensity\")",
+      "implementedBy": "inspector-only/src",
+      "enabledWhen": "document.keyIntensity differs from defaults.keyIntensity",
+      "history": "one entry",
+      "effect": "Restore the field from state.defaults.",
+      "enabled": true
+    },
+    {
+      "id": "property.set.fillIntensity",
+      "kind": "document_edit",
+      "scope": "local_inspector",
+      "binding": "Document.fillIntensity",
+      "implementedBy": "inspector-only/src",
+      "transaction": "BeginEdit(before) → clamp/edit → EndEdit() for continuous controls; Commit(before) for discrete controls.",
+      "payload": {
+        "value": "typed property value"
+      },
+      "enabled": true
+    },
+    {
+      "id": "property.reset.fillIntensity",
+      "kind": "property_reset",
+      "scope": "local_inspector",
+      "binding": "InspectorState::Reset(\"fillIntensity\")",
+      "implementedBy": "inspector-only/src",
+      "enabledWhen": "document.fillIntensity differs from defaults.fillIntensity",
+      "history": "one entry",
+      "effect": "Restore the field from state.defaults.",
+      "enabled": true
+    },
+    {
+      "id": "property.set.rimIntensity",
+      "kind": "document_edit",
+      "scope": "local_inspector",
+      "binding": "Document.rimIntensity",
+      "implementedBy": "inspector-only/src",
+      "transaction": "BeginEdit(before) → clamp/edit → EndEdit() for continuous controls; Commit(before) for discrete controls.",
+      "payload": {
+        "value": "typed property value"
+      },
+      "enabled": true
+    },
+    {
+      "id": "property.reset.rimIntensity",
+      "kind": "property_reset",
+      "scope": "local_inspector",
+      "binding": "InspectorState::Reset(\"rimIntensity\")",
+      "implementedBy": "inspector-only/src",
+      "enabledWhen": "document.rimIntensity differs from defaults.rimIntensity",
+      "history": "one entry",
+      "effect": "Restore the field from state.defaults.",
+      "enabled": true
+    },
+    {
+      "id": "property.set.yaw",
+      "kind": "document_edit",
+      "scope": "local_inspector",
+      "binding": "Document.yaw",
+      "implementedBy": "inspector-only/src",
+      "transaction": "BeginEdit(before) → clamp/edit → EndEdit() for continuous controls; Commit(before) for discrete controls.",
+      "payload": {
+        "value": "typed property value"
+      },
+      "enabled": true
+    },
+    {
+      "id": "property.reset.yaw",
+      "kind": "property_reset",
+      "scope": "local_inspector",
+      "binding": "InspectorState::Reset(\"yaw\")",
+      "implementedBy": "inspector-only/src",
+      "enabledWhen": "document.yaw differs from defaults.yaw",
+      "history": "one entry",
+      "effect": "Restore the field from state.defaults.",
+      "enabled": true
+    },
+    {
+      "id": "property.set.pitch",
+      "kind": "document_edit",
+      "scope": "local_inspector",
+      "binding": "Document.pitch",
+      "implementedBy": "inspector-only/src",
+      "transaction": "BeginEdit(before) → clamp/edit → EndEdit() for continuous controls; Commit(before) for discrete controls.",
+      "payload": {
+        "value": "typed property value"
+      },
+      "enabled": true
+    },
+    {
+      "id": "property.reset.pitch",
+      "kind": "property_reset",
+      "scope": "local_inspector",
+      "binding": "InspectorState::Reset(\"pitch\")",
+      "implementedBy": "inspector-only/src",
+      "enabledWhen": "document.pitch differs from defaults.pitch",
+      "history": "one entry",
+      "effect": "Restore the field from state.defaults.",
+      "enabled": true
+    },
+    {
+      "id": "property.set.distance",
+      "kind": "document_edit",
+      "scope": "local_inspector",
+      "binding": "Document.distance",
+      "implementedBy": "inspector-only/src",
+      "transaction": "BeginEdit(before) → clamp/edit → EndEdit() for continuous controls; Commit(before) for discrete controls.",
+      "payload": {
+        "value": "typed property value"
+      },
+      "enabled": true
+    },
+    {
+      "id": "property.reset.distance",
+      "kind": "property_reset",
+      "scope": "local_inspector",
+      "binding": "InspectorState::Reset(\"distance\")",
+      "implementedBy": "inspector-only/src",
+      "enabledWhen": "document.distance differs from defaults.distance",
+      "history": "one entry",
+      "effect": "Restore the field from state.defaults.",
+      "enabled": true
+    },
+    {
+      "id": "property.set.textureStrength",
+      "kind": "document_edit",
+      "scope": "local_inspector",
+      "binding": "Document.textureStrength",
+      "implementedBy": "inspector-only/src",
+      "transaction": "BeginEdit(before) → clamp/edit → EndEdit() for continuous controls; Commit(before) for discrete controls.",
+      "payload": {
+        "value": "typed property value"
+      },
+      "enabled": true
+    },
+    {
+      "id": "property.reset.textureStrength",
+      "kind": "property_reset",
+      "scope": "local_inspector",
+      "binding": "InspectorState::Reset(\"textureStrength\")",
+      "implementedBy": "inspector-only/src",
+      "enabledWhen": "document.textureStrength differs from defaults.textureStrength",
+      "history": "one entry",
+      "effect": "Restore the field from state.defaults.",
+      "enabled": true
+    },
+    {
+      "id": "property.set.uvScale",
+      "kind": "document_edit",
+      "scope": "local_inspector",
+      "binding": "Document.uvScale",
+      "implementedBy": "inspector-only/src",
+      "transaction": "BeginEdit(before) → clamp/edit → EndEdit() for continuous controls; Commit(before) for discrete controls.",
+      "payload": {
+        "value": "array<float,2> or axis+float"
+      },
+      "enabled": true
+    },
+    {
+      "id": "property.reset.uvScale",
+      "kind": "property_reset",
+      "scope": "local_inspector",
+      "binding": "InspectorState::Reset(\"uvScale\")",
+      "implementedBy": "inspector-only/src",
+      "enabledWhen": "document.uvScale differs from defaults.uvScale",
+      "history": "one entry",
+      "effect": "Restore the field from state.defaults.",
+      "enabled": true
+    },
+    {
+      "id": "property.set.uvOffset",
+      "kind": "document_edit",
+      "scope": "local_inspector",
+      "binding": "Document.uvOffset",
+      "implementedBy": "inspector-only/src",
+      "transaction": "BeginEdit(before) → clamp/edit → EndEdit() for continuous controls; Commit(before) for discrete controls.",
+      "payload": {
+        "value": "array<float,2> or axis+float"
+      },
+      "enabled": true
+    },
+    {
+      "id": "property.reset.uvOffset",
+      "kind": "property_reset",
+      "scope": "local_inspector",
+      "binding": "InspectorState::Reset(\"uvOffset\")",
+      "implementedBy": "inspector-only/src",
+      "enabledWhen": "document.uvOffset differs from defaults.uvOffset",
+      "history": "one entry",
+      "effect": "Restore the field from state.defaults.",
+      "enabled": true
+    },
+    {
+      "id": "property.set.tiling",
+      "kind": "document_edit",
+      "scope": "local_inspector",
+      "binding": "Document.tiling",
+      "implementedBy": "inspector-only/src",
+      "transaction": "BeginEdit(before) → clamp/edit → EndEdit() for continuous controls; Commit(before) for discrete controls.",
+      "payload": {
+        "value": "typed property value"
+      },
+      "enabled": true
+    },
+    {
+      "id": "property.reset.tiling",
+      "kind": "property_reset",
+      "scope": "local_inspector",
+      "binding": "InspectorState::Reset(\"tiling\")",
+      "implementedBy": "inspector-only/src",
+      "enabledWhen": "document.tiling differs from defaults.tiling",
+      "history": "one entry",
+      "effect": "Restore the field from state.defaults.",
+      "enabled": true
+    },
+    {
+      "id": "property.set.twoSided",
+      "kind": "document_edit",
+      "scope": "local_inspector",
+      "binding": "Document.twoSided",
+      "implementedBy": "inspector-only/src",
+      "transaction": "BeginEdit(before) → clamp/edit → EndEdit() for continuous controls; Commit(before) for discrete controls.",
+      "payload": {
+        "value": "typed property value"
+      },
+      "enabled": true
+    },
+    {
+      "id": "property.reset.twoSided",
+      "kind": "property_reset",
+      "scope": "local_inspector",
+      "binding": "InspectorState::Reset(\"twoSided\")",
+      "implementedBy": "inspector-only/src",
+      "enabledWhen": "document.twoSided differs from defaults.twoSided",
+      "history": "one entry",
+      "effect": "Restore the field from state.defaults.",
+      "enabled": true
+    },
+    {
+      "id": "property.set.castShadows",
+      "kind": "document_edit",
+      "scope": "local_inspector",
+      "binding": "Document.castShadows",
+      "implementedBy": "inspector-only/src",
+      "transaction": "BeginEdit(before) → clamp/edit → EndEdit() for continuous controls; Commit(before) for discrete controls.",
+      "payload": {
+        "value": "typed property value"
+      },
+      "enabled": true
+    },
+    {
+      "id": "property.reset.castShadows",
+      "kind": "property_reset",
+      "scope": "local_inspector",
+      "binding": "InspectorState::Reset(\"castShadows\")",
+      "implementedBy": "inspector-only/src",
+      "enabledWhen": "document.castShadows differs from defaults.castShadows",
+      "history": "one entry",
+      "effect": "Restore the field from state.defaults.",
+      "enabled": true
+    },
+    {
+      "id": "property.set.receiveShadows",
+      "kind": "document_edit",
+      "scope": "local_inspector",
+      "binding": "Document.receiveShadows",
+      "implementedBy": "inspector-only/src",
+      "transaction": "BeginEdit(before) → clamp/edit → EndEdit() for continuous controls; Commit(before) for discrete controls.",
+      "payload": {
+        "value": "typed property value"
+      },
+      "enabled": true
+    },
+    {
+      "id": "property.reset.receiveShadows",
+      "kind": "property_reset",
+      "scope": "local_inspector",
+      "binding": "InspectorState::Reset(\"receiveShadows\")",
+      "implementedBy": "inspector-only/src",
+      "enabledWhen": "document.receiveShadows differs from defaults.receiveShadows",
+      "history": "one entry",
+      "effect": "Restore the field from state.defaults.",
+      "enabled": true
+    },
+    {
+      "id": "property.set.grid",
+      "kind": "document_edit",
+      "scope": "local_inspector",
+      "binding": "Document.grid",
+      "implementedBy": "inspector-only/src",
+      "transaction": "BeginEdit(before) → clamp/edit → EndEdit() for continuous controls; Commit(before) for discrete controls.",
+      "payload": {
+        "value": "typed property value"
+      },
+      "enabled": true
+    },
+    {
+      "id": "property.reset.grid",
+      "kind": "property_reset",
+      "scope": "local_inspector",
+      "binding": "InspectorState::Reset(\"grid\")",
+      "implementedBy": "inspector-only/src",
+      "enabledWhen": "document.grid differs from defaults.grid",
+      "history": "one entry",
+      "effect": "Restore the field from state.defaults.",
+      "enabled": true
+    },
+    {
+      "id": "property.set.shadows",
+      "kind": "document_edit",
+      "scope": "local_inspector",
+      "binding": "Document.shadows",
+      "implementedBy": "inspector-only/src",
+      "transaction": "BeginEdit(before) → clamp/edit → EndEdit() for continuous controls; Commit(before) for discrete controls.",
+      "payload": {
+        "value": "typed property value"
+      },
+      "enabled": true
+    },
+    {
+      "id": "property.reset.shadows",
+      "kind": "property_reset",
+      "scope": "local_inspector",
+      "binding": "InspectorState::Reset(\"shadows\")",
+      "implementedBy": "inspector-only/src",
+      "enabledWhen": "document.shadows differs from defaults.shadows",
+      "history": "one entry",
+      "effect": "Restore the field from state.defaults.",
+      "enabled": true
+    },
+    {
+      "id": "property.set.turntable",
+      "kind": "document_edit",
+      "scope": "local_inspector",
+      "binding": "Document.turntable",
+      "implementedBy": "inspector-only/src",
+      "transaction": "BeginEdit(before) → clamp/edit → EndEdit() for continuous controls; Commit(before) for discrete controls.",
+      "payload": {
+        "value": "typed property value"
+      },
+      "enabled": true
+    },
+    {
+      "id": "property.reset.turntable",
+      "kind": "property_reset",
+      "scope": "local_inspector",
+      "binding": "InspectorState::Reset(\"turntable\")",
+      "implementedBy": "inspector-only/src",
+      "enabledWhen": "document.turntable differs from defaults.turntable",
+      "history": "one entry",
+      "effect": "Restore the field from state.defaults.",
+      "enabled": true
+    },
+    {
+      "id": "property.set.textureEnabled",
+      "kind": "document_edit",
+      "scope": "local_inspector",
+      "binding": "Document.textureEnabled",
+      "implementedBy": "inspector-only/src",
+      "transaction": "BeginEdit(before) → clamp/edit → EndEdit() for continuous controls; Commit(before) for discrete controls.",
+      "payload": {
+        "value": "typed property value"
+      },
+      "enabled": true
+    },
+    {
+      "id": "property.reset.textureEnabled",
+      "kind": "property_reset",
+      "scope": "local_inspector",
+      "binding": "InspectorState::Reset(\"textureEnabled\")",
+      "implementedBy": "inspector-only/src",
+      "enabledWhen": "document.textureEnabled differs from defaults.textureEnabled",
+      "history": "one entry",
+      "effect": "Restore the field from state.defaults.",
+      "enabled": true
+    },
+    {
+      "id": "color.open.baseColor",
+      "kind": "picker_open",
+      "scope": "local_inspector",
+      "binding": "InspectorState::OpenPicker(target)",
+      "implementedBy": "inspector-only/src",
+      "target": 0,
+      "history": false,
+      "enabled": true
+    },
+    {
+      "id": "color.set_hex.baseColor",
+      "kind": "document_edit",
+      "scope": "local_inspector",
+      "binding": "Document.baseColor[0..2]",
+      "implementedBy": "inspector-only/src",
+      "payload": {
+        "hex": "#RRGGBB"
+      },
+      "validation": "ParseHex; preserve alpha; reject incomplete/invalid input.",
+      "transaction": "one edit",
+      "enabled": true
+    },
+    {
+      "id": "color.set_alpha.baseColor",
+      "kind": "document_edit",
+      "scope": "local_inspector",
+      "binding": "Document.baseColor[3]",
+      "implementedBy": "inspector-only/src",
+      "payload": {
+        "alphaPercent": "0..100"
+      },
+      "effect": "Store alphaPercent / 100; does not write Document.opacity.",
+      "enabledWhen": "true",
+      "enabled": true
+    },
+    {
+      "id": "property.reset.baseColor",
+      "kind": "property_reset",
+      "scope": "local_inspector",
+      "binding": "InspectorState::Reset(\"baseColor\")",
+      "implementedBy": "inspector-only/src",
+      "enabledWhen": "document.baseColor differs from defaults.baseColor",
+      "history": "one entry",
+      "enabled": true
+    },
+    {
+      "id": "color.open.emissionColor",
+      "kind": "picker_open",
+      "scope": "local_inspector",
+      "binding": "InspectorState::OpenPicker(target)",
+      "implementedBy": "inspector-only/src",
+      "target": 1,
+      "history": false,
+      "enabled": true
+    },
+    {
+      "id": "color.set_hex.emissionColor",
+      "kind": "document_edit",
+      "scope": "local_inspector",
+      "binding": "Document.emissionColor[0..2]",
+      "implementedBy": "inspector-only/src",
+      "payload": {
+        "hex": "#RRGGBB"
+      },
+      "validation": "ParseHex; preserve alpha; reject incomplete/invalid input.",
+      "transaction": "one edit",
+      "enabled": true
+    },
+    {
+      "id": "color.set_alpha.emissionColor",
+      "kind": "document_edit",
+      "scope": "local_inspector",
+      "binding": "Document.emissionColor[3]",
+      "implementedBy": "inspector-only/src",
+      "payload": {
+        "alphaPercent": "0..100"
+      },
+      "effect": "Store alphaPercent / 100; does not write Document.opacity.",
+      "enabledWhen": "false",
+      "enabled": true
+    },
+    {
+      "id": "property.reset.emissionColor",
+      "kind": "property_reset",
+      "scope": "local_inspector",
+      "binding": "InspectorState::Reset(\"emissionColor\")",
+      "implementedBy": "inspector-only/src",
+      "enabledWhen": "document.emissionColor differs from defaults.emissionColor",
+      "history": "one entry",
+      "enabled": true
+    },
+    {
+      "id": "texture.choose",
+      "kind": "file_selection",
+      "scope": "local_inspector",
+      "binding": "Document.texturePath",
+      "implementedBy": "inspector-only/src",
+      "native": "GetOpenFileNameW + UTF-8 conversion",
+      "effect": "Choose local image path; textureEnabled=true; commit Document edit. No image decode, renderer upload or 3D action.",
+      "enabled": true
+    },
+    {
+      "id": "texture.clear",
+      "kind": "document_edit",
+      "scope": "local_inspector",
+      "binding": "Document.texturePath",
+      "implementedBy": "inspector-only/src",
+      "effect": "Clear path, textureEnabled=false; commit one edit.",
+      "enabledWhen": "texturePath is not empty",
+      "enabled": true
+    },
+    {
+      "id": "picker.mode",
+      "kind": "picker_representation",
+      "scope": "local_inspector",
+      "binding": "InspectorState.pickerMode",
+      "implementedBy": "inspector-only/src",
+      "history": "none",
+      "effect": "Edit draft or representation only.",
+      "enabledWhen": "state.pickerOpen",
+      "enabled": true
+    },
+    {
+      "id": "picker.rgb",
+      "kind": "picker_draft_edit",
+      "scope": "local_inspector",
+      "binding": "InspectorState.pickerDraft[0..2]",
+      "implementedBy": "inspector-only/src",
+      "history": "none",
+      "effect": "Edit draft or representation only.",
+      "enabledWhen": "state.pickerOpen",
+      "enabled": true
+    },
+    {
+      "id": "picker.hsv",
+      "kind": "picker_draft_edit",
+      "scope": "local_inspector",
+      "binding": "InspectorState.pickerHSV",
+      "implementedBy": "inspector-only/src",
+      "history": "none",
+      "effect": "Edit draft or representation only.",
+      "enabledWhen": "state.pickerOpen",
+      "enabled": true
+    },
+    {
+      "id": "picker.sv",
+      "kind": "picker_draft_edit",
+      "scope": "local_inspector",
+      "binding": "InspectorState.pickerHSV[1..2]",
+      "implementedBy": "inspector-only/src",
+      "history": "none",
+      "effect": "Edit draft or representation only.",
+      "enabledWhen": "state.pickerOpen",
+      "enabled": true
+    },
+    {
+      "id": "picker.hue",
+      "kind": "picker_draft_edit",
+      "scope": "local_inspector",
+      "binding": "InspectorState.pickerHSV[0]",
+      "implementedBy": "inspector-only/src",
+      "history": "none",
+      "effect": "Edit draft or representation only.",
+      "enabledWhen": "state.pickerOpen",
+      "enabled": true
+    },
+    {
+      "id": "picker.alpha",
+      "kind": "picker_draft_edit",
+      "scope": "local_inspector",
+      "binding": "InspectorState.pickerDraft[3]",
+      "implementedBy": "inspector-only/src",
+      "history": "none",
+      "effect": "Edit draft or representation only.",
+      "enabledWhen": "state.pickerTarget == 0",
+      "enabled": true
+    },
+    {
+      "id": "picker.hex",
+      "kind": "picker_draft_edit",
+      "scope": "local_inspector",
+      "binding": "InspectorState.pickerDraft[0..2]",
+      "implementedBy": "inspector-only/src",
+      "history": "none",
+      "effect": "Edit draft or representation only.",
+      "enabledWhen": "state.pickerOpen",
+      "enabled": true
+    },
+    {
+      "id": "picker.palette",
+      "kind": "picker_draft_edit",
+      "scope": "local_inspector",
+      "binding": "InspectorState.pickerDraft[0..2]",
+      "implementedBy": "inspector-only/src",
+      "history": "none",
+      "effect": "Edit draft or representation only.",
+      "enabledWhen": "state.pickerOpen",
+      "enabled": true
+    },
+    {
+      "id": "picker.restore_original",
+      "kind": "picker_draft_edit",
+      "scope": "local_inspector",
+      "binding": "InspectorState.pickerOriginal",
+      "implementedBy": "inspector-only/src",
+      "history": "none",
+      "effect": "Edit draft or representation only.",
+      "enabledWhen": "state.pickerOpen",
+      "enabled": true
+    },
+    {
+      "id": "picker.apply",
+      "kind": "picker_commit",
+      "scope": "local_inspector",
+      "binding": "InspectorState::ApplyPicker()",
+      "implementedBy": "inspector-only/src",
+      "history": "one committed color edit if changed",
+      "effect": "Copy pickerDraft to selected Document color and close.",
+      "enabledWhen": "state.pickerOpen",
+      "enabled": true
+    },
+    {
+      "id": "picker.cancel",
+      "kind": "picker_cancel",
+      "scope": "local_inspector",
+      "binding": "InspectorState::CancelPicker()",
+      "implementedBy": "inspector-only/src",
+      "history": "none",
+      "effect": "Discard draft and close; Document stays at its original color.",
+      "enabledWhen": "state.pickerOpen",
+      "enabled": true
+    }
+  ],
+  "implementationScope": "All enabled actions edit or inspect the local Document/InspectorState, use their public API, or use the native chooser; no renderer or engine callbacks are implemented."
+}

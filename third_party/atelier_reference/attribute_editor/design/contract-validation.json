@@ -1,0 +1,21 @@
+{
+  "suite": "inspector-design-contract",
+  "passed": true,
+  "components": 266,
+  "actions": 116,
+  "icons": 12,
+  "checks": [
+    "JSON parsing",
+    "unique IDs",
+    "all parents resolve",
+    "all component action IDs resolve",
+    "all component icon IDs resolve",
+    "SVG files exist",
+    "positive rectangles",
+    "color tokens resolve",
+    "catalog counts",
+    "native icon SHA256",
+    "342x920 reference / 318 panel"
+  ],
+  "failures": []
+}
