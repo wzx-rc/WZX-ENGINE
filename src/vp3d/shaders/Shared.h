@@ -76,6 +76,13 @@ struct FrameConstants {
 
     uint selMoreCount; uint pad0; uint pad1; uint pad2;   // extra selected instances (multi-selection), instance id + 1
     uint4 selMore[8];
+
+    // Temporal reprojection: camera of the previous frame (the history holds that frame).
+    float3 prevCamPos;   float prevTanHalfFovY;
+    float3 prevCamRight; float prevAspect;
+    float3 prevCamUp;    uint historyValid;     // 1 = history textures hold the previous frame
+    float3 prevCamFwd;   float historyCap;      // history length in frames (exponential average window)
+    uint pad3; uint pad4; uint pad5; uint pad6;
 };
 
 // DDGI probe volume (real-time GI test). Atlases: irradiance 8x8 octahedral texels per probe, distance

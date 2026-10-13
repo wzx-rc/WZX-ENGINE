@@ -4,6 +4,7 @@
 // The result is blended into the accumulation texture with a capped history (exponential average),
 // so the image keeps updating when the probes or the scene change.
 #include "DDGICommon.hlsli"
+#include "Temporal.hlsli"
 
 // Radiance leaving a secondary hit (reflection ray), diffuse only.
 float3 ShadeSecondary(Hit h, float3 V, inout uint rng) {
@@ -20,14 +21,14 @@ float3 ShadeSecondary(Hit h, float3 V, inout uint rng) {
 float3 ShadePixel(float3 o, float3 d, inout uint rng, inout Guides g) {
     Hit h;
     if (!TraceClosest(o, d, 1e30, 0xFF & ~MASK_LIGHT_HIDDEN, h)) {
-        g.albedo = 1; g.normal = -d; g.depth = 1e6; g.id = 0;
+        g.albedo = 1; g.normal = -d; g.geom = -d; g.depth = 1e6; g.id = 0;
         return (F.flags & FRAME_FLAG_ENV_VISIBLE) ? Environment(d) : 0;
     }
     GpuInstance gi = gInst[h.inst];
     g.depth = h.t;
     g.id = h.inst + 1;
     if (gi.lightId != NO_LIGHT) {
-        g.albedo = 1; g.normal = h.N;
+        g.albedo = 1; g.normal = h.N; g.geom = h.Ng;
         return h.front ? gLights[gi.lightId].radiance * F.lightScale : 0;
     }
     Surf s = MakeSurf(gMats[gi.materialId], h);
@@ -37,6 +38,7 @@ float3 ShadePixel(float3 o, float3 d, inout uint rng, inout Guides g) {
     if (dot(h.N, V) <= 0) h.N = h.Ng;
     g.albedo = s.trans > 0.5 ? 1.0.xxx : lerp(s.base, SpecF0(s) + 0.2, s.metal);
     g.normal = h.N;
+    g.geom = h.Ng;
 
     float3 N = h.N;
     float NoV = saturate(dot(N, V));
@@ -132,24 +134,8 @@ void main(uint3 id : SV_DispatchThreadID) {
         }
     }
 
-    // Capped temporal history: n frames since the last reset, at most temporalMax.
-    float n = (float)min(F.sampleIndex, G.temporalMax);
-    float4 acc = gTex[SLOT_ACCUM][id.xy];
-    float3 prev = F.sampleIndex == 0 ? L : acc.rgb / max(acc.w, 1.0);
-    float k = 1.0 / (n + 1.0);
-    float3 avg = lerp(prev, L, k);
-    gTex[SLOT_ACCUM][id.xy] = float4(avg * (n + 1.0), n + 1.0);
-
-    float4 alb = gTex[SLOT_ALBEDO][id.xy];
-    float4 nd = gTex[SLOT_NORMAL][id.xy];
-    if (F.sampleIndex == 0) {
-        alb = float4(g.albedo, (float)g.id);
-        nd = float4(g.normal, g.depth);
-    } else {
-        alb.rgb = lerp(alb.rgb, g.albedo, k);
-        alb.w = (float)g.id;
-        nd = lerp(nd, float4(g.normal, g.depth), k);
-    }
-    gTex[SLOT_ALBEDO][id.xy] = alb;
-    gTex[SLOT_NORMAL][id.xy] = nd;
+    // Temporal accumulation with reprojection (Temporal.hlsli). The guides are the current frame's.
+    gTex[SLOT_ACCUM][id.xy] = TemporalAccumulate(L, F.camPos + CurPixelDir(float2(id.xy)) * g.depth, g.geom, g.depth);
+    gTex[SLOT_ALBEDO][id.xy] = float4(g.albedo, (float)g.id);
+    gTex[SLOT_NORMAL][id.xy] = float4(g.geom, g.depth);
 }

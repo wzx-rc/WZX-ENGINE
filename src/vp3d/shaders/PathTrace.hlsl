@@ -408,9 +408,10 @@ bool RandomWalk(inout Hit h, Surf s, inout float3 thr, inout uint rng) {
 
 struct Guides {
     float3 albedo;
-    float3 normal;
+    float3 normal;   // shading normal (guide for the denoiser)
     float depth;
     uint id;
+    float3 geom;     // geometric normal of the primary hit (stable under bevel jitter; used by reprojection)
 };
 
 float3 TracePath(float3 o, float3 d, inout uint rng, inout Guides g) {
@@ -423,7 +424,7 @@ float3 TracePath(float3 o, float3 d, inout uint rng, inout Guides g) {
         if (!TraceClosest(o, d, 1e30, mask, h)) {
             float3 env = Environment(d);
             radiance += thr * env;
-            if (bounce == 0) { g.albedo = 1; g.normal = -d; g.depth = 1e6; g.id = 0; }
+            if (bounce == 0) { g.albedo = 1; g.normal = -d; g.geom = -d; g.depth = 1e6; g.id = 0; }
             break;
         }
         GpuInstance gi = gInst[h.inst];
@@ -435,7 +436,7 @@ float3 TracePath(float3 o, float3 d, inout uint rng, inout Guides g) {
                 float w = specPrev ? 1.0 : PowerHeuristic(prevPdf, LightPdf(gi.lightId, d, h.t));
                 radiance += thr * Le * w;
             }
-            if (bounce == 0) { g.albedo = 1; g.normal = h.N; g.depth = h.t; g.id = h.inst + 1; }
+            if (bounce == 0) { g.albedo = 1; g.normal = h.N; g.geom = h.Ng; g.depth = h.t; g.id = h.inst + 1; }
             break;
         }
 
@@ -452,6 +453,7 @@ float3 TracePath(float3 o, float3 d, inout uint rng, inout Guides g) {
         if (bounce == 0) {
             g.albedo = s.trans > 0.5 ? 1.0.xxx : lerp(s.base, SpecF0(s) + 0.2, s.metal);
             g.normal = h.N;
+            g.geom = h.Ng;
             g.depth = h.t;
             g.id = h.inst + 1;
         }

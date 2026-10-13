@@ -188,11 +188,10 @@ void App::drawTopBar() {
     x += w;
     w = menuW(L"Rendu");
     k = ui.menu("menu_render", Rect(x, 0, w, r.h), L"Rendu",
-                {L"Viewport temps réel (P)", L"Path tracing interactif", L"Path tracing qualité finale", L"Relancer l'accumulation", L"Paramètres de rendu"});
-    if (k == 0) { m_rs.raster = true; markDirty(); }
-    if (k == 1 || k == 2) { m_rs.raster = false; m_quality = k - 1; applyQuality(); markDirty(); }
-    if (k == 3) markDirty();
-    if (k == 4) m_rightTab = 1;
+                {L"Path tracing temporel", L"GI sondes (DDGI, expérimental)", L"Relancer l'accumulation", L"Paramètres de rendu"});
+    if (k == 0 || k == 1) { m_rs.raster = false; m_rs.temporal = true; m_rs.ddgi = k == 1; applyQuality(); markDirty(); }
+    if (k == 2) markDirty();
+    if (k == 3) m_rightTab = 1;
     x += w;
     w = menuW(L"Exporter");
     k = ui.menu("menu_export", Rect(x, 0, w, r.h), L"Exporter", {L"Image PNG du viewport (F12)", L"Image PNG de la fenêtre"});
@@ -265,7 +264,7 @@ void App::drawStatusBar() {
     size_t objs = 0;
     for (auto& o : m_scene.objects) if (o.visible && o.part != "WALL" && o.part != "GROUND") ++objs;
     wchar_t buf[256];
-    std::wstring mode = m_rs.raster ? L"Viewport raster" : m_rs.ddgi ? L"GI sondes (DDGI)" : (m_quality ? L"Path tracing" : L"PT interactif");
+    std::wstring mode = m_rs.ddgi ? L"GI sondes (DDGI)" : (m_rs.temporal ? L"Path tracing temporel" : L"Path tracing progressif");
     swprintf(buf, 256, L"%s   ·   %zu objets   ·   %s triangles   ·   %.1f ms GPU   ·   %s", widen(m_scene.name).c_str(), objs,
              thousands(m_scene.triangleCount()).c_str(), m_renderer.gpuFrameMs(), mode.c_str());
     ui.text(buf, Rect(r.cx(), r.y, r.w * 0.5f - 12, r.h), th.textDim, 11.5f, false, Align::Right);
@@ -584,12 +583,12 @@ void App::drawRenderTab(Rect area) {
     auto row = [&]() { Rect r(x, y, w, 28); y += 30; return r; };
 
     if (section(x, y, w, L"Moteur de rendu", 3)) {
-        static const std::vector<std::wstring> q = {L"Viewport temps réel (raster)", L"Path tracing interactif", L"Path tracing qualité finale", L"GI sondes temps réel (DDGI)"};
-        int mode = m_rs.raster ? 0 : (m_rs.ddgi ? 3 : 1 + m_quality);
+        static const std::vector<std::wstring> q = {L"Path tracing temporel", L"GI sondes (DDGI, expérimental)"};
+        int mode = m_rs.ddgi ? 1 : 0;
         if (ui.dropdown("quality", Rect(x, y, w, 28), q, mode)) {
-            m_rs.raster = mode == 0;
-            m_rs.ddgi = mode == 3;
-            if (mode == 1 || mode == 2) m_quality = mode - 1;
+            m_rs.raster = false;
+            m_rs.temporal = true;
+            m_rs.ddgi = mode == 1;
             applyQuality();
             ch = true;
         }
@@ -658,7 +657,8 @@ void App::drawRenderTab(Rect area) {
         info(L"API", L"DirectX 12 + DXR 1.1 (inline)");
         swprintf(buf, 160, L"%d × %d px", m_vpPx.w, m_vpPx.h);
         info(L"Résolution", buf);
-        swprintf(buf, 160, L"%u / %d", m_renderer.sampleCount(), m_rs.maxSamples);
+        if (m_rs.temporal && !m_rs.ddgi) swprintf(buf, 160, L"%u images (historique %d)", m_renderer.sampleCount(), m_rs.temporalCap);
+        else swprintf(buf, 160, L"%u / %d", m_renderer.sampleCount(), m_rs.maxSamples);
         info(L"Échantillons", buf);
         swprintf(buf, 160, L"%.2f ms GPU  ·  %d spp/image", m_renderer.gpuFrameMs(), m_rs.samplesPerFrame);
         info(L"Temps", buf);
@@ -819,12 +819,9 @@ void App::drawViewportOverlay() {
         if (ui.dropdown("proj_mode", Rect(bar.x + 2, bar.y + 2, 142, bar.h - 4), modes, m_viewMode)) setViewAxis(m_viewMode);
         Rect seg(bar.x + 152, bar.y, 230, bar.h);
         ui.fill(seg, glass, 5);
-        Rect a(seg.x + 2, seg.y + 2, 112, seg.h - 4), b(seg.x + 116, seg.y + 2, 112, seg.h - 4);
-        ui.fill(m_rs.raster ? a : b, th.accent, 4);
-        ui.text(L"Viewport  (P)", a, m_rs.raster ? Color::hex(0xFFFFFF) : th.textDim, 12, m_rs.raster, Align::Center);
-        ui.text(L"Path tracing", b, !m_rs.raster ? Color::hex(0xFFFFFF) : th.textDim, 12, !m_rs.raster, Align::Center);
-        if (ui.clicked(a) && !m_rs.raster) { m_rs.raster = true; markDirty(); }
-        if (ui.clicked(b) && m_rs.raster) { m_rs.raster = false; markDirty(); }
+        Rect a(seg.x + 2, seg.y + 2, seg.w - 4, seg.h - 4);
+        ui.fill(a, th.accent, 4);
+        ui.text(m_rs.ddgi ? L"GI sondes (DDGI)" : L"Path tracing temporel", a, Color::hex(0xFFFFFF), 12, true, Align::Center);
         Rect fr(seg.r() + 6, bar.y, 56, bar.h);
         ui.fill(fr, glass, 5);
         if (ui.iconButton(Rect(fr.x + 2, fr.y + 2, 25, fr.h - 4), 0xE890, m_scene.camera.dof, 12, L"Profondeur de champ")) { m_scene.camera.dof = !m_scene.camera.dof; markDirty(); }
@@ -854,7 +851,8 @@ void App::drawViewportOverlay() {
         row(L"Objets", std::to_wstring(objs));
         if (m_rs.raster) row(L"Lumières", std::to_wstring(m_scene.lights.size()));
         else {
-            swprintf(b, 64, L"%u / %d", std::min<uint32_t>(m_renderer.sampleCount(), m_rs.maxSamples), m_rs.maxSamples);
+            if (m_rs.temporal && !m_rs.ddgi) swprintf(b, 64, L"%u images", m_renderer.sampleCount());
+            else swprintf(b, 64, L"%u / %d", std::min<uint32_t>(m_renderer.sampleCount(), m_rs.maxSamples), m_rs.maxSamples);
             row(L"Échant.", b);
         }
     }

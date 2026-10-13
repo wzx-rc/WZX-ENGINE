@@ -38,7 +38,10 @@ struct RenderSettings {
     bool ddgi = false;
     int ddgiProbeBudget = 2048;   // target probe count over the scene bounds
     float ddgiHysteresis = 0.97f;
-    int ddgiTemporal = 32;        // max frames of image history (exponential average)
+    // Path tracing with temporal reprojection (default): one path per pixel per frame, history kept while moving.
+    // Off = progressive accumulation (reference renders, reset on every change).
+    bool temporal = true;
+    int temporalCap = 256;        // history length in frames (exponential average window): 256 converges, 64 stays noisier
     int ddgiView = 0;             // 0 full, 1 indirect only, 2 direct only
     bool ddgiShowProbes = false;  // draw the probes as small spheres shaded with their irradiance
 };
@@ -117,6 +120,8 @@ private:
     void createTargets(uint32_t w, uint32_t h);
     void setupProbeGrid(const RenderSettings& rs);
     void recordDDGI(const RenderSettings& rs, UINT gx, UINT gy);
+    void copyHistory();
+    uint32_t sceneSignature(const Scene& scene) const;
     Buffer createBuffer(uint64_t size, D3D12_HEAP_TYPE heap, D3D12_RESOURCE_FLAGS flags, D3D12_RESOURCE_STATES state);
     void ensureUpload(Buffer& b, uint64_t size);
     void buildTLAS(const Scene& scene, bool buildAS);
@@ -142,6 +147,7 @@ private:
     ComPtr<ID3D12RootSignature> m_rootSig;
     ComPtr<ID3D12PipelineState> m_psoTrace, m_psoDenoise, m_psoTonemap;
     ComPtr<ID3D12PipelineState> m_psoGIUpdate, m_psoGIBlend, m_psoGIShade;
+    ComPtr<ID3D12PipelineState> m_psoTraceTemporal;
     ComPtr<ID3D12DescriptorHeap> m_heap;
     uint32_t m_descSize = 0;
 
@@ -185,6 +191,12 @@ private:
     float m_giUpdateMs = 0.0f, m_giBlendMs = 0.0f;
     bool m_giTimed = false;
     Rng m_giRng;
+
+    // Temporal history: copies of ACCUM and NORMAL of the previous frame, and the camera they were rendered with.
+    ComPtr<ID3D12Resource> m_hist[2];
+    struct PrevCamera { float3 pos, right, up, fwd; float tanHalf = 1.0f, aspect = 1.0f; } m_prevCam;
+    bool m_historyValid = false;
+    uint32_t m_sceneSignature = 0;
 
     // Raster viewport
     static constexpr uint32_t kShadowSize = 2048, kMsaa = 4;

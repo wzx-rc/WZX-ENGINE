@@ -131,7 +131,7 @@ bool Renderer::init(HWND hwnd, uint32_t width, uint32_t height, const std::wstri
 
     D3D12_DESCRIPTOR_HEAP_DESC hd = {};
     hd.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-    hd.NumDescriptors = kTexCount + 1 + kGITexCount;  // + shadow map SRV + DDGI UAVs
+    hd.NumDescriptors = kTexCount + 1 + kGITexCount + 2;  // + shadow map SRV + DDGI UAVs + history UAVs
     hd.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
     m_device->CreateDescriptorHeap(&hd, IID_PPV_ARGS(&m_heap));
     m_descSize = m_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
@@ -165,7 +165,12 @@ bool Renderer::createPipelines(std::string* error) {
     giRange.NumDescriptors = kGITexCount;
     giRange.BaseShaderRegister = 6;
 
-    D3D12_ROOT_PARAMETER p[11] = {};
+    D3D12_DESCRIPTOR_RANGE histRange = {};
+    histRange.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_UAV;
+    histRange.NumDescriptors = 2;
+    histRange.BaseShaderRegister = 10;
+
+    D3D12_ROOT_PARAMETER p[12] = {};
     p[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
     p[0].Descriptor.ShaderRegister = 0;
     p[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
@@ -183,9 +188,12 @@ bool Renderer::createPipelines(std::string* error) {
     p[10].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;   // u6..u9 DDGI textures
     p[10].DescriptorTable.NumDescriptorRanges = 1;
     p[10].DescriptorTable.pDescriptorRanges = &giRange;
+    p[11].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;   // u10, u11 temporal history
+    p[11].DescriptorTable.NumDescriptorRanges = 1;
+    p[11].DescriptorTable.pDescriptorRanges = &histRange;
 
     D3D12_ROOT_SIGNATURE_DESC rsd = {};
-    rsd.NumParameters = 11;
+    rsd.NumParameters = 12;
     rsd.pParameters = p;
     ComPtr<ID3DBlob> blob, err;
     if (FAILED(D3D12SerializeRootSignature(&rsd, D3D_ROOT_SIGNATURE_VERSION_1, &blob, &err))) {
@@ -210,7 +218,8 @@ bool Renderer::createPipelines(std::string* error) {
         return true;
     };
     return make(L"PathTrace.cso", m_psoTrace) && make(L"Denoise.cso", m_psoDenoise) && make(L"Tonemap.cso", m_psoTonemap) &&
-           make(L"DDGIUpdate.cso", m_psoGIUpdate) && make(L"DDGIBlend.cso", m_psoGIBlend) && make(L"GIShade.cso", m_psoGIShade);
+           make(L"DDGIUpdate.cso", m_psoGIUpdate) && make(L"DDGIBlend.cso", m_psoGIBlend) && make(L"GIShade.cso", m_psoGIShade) &&
+           make(L"PathTraceTemporal.cso", m_psoTraceTemporal);
 }
 
 void Renderer::createTargets(uint32_t w, uint32_t h) {
@@ -242,6 +251,30 @@ void Renderer::createTargets(uint32_t w, uint32_t h) {
         hnd.ptr += (SIZE_T)i * m_descSize;
         m_device->CreateUnorderedAccessView(m_tex[i].Get(), nullptr, &u, hnd);
     }
+    // History textures (UAV slots u10, u11): copies of ACCUM and NORMAL, written at the end of each frame.
+    const TexSlot histSrc[2] = {TEX_ACCUM, TEX_NORMALDEPTH};
+    const uint32_t histHeap = kTexCount + 1 + kGITexCount;
+    for (int i = 0; i < 2; ++i) {
+        D3D12_RESOURCE_DESC d = {};
+        d.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+        d.Width = w;
+        d.Height = h;
+        d.DepthOrArraySize = 1;
+        d.MipLevels = 1;
+        d.Format = fmts[histSrc[i]];
+        d.SampleDesc.Count = 1;
+        d.Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
+        m_hist[i].Reset();
+        m_device->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &d, D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+                                          nullptr, IID_PPV_ARGS(&m_hist[i]));
+        D3D12_UNORDERED_ACCESS_VIEW_DESC u = {};
+        u.Format = d.Format;
+        u.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
+        D3D12_CPU_DESCRIPTOR_HANDLE hnd = cpu;
+        hnd.ptr += (SIZE_T)(histHeap + i) * m_descSize;
+        m_device->CreateUnorderedAccessView(m_hist[i].Get(), nullptr, &u, hnd);
+    }
+    m_historyValid = false;
     createRasterTargets(w, h);
     m_sampleIndex = 0;
 }
@@ -305,6 +338,7 @@ void Renderer::uavBarrier(ID3D12Resource* r) {
 
 void Renderer::setScene(const Scene& scene) {
     waitIdle();
+    m_historyValid = false;
     m_meshes.clear();
     m_sceneGeometryVersion = scene.geometryVersion;
 
@@ -608,7 +642,7 @@ void Renderer::recordDDGI(const RenderSettings& rs, UINT gx, UINT gy) {
     c.rot1 = float4(ex.y, ey.y, ez.y, 0);
     c.rot2 = float4(ex.z, ey.z, ez.z, 0);
     c.frame = m_giFrame++;
-    c.temporalMax = (uint32_t)std::max(0, rs.ddgiTemporal);
+    c.temporalMax = (uint32_t)std::max(1, rs.temporalCap);
     c.view = (uint32_t)rs.ddgiView;
     c.flags = rs.ddgiShowProbes ? 1u : 0u;
     c.normalBias = 0.06f;
@@ -635,6 +669,70 @@ void Renderer::recordDDGI(const RenderSettings& rs, UINT gx, UINT gy) {
     m_giTimed = true;
 }
 
+// Copies ACCUM and NORMAL into the history textures, after the frame's compute work and before the copy to the back buffer.
+void Renderer::copyHistory() {
+    uavBarrier();
+    const TexSlot src[2] = {TEX_ACCUM, TEX_NORMALDEPTH};
+    for (int i = 0; i < 2; ++i) {
+        transition(m_tex[src[i]].Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_COPY_SOURCE);
+        transition(m_hist[i].Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_COPY_DEST);
+        m_cmd->CopyResource(m_hist[i].Get(), m_tex[src[i]].Get());
+        transition(m_hist[i].Get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+        transition(m_tex[src[i]].Get(), D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+    }
+}
+
+// Hash of everything that changes the lighting of a frame except the camera and the object transforms, which
+// the reprojection handles. A change here drops the history.
+uint32_t Renderer::sceneSignature(const Scene& s) const {
+    uint32_t h = 2166136261u;
+    auto mix = [&](const void* p, size_t n) {
+        const unsigned char* b = static_cast<const unsigned char*>(p);
+        for (size_t i = 0; i < n; ++i) {
+            h ^= b[i];
+            h *= 16777619u;
+        }
+    };
+    for (const Material& m : s.materials) {
+        mix(&m.baseColor, sizeof(m.baseColor));
+        mix(&m.roughness, sizeof(float));
+        mix(&m.metallic, sizeof(float));
+        mix(&m.specular, sizeof(float));
+        mix(&m.transmission, sizeof(float));
+        mix(&m.ior, sizeof(float));
+        mix(&m.subsurface, sizeof(float));
+        mix(&m.sssRadius, sizeof(m.sssRadius));
+        mix(&m.emission, sizeof(m.emission));
+        mix(&m.emissionStrength, sizeof(float));
+        mix(&m.bevelRadius, sizeof(float));
+        mix(&m.coat, sizeof(float));
+        mix(&m.coatRoughness, sizeof(float));
+        mix(&m.flags, sizeof(uint32_t));
+    }
+    for (const AreaLight& l : s.lights) {
+        mix(&l.position, sizeof(l.position));
+        mix(&l.target, sizeof(l.target));
+        mix(&l.width, sizeof(float));
+        mix(&l.height, sizeof(float));
+        mix(&l.color, sizeof(l.color));
+        mix(&l.intensity, sizeof(float));
+        mix(&l.enabled, sizeof(bool));
+        mix(&l.visibleToCamera, sizeof(bool));
+    }
+    mix(&s.env.top, sizeof(s.env.top));
+    mix(&s.env.horizon, sizeof(s.env.horizon));
+    mix(&s.env.bottom, sizeof(s.env.bottom));
+    mix(&s.env.intensity, sizeof(float));
+    for (const Object& o : s.objects) {
+        mix(&o.material, sizeof(o.material));
+        mix(&o.mesh, sizeof(o.mesh));
+        mix(&o.visible, sizeof(bool));
+        mix(&o.ghost, sizeof(bool));
+    }
+    mix(&s.gridScale, sizeof(float));
+    return h;
+}
+
 void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRect& vpIn, int selectedObject,
                       bool toBackBuffer) {
     ViewRect vp = vpIn;
@@ -647,6 +745,12 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
         createTargets(vp.w, vp.h);
     }
     if (scene.geometryVersion != m_sceneGeometryVersion) setScene(scene);
+    const uint32_t sig = sceneSignature(scene);
+    if (sig != m_sceneSignature) {
+        m_sceneSignature = sig;
+        m_historyValid = false;
+    }
+    const bool useHistory = (rs.temporal || rs.ddgi) && !rs.raster;
 
     beginCommands();
     m_giTimed = false;
@@ -692,6 +796,14 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
     fc.lightScale = rs.lightScale;
     fc.vignette = rs.vignette;
     fc.bevelSamples = (float)std::max(1, rs.bevelSamples);
+    fc.historyValid = (useHistory && m_historyValid) ? 1u : 0u;
+    fc.historyCap = (float)std::max(1, rs.temporalCap);
+    fc.prevCamPos = m_prevCam.pos;
+    fc.prevCamRight = m_prevCam.right;
+    fc.prevCamUp = m_prevCam.up;
+    fc.prevCamFwd = m_prevCam.fwd;
+    fc.prevTanHalfFovY = m_prevCam.tanHalf;
+    fc.prevAspect = m_prevCam.aspect;
     memcpy(m_constants.mapped, &fc, sizeof(fc));
 
     ID3D12DescriptorHeap* heaps[] = {m_heap.Get()};
@@ -719,11 +831,20 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
     m_cmd->SetComputeRootShaderResourceView(6, m_materials.va());
     m_cmd->SetComputeRootShaderResourceView(7, m_lights.va());
     m_cmd->SetComputeRootDescriptorTable(8, m_heap->GetGPUDescriptorHandleForHeapStart());
+    D3D12_GPU_DESCRIPTOR_HANDLE histTable = m_heap->GetGPUDescriptorHandleForHeapStart();
+    histTable.ptr += (UINT64)(kTexCount + 1 + kGITexCount) * m_descSize;
+    m_cmd->SetComputeRootDescriptorTable(11, histTable);   // u10, u11: temporal history
 
     bool traced = false;
     m_cmd->EndQuery(m_queryHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 0);
     if (rs.ddgi) {
         recordDDGI(rs, gx, gy);   // never converges: probes and image history keep updating
+        ++m_sampleIndex;
+        traced = true;
+    } else if (rs.temporal) {
+        m_cmd->SetPipelineState(m_psoTraceTemporal.Get());   // no convergence limit: the history keeps refining
+        m_cmd->Dispatch(gx, gy, 1);
+        uavBarrier();
         ++m_sampleIndex;
         traced = true;
     } else if (m_sampleIndex < (uint32_t)rs.maxSamples) {
@@ -758,6 +879,11 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
     uint32_t tc[4] = {rs.denoise ? denoisedSlot : 0xFFFFFFFFu, 0, (uint32_t)rs.tonemapper, 0};
     m_cmd->SetComputeRoot32BitConstants(1, 4, tc, 0);
     m_cmd->Dispatch(gx, gy, 1);
+    }
+    if (useHistory) {
+        copyHistory();
+        m_historyValid = true;
+        m_prevCam = {fc.camPos, fc.camRight, fc.camUp, fc.camFwd, fc.tanHalfFovY, fc.aspect};
     }
     m_cmd->EndQuery(m_queryHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 1);
     m_cmd->ResolveQueryData(m_queryHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 0, m_giTimed ? 4 : 2, m_queryReadback.res.Get(), 0);

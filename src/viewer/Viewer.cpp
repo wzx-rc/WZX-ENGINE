@@ -3,7 +3,7 @@
 // animated sphere and light to watch the probes react, live GPU timings.
 //
 // Mouse: left or right drag = orbit, middle drag = pan, wheel = zoom.
-// Keys: 1 DDGI, 2 path tracing, 3 raster | V GI view (full / indirect / direct) | P probes
+// Keys: 1 DDGI, 2 path tracing (temporal) | V GI view (full / indirect / direct) | P probes
 //       +/- probe count | H hysteresis | A animate sphere | L animate light | R reset view | F12 capture
 #include "vp3d/Renderer.h"
 #include "vp3d/UI.h"
@@ -131,8 +131,9 @@ void Viewer::buildScene() {
 }
 
 void Viewer::applyMode() {
-    rs.raster = mode == 2;
+    rs.raster = false;
     rs.ddgi = mode == 0;
+    rs.temporal = mode == 1;
     rs.maxBounces = 6;
     rs.maxSamples = 4096;
     renderer.resetAccumulation();
@@ -175,7 +176,6 @@ void Viewer::frame() {
     // Keys
     if (ui.keyPressed('1')) { mode = 0; applyMode(); }
     if (ui.keyPressed('2')) { mode = 1; applyMode(); }
-    if (ui.keyPressed('3')) { mode = 2; applyMode(); }
     if (ui.keyPressed('V')) { rs.ddgiView = (rs.ddgiView + 1) % 3; moved = true; }
     if (ui.keyPressed('P')) { rs.ddgiShowProbes = !rs.ddgiShowProbes; moved = true; }
     if (ui.keyPressed(VK_ADD) || ui.keyPressed(VK_OEM_PLUS)) rs.ddgiProbeBudget = std::min(rs.ddgiProbeBudget * 2, 16384);
@@ -244,7 +244,7 @@ void Viewer::drawHud() {
         swprintf(b, 200, L"Vue : %s   ·   hystérésis %.2f", views[rs.ddgiView], rs.ddgiHysteresis);
         lines.push_back(b);
     } else if (mode == 1) {
-        swprintf(b, 200, L"Échantillons %u / %d", renderer.sampleCount(), rs.maxSamples);
+        swprintf(b, 200, L"Historique temporel : %d images", rs.temporalCap);
         lines.push_back(b);
     }
     swprintf(b, 200, L"Animation : sphère %s · lumière %s", animSphere ? L"oui" : L"non", animLight ? L"oui" : L"non");
@@ -255,7 +255,7 @@ void Viewer::drawHud() {
         ui.text(lines[i], Rect(24, y + 8 + 22.0f * i, 310, 20), i == 0 ? Color::hex(0x6CB4FF) : Color::hex(0xE6E8EB), 13, i == 0);
 
     const wchar_t* help =
-        L"1 DDGI   2 Path tracing   3 Raster   ·   V vue GI   P sondes   +/- nombre de sondes   H hystérésis   ·   "
+        L"1 DDGI   2 Path tracing temporel   ·   V vue GI   P sondes   +/- nombre de sondes   H hystérésis   ·   "
         L"A anime la sphère   L anime la lumière   R vue   F12 capture";
     ui.fill(Rect(12, ui.height - 38, ui.width - 24, 26), Color::hex(0x101317, 0.75f), 6);
     ui.text(help, Rect(22, ui.height - 35, ui.width - 44, 20), Color::hex(0xB9BEC6), 12);
@@ -336,6 +336,8 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         else if (a == L"--view") v.rs.ddgiView = _wtoi(next().c_str());
         else if (a == L"--probes") v.rs.ddgiProbeBudget = _wtoi(next().c_str());
         else if (a == L"--anim") v.animSphere = v.animLight = _wtoi(next().c_str()) != 0;
+        else if (a == L"--light-anim") v.animLight = _wtoi(next().c_str()) != 0;
+        else if (a == L"--cap") v.rs.temporalCap = _wtoi(next().c_str());
         else if (a == L"--vsync") v.vsync = _wtoi(next().c_str()) != 0;
     }
     LocalFree(argv);

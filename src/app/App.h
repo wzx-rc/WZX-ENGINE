@@ -50,13 +50,18 @@ struct Options {
     int tool = -1;              // test: start with this tool (1 move, 2 rotate)
     int width = 1600, height = 900;
     int quality = 1;
-    bool raster = true;         // light raster viewport by default, P toggles path tracing
+    bool raster = false;        // raster viewport (legacy, not offered in the UI)
     std::wstring openPath;      // scene file to open at startup
     // DDGI test
     bool ddgi = false;          // start in the real-time probe GI mode
     int probes = 2048;
     int ddgiView = 0;
-    int temporal = 32;
+    bool temporal = true;       // path tracing with temporal reprojection (--temporal 0 = progressive reference)
+    int temporalCap = 256;      // history length in frames (converges; the history is dropped on lighting changes)
+    bool orbit = false;         // benchmark: turntable camera (moving view)
+    bool denoise = true;        // edge-aware a-trous denoiser on the output
+    float sway = 0.0f;          // benchmark: oscillate the yaw by this amplitude (radians) around the start view
+    int snapEvery = 0;          // benchmark: save a snapshot every N frames (<shot>_fNNNN.png)
     float hysteresis = 0.97f;
     std::wstring benchPath;     // benchmark: per-frame timings (CSV) then exit
     int benchFrames = 300;
@@ -208,6 +213,7 @@ private:
     float3 m_dragOffset;
     bool m_dragMoved = false;
     bool m_turntable = false;
+    float m_swayBase = 0.0f, m_swayT = 0.0f;
     bool m_autoFocus = true;
     std::vector<Snapshot> m_undo, m_redo;
 

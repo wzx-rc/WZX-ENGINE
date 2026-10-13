@@ -90,7 +90,10 @@ bool App::init(HINSTANCE inst, const Options& opt) {
     m_rs.ddgi = opt.ddgi;
     m_rs.ddgiProbeBudget = opt.probes;
     m_rs.ddgiView = opt.ddgiView;
-    m_rs.ddgiTemporal = opt.temporal;
+    m_rs.temporal = opt.temporal;
+    m_rs.temporalCap = opt.temporalCap;
+    m_turntable = opt.orbit;
+    m_rs.denoise = opt.denoise;
     m_rs.ddgiHysteresis = opt.hysteresis;
     if (opt.ddgi) m_rs.raster = false;
     ShowWindow(m_hwnd, SW_SHOWDEFAULT);
@@ -100,6 +103,7 @@ bool App::init(HINSTANCE inst, const Options& opt) {
     layout();
     if (opt.bounces > 0) m_rs.maxBounces = opt.bounces;
     loadScene(opt.scene);
+    m_swayBase = m_scene.camera.yaw;
     if (opt.view >= 0 && opt.view < (int)m_views.size()) {
         m_activeView = opt.view;
         m_scene.camera = m_views[opt.view].cam;
@@ -262,6 +266,11 @@ void App::frame() {
     handleShortcuts();
     viewportInput();
     savePrefs();
+    if (m_opt.sway > 0.0f) {
+        m_swayT += 0.05f;
+        m_scene.camera.yaw = m_swayBase + m_opt.sway * std::sin(m_swayT);
+        cameraChanged();
+    }
     if (m_turntable) {
         m_scene.camera.yaw += 0.006f;
         cameraChanged();
@@ -269,7 +278,7 @@ void App::frame() {
     if (m_autoFocus && m_scene.camera.dof) m_scene.camera.focusDistance = m_scene.camera.distance;
 
     // Adaptive samples per frame: 1 while interacting, more when the view is still.
-    if (m_interacting || m_opt.motion) m_adaptiveSpp = 1;
+    if (m_interacting || m_opt.motion || m_rs.temporal) m_adaptiveSpp = 1;
     else {
         float g = m_renderer.gpuFrameMs();
         if (g < 9.0f && m_adaptiveSpp < 8) m_adaptiveSpp++;
@@ -321,6 +330,11 @@ void App::benchFrame() {
     }
     m_benchPrev = img;
     m_bench.push_back({m_renderer.gpuFrameMs(), m_rs.ddgi ? m_renderer.giUpdateMs() : 0.0f, m_rs.ddgi ? m_renderer.giBlendMs() : 0.0f, flicker});
+    if (m_opt.snapEvery > 0 && !m_opt.shotPath.empty() && (m_bench.size() - 1) % m_opt.snapEvery == 0) {
+        wchar_t name[512];
+        swprintf(name, 512, L"%s_f%04zu.png", m_opt.shotPath.c_str(), m_bench.size() - 1);
+        savePng(name, img, w, h);
+    }
     if (m_opt.motion) m_renderer.resetAccumulation();
     if ((int)m_bench.size() < m_opt.benchFrames) return;
 
@@ -345,7 +359,7 @@ void App::benchFrame() {
         stat(&BenchRow::giUpdate, um, up);
         stat(&BenchRow::giBlend, bm, bp);
         stat(&BenchRow::flicker, fm, fp);
-        fprintf(f, "# mode=%s motion=%d res=%ux%u probes=%u spacing=%.3f frames=%zu\n", m_rs.ddgi ? "ddgi" : "pathtrace",
+        fprintf(f, "# mode=%s motion=%d res=%ux%u probes=%u spacing=%.3f frames=%zu\n", m_rs.ddgi ? "ddgi" : (m_rs.temporal ? "pt-temporal" : "pt-progressive"),
                 (int)m_opt.motion, w, h, m_rs.ddgi ? m_renderer.giProbeCount() : 0u, m_renderer.giSpacing(), m_bench.size());
         fprintf(f, "# gpu_ms mean=%.3f p95=%.3f | gi_update_ms mean=%.3f p95=%.3f | gi_blend_ms mean=%.3f p95=%.3f | flicker_pct mean=%.3f p95=%.3f\n",
                 gm, gp, um, up, bm, bp, fm, fp);
@@ -576,7 +590,6 @@ void App::handleShortcuts() {
     UI& ui = m_ui;
     if (ui.textFocused()) return;
     bool ctrl = ui.keyDown(VK_CONTROL);
-    if (ui.keyPressed('P')) { m_rs.raster = !m_rs.raster; markDirty(); }
     if (ui.keyPressed('L')) { m_rs.raster = false; m_rs.ddgi = !m_rs.ddgi; markDirty(); }   // DDGI probe GI test
     if (ctrl && ui.keyPressed('S')) m_pendingAction = 1;
     if (ctrl && ui.keyPressed('O')) m_pendingAction = 2;
@@ -835,7 +848,12 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         else if (a == L"--ddgi") opt.ddgi = _wtoi(next().c_str()) != 0;
         else if (a == L"--probes") opt.probes = _wtoi(next().c_str());
         else if (a == L"--ddgi-view") opt.ddgiView = _wtoi(next().c_str());
-        else if (a == L"--temporal") opt.temporal = _wtoi(next().c_str());
+        else if (a == L"--temporal") opt.temporal = _wtoi(next().c_str()) != 0;
+        else if (a == L"--temporal-cap") opt.temporalCap = _wtoi(next().c_str());
+        else if (a == L"--orbit") opt.orbit = _wtoi(next().c_str()) != 0;
+        else if (a == L"--denoise") opt.denoise = _wtoi(next().c_str()) != 0;
+        else if (a == L"--sway") opt.sway = (float)_wtof(next().c_str());
+        else if (a == L"--snap-every") opt.snapEvery = _wtoi(next().c_str());
         else if (a == L"--hysteresis") opt.hysteresis = (float)_wtof(next().c_str());
         else if (a == L"--bench") opt.benchPath = next();
         else if (a == L"--frames") opt.benchFrames = _wtoi(next().c_str());

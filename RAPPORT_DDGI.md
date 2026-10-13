@@ -66,3 +66,56 @@ Petit viewer dédié (`src\viewer\Viewer.cpp`, compilé par `build.bat`) : Corne
 Mesures (1600 × 1000, vsync coupée, 2 448 sondes) : DDGI 6,0 ms GPU (mise à jour des sondes 0,12 ms et fusion 0,26 ms), path tracing 1 spp 5,4 ms, DDGI animé 6,0 ms. Avec la vsync active, le GPU reste à basse fréquence et le temps affiché grimpe à environ 14 ms : ce n'est pas une mesure de charge.
 L'affichage des sondes ajoute environ 3 ms (test brut contre toutes les sondes pour chaque pixel, outil de debug uniquement).
 En animation, l'historique d'image est effacé à chaque frame : les ombres directes passent alors par le débruiteur à 1 échantillon et deviennent plus floues. Une reprojection temporelle serait la prochaine amélioration.
+
+## Path tracing temporel et rendu unique (13/10/2026)
+
+Décision : le rendu principal est le path tracing temporel. Le viewport raster et le menu de qualité ne sont plus proposés (code conservé, rien supprimé). Le path tracing progressif reste accessible en ligne de commande (`--temporal 0`) pour les images de référence.
+
+### Principe
+- Chaque frame trace 1 chemin par pixel (`PathTraceTemporal.hlsl`), mélangé à l'historique (moyenne exponentielle, fenêtre de 256 images par défaut).
+- Reprojection : chaque pixel est retrouvé dans la frame précédente par sa position monde (caméra précédente). Un historique n'est accepté que si la surface est la même (distance < 1 % de la profondeur, normale géométrique cohérente), avec recherche sur les 4 voisins.
+- Historique tenu dans des textures copiées à chaque frame (`copyHistory`). Il est réinitialisé seulement si l'éclairage ou les matériaux changent (signature de scène), pas quand la caméra bouge.
+- Le débruitage à-trous reste actif (il améliore la précision à la fin, voir ci-dessous).
+
+### Mesures (RTX 5060, 1203 x 700, 10 rebonds, référence = path tracing progressif 4096 spp)
+
+| Configuration | Image 30 | Image 120 | Image 270 |
+|---|---|---|---|
+| Temporel, cap 256, débruitage (défaut) | 12,1 | 8,6 | **5,7** |
+| Temporel, cap 256, sans débruitage | – | – | 6,6 |
+| Temporel, cap 128, débruitage | – | – | 8,4 |
+| Temporel, cap 64, débruitage | – | – | 10,7 |
+| Progressif 64 spp (référence de comparaison) | – | – | 8,3 |
+| Progressif 256 spp (référence de comparaison) | – | – | 4,9 |
+
+Erreur = RMSE sur 0-255 (sRGB). Le biais de luminosité est de +0,8 % à l'image 270 avec le débruitage.
+
+Temps GPU (moyenne) : temporel 4,1 ms (caméra fixe), 4,3 ms (caméra qui oscille), DDGI 3,5 ms, progressif 9,7 ms (il augmente ses échantillons par frame à l'arrêt, donc non comparable).
+
+Mouvement (oscillation de caméra ±0,15 rad, 121 images) : scintillement moyen 0,32 % (p95 0,46) en temporel, contre 0,74 % (p95 0,78) en progressif, qui repart de zéro à chaque frame.
+
+Sphère animée (viewer, image 150) : cap 256 et cap 64 ne diffèrent que de 4,7 de RMSE, et aucune traînée visible n'apparaît à cap 256 (contrôle visuel seulement).
+
+### Corrections faites en route (pour mémoire)
+- L'historique n'était jamais lu : la table de descripteurs des textures u10/u11 n'était pas liée aux passes de calcul.
+- Un rejet sur différence de luminosité était trop strict : un chemin à 1 échantillon est très bruité, donc l'historique était remis à zéro en permanence. Supprimé.
+- Les silhouettes scintillaient (la surface stockée changeait d'une frame à l'autre) : recherche sur les voisins et normale géométrique (stable malgré le biseau).
+- La reprojection ne correspondait pas exactement au point de référence : les deux calculs de direction partagent maintenant la même fonction (`CurPixelDir` / `PrevPixelDir`), donc une caméra immobile est reprojetée au pixel près.
+
+### Limites connues
+- Lumière ou matériau modifié : l'historique est effacé. Pendant le mouvement d'une lumière, l'image retombe à 1 échantillon + débruitage (plus bruitée).
+- Ombres portées par un objet en mouvement sur une surface fixe : la reprojection ne les voit pas. Une traînée peut persister jusqu'à 256 images (environ 4 s à 60 fps). Pas observé sur la sphère animée, mais pas mesuré sur une scène plus complexe.
+- Profondeur de champ : la reprojection utilise le centre du sténopé. Avec la PdC activée, les tests sont plus stricts et l'image peut être plus bruitée (non mesuré).
+- Testé seulement sur RTX 5060 et sur les deux résolutions 1203 x 700 et 1600 x 1000.
+- Le dépôt principal `WZX ENGINE` n'est pas modifié : le correctif reste à porter après validation.
+
+### Ce qui change dans l'interface et la ligne de commande
+- Menu Rendu : « Path tracing temporel » (défaut), « GI sondes (DDGI, expérimental) », « Relancer l'accumulation », « Paramètres de rendu ». Bouton P et bascule viewport supprimés de l'interface.
+- Options : `--temporal 0|1`, `--temporal-cap N` (256 par défaut), `--denoise 0|1`, `--sway A` (oscillation de caméra, benchmark), `--orbit 1`, `--snap-every N`, `--bench fichier.csv --frames N`.
+- Viewer : touches 1 (DDGI) et 2 (path tracing temporel) ; options `--light-anim 0|1`, `--cap N`.
+
+### Pistes suivantes
+1. Valider le rendu sur la scène RTS réelle, puis porter le correctif dans `WZX ENGINE`.
+2. Historique « souple » pour une lumière qui bouge (réduction progressive au lieu d'un effacement).
+3. Reprojection tenant compte de la PdC.
+4. Mesurer la traînée d'ombre sur une scène avec objets mobiles.
