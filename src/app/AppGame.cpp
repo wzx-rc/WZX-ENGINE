@@ -1,0 +1,941 @@
+// Game layer: Play mode, node graph editor hookup, builds, player mode and the local command API.
+#include "App.h"
+#include "GameHost.h"
+#include <shellapi.h>
+#include <ctime>
+#include <filesystem>
+#include <fstream>
+#include <sstream>
+
+namespace app {
+
+namespace fs = std::filesystem;
+using namespace game;
+
+static const int kApiPort = 7878;
+
+static std::string num(float v) {
+    char b[32];
+    snprintf(b, sizeof b, "%g", v);
+    return b;
+}
+
+static std::string vec(const float3& v) { return "[" + num(v.x) + ", " + num(v.y) + ", " + num(v.z) + "]"; }
+
+static std::string jstr(const std::string& s) { return "\"" + jsonEscape(s) + "\""; }
+
+static bool readVec(const Json& j, float3& out) {
+    if (j.type != Json::Array || j.a.size() < 3) return false;
+    out = float3((float)j[0].num(), (float)j[1].num(), (float)j[2].num());
+    return true;
+}
+
+static float linToSrgb1(float c) {
+    c = clampf(c, 0, 1);
+    return c <= 0.0031308f ? c * 12.92f : 1.055f * std::pow(c, 1.0f / 2.4f) - 0.055f;
+}
+
+static std::string readFile(const fs::path& p) {
+    std::ifstream f(p, std::ios::binary);
+    std::stringstream ss;
+    ss << f.rdbuf();
+    return ss.str();
+}
+
+// --------------------------------------------------------------------------- setup
+
+GameHost::~GameHost() { m_server.stop(); }
+
+void GameHost::init() {
+    fs::path exe(m_app.m_exeDir);
+    std::error_code ec;
+    if (fs::exists(exe / "game.json")) {
+        // Built game: everything sits next to the executable.
+        m_player = true;
+        m_projectDir = m_gameDir = exe.wstring();
+        Json cfg;
+        Json::parse(readFile(exe / "game.json"), cfg);
+        m_graphPath = (exe / fromUtf8(cfg["graph"].str("graph.json"))).wstring();
+        m_playerFps = cfg["showFps"].b;
+        m_playerPathTracing = cfg["pathTracing"].b;
+        fs::path scene = exe / fromUtf8(cfg["scene"].str("scene.v3d.json"));
+        if (fs::exists(scene)) m_app.loadSceneFile(scene.wstring());
+        m_app.m_rs.raster = true;
+        m_app.m_tool = TOOL_SELECT;
+        std::wstring title = fromUtf8(cfg["title"].str("WZX Game"));
+        SetWindowTextW(m_app.m_hwnd, title.c_str());
+        HWND h = m_app.m_hwnd;
+        if (cfg["fullscreen"].b) {
+            MONITORINFO mi = {sizeof(mi)};
+            GetMonitorInfoW(MonitorFromWindow(h, MONITOR_DEFAULTTONEAREST), &mi);
+            SetWindowLongPtrW(h, GWL_STYLE, WS_POPUP | WS_VISIBLE);
+            SetWindowPos(h, HWND_TOP, mi.rcMonitor.left, mi.rcMonitor.top, mi.rcMonitor.right - mi.rcMonitor.left,
+                         mi.rcMonitor.bottom - mi.rcMonitor.top, SWP_FRAMECHANGED);
+        } else {
+            int w = (int)cfg["width"].num(1600), hh = (int)cfg["height"].num(900);
+            RECT r = {0, 0, (LONG)(w * m_app.m_dpi), (LONG)(hh * m_app.m_dpi)};
+            AdjustWindowRectExForDpi(&r, WS_OVERLAPPEDWINDOW, FALSE, 0, (UINT)(m_app.m_dpi * 96));
+            SetWindowPos(h, nullptr, 0, 0, r.right - r.left, r.bottom - r.top, SWP_NOMOVE | SWP_NOZORDER);
+        }
+        std::string err;
+        if (!loadGraph(&err)) toast(L"Graphe introuvable : " + fromUtf8(err));
+        if (cfg["commandApi"].b)
+            for (int p = kApiPort; p < kApiPort + 10 && !m_server.running(); ++p) m_server.start(p);
+        play();
+        return;
+    }
+    // Editor: project root = two levels above build\bin when the sources are there.
+    fs::path root = exe.parent_path().parent_path();
+    if (!fs::exists(root / "src")) root = exe;
+    m_projectDir = root.wstring();
+    m_gameDir = (root / "game").wstring();
+    fs::create_directories(m_gameDir, ec);
+    m_graphPath = (fs::path(m_gameDir) / "main.graph.json").wstring();
+    if (!loadGraph()) {
+        defaultGraph();
+        saveGraph();
+    }
+    for (int p = kApiPort; p < kApiPort + 10 && !m_server.running(); ++p) m_server.start(p);
+    if (m_server.running())
+        toast(L"API de commandes : http://127.0.0.1:" + std::to_wstring(m_server.port()) + L"   ·   F3 graphe   ·   F5 Play   ·   F7 Build");
+}
+
+bool GameHost::saveGraph(std::string* err) {
+    if (!m_graph.save(m_graphPath)) { if (err) *err = "écriture impossible"; return false; }
+    m_editor.clearModified();
+    return true;
+}
+
+bool GameHost::loadGraph(std::string* err) {
+    if (!fs::exists(m_graphPath)) { if (err) *err = "fichier absent"; return false; }
+    return m_graph.load(m_graphPath, err);
+}
+
+// Example graph: select a unit by clicking it, click the ground to send it to a grid cell,
+// R turns it, C spawns a cube on a free cell.
+void GameHost::defaultGraph() {
+    Graph& g = m_graph;
+    g.clear();
+    auto L = [&](int a, const char* out, int b, const char* in) {
+        g.connect(a, g.node(a)->def->findOut(out), b, g.node(b)->def->findIn(in));
+    };
+    auto set = [&](int n, const char* pin, const Value& v) {
+        Node* nd = g.node(n);
+        int i = nd->def->findIn(pin);
+        if (i >= 0) { Value t = v; t.type = nd->def->ins[i].type; nd->inputs[i] = t; }
+    };
+    int start = g.addNode("event.start", float2(0, 0));
+    int hello = g.addNode("action.print", float2(260, 0));
+    set(hello, "Texte", Value::Str("Cliquez une unité, puis le sol pour la déplacer. R : tourner, C : créer un cube."));
+    L(start, "", hello, "");
+
+    int click = g.addNode("event.clickObject", float2(0, 140));
+    int sel = g.addNode("action.select", float2(260, 140));
+    L(click, "", sel, "");
+    L(click, "Objet", sel, "Objet");
+
+    int ground = g.addNode("event.clickGround", float2(0, 320));
+    int selected = g.addNode("data.selected", float2(0, 440));
+    int valid = g.addNode("data.isValid", float2(230, 470));
+    int branch = g.addNode("flow.branch", float2(480, 320));
+    int snap = g.addNode("rts.snap", float2(230, 560));
+    int move = g.addNode("action.moveTo", float2(760, 320));
+    int done = g.addNode("action.print", float2(1040, 380));
+    set(done, "Texte", Value::Str("Unité arrivée"));
+    L(ground, "", branch, "");
+    L(selected, "Objet", valid, "Objet");
+    L(valid, "Valide", branch, "Condition");
+    L(branch, "Vrai", move, "");
+    L(selected, "Objet", move, "Objet");
+    L(ground, "Point", snap, "Position");
+    L(snap, "Position", move, "Cible");
+    L(move, "Arrivé", done, "");
+
+    int keyR = g.addNode("event.key", float2(0, 720));
+    set(keyR, "Touche", Value::Str("R"));
+    int rot = g.addNode("action.rotate", float2(260, 720));
+    L(keyR, "", rot, "");
+    L(selected, "Objet", rot, "Objet");
+
+    int keyC = g.addNode("event.key", float2(0, 860));
+    set(keyC, "Touche", Value::Str("C"));
+    int rnd = g.addNode("math.random", float2(0, 960));
+    set(rnd, "Min", Value::Float(-30));
+    set(rnd, "Max", Value::Float(30));
+    int mk = g.addNode("data.makeVec3", float2(230, 960));
+    L(rnd, "Valeur", mk, "X");
+    L(rnd, "Valeur", mk, "Z");
+    int snap2 = g.addNode("rts.snap", float2(500, 1000));
+    L(mk, "Vecteur", snap2, "Position");
+    int spawn = g.addNode("action.spawn", float2(760, 860));
+    L(keyC, "", spawn, "");
+    L(snap2, "Position", spawn, "Position");
+    int count = g.addNode("action.addVar", float2(1040, 860));
+    set(count, "Nom", Value::Str("cubes"));
+    L(spawn, "", count, "");
+}
+
+// --------------------------------------------------------------------------- play
+
+void GameHost::play() {
+    if (m_playing) return;
+    Scene& s = m_app.m_scene;
+    m_saveObjects = s.objects;
+    m_saveMaterials = s.materials;
+    m_saveSelected = m_app.m_selected;
+    m_saveTool = m_app.m_tool;
+    m_app.m_tool = TOOL_SELECT;
+    m_app.m_multi.clear();
+    m_app.m_gz = GizmoDrag();
+    m_playing = true;
+    m_rt.start(&m_graph, this);
+    m_app.markDirty();
+}
+
+void GameHost::stop() {
+    if (!m_playing) return;
+    m_rt.stop();
+    m_playing = false;
+    Scene& s = m_app.m_scene;
+    s.objects = m_saveObjects;
+    s.materials = m_saveMaterials;
+    m_app.m_selected = m_saveSelected < (int)s.objects.size() ? m_saveSelected : -1;
+    m_app.m_multi.clear();
+    m_app.m_tool = (Tool)m_saveTool;
+    m_app.markDirty();
+}
+
+void GameHost::update(float dt) {
+    if (m_playing) m_rt.tick(dt);
+}
+
+// --------------------------------------------------------------------------- World
+
+int GameHost::objectCount() const { return (int)m_app.m_scene.objects.size(); }
+
+bool GameHost::objectAlive(int i) const {
+    return i >= 0 && i < objectCount() && m_app.m_scene.objects[i].visible && !m_app.m_scene.objects[i].ghost;
+}
+
+std::string GameHost::objectName(int i) const { return objectAlive(i) ? m_app.m_scene.objects[i].name : ""; }
+std::string GameHost::objectPart(int i) const { return objectAlive(i) ? m_app.m_scene.objects[i].part : ""; }
+float3 GameHost::getPosition(int i) const { return objectAlive(i) ? m_app.m_scene.objects[i].position : float3(0, 0, 0); }
+
+void GameHost::setPosition(int i, float3 p) {
+    if (!objectAlive(i)) return;
+    m_app.m_scene.objects[i].position = p;
+    m_app.markDirty();
+}
+
+void GameHost::rotateY(int i, float deg) {
+    if (!objectAlive(i)) return;
+    Object& o = m_app.m_scene.objects[i];
+    o.yaw += radians(deg);
+    if (o.useRot) o.rot = qNormalize(qMul(qAxisAngle(float3(0, 1, 0), radians(deg)), o.rot));
+    m_app.markDirty();
+}
+
+void GameHost::setScale(int i, float3 s) {
+    if (!objectAlive(i)) return;
+    m_app.m_scene.objects[i].scale = s;
+    m_app.markDirty();
+}
+
+void GameHost::setColor(int i, float3 rgb) {
+    if (!objectAlive(i)) return;
+    Material& m = m_app.m_scene.materials[m_app.m_scene.objects[i].material];
+    m.baseColor = float3(srgbToLinear(clampf(rgb.x, 0, 1)), srgbToLinear(clampf(rgb.y, 0, 1)), srgbToLinear(clampf(rgb.z, 0, 1)));
+    m.colorId = -1;
+    m_app.markDirty();
+}
+
+std::string GameHost::uniqueName(const std::string& base) const {
+    auto used = [&](const std::string& n) {
+        for (const Object& o : m_app.m_scene.objects) if (o.name == n) return true;
+        return false;
+    };
+    if (!used(base)) return base;
+    for (int k = 2;; ++k) {
+        std::string n = base + " " + std::to_string(k);
+        if (!used(n)) return n;
+    }
+}
+
+int GameHost::spawn(const std::string& part, float3 pos, float3 rgb) {
+    const PartDef* p = findPart(part);
+    if (!p) return -1;
+    int idx = addPart(m_app.m_scene, p->id, p->defaultColor, -1, pos, 0);
+    if (idx < 0) return -1;
+    m_app.m_scene.objects[idx].name.clear();   // the new object must not collide with itself
+    m_app.m_scene.objects[idx].name = uniqueName(toUtf8(p->name));
+    setColor(idx, rgb);
+    m_app.markDirty();
+    return idx;
+}
+
+void GameHost::destroy(int i) {
+    if (!objectAlive(i)) return;
+    Object& o = m_app.m_scene.objects[i];
+    o.visible = false;
+    o.selectable = false;
+    if (m_app.m_selected == i) m_app.m_selected = -1;
+    m_app.markDirty();
+}
+
+int GameHost::selected() const { return m_app.m_selected; }
+
+void GameHost::select(int i) {
+    m_app.m_selected = objectAlive(i) ? i : -1;
+    m_app.m_multi.clear();
+    m_app.markDirty();
+}
+
+void GameHost::message(const std::string& text) { toast(fromUtf8(text)); }
+
+void GameHost::toast(const std::wstring& s) {
+    m_toasts.push_back({s, GetTickCount64()});
+    if (m_toasts.size() > 5) m_toasts.erase(m_toasts.begin());
+}
+
+// --------------------------------------------------------------------------- per-frame input
+
+static const struct { int vk; const char* name; } kKeys[] = {
+    {VK_SPACE, "ESPACE"}, {VK_RETURN, "ENTREE"}, {VK_ESCAPE, "ECHAP"}, {VK_DELETE, "SUPPR"}, {VK_TAB, "TAB"},
+    {VK_UP, "HAUT"}, {VK_DOWN, "BAS"}, {VK_LEFT, "GAUCHE"}, {VK_RIGHT, "DROITE"},
+};
+
+void GameHost::playInput() {
+    App& a = m_app;
+    UI& ui = a.m_ui;
+    if (ui.mousePressed[0] && a.m_rcView.contains(ui.mx, ui.my) && !ui.popupOpen() && !a.overPanels(ui.mx, ui.my) &&
+        (m_player || !a.overViewportWidgets(ui.mx, ui.my))) {
+        float3 o, d;
+        a.cameraRay(ui.mx, ui.my, o, d);
+        PickResult pr = pick(a.m_scene, o, d);
+        if (pr.object >= 0 && objectAlive(pr.object) && !a.m_scene.objects[pr.object].part.empty()) {
+            m_rt.fireClickObject(pr.object, pr.position);
+        } else if (std::fabs(d.y) > 1e-5f) {
+            float t = -o.y / d.y;
+            if (t > 0) m_rt.fireClickGround(o + d * t);
+        }
+        ui.mousePressed[0] = false;   // the editor tools must not see game clicks
+    }
+    if (ui.textFocused()) return;
+    for (int k = 'A'; k <= 'Z'; ++k) if (ui.keyPressed(k)) m_rt.fireKey(std::string(1, (char)k));
+    for (int k = '0'; k <= '9'; ++k) if (ui.keyPressed(k)) m_rt.fireKey(std::string(1, (char)k));
+    for (int f = 1; f <= 12; ++f) if (ui.keyPressed(VK_F1 + f - 1)) m_rt.fireKey("F" + std::to_string(f));
+    for (auto& k : kKeys) if (ui.keyPressed(k.vk)) m_rt.fireKey(k.name);
+}
+
+// Graph editor clicks are drawn after the editor UI: hide them from the widgets underneath.
+static bool s_stashPressed[3], s_stashDouble;
+static float s_stashWheel;
+static bool s_stashed = false;
+
+bool GameHost::beginFrame(bool& skipViewport) {
+    handleRequests();
+    UI& ui = m_app.m_ui;
+    skipViewport = false;
+    if (!ui.textFocused()) {
+        if (!m_player) {
+            if (ui.keyPressed(VK_F3)) {
+                m_showGraph = !m_showGraph;
+                static bool framed = false;
+                if (m_showGraph && !framed) { framed = true; m_editor.frameAll(m_graph); }
+            }
+            if (ui.keyPressed(VK_F5)) m_playing ? stop() : play();
+            if (ui.keyPressed(VK_F7)) m_pendingToolbar = 3;
+        } else {
+            if (ui.keyPressed(VK_ESCAPE)) PostMessageW(m_app.m_hwnd, WM_CLOSE, 0, 0);
+            if (m_playerPathTracing && ui.keyPressed('P')) { m_app.m_rs.raster = !m_app.m_rs.raster; m_app.markDirty(); }
+        }
+    }
+    // floating toolbar (drawn in draw(), rectangles from the previous frame)
+    if (!m_player && !m_showGraph && ui.mousePressed[0])
+        for (const Btn& b : m_toolbar)
+            if (b.r.contains(ui.mx, ui.my)) { m_pendingToolbar = b.action; ui.mousePressed[0] = false; break; }
+    switch (m_pendingToolbar) {
+    case 1: m_playing ? stop() : play(); break;
+    case 2: m_showGraph = true; m_editor.frameAll(m_graph); break;
+    case 3: {
+        std::wstring out;
+        std::string err;
+        if (build("", false, out, err)) toast(L"Build terminé : " + out);
+        else toast(L"Build impossible : " + fromUtf8(err));
+        break;
+    }
+    default: break;
+    }
+    m_pendingToolbar = 0;
+
+    s_stashed = false;
+    if (m_showGraph && !m_player) {
+        skipViewport = true;
+        if (m_app.m_rcView.contains(ui.mx, ui.my)) {
+            for (int i = 0; i < 3; ++i) { s_stashPressed[i] = ui.mousePressed[i]; ui.mousePressed[i] = false; }
+            s_stashDouble = ui.mouseDoubleClick;
+            s_stashWheel = ui.wheel;
+            ui.mouseDoubleClick = false;
+            ui.wheel = 0;
+            s_stashed = true;
+        }
+        return true;
+    }
+    if (m_playing) {
+        playInput();
+        return true;
+    }
+    return m_player;
+}
+
+// --------------------------------------------------------------------------- drawing
+
+void GameHost::drawToolbar() {
+    UI& ui = m_app.m_ui;
+    const Rect& v = m_app.m_rcView;
+    const float bw = 116, bh = 30, gap = 6;
+    float x = v.cx() - (bw * 3 + gap * 2) * 0.5f, y = v.b() - bh - 12;
+    m_toolbar.clear();
+    Rect r0(x, y, bw, bh), r1(x + bw + gap, y, bw, bh), r2(x + 2 * (bw + gap), y, bw, bh);
+    ui.fill(Rect(r0.x - 5, y - 5, bw * 3 + gap * 2 + 10, bh + 10), Color::hex(0x0E1013, 0.85f), 8);
+    ui.button(r0, m_playing ? L"Stop  F5" : L"Jouer  F5", m_playing, m_playing ? 0xE71A : 0xE768);
+    ui.button(r1, L"Graphe  F3", false, 0xE8A1);
+    ui.button(r2, L"Build  F7", false, 0xE7B8);
+    m_toolbar = {{r0, 1}, {r1, 2}, {r2, 3}};
+}
+
+void GameHost::drawToasts() {
+    UI& ui = m_app.m_ui;
+    uint64_t now = GetTickCount64();
+    m_toasts.erase(std::remove_if(m_toasts.begin(), m_toasts.end(), [&](const Toast& t) { return now - t.t > 5000; }), m_toasts.end());
+    const Rect& v = m_app.m_rcView;
+    float y = v.y + (m_showGraph ? 46 : 48);
+    for (const Toast& t : m_toasts) {
+        float w = std::min(ui.textWidth(t.text, 13) + 32, v.w - 40);
+        float a = clampf((5000.0f - (now - t.t)) / 600.0f, 0, 1);
+        Rect r(v.cx() - w * 0.5f, y, w, 30);
+        ui.fill(r, Color::hex(0x0E1013, 0.88f * a), 6);
+        ui.stroke(r, ui.theme.accent.withAlpha(0.6f * a), 6);
+        ui.text(t.text, r, ui.theme.text.withAlpha(a), 13, false, Align::Center);
+        y += 36;
+    }
+}
+
+void GameHost::draw() {
+    UI& ui = m_app.m_ui;
+    const Rect& v = m_app.m_rcView;
+    if (m_player) {
+        if (m_playerFps) {
+            wchar_t b[64];
+            swprintf(b, 64, L"%.0f FPS", 1000.0f / std::max(m_app.m_frameMs, 0.1f));
+            ui.text(b, Rect(v.x + 10, v.y + 6, 120, 20), ui.theme.textDim, 12);
+        }
+        drawToasts();
+        return;
+    }
+    if (m_showGraph) {
+        if (s_stashed) {
+            for (int i = 0; i < 3; ++i) ui.mousePressed[i] = s_stashPressed[i];
+            ui.mouseDoubleClick = s_stashDouble;
+            ui.wheel = s_stashWheel;
+        }
+        m_editor.draw(ui, v, m_graph, m_playing ? &m_rt : nullptr, m_playing);
+        switch (m_editor.takeAction()) {
+        case NodeEditor::TogglePlay: m_playing ? stop() : play(); break;
+        case NodeEditor::Save: {
+            std::string err;
+            if (saveGraph(&err)) m_editor.status = "Graphe enregistré : " + toUtf8(m_graphPath);
+            else m_editor.status = "Échec de l'enregistrement : " + err;
+            break;
+        }
+        case NodeEditor::Close: m_showGraph = false; break;
+        case NodeEditor::Build: m_pendingToolbar = 3; break;
+        default: break;
+        }
+    } else {
+        if (m_playing) {
+            ui.stroke(Rect(v.x + 1, v.y + 1, v.w - 2, v.h - 2), Color::hex(0x3FB950), 0, 2.5f);
+            Rect tag(v.cx() - 120, v.y + 10, 240, 26);
+            ui.fill(tag, Color::hex(0x3FB950, 0.9f), 5);
+            ui.text(L"PLAY  ·  F5 pour arrêter", tag, Color::hex(0x08130B), 12.5f, true, Align::Center);
+        }
+        drawToolbar();
+    }
+    drawToasts();
+}
+
+void GameHost::afterDraw() {
+    if (!m_shotReq) return;
+    m_app.m_status.clear();
+    m_app.saveScreenshot(m_shotWindow);   // window: true = whole window, UI included
+    bool saved = !m_app.m_status.empty();
+    m_shotReq->response = saved ? "{\"ok\": true, \"status\": " + jstr(toUtf8(m_app.m_status)) + ", \"dir\": " +
+                                      jstr(toUtf8(m_app.m_exeDir + L"\\captures")) + "}"
+                                : "{\"ok\": false, \"error\": \"capture impossible\"}";
+    m_shotReq->status = saved ? 200 : 500;
+    m_server.complete(m_shotReq);
+    m_shotReq.reset();
+}
+
+// --------------------------------------------------------------------------- builds
+
+std::vector<BuildProfile> GameHost::loadProfiles() {
+    fs::path file = fs::path(m_gameDir) / "build_profiles.json";
+    if (!fs::exists(file)) {
+        std::ofstream f(file, std::ios::binary);
+        f << "{\n  \"profiles\": [\n"
+             "    {\"name\": \"windows-release\", \"title\": \"WZX Game\", \"width\": 1600, \"height\": 900, \"fullscreen\": false, "
+             "\"pathTracing\": false, \"showFps\": false, \"commandApi\": false},\n"
+             "    {\"name\": \"windows-debug\", \"title\": \"WZX Game (debug)\", \"width\": 1600, \"height\": 900, \"fullscreen\": false, "
+             "\"pathTracing\": true, \"showFps\": true, \"commandApi\": true},\n"
+             "    {\"name\": \"windows-fullscreen\", \"title\": \"WZX Game\", \"width\": 1920, \"height\": 1080, \"fullscreen\": true, "
+             "\"pathTracing\": false, \"showFps\": false, \"commandApi\": false}\n"
+             "  ]\n}\n";
+    }
+    std::vector<BuildProfile> out;
+    Json j;
+    if (Json::parse(readFile(file), j))
+        for (const Json& p : j["profiles"].a) {
+            BuildProfile b;
+            b.name = p["name"].str(b.name);
+            b.title = p["title"].str(b.title);
+            b.width = (int)p["width"].num(b.width);
+            b.height = (int)p["height"].num(b.height);
+            b.fullscreen = p["fullscreen"].b;
+            b.pathTracing = p["pathTracing"].b;
+            b.showFps = p["showFps"].b;
+            b.commandApi = p["commandApi"].b;
+            out.push_back(b);
+        }
+    if (out.empty()) out.push_back(BuildProfile());
+    return out;
+}
+
+bool GameHost::build(const std::string& profileName, bool run, std::wstring& outDir, std::string& err) {
+    if (m_player) { err = "pas de build depuis un jeu exporté"; return false; }
+    if (m_playing) stop();
+    std::vector<BuildProfile> profiles = loadProfiles();
+    const BuildProfile* bp = &profiles[0];
+    if (!profileName.empty()) {
+        bp = nullptr;
+        for (const BuildProfile& p : profiles) if (p.name == profileName) bp = &p;
+        if (!bp) { err = "profil inconnu : " + profileName; return false; }
+    }
+    std::string exeName;
+    for (char c : bp->title) exeName.push_back(strchr("\\/:*?\"<>|", c) ? '_' : c);
+    if (exeName.empty()) exeName = "Game";
+    exeName += ".exe";
+
+    fs::path out = fs::path(m_projectDir) / "builds" / fromUtf8(bp->name);
+    fs::path exeDir(m_app.m_exeDir);
+    std::error_code ec;
+    fs::create_directories(out, ec);
+    if (ec) { err = "création du dossier impossible : " + ec.message(); return false; }
+    wchar_t self[MAX_PATH];
+    GetModuleFileNameW(nullptr, self, MAX_PATH);
+    fs::copy_file(self, out / fromUtf8(exeName), fs::copy_options::overwrite_existing, ec);
+    if (ec) { err = "copie de l'exécutable impossible (le jeu exporté est-il ouvert ?) : " + ec.message(); return false; }
+    fs::copy(exeDir / "shaders", out / "shaders", fs::copy_options::recursive | fs::copy_options::overwrite_existing, ec);
+    if (ec) { err = "copie des shaders impossible : " + ec.message(); return false; }
+    if (fs::exists(exeDir / "assets")) {
+        fs::copy(exeDir / "assets", out / "assets", fs::copy_options::recursive | fs::copy_options::overwrite_existing, ec);
+        if (ec) { err = "copie des assets impossible : " + ec.message(); return false; }
+    }
+    std::wstring savedStatus = m_app.m_status;
+    if (!m_app.saveSceneFile((out / "scene.v3d.json").wstring())) { err = "écriture de la scène impossible"; return false; }
+    m_app.m_status = savedStatus;
+    if (!m_graph.save((out / "graph.json").wstring())) { err = "écriture du graphe impossible"; return false; }
+    time_t t = time(nullptr);
+    tm lt;
+    localtime_s(&lt, &t);
+    char date[64];
+    strftime(date, sizeof date, "%Y-%m-%d %H:%M:%S", &lt);
+    {
+        std::ofstream f(out / "game.json", std::ios::binary);
+        f << "{\n  \"format\": \"wzx-game\",\n  \"profile\": " << jstr(bp->name) << ",\n  \"title\": " << jstr(bp->title)
+          << ",\n  \"built\": " << jstr(date) << ",\n  \"width\": " << bp->width << ",\n  \"height\": " << bp->height
+          << ",\n  \"fullscreen\": " << (bp->fullscreen ? "true" : "false") << ",\n  \"pathTracing\": " << (bp->pathTracing ? "true" : "false")
+          << ",\n  \"showFps\": " << (bp->showFps ? "true" : "false") << ",\n  \"commandApi\": " << (bp->commandApi ? "true" : "false")
+          << ",\n  \"scene\": \"scene.v3d.json\",\n  \"graph\": \"graph.json\"\n}\n";
+        if (!f) { err = "écriture de game.json impossible"; return false; }
+    }
+    outDir = out.wstring();
+    m_lastBuild = toUtf8(outDir);
+    if (run) ShellExecuteW(nullptr, L"open", (out / fromUtf8(exeName)).c_str(), nullptr, out.c_str(), SW_SHOWNORMAL);
+    return true;
+}
+
+// --------------------------------------------------------------------------- command API
+
+std::string GameHost::sceneJson() const {
+    const Scene& s = m_app.m_scene;
+    const Camera& c = s.camera;
+    std::ostringstream js;
+    js << "{\"ok\": true, \"scene\": " << jstr(s.name) << ", \"units\": \"cm\", \"playing\": " << (m_playing ? "true" : "false")
+       << ", \"selected\": " << m_app.m_selected << ",\n \"camera\": {\"target\": " << vec(c.target) << ", \"yaw\": " << num(degrees(c.yaw))
+       << ", \"pitch\": " << num(degrees(c.pitch)) << ", \"distance\": " << num(c.distance) << "},\n \"parts\": [";
+    for (size_t i = 0; i < parts().size(); ++i) js << (i ? ", " : "") << jstr(parts()[i].id);
+    js << "],\n \"objects\": [";
+    for (size_t i = 0; i < s.objects.size(); ++i) {
+        const Object& o = s.objects[i];
+        const Material& m = s.materials[o.material];
+        float4 q = m_app.objRot(o);
+        float3 xa = qRot(q, float3(1, 0, 0));
+        js << (i ? ",\n  " : "\n  ") << "{\"index\": " << i << ", \"name\": " << jstr(o.name) << ", \"part\": " << jstr(o.part)
+           << ", \"pos\": " << vec(o.position) << ", \"yaw\": " << num(degrees(std::atan2(-xa.z, xa.x))) << ", \"scale\": " << vec(o.scale)
+           << ", \"color\": " << vec(float3(linToSrgb1(m.baseColor.x), linToSrgb1(m.baseColor.y), linToSrgb1(m.baseColor.z)))
+           << ", \"visible\": " << (o.visible ? "true" : "false") << "}";
+    }
+    js << "\n ]}";
+    return js.str();
+}
+
+int GameHost::resolveObject(const Json& t) const {
+    if (t.type == Json::Number) {
+        int i = (int)t.n;
+        return i >= 0 && i < objectCount() ? i : -1;
+    }
+    if (t.type == Json::String)
+        for (int i = 0; i < objectCount(); ++i) if (m_app.m_scene.objects[i].name == t.s) return i;
+    return -1;
+}
+
+static const char* kHelp =
+    "{\"ok\": true, \"usage\": \"POST /cmd avec un objet JSON {\\\"cmd\\\": ..., ...}. GET /scene = scene.get.\", \"commands\": {"
+    "\"state\": \"{}\", "
+    "\"scene.get\": \"{} -> objets, camera, selection\", "
+    "\"scene.new\": \"{} -> scene Studio vide\", "
+    "\"scene.save\": \"{path}\", \"scene.load\": \"{path}\", "
+    "\"object.add\": \"{part: CUBE|SPHERE|BALL, pos:[x,y,z], yaw?, color?:[r,g,b] 0-1, name?} -> index\", "
+    "\"object.set\": \"{target: index|nom, pos?, yaw?, rotate?, scale?, color?, name?, visible?}\", "
+    "\"object.delete\": \"{target}\", \"object.select\": \"{target|null}\", "
+    "\"camera.set\": \"{target?:[x,y,z], yaw?, pitch?, distance?}\", "
+    "\"play\": \"{}\", \"stop\": \"{}\", "
+    "\"input.key\": \"{key: R|ESPACE|...} (pendant Play)\", \"input.click\": \"{target} ou {pos:[x,y,z]} (pendant Play)\", "
+    "\"graph.get\": \"{}\", \"graph.set\": \"{graph: {...}}\", \"graph.clear\": \"{}\", \"graph.nodeTypes\": \"{}\", "
+    "\"graph.addNode\": \"{type, x?, y?, in?: {broche: valeur}} -> id\", \"graph.removeNode\": \"{id}\", "
+    "\"graph.connect\": \"{from:[id, sortie], to:[id, entree]} (nom ou index de broche)\", "
+    "\"graph.disconnect\": \"{id, pin, output}\", \"graph.setInput\": \"{id, pin, value}\", "
+    "\"graph.save\": \"{}\", \"graph.load\": \"{}\", \"graph.show\": \"{open: true|false}\", "
+    "\"build\": \"{profile?, run?} -> dossier\", \"build.profiles\": \"{}\", "
+    "\"screenshot\": \"{window?: true = fenetre entiere} -> fichier PNG\", \"log\": \"{} -> journal du graphe\"}}";
+
+void GameHost::handleRequests() {
+    for (int guard = 0; guard < 16; ++guard) {
+        std::shared_ptr<CommandRequest> r = m_server.next();
+        if (!r) return;
+        int status = 200;
+        std::string path = r->path.substr(0, r->path.find('?'));
+        if (path == "/" || path == "/help") {
+            r->response = kHelp;
+        } else if (path == "/scene") {
+            r->response = sceneJson();
+        } else if (path == "/cmd") {
+            Json j;
+            if (!Json::parse(r->body, j) || j.type != Json::Object) {
+                status = 400;
+                r->response = "{\"ok\": false, \"error\": \"corps JSON invalide\"}";
+            } else if (j["cmd"].str() == "screenshot") {
+                // taken in afterDraw(), once this frame (UI included) is complete
+                m_shotReq = r;
+                m_shotWindow = j["window"].b;
+                continue;
+            } else {
+                r->response = command(j, status);
+            }
+        } else {
+            status = 404;
+            r->response = "{\"ok\": false, \"error\": \"utiliser POST /cmd, GET /scene ou GET /help\"}";
+        }
+        r->status = status;
+        m_server.complete(r);
+    }
+}
+
+std::string GameHost::command(const Json& j, int& status) {
+    App& a = m_app;
+    Scene& s = a.m_scene;
+    std::string cmd = j["cmd"].str();
+    auto fail = [&](const std::string& e) { status = 400; return "{\"ok\": false, \"error\": " + jstr(e) + "}"; };
+    auto ok = [](const std::string& extra = "") { return "{\"ok\": true" + extra + "}"; };
+    auto pathArg = [&](const char* def) {
+        fs::path p = fromUtf8(j["path"].str(def));
+        if (p.is_relative()) p = fs::path(m_projectDir) / p;
+        return p;
+    };
+
+    if (cmd == "help") return kHelp;
+    if (cmd == "state")
+        return ok(", \"playing\": " + std::string(m_playing ? "true" : "false") + ", \"graphOpen\": " + (m_showGraph ? "true" : "false") +
+                  ", \"selected\": " + std::to_string(a.m_selected) + ", \"objects\": " + std::to_string(s.objects.size()) +
+                  ", \"graphNodes\": " + std::to_string(m_graph.nodes.size()) + ", \"graphPath\": " + jstr(toUtf8(m_graphPath)) +
+                  ", \"projectDir\": " + jstr(toUtf8(m_projectDir)) + ", \"lastBuild\": " + jstr(m_lastBuild) +
+                  ", \"mouse\": [" + num(a.m_ui.mx) + ", " + num(a.m_ui.my) + "], \"viewport\": [" + num(a.m_rcView.x) + ", " + num(a.m_rcView.y) + ", " + num(a.m_rcView.w) + ", " + num(a.m_rcView.h) + "]");
+    if (cmd == "scene.get") return sceneJson();
+    if (cmd == "scene.new") {
+        if (m_playing) stop();
+        a.loadScene(SCENE_STUDIO);
+        return ok();
+    }
+    if (cmd == "scene.save") {
+        fs::path p = pathArg("game/scene.v3d.json");
+        if (!a.saveSceneFile(p.wstring())) return fail("écriture impossible : " + toUtf8(p.wstring()));
+        return ok(", \"path\": " + jstr(toUtf8(p.wstring())));
+    }
+    if (cmd == "scene.load") {
+        if (m_playing) stop();
+        fs::path p = pathArg("game/scene.v3d.json");
+        if (!a.loadSceneFile(p.wstring())) return fail("chargement impossible : " + toUtf8(p.wstring()));
+        return ok(", \"objects\": " + std::to_string(s.objects.size()));
+    }
+    if (cmd == "object.add") {
+        std::string part = j["part"].str("CUBE");
+        const PartDef* p = findPart(part);
+        if (!p) return fail("type inconnu : " + part + " (CUBE, SPHERE, BALL)");
+        float3 pos(0, 0, 0);
+        readVec(j["pos"], pos);
+        if (!m_playing) a.pushUndo();
+        int idx = addPart(s, p->id, p->defaultColor, -1, pos, (float)j["yaw"].num(0));
+        Object& o = s.objects[idx];
+        o.name.clear();
+        o.name = uniqueName(j["name"].str(toUtf8(p->name)));
+        o.rot = qAxisAngle(float3(0, 1, 0), o.yaw);
+        o.useRot = true;
+        float3 c;
+        if (readVec(j["color"], c)) setColor(idx, c);
+        a.markDirty();
+        return ok(", \"index\": " + std::to_string(idx) + ", \"name\": " + jstr(o.name));
+    }
+    if (cmd == "object.set") {
+        int i = resolveObject(j["target"]);
+        if (i < 0) return fail("objet introuvable");
+        if (!m_playing) a.pushUndo();
+        Object& o = s.objects[i];
+        float3 v;
+        if (readVec(j["pos"], v)) o.position = v;
+        if (j["yaw"].type == Json::Number) {
+            o.yaw = radians((float)j["yaw"].n);
+            o.rot = qAxisAngle(float3(0, 1, 0), o.yaw);
+            o.useRot = true;
+        }
+        if (j["rotate"].type == Json::Number) rotateY(i, (float)j["rotate"].n);
+        if (readVec(j["scale"], v)) o.scale = v;
+        else if (j["scale"].type == Json::Number) o.scale = float3((float)j["scale"].n);
+        if (readVec(j["color"], v)) setColor(i, v);
+        if (j["name"].type == Json::String) o.name = j["name"].s;
+        if (j["visible"].type == Json::Bool) o.visible = j["visible"].b;
+        a.markDirty();
+        return ok(", \"index\": " + std::to_string(i));
+    }
+    if (cmd == "object.delete") {
+        int i = resolveObject(j["target"]);
+        if (i < 0) return fail("objet introuvable");
+        if (m_playing) { destroy(i); return ok(); }
+        a.pushUndo();
+        s.objects.erase(s.objects.begin() + i);
+        a.m_selected = -1;
+        a.m_multi.clear();
+        a.markDirty();
+        return ok();
+    }
+    if (cmd == "object.select") {
+        int i = resolveObject(j["target"]);
+        a.m_selected = i;
+        a.m_multi.clear();
+        a.markDirty();
+        return ok(", \"selected\": " + std::to_string(i));
+    }
+    if (cmd == "camera.set") {
+        Camera& c = s.camera;
+        float3 v;
+        if (readVec(j["target"], v)) c.target = v;
+        if (j["yaw"].type == Json::Number) c.yaw = radians((float)j["yaw"].n);
+        if (j["pitch"].type == Json::Number) c.pitch = radians(clampf((float)j["pitch"].n, -89, 89));
+        if (j["distance"].type == Json::Number) c.distance = clampf((float)j["distance"].n, 0.5f, 2000);
+        a.cameraChanged();
+        return ok();
+    }
+    if (cmd == "play") { play(); return ok(", \"playing\": true"); }
+    if (cmd == "stop") { stop(); return ok(", \"playing\": false"); }
+    if (cmd == "input.key") {
+        if (!m_playing) return fail("Play n'est pas lancé");
+        std::string k = j["key"].str();
+        for (char& c : k) if (c >= 'a' && c <= 'z') c = (char)(c - 32);
+        m_rt.fireKey(k);
+        return ok();
+    }
+    if (cmd == "input.click") {
+        if (!m_playing) return fail("Play n'est pas lancé");
+        float3 p;
+        if (j["target"].type != Json::Null) {
+            int i = resolveObject(j["target"]);
+            if (i < 0) return fail("objet introuvable");
+            m_rt.fireClickObject(i, s.objects[i].position);
+        } else if (readVec(j["pos"], p)) {
+            m_rt.fireClickGround(p);
+        } else {
+            return fail("préciser target ou pos");
+        }
+        return ok();
+    }
+    // graph
+    if (cmd == "graph.get") return "{\"ok\": true, \"path\": " + jstr(toUtf8(m_graphPath)) + ", \"graph\": " + m_graph.toJson() + "}";
+    if (cmd == "graph.nodeTypes") {
+        std::ostringstream js;
+        js << "{\"ok\": true, \"types\": [";
+        bool first = true;
+        for (const NodeDef& d : nodeDefs()) {
+            js << (first ? "\n  " : ",\n  ") << "{\"type\": " << jstr(d.id) << ", \"label\": " << jstr(d.label) << ", \"category\": "
+               << jstr(d.category) << ", \"help\": " << jstr(d.help) << ", \"in\": [";
+            for (size_t i = 0; i < d.ins.size(); ++i)
+                js << (i ? ", " : "") << "{\"name\": " << jstr(d.ins[i].name) << ", \"type\": \"" << pinTypeName(d.ins[i].type) << "\"}";
+            js << "], \"out\": [";
+            for (size_t i = 0; i < d.outs.size(); ++i)
+                js << (i ? ", " : "") << "{\"name\": " << jstr(d.outs[i].name) << ", \"type\": \"" << pinTypeName(d.outs[i].type) << "\"}";
+            js << "]}";
+            first = false;
+        }
+        js << "\n]}";
+        return js.str();
+    }
+    if (cmd == "graph.set" || cmd == "graph.clear" || cmd == "graph.load") {
+        if (m_playing) stop();
+        std::string err;
+        if (cmd == "graph.clear") m_graph.clear();
+        else if (cmd == "graph.load") { if (!loadGraph(&err)) return fail(err); }
+        else {
+            // re-serialise the "graph" member (the parser keeps no source text)
+            const Json& g = j["graph"];
+            if (g.type != Json::Object) return fail("champ graph manquant");
+            Graph tmp;
+            std::ostringstream js;
+            std::function<void(const Json&)> write = [&](const Json& v) {
+                switch (v.type) {
+                case Json::Null: js << "null"; break;
+                case Json::Bool: js << (v.b ? "true" : "false"); break;
+                case Json::Number: js << num((float)v.n); break;
+                case Json::String: js << jstr(v.s); break;
+                case Json::Array: { js << "["; for (size_t i = 0; i < v.a.size(); ++i) { if (i) js << ","; write(v.a[i]); } js << "]"; break; }
+                case Json::Object: {
+                    js << "{";
+                    bool f = true;
+                    for (auto& kv : v.o) { if (!f) js << ","; js << jstr(kv.first) << ":"; write(kv.second); f = false; }
+                    js << "}";
+                    break;
+                }
+                }
+            };
+            write(g);
+            if (!tmp.fromJson(js.str(), &err)) return fail(err);
+            m_graph = tmp;
+        }
+        m_editor.frameAll(m_graph);
+        return ok(", \"nodes\": " + std::to_string(m_graph.nodes.size()));
+    }
+    if (cmd == "graph.addNode") {
+        std::string type = j["type"].str();
+        int id = m_graph.addNode(type, float2((float)j["x"].num(0), (float)j["y"].num(0)));
+        if (!id) return fail("type de noeud inconnu : " + type + " (voir graph.nodeTypes)");
+        Node* n = m_graph.node(id);
+        for (auto& kv : j["in"].o) {
+            int pi = n->def->findIn(kv.first);
+            if (pi < 0) continue;
+            Value& v = n->inputs[pi];
+            const Json& x = kv.second;
+            if (x.type == Json::Number) { v.f = (float)x.n; v.b = x.n != 0; v.v = float3((float)x.n); v.s = num((float)x.n); }
+            else if (x.type == Json::Bool) { v.b = x.b; v.f = x.b ? 1.0f : 0.0f; }
+            else if (x.type == Json::String) v.s = x.s;
+            else readVec(x, v.v);
+        }
+        return ok(", \"id\": " + std::to_string(id));
+    }
+    if (cmd == "graph.removeNode") {
+        int id = (int)j["id"].num(0);
+        if (!m_graph.node(id)) return fail("noeud introuvable");
+        m_graph.removeNode(id);
+        return ok();
+    }
+    auto pinIndex = [&](const Node* n, const Json& p, bool output) -> int {
+        if (p.type == Json::Number) return (int)p.n;
+        return output ? n->def->findOut(p.str()) : n->def->findIn(p.str());
+    };
+    if (cmd == "graph.connect") {
+        int a1 = (int)j["from"][0].num(0), b1 = (int)j["to"][0].num(0);
+        const Node* na = m_graph.node(a1);
+        const Node* nb = m_graph.node(b1);
+        if (!na || !nb) return fail("noeud introuvable");
+        int pa = pinIndex(na, j["from"][1], true), pb = pinIndex(nb, j["to"][1], false);
+        std::string err;
+        if (!m_graph.connect(a1, pa, b1, pb, &err)) return fail(err);
+        return ok();
+    }
+    if (cmd == "graph.disconnect") {
+        int id = (int)j["id"].num(0);
+        const Node* n = m_graph.node(id);
+        if (!n) return fail("noeud introuvable");
+        bool out = j["output"].b;
+        int p = pinIndex(n, j["pin"], out);
+        if (p < 0) return fail("broche introuvable");
+        m_graph.disconnectPin(id, p, out);
+        return ok();
+    }
+    if (cmd == "graph.setInput") {
+        Node* n = m_graph.node((int)j["id"].num(0));
+        if (!n) return fail("noeud introuvable");
+        int p = pinIndex(n, j["pin"], false);
+        if (p < 0 || p >= (int)n->inputs.size()) return fail("broche introuvable");
+        Value& v = n->inputs[p];
+        const Json& x = j["value"];
+        switch (v.type) {
+        case PinType::Float: v.f = (float)x.num(v.f); break;
+        case PinType::Bool: v.b = x.type == Json::Bool ? x.b : x.num(0) != 0; break;
+        case PinType::Vec3: if (!readVec(x, v.v) && x.type == Json::Number) v.v = float3((float)x.n); break;
+        case PinType::String: v.s = x.type == Json::String ? x.s : num((float)x.num()); break;
+        default: return fail("cette broche n'a pas de valeur");
+        }
+        ++m_graph.version;
+        return ok();
+    }
+    if (cmd == "graph.save") {
+        std::string err;
+        if (!saveGraph(&err)) return fail(err);
+        return ok(", \"path\": " + jstr(toUtf8(m_graphPath)));
+    }
+    if (cmd == "graph.show") {
+        m_showGraph = j["open"].type == Json::Bool ? j["open"].b : true;
+        if (m_showGraph) m_editor.frameAll(m_graph);
+        return ok();
+    }
+    // build / output
+    if (cmd == "build.profiles") {
+        std::ostringstream js;
+        js << "{\"ok\": true, \"file\": " << jstr(toUtf8((fs::path(m_gameDir) / "build_profiles.json").wstring())) << ", \"profiles\": [";
+        auto ps = loadProfiles();
+        for (size_t i = 0; i < ps.size(); ++i)
+            js << (i ? ", " : "") << "{\"name\": " << jstr(ps[i].name) << ", \"title\": " << jstr(ps[i].title) << ", \"fullscreen\": "
+               << (ps[i].fullscreen ? "true" : "false") << ", \"pathTracing\": " << (ps[i].pathTracing ? "true" : "false")
+               << ", \"showFps\": " << (ps[i].showFps ? "true" : "false") << ", \"commandApi\": " << (ps[i].commandApi ? "true" : "false") << "}";
+        js << "]}";
+        return js.str();
+    }
+    if (cmd == "build") {
+        std::wstring out;
+        std::string err;
+        if (!build(j["profile"].str(), j["run"].b, out, err)) return fail(err);
+        toast(L"Build terminé : " + out);
+        return ok(", \"path\": " + jstr(toUtf8(out)));
+    }
+    if (cmd == "log") {
+        std::ostringstream js;
+        js << "{\"ok\": true, \"log\": [";
+        for (size_t i = 0; i < m_rt.log.size(); ++i) js << (i ? ", " : "") << jstr(m_rt.log[i]);
+        js << "], \"variables\": {";
+        bool f = true;
+        for (auto& kv : m_rt.variables()) { js << (f ? "" : ", ") << jstr(kv.first) << ": " << valueToJson(kv.second); f = false; }
+        js << "}}";
+        return js.str();
+    }
+    return fail("commande inconnue : " + cmd + " (GET /help pour la liste)");
+}
+
+} // namespace app

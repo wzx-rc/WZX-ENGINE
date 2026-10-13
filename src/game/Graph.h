@@ -1,0 +1,122 @@
+// game - node graph (Blueprint style) describing the game interactions.
+// The graph is pure data: node types come from a registry (NodeLib.cpp), the
+// interpreter lives in Runtime, the editor view in NodeEditor.
+#pragma once
+#include "vp3d/Math.h"
+#include <map>
+#include <string>
+#include <vector>
+
+namespace game {
+
+using vp3d::float2;
+using vp3d::float3;
+
+enum class PinType { Exec, Float, Bool, Vec3, Object, String };
+
+struct Value {
+    PinType type = PinType::Float;
+    float f = 0;
+    bool b = false;
+    float3 v;
+    int obj = -1;          // scene object index (-1 = none)
+    std::string s;
+
+    static Value Float(float x) { Value r; r.type = PinType::Float; r.f = x; return r; }
+    static Value Bool(bool x) { Value r; r.type = PinType::Bool; r.b = x; return r; }
+    static Value Vec3(float3 x) { Value r; r.type = PinType::Vec3; r.v = x; return r; }
+    static Value Obj(int i) { Value r; r.type = PinType::Object; r.obj = i; return r; }
+    static Value Str(const std::string& x) { Value r; r.type = PinType::String; r.s = x; return r; }
+    static Value None(PinType t) { Value r; r.type = t; return r; }
+
+    // Conversions used when a pin of another type is connected (Float <-> Bool, etc.).
+    float asFloat() const;
+    bool asBool() const;
+    float3 asVec3() const;
+    std::string asString() const;
+};
+
+struct PinDef {
+    std::string name;
+    PinType type;
+};
+
+// Operation implemented by the runtime for each node type.
+enum class Op {
+    // events
+    OnStart, OnTick, OnClickObject, OnClickGround, OnKey, OnCustom,
+    // flow
+    Branch, Sequence, Delay, ForEachPart, DoOnce, FireCustom,
+    // actions
+    SetPosition, MoveTo, RotateY, Spawn, Destroy, SetColor, SetScale, Select, Print, SetVar, AddVar,
+    // data
+    ConstFloat, ConstBool, ConstVec3, ConstString, GetVar, Selected, FindObject, GetPosition, PartOf, IsValid,
+    MakeVec3, BreakVec3, Distance, Time,
+    // maths / logic
+    Add, Sub, Mul, Div, Greater, Less, Equal, StrEqual, And, Or, Not, Random, AddVec3, ScaleVec3, Concat,
+    // RTS
+    SnapGrid, CellFree, CountPart,
+};
+
+struct NodeDef {
+    Op op = Op::OnStart;
+    std::string id;          // stable identifier, e.g. "event.click"
+    std::string label;       // shown in the editor (UTF-8)
+    std::string category;    // Événements, Flux, Actions, Données, Maths, RTS
+    std::string help;        // one-line description (editor tooltip, API listing)
+    std::vector<PinDef> ins, outs;
+    std::vector<Value> defaults;   // one per input (ignored for Exec pins)
+    bool pure = false;       // no exec pins: evaluated on demand when an output is read
+    bool event = false;      // entry point fired by the runtime
+    int findIn(const std::string& n) const;
+    int findOut(const std::string& n) const;
+};
+
+const std::vector<NodeDef>& nodeDefs();
+const NodeDef* findNodeDef(const std::string& id);
+const char* pinTypeName(PinType t);
+
+struct Node {
+    int id = 0;
+    std::string type;
+    float2 pos;                      // editor position (graph units)
+    std::vector<Value> inputs;       // inline values of unconnected inputs
+    const NodeDef* def = nullptr;    // resolved from type
+};
+
+struct Link {
+    int fromNode = 0, fromPin = 0;   // output pin index
+    int toNode = 0, toPin = 0;       // input pin index
+};
+
+class Graph {
+public:
+    std::string name = "main";
+    std::vector<Node> nodes;
+    std::vector<Link> links;
+    int nextId = 1;
+    uint32_t version = 1;            // bumped on every structural edit
+
+    Node* node(int id);
+    const Node* node(int id) const;
+    // Returns the new node id, or 0 if the type is unknown.
+    int addNode(const std::string& type, float2 pos);
+    void removeNode(int id);
+    // Connects an output to an input. Replaces the previous link of a data input / exec output.
+    // Returns false (and sets err) if the pins are incompatible.
+    bool connect(int fromNode, int fromPin, int toNode, int toPin, std::string* err = nullptr);
+    void disconnectPin(int nodeId, int pin, bool output);
+    const Link* inputLink(int nodeId, int pin) const;
+    static bool compatible(PinType out, PinType in);
+    void clear();
+
+    std::string toJson() const;
+    bool fromJson(const std::string& text, std::string* err = nullptr);
+    bool save(const std::wstring& path) const;
+    bool load(const std::wstring& path, std::string* err = nullptr);
+};
+
+// Small helpers shared by the game module.
+std::string valueToJson(const Value& v);
+
+} // namespace game
