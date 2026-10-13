@@ -48,4 +48,9 @@ echo [3/3] Viewport3D app
 cl %CFLAGS% /c src\app\*.cpp /Fo:build\obj\app\ || exit /b 1
 link /nologo /OUT:%OUT%\Viewport3D.exe build\obj\app\*.obj build\lib\vp3d.lib d3d12.lib dxgi.lib d3d11.lib d2d1.lib dwrite.lib windowscodecs.lib user32.lib gdi32.lib ole32.lib shell32.lib shcore.lib comdlg32.lib /SUBSYSTEM:WINDOWS || exit /b 1
 
-echo Build OK: %OUT%\Viewport3D.exe
+echo [4/3] DDGI viewer
+if not exist build\obj\viewer mkdir build\obj\viewer
+cl %CFLAGS% /c src\viewer\*.cpp /Fo:build\obj\viewer\ || exit /b 1
+link /nologo /OUT:%OUT%\DDGIViewer.exe build\obj\viewer\*.obj build\lib\vp3d.lib d3d12.lib dxgi.lib d3d11.lib d2d1.lib dwrite.lib windowscodecs.lib user32.lib gdi32.lib ole32.lib shell32.lib shcore.lib /SUBSYSTEM:WINDOWS || exit /b 1
+
+echo Build OK: %OUT%\Viewport3D.exe, %OUT%\DDGIViewer.exe

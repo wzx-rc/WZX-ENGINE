@@ -40,6 +40,7 @@ struct RenderSettings {
     float ddgiHysteresis = 0.97f;
     int ddgiTemporal = 32;        // max frames of image history (exponential average)
     int ddgiView = 0;             // 0 full, 1 indirect only, 2 direct only
+    bool ddgiShowProbes = false;  // draw the probes as small spheres shaded with their irradiance
 };
 
 struct ViewRect { int x = 0, y = 0, w = 1, h = 1; };

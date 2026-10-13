@@ -112,6 +112,26 @@ void main(uint3 id : SV_DispatchThreadID) {
     float lum = Luminance(L);
     if (lum > F.fireflyClamp) L *= F.fireflyClamp / lum;
 
+    // Debug: probes drawn as small spheres showing their irradiance (red = disabled, inside geometry).
+    if (G.flags & 1u) {
+        float r = min(G.spacing.x, min(G.spacing.y, G.spacing.z)) * 0.1;
+        float best = g.depth;
+        uint hitProbe = 0xFFFFFFFFu;
+        for (uint p = 0; p < G.counts.w; ++p) {
+            float3 oc = F.camPos - ProbePos(ProbeCoord(p));
+            float b = dot(oc, dir), c = dot(oc, oc) - r * r;
+            float disc = b * b - c;
+            if (disc <= 0) continue;
+            float t = -b - sqrt(disc);
+            if (t > 0 && t < best) { best = t; hitProbe = p; }
+        }
+        if (hitProbe != 0xFFFFFFFFu) {
+            float3 n = normalize(F.camPos + dir * best - ProbePos(ProbeCoord(hitProbe)));
+            L = gProbe[int2(hitProbe, 0)].x > 0.5 ? SampleTile(gIrr, hitProbe, DDGI_IRR_N, n).rgb : float3(0.6, 0.02, 0.02);
+            g.albedo = 1; g.normal = n; g.depth = best; g.id = 65000;
+        }
+    }
+
     // Capped temporal history: n frames since the last reset, at most temporalMax.
     float n = (float)min(F.sampleIndex, G.temporalMax);
     float4 acc = gTex[SLOT_ACCUM][id.xy];

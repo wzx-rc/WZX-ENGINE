@@ -54,3 +54,15 @@ Suite proposée, dans l'ordre :
 2. Brancher la GI des sondes dans le **viewport raster** (lecture des sondes dans `Raster.hlsl`) plutôt que dans un rendu par rayons. Pour un RTS, c'est probablement la voie la plus rentable : raster rapide, ombres en shadow map, GI des sondes.
 3. Volume de sondes qui suit la caméra RTS (ou cascades) pour les grandes cartes.
 4. Ajouter un AO léger pour les contacts, et gérer coat, SSS et verre si on garde le rendu par rayons.
+
+## Viewer d'étude : `build\bin\DDGIViewer.exe` (13/10/2026)
+
+Petit viewer dédié (`src\viewer\Viewer.cpp`, compilé par `build.bat`) : Cornell Box avec 6 sphères (diffuse blanche, miroir, bleue mate, jaune brillante, or rugueux, orange suspendue et animable), sans éditeur.
+
+- Souris : glisser gauche ou droit = orbite, milieu = déplacement, molette = zoom.
+- **1** DDGI, **2** path tracing, **3** raster · **V** vue GI (complet / indirect seul / direct seul) · **P** affiche les sondes (sphères teintées par leur irradiance, rouge = sonde désactivée) · **+/-** nombre de sondes · **H** hystérésis 0,97 / 0,90 · **A** anime la sphère · **L** anime la lumière · **R** vue de départ · **F12** capture.
+- Ligne de commande : `--mode 0|1|2 --probes N --probes-visible 1 --view 0|1|2 --anim 1 --vsync 0 --shot fichier.png --frames N` (écrit aussi `fichier.png.txt` avec le temps GPU moyen).
+
+Mesures (1600 × 1000, vsync coupée, 2 448 sondes) : DDGI 6,0 ms GPU (mise à jour des sondes 0,12 ms et fusion 0,26 ms), path tracing 1 spp 5,4 ms, DDGI animé 6,0 ms. Avec la vsync active, le GPU reste à basse fréquence et le temps affiché grimpe à environ 14 ms : ce n'est pas une mesure de charge.
+L'affichage des sondes ajoute environ 3 ms (test brut contre toutes les sondes pour chaque pixel, outil de debug uniquement).
+En animation, l'historique d'image est effacé à chaque frame : les ombres directes passent alors par le débruiteur à 1 échantillon et deviennent plus floues. Une reprojection temporelle serait la prochaine amélioration.

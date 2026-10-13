@@ -610,6 +610,7 @@ void Renderer::recordDDGI(const RenderSettings& rs, UINT gx, UINT gy) {
     c.frame = m_giFrame++;
     c.temporalMax = (uint32_t)std::max(0, rs.ddgiTemporal);
     c.view = (uint32_t)rs.ddgiView;
+    c.flags = rs.ddgiShowProbes ? 1u : 0u;
     c.normalBias = 0.06f;
     c.viewBias = 0.24f;
     c.energy = 1.0f;
