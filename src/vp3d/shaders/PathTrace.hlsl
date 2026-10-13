@@ -333,6 +333,25 @@ bool SampleLight(float3 P, inout uint rng, out float3 L, out float dist, out flo
     return true;
 }
 
+// Same as SampleLight, with the random numbers given by the caller (stratified over frames).
+bool SampleLightU(float3 P, float3 us, out float3 L, out float dist, out float3 Le, out float pdf) {
+    L = 0; dist = 0; Le = 0; pdf = 0;
+    if (F.lightCount == 0) return false;
+    uint li = min((uint)(us.x * F.lightCount), F.lightCount - 1);
+    GpuLight l = gLights[li];
+    float2 u = us.yz;
+    float3 X = l.corner + l.edgeU * u.x + l.edgeV * u.y;
+    float3 d = X - P;
+    dist = length(d);
+    L = d / dist;
+    float3 Nl = normalize(cross(l.edgeU, l.edgeV));
+    float cosL = dot(-L, Nl);
+    if (cosL <= 1e-4) return false;
+    pdf = dist * dist / (cosL * l.area) / F.lightCount;
+    Le = l.radiance * F.lightScale;
+    return true;
+}
+
 float LightPdf(uint lightId, float3 dir, float t) {
     GpuLight l = gLights[lightId];
     float3 Nl = normalize(cross(l.edgeU, l.edgeV));

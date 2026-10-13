@@ -18,7 +18,7 @@ float3 ShadeSecondary(Hit h, float3 V, inout uint rng) {
     return c;
 }
 
-float3 ShadePixel(float3 o, float3 d, inout uint rng, inout Guides g) {
+float3 ShadePixel(float3 o, float3 d, inout uint rng, inout Guides g, float3 ul, float2 ur) {
     Hit h;
     if (!TraceClosest(o, d, 1e30, 0xFF & ~MASK_LIGHT_HIDDEN, h)) {
         g.albedo = 1; g.normal = -d; g.geom = -d; g.depth = 1e6; g.id = 0;
@@ -55,7 +55,7 @@ float3 ShadePixel(float3 o, float3 d, inout uint rng, inout Guides g) {
     if (showDirect) {
         float3 L, Le;
         float dist, lpdf;
-        if (SampleLight(h.P, rng, L, dist, Le, lpdf) && dot(L, h.Ng) > 0) {
+        if (SampleLightU(h.P, ul, L, dist, Le, lpdf) && dot(L, h.Ng) > 0) {
             float NoL = dot(N, L);
             if (NoL > 0 && !Occluded(OffsetRay(h.P, h.Ng), L, dist * 0.999)) {
                 float3 H = normalize(V + L);
@@ -72,26 +72,31 @@ float3 ShadePixel(float3 o, float3 d, inout uint rng, inout Guides g) {
     // Diffuse GI from the probes.
     if (showIndirect) c += kd * (1.0 - F0) * SampleIrradiance(h.P, N, V);
 
-    // One glossy reflection ray (VNDF sampling), its hit shaded with direct light + probe GI.
+    // Glossy reflections (VNDF sampling), each hit shaded with direct light + probe GI. Glossy surfaces take several
+    // rays: a bright reflection of the light is hit in only some frames, so a single ray flickers.
     if (s.trans < 0.5 && Luminance(F0) > 0.01) {
-        float3 Hm = SampleGGXHalf(N, V, a, Rnd2(rng));
-        float3 L = reflect(-V, Hm);
-        float NoL = dot(N, L);
-        if (NoL > 0 && dot(L, h.Ng) > 0) {
-            float VoH = saturate(dot(V, Hm));
-            float3 w = SchlickF(F0, VoH) * G2_Smith(NoL, max(NoV, 1e-4), a) / max(G1_Smith(max(NoV, 1e-4), a), 1e-4);
-            float pdfSpec = D_GGX(saturate(dot(N, Hm)), a) * G1_Smith(max(NoV, 1e-4), a) / (4.0 * max(NoV, 1e-4));
-            Hit r;
-            float3 o2 = OffsetRay(h.P, h.Ng);
-            if (!TraceClosest(o2, L, 1e30, 0xFF, r)) {
-                if (showIndirect) c += w * Environment(L);
-            } else {
-                GpuInstance ri = gInst[r.inst];
-                if (ri.lightId != NO_LIGHT) {
-                    if (showDirect && r.front)
-                        c += w * gLights[ri.lightId].radiance * F.lightScale * PowerHeuristic(pdfSpec, LightPdf(ri.lightId, L, r.t));
-                } else if (showIndirect) {
-                    c += w * ShadeSecondary(r, -L, rng);
+        uint nRefl = s.rough < 0.5 ? 4u : 1u;
+        for (uint k = 0; k < nRefl; ++k) {
+            float2 uk = frac(ur + float2((float)k / nRefl, frac((float)k * 0.618034)));
+            float3 Hm = SampleGGXHalf(N, V, a, uk);
+            float3 L = reflect(-V, Hm);
+            float NoL = dot(N, L);
+            if (NoL > 0 && dot(L, h.Ng) > 0) {
+                float VoH = saturate(dot(V, Hm));
+                float3 w = SchlickF(F0, VoH) * G2_Smith(NoL, max(NoV, 1e-4), a) / max(G1_Smith(max(NoV, 1e-4), a), 1e-4) / (float)nRefl;
+                float pdfSpec = D_GGX(saturate(dot(N, Hm)), a) * G1_Smith(max(NoV, 1e-4), a) / (4.0 * max(NoV, 1e-4));
+                Hit r;
+                float3 o2 = OffsetRay(h.P, h.Ng);
+                if (!TraceClosest(o2, L, 1e30, 0xFF, r)) {
+                    if (showIndirect) c += w * Environment(L);
+                } else {
+                    GpuInstance ri = gInst[r.inst];
+                    if (ri.lightId != NO_LIGHT) {
+                        if (showDirect && r.front)
+                            c += w * gLights[ri.lightId].radiance * F.lightScale * PowerHeuristic(pdfSpec, LightPdf(ri.lightId, L, r.t));
+                    } else if (showIndirect) {
+                        c += w * ShadeSecondary(r, -L, rng);
+                    }
                 }
             }
         }
@@ -109,7 +114,16 @@ void main(uint3 id : SV_DispatchThreadID) {
     float3 dir = normalize(F.camFwd + F.camRight * (ndc.x * F.aspect * F.tanHalfFovY) + F.camUp * (ndc.y * F.tanHalfFovY));
 
     Guides g = (Guides)0;
-    float3 L = ShadePixel(F.camPos, dir, rng, g);
+    // Stratified over frames: a low-discrepancy sequence with a per-pixel shift. The light sample and the glossy
+    // reflection direction then converge in a few frames instead of flickering with random numbers.
+    uint hp0 = Hash(id.x + id.y * 65521u);
+    uint hp1 = Hash(hp0 ^ 0x9e3779b9u);
+    uint hp2 = Hash(hp1 ^ 0x85ebca6bu);
+    float3 shift = float3(hp0, hp1, hp2) * (1.0 / 4294967296.0);
+    float fr = (float)F.frameIndex;
+    float3 ul = frac(0.5 + fr * float3(0.8191725134, 0.6710436067, 0.5497004779) + shift);
+    float2 ur = frac(0.5 + fr * float2(0.7548776662, 0.5698402910) + shift.yz);
+    float3 L = ShadePixel(F.camPos, dir, rng, g, ul, ur);
     if (any(isnan(L)) || any(isinf(L))) L = 0;
     float lum = Luminance(L);
     if (lum > F.fireflyClamp) L *= F.fireflyClamp / lum;
@@ -135,7 +149,14 @@ void main(uint3 id : SV_DispatchThreadID) {
     }
 
     // Temporal accumulation with reprojection (Temporal.hlsli). The guides are the current frame's.
-    gTex[SLOT_ACCUM][id.xy] = TemporalAccumulate(L, F.camPos + CurPixelDir(float2(id.xy)) * g.depth, g.geom, g.depth);
+    // Pixel-centre primary surface validates the history (as in PathTraceTemporal.hlsl): a jittered sample on an
+    // edge would otherwise reset the history every frame. The jittered sample is still averaged in (anti-aliasing).
+    float3 dirc = CurPixelDir(float2(id.xy));
+    Hit hc;
+    bool okc = TraceClosest(F.camPos, dirc, 1e30, 0xFF & ~MASK_LIGHT_HIDDEN, hc);
+    float depthC = okc ? hc.t : 1e6;
+    float3 geomC = okc ? hc.Ng : -dirc;
+    gTex[SLOT_ACCUM][id.xy] = TemporalAccumulate(L, F.camPos + dirc * depthC, geomC, depthC);
     gTex[SLOT_ALBEDO][id.xy] = float4(g.albedo, (float)g.id);
-    gTex[SLOT_NORMAL][id.xy] = float4(g.geom, g.depth);
+    gTex[SLOT_NORMAL][id.xy] = float4(geomC, depthC);
 }

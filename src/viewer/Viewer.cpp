@@ -18,6 +18,32 @@ using namespace vp3d;
 
 namespace {
 
+// Writes an RGBA8 image as PNG (same encoder as the capture).
+bool writePng(const std::wstring& path, std::vector<uint8_t> rgba, uint32_t w, uint32_t h) {
+    for (size_t i = 3; i < rgba.size(); i += 4) rgba[i] = 255;
+    ComPtr<IWICImagingFactory> f;
+    if (FAILED(CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&f)))) return false;
+    ComPtr<IWICStream> st;
+    f->CreateStream(&st);
+    if (FAILED(st->InitializeFromFilename(path.c_str(), GENERIC_WRITE))) return false;
+    ComPtr<IWICBitmapEncoder> enc;
+    f->CreateEncoder(GUID_ContainerFormatPng, nullptr, &enc);
+    enc->Initialize(st.Get(), WICBitmapEncoderNoCache);
+    ComPtr<IWICBitmapFrameEncode> fr;
+    ComPtr<IPropertyBag2> props;
+    enc->CreateNewFrame(&fr, &props);
+    fr->Initialize(props.Get());
+    fr->SetSize(w, h);
+    WICPixelFormatGUID fmt = GUID_WICPixelFormat32bppRGBA;
+    fr->SetPixelFormat(&fmt);
+    if (fmt != GUID_WICPixelFormat32bppRGBA)
+        for (size_t i = 0; i + 3 < rgba.size(); i += 4) std::swap(rgba[i], rgba[i + 2]);
+    fr->WritePixels(h, w * 4, (UINT)rgba.size(), rgba.data());
+    fr->Commit();
+    enc->Commit();
+    return true;
+}
+
 struct Viewer {
     HWND hwnd = nullptr;
     Renderer renderer;
@@ -38,6 +64,12 @@ struct Viewer {
     // Automated capture: --shot file.png --frames N
     std::wstring shotPath;
     int shotFrames = 120, frameCount = 0;
+    int statFrom = -1;               // test: stability statistics from this frame (--stat-from)
+    int statRect[4] = {0, 0, 0, 0};  // test: region for the mean deviation (--stat-rect x0,y0,x1,y1)
+    float statGain = 20.0f;          // test: gain of the stability map (<shot>.std.png)
+    std::vector<double> stat1, stat2;   // running sums of the luminance and of its square
+    int statCount = 0;
+    uint32_t statW = 0, statH = 0;
     struct ScriptKey { int frame; int vk; };
     std::vector<ScriptKey> script;   // test: key presses at given frames (--script 60:V,120:P)
     bool vsync = true;
@@ -232,6 +264,43 @@ void Viewer::frame() {
         running = false;
     }
     renderer.present(vsync);
+    // Test statistics: per-pixel luminance sums over the frames from statFrom (read back after the present).
+    if (statFrom >= 0 && frameCount - 1 >= statFrom && frameCount <= shotFrames) {
+        std::vector<uint8_t> img;
+        uint32_t w = 0, h = 0;
+        if (renderer.readViewport(img, w, h)) {
+            const size_t n = img.size() / 4;
+            if (stat1.size() != n) { stat1.assign(n, 0.0); stat2.assign(n, 0.0); statCount = 0; statW = w; statH = h; }
+            for (size_t i = 0; i < n; ++i) {
+                double l = 0.2126 * img[i * 4] + 0.7152 * img[i * 4 + 1] + 0.0722 * img[i * 4 + 2];
+                stat1[i] += l;
+                stat2[i] += l * l;
+            }
+            ++statCount;
+        }
+    }
+    if (statCount > 1 && frameCount >= shotFrames && !shotPath.empty()) {
+        const size_t n = stat1.size();
+        std::vector<uint8_t> stdMap(n * 4, 255);
+        double all = 0.0, region = 0.0;
+        int rc = 0;
+        for (size_t i = 0; i < n; ++i) {
+            double mean = stat1[i] / statCount;
+            double var = std::max(0.0, stat2[i] / statCount - mean * mean) * statCount / (statCount - 1);
+            double sd = std::sqrt(var);
+            uint8_t v = (uint8_t)std::min(255.0, sd * statGain);
+            stdMap[i * 4] = stdMap[i * 4 + 1] = stdMap[i * 4 + 2] = v;
+            all += sd;
+            int x = (int)(i % statW), y = (int)(i / statW);
+            if (statRect[2] > statRect[0] && x >= statRect[0] && x < statRect[2] && y >= statRect[1] && y < statRect[3]) { region += sd; ++rc; }
+        }
+        writePng(shotPath + L".std.png", stdMap, statW, statH);
+        if (FILE* sf = _wfopen((shotPath + L".stab.txt").c_str(), L"w")) {
+            fprintf(sf, "frames %d..%d: std_all=%.4f std_region=%.4f (gain %.1f, region %d,%d,%d,%d)\n", statFrom, shotFrames - 1, all / n,
+                    rc ? region / rc : 0.0, statGain, statRect[0], statRect[1], statRect[2], statRect[3]);
+            fclose(sf);
+        }
+    }
 }
 
 void Viewer::drawHud() {
@@ -345,6 +414,16 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         else if (a == L"--anim") v.animSphere = v.animLight = _wtoi(next().c_str()) != 0;
         else if (a == L"--light-anim") v.animLight = _wtoi(next().c_str()) != 0;
         else if (a == L"--cap") v.rs.temporalCap = _wtoi(next().c_str());
+        else if (a == L"--clamp") v.rs.fireflyClamp = (float)_wtof(next().c_str());
+        else if (a == L"--denoise") v.rs.denoise = _wtoi(next().c_str()) != 0;
+        else if (a == L"--hysteresis") v.rs.ddgiHysteresis = (float)_wtof(next().c_str());
+        else if (a == L"--aa") v.rs.aaLevel = _wtoi(next().c_str());
+        else if (a == L"--stat-from") v.statFrom = _wtoi(next().c_str());
+        else if (a == L"--stat-gain") v.statGain = (float)_wtof(next().c_str());
+        else if (a == L"--stat-rect") {
+            std::wstring s = next();
+            swscanf_s(s.c_str(), L"%d,%d,%d,%d", &v.statRect[0], &v.statRect[1], &v.statRect[2], &v.statRect[3]);
+        }
         else if (a == L"--script") {
             std::wstring s = next();
             size_t pos = 0;

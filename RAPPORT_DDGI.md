@@ -146,3 +146,20 @@ Pour l'anti-aliasing, « désactivé » donne des contours plus crénelés, « �
 ### Limites
 - Le mode DDGI (`GIShade`) garde l'ancienne validation : la correction n'y est pas encore portée.
 - Le lissage plat ne se voit presque pas sur cette scène. Il servira davantage sur des maillages grossiers (lathes, modèles importés).
+
+## Sphère « Or rugueux » du DDGIViewer : scintillement (13/10/2026)
+
+Mesure dans le DDGIViewer (1600 x 1000, images 200 à 319, écart-type de la luminance par pixel, échelle 0-255, gain 20). Outils : `--stat-from`, `--stat-rect`, `--stat-gain` (viewer et application), `--clamp`, `--denoise`, `--aa`, `--hysteresis`.
+
+| Configuration | Sphère + contours | Intérieur | Point brillant (reflet du plafonnier) |
+|---|---|---|---|
+| DDGI, validation sur l'échantillon jitté (avant) | 1,34 | 0,76 | – |
+| DDGI, validation sur le rayon central | 0,82 | 0,56 | 1,21 |
+| + lumière stratifiée et 4 rayons de reflet sur les surfaces brillantes | 0,80 | 0,51 | 1,18 |
+| Mode PT temporel (viewer) | 0,75 | – | 1,28 |
+
+Ce qui a été réduit : les contours (silhouettes, même cause que pour l'application : validation sur l'échantillon jitté) et le motif de maillage à l'intérieur de la sphère (rejet de rayons de reflet sous la facette géométrique, qui dépend de la tessellation).
+
+Ce qui reste : un petit point brillant en haut de la sphère, qui est le reflet du plafonnier. Tests qui ne le réduisent pas : écrêtage des fireflies (à 200 : identique), lumière stratifiée, 4 rayons de reflet, jitter désactivé (1,17), hystérésis des sondes (0,90 : 1,07). Le débruitage le réduit de moitié (2,44 sans débruitage). C'est une variance d'échantillonnage : un seul chemin par pixel et par image, avec un reflet très vif. La réduire demande plus d'échantillons sur ces pixels (le mode « Anti-aliasing élevé » de l'application réduit ce type de point d'environ 27 %, pour 2,7 fois le temps GPU).
+
+Observation : avec une hystérésis de 0,995 (valeur hors interface), l'image DDGI devient noire. Non traité, car la touche H n'utilise que 0,97 et 0,90.
