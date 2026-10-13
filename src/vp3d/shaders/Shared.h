@@ -16,6 +16,9 @@ struct uint4 { uint x, y, z, w; };
 #define MAT_FLAG_GRID      1u   // procedural ground grid
 #define MAT_FLAG_THIN      2u   // thin-walled transmission (no refraction offset)
 
+#define MAX_TEXTURES       16u  // material textures bound to the raster and path tracing passes
+#define NO_TEXTURE         0xFFFFFFFFu
+
 // Instance masks
 #define MASK_OPAQUE        0x01u
 #define MASK_GLASS         0x02u
@@ -33,6 +36,7 @@ struct uint4 { uint x, y, z, w; };
 struct GpuVertex {
     float3 pos;
     float3 nrm;
+    float2 uv;
 };
 
 struct GpuInstance {
@@ -47,7 +51,7 @@ struct GpuMaterial {
     float3 emission;   float metallic;
     float3 sssRadius;  float subsurface;
     float transmission; float ior; float bevelRadius; uint flags;
-    float specular;    float coat; float coatRoughness; float pad;
+    float specular;    float coat; float coatRoughness; uint baseColorTex;   // NO_TEXTURE or index in the texture table
 };
 
 struct GpuLight {

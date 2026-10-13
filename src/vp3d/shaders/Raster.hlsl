@@ -15,6 +15,8 @@ struct RasterConstants {
     float3 envBottom; uint keyLight;
     float3 ambient; float shadowTexel;
     float3 keyPos; float lightScale;
+    float3 sunDir; float sunOn;          // direction towards the sun, 1 when the sun is the key light
+    float3 sunRadiance; float pad;
 };
 ConstantBuffer<RasterConstants> R : register(b0);
 
@@ -33,6 +35,8 @@ StructuredBuffer<GpuMaterial> gMats : register(t0);
 Texture2D<float> gShadow : register(t1);
 StructuredBuffer<GpuLight> gLights : register(t2);
 SamplerComparisonState gShadowCmp : register(s0);
+Texture2D<float4> gTextures[MAX_TEXTURES] : register(t0, space1);
+SamplerState gLinearWrap : register(s1);
 
 static const float PI = 3.14159265;
 #define DRAW_GHOST 1u
@@ -41,12 +45,14 @@ static const float PI = 3.14159265;
 struct VSIn {
     float3 pos : POSITION;
     float3 nrm : NORMAL;
+    float2 uv : TEXCOORD;
 };
 
 struct VSOut {
     float4 pos : SV_Position;
     float3 wpos : WORLDPOS;
     float3 nrm : NORMAL;
+    float2 uv : TEXCOORD;
 };
 
 float3 ToWorld(float3 p) {
@@ -59,6 +65,7 @@ VSOut VSMain(VSIn i) {
     o.wpos = ToWorld(i.pos);
     float3 n = float3(dot(D.row0.xyz, i.nrm), dot(D.row1.xyz, i.nrm), dot(D.row2.xyz, i.nrm));
     o.nrm = normalize(n);
+    o.uv = i.uv;
     o.pos = mul(R.viewProj, float4(o.wpos, 1));
     return o;
 }
@@ -154,6 +161,7 @@ float4 Shade(VSOut i, bool ghost) {
     if (dot(N, V) < 0) N = -N;
     float3 base = m.baseColor;
     float3 emission = m.emission;
+    if (m.baseColorTex != NO_TEXTURE) base *= gTextures[NonUniformResourceIndex(m.baseColorTex)].Sample(gLinearWrap, i.uv).rgb;
     if (m.flags & MAT_FLAG_GRID) base = GridColor(base, i.wpos, emission);
     if (D.flags & DRAW_LIGHT) return float4(m.emission * R.lightScale, 1);
 
@@ -192,6 +200,18 @@ float4 Shade(VSOut i, bool ghost) {
             spec += D_GGX(NoH, acL) * V_Smith(NoV, NoL, acL) * 0.04 * m.coat * (ac * ac) / max(acL * acL, 1e-4);
         }
         color += (diff + spec) * E * NoL * shadow;
+    }
+    if (R.sunOn > 0) {
+        float3 L = R.sunDir;
+        float NoL = saturate(dot(N, L));
+        if (NoL > 0) {
+            float3 H = normalize(V + L);
+            float NoH = saturate(dot(N, H));
+            float3 F = Fresnel(f0, saturate(dot(V, H)));
+            float3 spec = D_GGX(NoH, a) * V_Smith(NoV, NoL, a) * F;
+            float3 diff = diffuseCol / PI * (1 - F);
+            color += (diff + spec) * R.sunRadiance * R.lightScale * NoL * Shadow(i.wpos, N);
+        }
     }
     // Hemisphere ambient + reflection of the environment, darkened in cavities facing down.
     float3 sky = Environment(N) + R.ambient * (0.65 + 0.35 * N.y);

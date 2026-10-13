@@ -90,7 +90,8 @@ private:
     // RTS placement (AppRts.cpp): houses on the grid, dragged in the view or out of the HUD, animated
     // and turned into scene objects. Simulated during Play; the input and the HUD need the RTS camera.
     game::Placement m_build;
-    std::map<int, int> m_buildMat;       // building id -> its own material
+    int m_houseMesh = -1, m_houseTex = -1, m_houseMat = -1;   // the house model (assets/HOUSE), see AppRts.cpp
+    bool m_houseFailed = false;          // the model could not be loaded (reported once)
     int m_invalidMat = -1;               // red material of an invalid drop (this Play session)
     int m_buildHover = -1, m_buildSelected = -1, m_buildPress = -1;
     ImVec2 m_buildPressPos;
@@ -108,6 +109,14 @@ private:
     void clearBuildings();
     bool isBuilding(int obj) const;
     void drawRtsHud();
+    bool ensureHouseModel();
+    // Sun (RTS play): azimuth and height from the dial (AppRts.cpp), restored on Stop
+    vp3d::SunLight m_saveSun;
+    float m_sunAzimuth = vp3d::radians(220.0f);
+    float m_sunElevation = vp3d::radians(48.0f);
+    float m_sunGrabAnim = 0.0f;         // the sun bounces when the dial is grabbed
+    void updateSun();
+    void drawSunDial();
 
     App& m_app;
     game::Graph m_graph;

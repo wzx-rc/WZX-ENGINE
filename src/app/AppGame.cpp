@@ -222,6 +222,7 @@ void GameHost::play() {
     Scene& s = m_app.m_scene;
     m_saveObjects = s.objects;
     m_saveMaterials = s.materials;
+    m_saveSun = s.sun;
     m_saveSelected = m_app.m_selected;
     m_saveTool = m_app.m_tool;
     m_app.m_tool = TOOL_SELECT;
@@ -241,6 +242,7 @@ void GameHost::stop() {
     Scene& s = m_app.m_scene;
     s.objects = m_saveObjects;
     s.materials = m_saveMaterials;
+    s.sun = m_saveSun;
     m_app.m_selected = m_saveSelected < (int)s.objects.size() ? m_saveSelected : -1;
     m_app.m_multi.clear();
     m_app.m_tool = (Tool)m_saveTool;
@@ -249,7 +251,10 @@ void GameHost::stop() {
 
 void GameHost::update(float dt) {
     if (m_playing) m_rt.tick(dt);
-    if (m_playing && m_rtsCam) updateRtsCamera(dt);
+    if (m_playing && m_rtsCam) {
+        updateRtsCamera(dt);
+        updateSun();
+    }
     if (m_playing) updatePlacement(dt);
 }
 
@@ -260,6 +265,12 @@ void GameHost::setRtsCamera(bool on) {
     }
     m_rtsCam = on;
     m_rmbDrag = false;
+    m_app.m_scene.sun.enabled = on;   // the RTS game is lit by its sun
+    if (on) {
+        m_houseFailed = false;
+        ensureHouseModel();   // the houses need their model: loaded once, then kept by the scene
+        updateSun();
+    }
 }
 
 bool GameHost::groundUnderMouse(float3& p) const {
@@ -805,6 +816,7 @@ static const char* kHelp =
     "\"play\": \"{}\", \"stop\": \"{}\", "
     "\"rts.list\": \"{} -> maisons sur la grille\", \"rts.add\": \"{type: index, pos?: [x,y,z]} -> index (Play, caméra RTS)\", "
     "\"rts.move\": \"{index, pos: [x,y,z]} -> placed\", \"rts.rotate\": \"{index}\", \"rts.remove\": \"{index}\", "
+    "\"sun.set\": \"{azimuth?, elevation?} (degrés) -> soleil du cadran\", "
     "\"input.key\": \"{key: R|ESPACE|...} (pendant Play)\", \"input.click\": \"{target} ou {pos:[x,y,z]} (pendant Play)\", "
     "\"graph.get\": \"{}\", \"graph.set\": \"{graph: {...}}\", \"graph.clear\": \"{}\", \"graph.nodeTypes\": \"{}\", "
     "\"graph.addNode\": \"{type, x?, y?, in?: {broche: valeur}} -> id\", \"graph.removeNode\": \"{id}\", "
@@ -973,12 +985,19 @@ std::string GameHost::command(const Json& j, int& status) {
         }
         return ok();
     }
+    if (cmd == "sun.set") {
+        if (j["azimuth"].type == Json::Number) m_sunAzimuth = radians((float)j["azimuth"].n);
+        if (j["elevation"].type == Json::Number) m_sunElevation = radians(clampf((float)j["elevation"].n, 10.0f, 85.0f));
+        updateSun();
+        return ok(", \"azimuth\": " + num(degrees(m_sunAzimuth)) + ", \"elevation\": " + num(degrees(m_sunElevation)));
+    }
     // RTS placement (AppRts.cpp): the houses, for tests and scripts
     if (cmd == "rts.list") {
         const std::vector<game::Building>& bs = m_build.buildings();
         const std::vector<game::BuildingType>& ts = m_build.types();
         std::ostringstream js;
-        js << "{\"ok\": true, \"dragging\": " << m_build.dragging() << ", \"types\": [";
+        js << "{\"ok\": true, \"sun\": {\"enabled\": " << (s.sun.enabled ? "true" : "false") << ", \"azimuth\": " << num(degrees(m_sunAzimuth))
+           << ", \"elevation\": " << num(degrees(m_sunElevation)) << "}, \"dragging\": " << m_build.dragging() << ", \"types\": [";
         for (size_t k = 0; k < ts.size(); ++k) js << (k ? ", " : "") << jstr(ts[k].name);
         js << "], \"buildings\": [";
         for (size_t i = 0; i < bs.size(); ++i) {

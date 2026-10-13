@@ -23,6 +23,8 @@ struct RasterConstants {
     float3 envBottom; uint32_t keyLight;
     float3 ambient; float shadowTexel;
     float3 keyPos; float lightScale;
+    float3 sunDir; float sunOn;
+    float3 sunRadiance; float pad;
 };
 
 struct DrawConstants {
@@ -63,7 +65,13 @@ bool Renderer::createRasterPipelines(std::string* error) {
     range.NumDescriptors = 1;
     range.BaseShaderRegister = 1;
 
-    D3D12_ROOT_PARAMETER p[5] = {};
+    D3D12_DESCRIPTOR_RANGE texRange = {};
+    texRange.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+    texRange.NumDescriptors = kMaxTextures;
+    texRange.BaseShaderRegister = 0;
+    texRange.RegisterSpace = 1;
+
+    D3D12_ROOT_PARAMETER p[6] = {};
     p[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
     p[0].Descriptor.ShaderRegister = 0;
     p[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
@@ -77,6 +85,10 @@ bool Renderer::createRasterPipelines(std::string* error) {
     p[4].DescriptorTable.NumDescriptorRanges = 1;
     p[4].DescriptorTable.pDescriptorRanges = &range;
     p[4].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+    p[5].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+    p[5].DescriptorTable.NumDescriptorRanges = 1;
+    p[5].DescriptorTable.pDescriptorRanges = &texRange;
+    p[5].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
 
     D3D12_STATIC_SAMPLER_DESC ss = {};
     ss.Filter = D3D12_FILTER_COMPARISON_MIN_MAG_LINEAR_MIP_POINT;
@@ -86,12 +98,20 @@ bool Renderer::createRasterPipelines(std::string* error) {
     ss.MaxLOD = D3D12_FLOAT32_MAX;
     ss.ShaderRegister = 0;
     ss.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+    D3D12_STATIC_SAMPLER_DESC samplers[2] = {ss, {}};
+    D3D12_STATIC_SAMPLER_DESC& ts = samplers[1];   // material textures: anisotropic, wrap
+    ts.Filter = D3D12_FILTER_ANISOTROPIC;
+    ts.MaxAnisotropy = 8;
+    ts.AddressU = ts.AddressV = ts.AddressW = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+    ts.MaxLOD = D3D12_FLOAT32_MAX;
+    ts.ShaderRegister = 1;
+    ts.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
 
     D3D12_ROOT_SIGNATURE_DESC rsd = {};
-    rsd.NumParameters = 5;
+    rsd.NumParameters = 6;
     rsd.pParameters = p;
-    rsd.NumStaticSamplers = 1;
-    rsd.pStaticSamplers = &ss;
+    rsd.NumStaticSamplers = 2;
+    rsd.pStaticSamplers = samplers;
     rsd.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
     ComPtr<ID3DBlob> blob, err;
     if (FAILED(D3D12SerializeRootSignature(&rsd, D3D_ROOT_SIGNATURE_VERSION_1, &blob, &err))) {
@@ -117,11 +137,12 @@ bool Renderer::createRasterPipelines(std::string* error) {
     D3D12_INPUT_ELEMENT_DESC layout[] = {
         {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
         {"NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+        {"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 24, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
     };
     auto base = [&]() {
         D3D12_GRAPHICS_PIPELINE_STATE_DESC d = {};
         d.pRootSignature = m_rasterRoot.Get();
-        d.InputLayout = {layout, 2};
+        d.InputLayout = {layout, 3};
         d.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
         d.RasterizerState.FillMode = D3D12_FILL_MODE_SOLID;
         d.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
@@ -297,22 +318,27 @@ void Renderer::recordRaster(const Scene& scene, const RenderSettings& rs, const 
     setRows(rc.viewProj, 2, f * A, -dot(f, eye) * A + B);
     setRows(rc.viewProj, 3, f, -dot(f, eye));
 
-    // Key light = the strongest enabled area light; it gets the shadow map.
+    // Key light = the sun when enabled, else the strongest enabled area light; it gets the shadow map.
     int key = -1;
     float best = 0;
     int li = 0;
     float3 keyCenter(0, 50, 0);
-    for (const AreaLight& l : scene.lights) {
-        if (!l.enabled) continue;
-        float pw = (l.color.x + l.color.y + l.color.z) * l.intensity * l.width * l.height;
-        if (pw > best) { best = pw; key = li; keyCenter = l.position; }
-        ++li;
+    float3 c = m_sceneCenter;
+    float R = m_sceneRadius * 1.05f;
+    bool sun = scene.sun.enabled && scene.sun.intensity > 0;
+    if (sun) {
+        keyCenter = c + normalize(scene.sun.direction) * (R * 3.0f);
+    } else {
+        for (const AreaLight& l : scene.lights) {
+            if (!l.enabled) continue;
+            float pw = (l.color.x + l.color.y + l.color.z) * l.intensity * l.width * l.height;
+            if (pw > best) { best = pw; key = li; keyCenter = l.position; }
+            ++li;
+        }
     }
-    float3 lz = normalize(m_sceneCenter - keyCenter);
+    float3 lz = normalize(c - keyCenter);
     float3 ref = std::fabs(lz.y) > 0.99f ? float3(1, 0, 0) : float3(0, 1, 0);
     float3 lx = normalize(cross(ref, lz)), ly = cross(lz, lx);
-    float R = m_sceneRadius * 1.05f;
-    float3 c = m_sceneCenter;
     setRows(rc.lightViewProj, 0, lx / R, -dot(lx, c) / R);
     setRows(rc.lightViewProj, 1, ly / R, -dot(ly, c) / R);
     setRows(rc.lightViewProj, 2, lz / (2 * R), (-dot(lz, c) + R) / (2 * R));
@@ -335,6 +361,9 @@ void Renderer::recordRaster(const Scene& scene, const RenderSettings& rs, const 
     rc.shadowTexel = 1.0f / kShadowSize;
     rc.keyPos = keyCenter;
     rc.lightScale = rs.lightScale;
+    rc.sunDir = normalize(scene.sun.direction);
+    rc.sunOn = sun ? 1.0f : 0.0f;
+    rc.sunRadiance = scene.sun.color * scene.sun.intensity;
     memcpy(m_rasterCB.mapped, &rc, sizeof(rc));
 
     m_cmd->SetGraphicsRootSignature(m_rasterRoot.Get());
@@ -344,6 +373,7 @@ void Renderer::recordRaster(const Scene& scene, const RenderSettings& rs, const 
     D3D12_GPU_DESCRIPTOR_HANDLE shadowSrv = m_heap->GetGPUDescriptorHandleForHeapStart();
     shadowSrv.ptr += (UINT64)kTexCount * m_descSize;
     m_cmd->SetGraphicsRootDescriptorTable(4, shadowSrv);
+    m_cmd->SetGraphicsRootDescriptorTable(5, textureTable());
 
     D3D12_VERTEX_BUFFER_VIEW vbv = {m_vb.va(), (UINT)m_vb.size, sizeof(gpu::GpuVertex)};
     D3D12_INDEX_BUFFER_VIEW ibv = {m_ib.va(), (UINT)m_ib.size, DXGI_FORMAT_R32_UINT};
@@ -378,7 +408,7 @@ void Renderer::recordRaster(const Scene& scene, const RenderSettings& rs, const 
     m_cmd->RSSetViewports(1, &svp);
     m_cmd->RSSetScissorRects(1, &ssc);
     m_cmd->SetPipelineState(m_psoShadow.Get());
-    if (key >= 0)
+    if (key >= 0 || sun)
         for (const Draw& d : m_draws)
             if (!(d.flags & 7u) && !isTransparent(d)) drawOne(d);
     transition(m_shadowMap.Get(), D3D12_RESOURCE_STATE_DEPTH_WRITE, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);

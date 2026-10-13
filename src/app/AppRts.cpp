@@ -3,6 +3,7 @@
 // HUD need the "Caméra RTS" node (the RTS camera) and the Scene view on screen.
 #include "App.h"
 #include "GameHost.h"
+#include "vp3d/AssetImport.h"
 #include <cmath>
 #include <string>
 
@@ -59,7 +60,6 @@ void GameHost::removeBuilding(int idx) {
     std::vector<game::Building>& bs = m_build.buildings();
     if (idx < 0 || idx >= (int)bs.size()) return;
     if (objectAlive(bs[idx].object)) destroy(bs[idx].object);
-    m_buildMat.erase(bs[idx].id);
     m_build.remove(idx);
     m_buildHover = m_buildPress = m_buildSelected = -1;
 }
@@ -67,7 +67,6 @@ void GameHost::removeBuilding(int idx) {
 // Stop: the scene is restored, so the houses and their materials go with it.
 void GameHost::clearBuildings() {
     m_build.clear();
-    m_buildMat.clear();
     m_invalidMat = -1;
     m_buildHover = m_buildPress = m_buildSelected = -1;
     m_buildHud = m_hudDrag = false;
@@ -93,8 +92,64 @@ int GameHost::invalidMaterial() {
     return m_invalidMat;
 }
 
-// Each house is a scene object: a CUBE scaled to the footprint and the height, turned, tilted and
-// squashed by the animation. A house in hand over an invalid cell turns red.
+// The house model of the RTS starter (assets/HOUSE): the OBJ, its base colour image and one material for
+// every house. The mesh and the image stay in the scene; the material is made again after each Stop,
+// which restores the materials of the scene.
+bool GameHost::ensureHouseModel() {
+    Scene& s = m_app.m_scene;
+    const bool loaded = m_houseMesh >= 0 && m_houseMesh < (int)s.meshNames.size() && s.meshNames[m_houseMesh] == "House01_low";
+    if (!loaded) {
+        std::wstring dir = m_app.m_exeDir + L"\\assets\\HOUSE\\";
+        vp3d::MeshData mesh;
+        vp3d::ObjInfo info;
+        std::string err;
+        if (!vp3d::loadObj(dir + L"House01_low.obj", mesh, &info, &err)) {
+            if (!m_houseFailed) toast(L"House model not loaded: " + fromUtf8(err));
+            m_houseFailed = true;
+            return false;
+        }
+        // centimetres; the base on y = 0 and centred on x / z (the pivot of a house is its footprint centre)
+        float3 mn, mx;
+        mesh.bounds(mn, mx);
+        float3 shift((mn.x + mx.x) * 0.5f, mn.y, (mn.z + mx.z) * 0.5f);
+        for (vp3d::Vertex& v : mesh.vertices) v.pos -= shift;
+        // base colour: the image named by the .mtl, else the *basecolor* image of the folder (the export names a .bmp that is not there)
+        std::wstring texPath;
+        if (!info.diffuseMap.empty() && GetFileAttributesW((dir + fromUtf8(info.diffuseMap)).c_str()) != INVALID_FILE_ATTRIBUTES) {
+            texPath = dir + fromUtf8(info.diffuseMap);
+        } else {
+            WIN32_FIND_DATAW fd;
+            HANDLE h = FindFirstFileW((dir + L"*basecolor*.*").c_str(), &fd);
+            if (h != INVALID_HANDLE_VALUE) {
+                texPath = dir + fd.cFileName;
+                FindClose(h);
+            }
+        }
+        m_houseTex = -1;
+        if (!texPath.empty()) {
+            vp3d::Texture tex;
+            std::string terr;
+            if (vp3d::loadImage(texPath, tex, &terr, 2048)) m_houseTex = s.addTexture(std::move(tex));
+            else toast(L"Texture not loaded: " + fromUtf8(terr));
+        }
+        m_houseMesh = s.addMesh("House01_low", std::move(mesh));
+    }
+    if (m_houseMat < 0 || m_houseMat >= (int)s.materials.size() || s.materials[m_houseMat].name != "House") {
+        Material hm;
+        hm.name = "House";
+        hm.baseColor = float3(1, 1, 1);
+        hm.roughness = 0.75f;
+        hm.specular = 0.3f;
+        hm.baseColorTex = m_houseTex;
+        if (m_houseTex < 0) hm.baseColor = float3(0.6f, 0.45f, 0.35f);
+        m_houseMat = s.addMaterial(hm);
+    }
+    m_houseFailed = false;
+    return true;
+}
+
+// Each house is a scene object: the model scaled to its type, turned, tilted and squashed by the
+// animation. A house in hand over an invalid cell turns red.
 void GameHost::syncBuildings() {
     Scene& s = m_app.m_scene;
     const std::vector<BuildingType>& types = m_build.types();
@@ -103,24 +158,28 @@ void GameHost::syncBuildings() {
         game::Building& b = bs[i];
         const BuildingType& t = types[b.type];
         if (!objectAlive(b.object)) {
-            b.object = spawn("CUBE", b.pos, t.color);
-            if (b.object < 0) continue;
-            s.objects[b.object].name = uniqueName(t.name);
-            m_buildMat[b.id] = s.objects[b.object].material;
+            if (!ensureHouseModel()) return;
+            Object fresh;
+            fresh.name = uniqueName(t.name);
+            fresh.part = "House";
+            fresh.mesh = m_houseMesh;
+            fresh.material = m_houseMat;
+            fresh.position = b.pos;
+            fresh.useRot = true;
+            b.object = s.addObject(fresh);
         }
         Object& o = s.objects[b.object];
-        // the CUBE part is 6 units wide and stands on y = 0; the house fills 90 % of its cells
-        float k = b.hover;
-        float sx = (1 + b.squash * 0.5f) * k * b.footW(t) * 0.9f / 6.0f;
-        float sz = (1 + b.squash * 0.5f) * k * b.footD(t) * 0.9f / 6.0f;
-        float sy = (1 - b.squash) * k * t.height / 6.0f;
+        // the model is scaled to its type; the squash widens it and flattens it, the hover grows it
+        float k = b.hover * t.modelScale;
+        float sx = (1 + b.squash * 0.5f) * k;
+        float sy = (1 - b.squash) * k;
+        float sz = sx;
         o.position = b.pos;
         o.useRot = true;
         o.rot = qMul(qAxisAngle(float3(0, 1, 0), b.yaw), qMul(qAxisAngle(float3(1, 0, 0), b.tiltX), qAxisAngle(float3(0, 0, 1), b.tiltZ)));
         o.scale = float3(sx, sy, sz);
         bool invalid = i == m_build.dragging() && !m_build.dragValid();
-        auto own = m_buildMat.find(b.id);
-        o.material = invalid ? invalidMaterial() : (own != m_buildMat.end() ? own->second : o.material);
+        o.material = invalid ? invalidMaterial() : m_houseMat;
     }
     if (!bs.empty()) m_app.markDirty();
 }
@@ -221,6 +280,84 @@ void GameHost::drawRtsHud() {
         ImGui::TextDisabled("Drag a house onto the grid  ·  R rotate  ·  Del delete");
     }
     ImGui::End();
+    drawSunDial();
+}
+
+// The sun: its direction from the azimuth (around the vertical) and the height.
+void GameHost::updateSun() {
+    float ce = std::cos(m_sunElevation);
+    m_app.m_scene.sun.direction = normalize(float3(std::sin(m_sunAzimuth) * ce, std::sin(m_sunElevation), std::cos(m_sunAzimuth) * ce));
+}
+
+// Sun dial, top right of the view. The top of the dial is where the camera looks: the sun sits on the
+// ring (drag it to turn the light), the arrow in the centre gives the direction of the shadows, and the
+// slider sets the height of the sun.
+void GameHost::drawSunDial() {
+    const ScreenRect& v = m_app.m_rcView;
+    ImGuiIO& io = ImGui::GetIO();
+    const float d = m_app.m_dpi;
+    const float R = 62 * d;
+    const ImVec2 c(v.r() - R - 28 * d, v.y + 180 * d + R);   // below the viewport statistics box
+    ImGui::SetNextWindowPos(ImVec2(c.x - R - 20 * d, c.y - R - 20 * d), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(2 * R + 40 * d, 2 * R + 80 * d), ImGuiCond_Always);
+    const ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |
+                                   ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoBackground;
+    if (ImGui::Begin("##sundial", nullptr, flags)) {
+        if (ImGui::IsWindowHovered()) m_buildHud = true;
+        ImGui::SetCursorScreenPos(ImVec2(c.x - R - 14 * d, c.y - R - 14 * d));
+        ImGui::InvisibleButton("##dial", ImVec2(2 * R + 28 * d, 2 * R + 28 * d));
+        // the view on the ground: f = forward, r = right (the dial turns with the camera)
+        float3 right, up, fwd;
+        m_app.m_scene.camera.basis(right, up, fwd);
+        float3 f(fwd.x, 0, fwd.z), r(right.x, 0, right.z);
+        f = length(f) > 1e-4f ? normalize(f) : float3(0, 0, 1);
+        r = length(r) > 1e-4f ? normalize(r) : float3(1, 0, 0);
+        if (ImGui::IsItemActivated()) m_sunGrabAnim = 1.0f;
+        if (ImGui::IsItemActive()) {
+            m_buildHud = true;   // the camera does not move while the dial is held
+            float dx = io.MousePos.x - c.x, dy = io.MousePos.y - c.y;
+            if (dx * dx + dy * dy > 4.0f) {
+                float a = std::atan2(dx, -dy);   // 0 at the top, clockwise
+                float3 h = f * std::cos(a) + r * std::sin(a);
+                m_sunAzimuth = std::atan2(h.x, h.z);
+            }
+        }
+        m_sunGrabAnim = std::max(0.0f, m_sunGrabAnim - io.DeltaTime * 3.0f);
+        float3 sunH(std::sin(m_sunAzimuth), 0, std::cos(m_sunAzimuth));
+        float th = std::atan2(dot(sunH, r), dot(sunH, f));
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        dl->AddCircleFilled(c, R, IM_COL32(20, 26, 36, 190), 64);
+        dl->AddCircle(c, R, IM_COL32(230, 236, 245, 230), 64, 3 * d);
+        dl->AddCircle(c, R * 0.55f, IM_COL32(230, 236, 245, 60), 48, 1 * d);
+        // arrow in the centre: the direction of the shadows (opposite of the sun)
+        ImVec2 ad(-std::sin(th), std::cos(th));
+        ImVec2 tip(c.x + ad.x * R * 0.42f, c.y + ad.y * R * 0.42f), tail(c.x - ad.x * R * 0.18f, c.y - ad.y * R * 0.18f);
+        dl->AddLine(tail, tip, IM_COL32(200, 210, 225, 220), 3 * d);
+        ImVec2 pr(-ad.y, ad.x);
+        float ah = 9 * d;
+        dl->AddTriangleFilled(ImVec2(tip.x + ad.x * ah, tip.y + ad.y * ah), ImVec2(tip.x + pr.x * ah * 0.7f, tip.y + pr.y * ah * 0.7f),
+                              ImVec2(tip.x - pr.x * ah * 0.7f, tip.y - pr.y * ah * 0.7f), IM_COL32(200, 210, 225, 220));
+        // the sun on the ring (it bounces when grabbed)
+        ImVec2 sp(c.x + std::sin(th) * R, c.y - std::cos(th) * R);
+        float pulse = 1.0f + 0.35f * std::sin(m_sunGrabAnim * 3.14159265f) + (ImGui::IsItemActive() ? 0.12f : 0.0f);
+        float sr = 11 * d * pulse;
+        float t = (float)ImGui::GetTime();
+        for (int k = 0; k < 8; ++k) {
+            float a = k * 3.14159265f / 4 + t * 0.5f;
+            dl->AddLine(ImVec2(sp.x + std::cos(a) * sr * 1.3f, sp.y + std::sin(a) * sr * 1.3f),
+                        ImVec2(sp.x + std::cos(a) * sr * 1.8f, sp.y + std::sin(a) * sr * 1.8f), IM_COL32(255, 210, 80, 255), 2.5f * d);
+        }
+        dl->AddCircleFilled(sp, sr, IM_COL32(255, 214, 90, 255), 24);
+        dl->AddCircle(sp, sr, IM_COL32(200, 120, 20, 255), 24, 1.5f * d);
+        // height of the sun
+        ImGui::SetCursorScreenPos(ImVec2(c.x - R, c.y + R + 22 * d));
+        ImGui::SetNextItemWidth(2 * R);
+        float elev = degrees(m_sunElevation);
+        if (ImGui::SliderFloat("##elev", &elev, 10.0f, 85.0f, "Height %.0f°")) m_sunElevation = radians(elev);
+        if (ImGui::IsItemActive()) m_buildHud = true;
+    }
+    ImGui::End();
+    updateSun();
 }
 
 } // namespace app

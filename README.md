@@ -45,6 +45,7 @@ ACES (fit de Hill, RRT+ODT), AgX, AgX Punchy, Standard. Espace de travail : lin�
 - `src/vp3d/` : **module réutilisable** (lib statique `build/lib/vp3d.lib`)
   - `Renderer` : device DX12, BLAS/TLAS, accumulation, débruitage, tonemap
   - `Scene`, `MeshGen` : description de scène, meshes procéduraux (box, sphère, lathe, shader ball)
+  - `AssetImport` : import OBJ (positions, UV, normales) et images (WIC : jpg, png, bmp) ; textures de base (`Material::baseColorTex`) échantillonnées en raster et en traçage
   - `UI` : UI immédiate Direct2D/DirectWrite au-dessus du swapchain (D3D11On12), sans dépendance externe
   - `shaders/` : `PathTrace.hlsl`, `Denoise.hlsl`, `Tonemap.hlsl`, `Raster.hlsl`
 - `src/app/` : éditeur (espaces de travail Atelier dessinés avec Dear ImGui)

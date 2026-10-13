@@ -8,6 +8,7 @@ namespace vp3d {
 struct Vertex {
     float3 pos;
     float3 nrm;
+    float2 uv;                     // texture coordinates (0 when the mesh has none)
 };
 
 struct MeshData {

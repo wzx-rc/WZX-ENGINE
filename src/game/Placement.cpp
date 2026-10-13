@@ -33,12 +33,14 @@ void Placement::init(int cellsX, int cellsZ, float cellSize) {
     small.d = 1;
     small.height = 1.2f;
     small.color = float3(0.80f, 0.60f, 0.42f);
+    small.modelScale = 0.01645f;   // 0.81 m wide: one cell (as the RTS starter)
     BuildingType large;
     large.name = "Large House";
     large.w = 3;
     large.d = 3;
     large.height = 2.4f;
     large.color = float3(0.62f, 0.52f, 0.44f);
+    large.modelScale = 0.051f;     // 2.52 m wide: three cells (as the RTS starter)
     m_types = {small, large};
     clear();
 }

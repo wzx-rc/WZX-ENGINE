@@ -13,6 +13,10 @@ StructuredBuffer<GpuLight> gLights : register(t5);
 // 3,4 denoise ping-pong (demodulated radiance) | 5 output LDR
 RWTexture2D<float4> gTex[6] : register(u0);
 
+// Material textures (sRGB views, sampled as linear) and their sampler.
+Texture2D<float4> gTextures[MAX_TEXTURES] : register(t0, space1);
+SamplerState gLinearWrap : register(s0);
+
 static const float PI = 3.14159265358979;
 static const uint SLOT_ACCUM = 0;
 static const uint SLOT_ALBEDO = 1;
