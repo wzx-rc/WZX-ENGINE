@@ -573,9 +573,14 @@ void NodeEditor::drawNode(Graph& g, Node& n, const Runtime* rt) {
     }
 
     // outline from the Graph settings; the selected node in cyan, a node that just ran in yellow
-    if (sel) dl->AddRect(p0, p1, kCyan, 5 * s, 0, 2 * m_outlineWeight * s);
-    else if (m_outline) dl->AddRect(p0, p1, kBorderC, 5 * s, 0, m_outlineWeight * s);
-    if (hot) dl->AddRect(p0, p1, IM_COL32(255, 210, 74, 255), 5 * s, 0, 2 * m_outlineWeight * s);
+    // the stroke lies outside the node: its inner edge sits on the node border, in the node's category colour
+    auto outside = [&](ImU32 c, float w) {
+        float h = w * 0.5f;
+        dl->AddRect(ImVec2(p0.x - h, p0.y - h), ImVec2(p1.x + h, p1.y + h), c, 5 * s + h, 0, w);
+    };
+    if (sel) outside(kCyan, 2 * m_outlineWeight * s);
+    else if (m_outline) outside(color, m_outlineWeight * s);
+    if (hot) outside(IM_COL32(255, 210, 74, 255), 2 * m_outlineWeight * s);
 
     // outputs: labels on the inner side of the pin
     for (int i = 0; i < (int)n.def->outs.size(); ++i) {
