@@ -122,8 +122,8 @@ std::vector<NodeDef> build() {
     v.push_back(B(Op::CellFree, "rts.cellFree", "Is Cell Free", RT, "True if no visible object occupies the cell (radius = half a step).")
                     .pure().inV("Position", float3(0, 0, 0)).inF("Step", 6).out("Free", Bo));
     // Native C++ system: the camera, its HUD (+ Add buttons, sun dial), the mouse placement and the sun.
-    // Native C++ system: the camera, its HUD (+ Add buttons, sun dial), the mouse placement and the sun.
-    v.push_back(B(Op::SetRtsCamera, "rts.camera", "RTS Camera", NA, "Native C++ system of the RTS: camera (ZQSD / WASD, edges, wheel, right-drag, Q/E turn), HUD with the + Add buttons and the sun dial, house placement with the mouse, sun. Active switches it on or off.").execIn().inB("Active", true).execOut());
+    // Native C++ system: the RTS camera and the sun dial. Alone on the graph it stays off.
+    v.push_back(B(Op::SetRtsCamera, "rts.camera", "RTS Camera", NA, "RTS camera (native C++): ZQSD / WASD or arrows, screen edges, wheel, right-drag, Q/E to turn, and the sun dial. Active switches it on or off; with no link it stays off.").execIn().inB("Active", true).execOut());
     v.push_back(B(Op::CountPart, "rts.count", "Count Objects", RT, "Number of visible objects of a type (empty = all).").pure().inS("Type", "CUBE").out("Count", F));
     v.push_back(B(Op::PlaceHouse, "rts.placeHouse", "Place House", RT, "Places a house of the village on a grid cell (Type 0 = small, 1 = large; Cell X, Z = lower corner; Turn 0 to 3). House = its id, -1 if the cell is taken.")
                     .execIn().inF("Type", 0).inF("Cell X", 0).inF("Cell Z", 0).inF("Turn", 0).execOut().out("House", F));
