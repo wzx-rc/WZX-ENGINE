@@ -46,6 +46,13 @@ static std::string readFile(const fs::path& p) {
 
 // Icon of each node type, from the Atelier icon set (the game layer only names the type).
 static void drawNodeIcon(ImDrawList* dl, const std::string& id, ImVec2 p, float size, ImU32 color) {
+    if (id == "rts.camera") {   // native C++ node: a "C++" badge in its colour, not an icon
+        const float w = size * 1.7f;
+        dl->AddRectFilled(p, ImVec2(p.x + w, p.y + size), color, 3 * size / 14.0f);
+        ImVec2 ts = ImGui::CalcTextSize("C++");
+        dl->AddText(ImVec2(p.x + (w - ts.x) * 0.5f, p.y + (size - ts.y) * 0.5f), IM_COL32(40, 28, 4, 255), "C++");
+        return;
+    }
     using atelier::Icon;
     static const std::unordered_map<std::string, Icon> kIcons = {
         {"event.start", Icon::Play},          {"event.tick", Icon::Refresh},        {"event.clickObject", Icon::Pin},
@@ -67,6 +74,8 @@ static void drawNodeIcon(ImDrawList* dl, const std::string& id, ImVec2 p, float 
         {"math.random", Icon::Refresh},       {"math.addVec3", Icon::Move},         {"math.scaleVec3", Icon::Scale},
         {"math.concat", Icon::List},          {"rts.snap", Icon::Grid},             {"rts.cellFree", Icon::Grid},
         {"rts.camera", Icon::Camera},         {"rts.count", Icon::Cube},
+        {"rts.placeHouse", Icon::Plus},       {"rts.removeHouse", Icon::Trash},     {"rts.turnHouse", Icon::Rotate},
+        {"rts.houseAt", Icon::Grid},          {"rts.houseCount", Icon::Cube},       {"event.houseClicked", Icon::Pin},
     };
     auto it = kIcons.find(id);
     atelier::DrawIcon(dl, it == kIcons.end() ? Icon::Blueprint : it->second, p, size, color);
@@ -428,8 +437,10 @@ void GameHost::playInput() {
         m_app.cameraRay(io.MousePos.x, io.MousePos.y, o, d);
         PickResult pr = pick(m_app.m_scene, o, d);
         float tHouse = 0;
-        if (m_rtsCam && houseUnder(o, d, tHouse) >= 0 && tHouse <= pr.t) {
-            // a house: the RTS placement takes the click (AppRts.cpp), the graph gets no event
+        const int house = m_rtsCam ? houseUnder(o, d, tHouse) : -1;
+        if (house >= 0 && tHouse <= pr.t) {
+            // a house: the graph gets "House Clicked"; the RTS placement takes the drag (AppRts.cpp)
+            m_rt.fireHouseClick(m_build.buildings()[house].id);
         } else if (pr.object >= 0 && objectAlive(pr.object) && !m_app.m_scene.objects[pr.object].part.empty()) {
             m_rt.fireClickObject(pr.object, pr.position);
         } else if (std::fabs(d.y) > 1e-5f) {

@@ -395,6 +395,49 @@ void GameHost::drawRtsHud() {
     if (m_rtsCam) drawSunDial();
 }
 
+// Graph nodes of the houses (World): the ids are stable, so a node keeps its house when another is removed.
+int GameHost::houseIndex(int id) const {
+    for (int i = 0; i < (int)m_build.buildings().size(); ++i)
+        if (m_build.buildings()[i].id == id) return i;
+    return -1;
+}
+
+int GameHost::placeHouse(const std::string& type, int cx, int cz, int rot) {
+    int t = -1;
+    for (int k = 0; k < (int)m_build.types().size(); ++k)
+        if (m_build.types()[k].name == type) t = k;
+    if (t < 0) return -1;
+    int idx = m_build.place(t, Cell{cx, cz}, rot);
+    return idx < 0 ? -1 : m_build.buildings()[idx].id;
+}
+
+bool GameHost::removeHouse(int id) {
+    int i = houseIndex(id);
+    if (i < 0) return false;
+    removeBuilding(i);
+    return true;
+}
+
+bool GameHost::turnHouse(int id) {
+    int i = houseIndex(id);
+    return i >= 0 && m_build.rotate(i);
+}
+
+int GameHost::houseAt(int cx, int cz) const {
+    for (const game::Building& b : m_build.buildings()) {
+        if (!b.placed) continue;
+        const BuildingType& t = m_build.types()[b.type];
+        if (cx >= b.cell.x && cx < b.cell.x + b.footW(t) && cz >= b.cell.z && cz < b.cell.z + b.footD(t)) return b.id;
+    }
+    return -1;
+}
+
+int GameHost::houseCount() const {
+    int n = 0;
+    for (const game::Building& b : m_build.buildings()) n += b.placed;
+    return n;
+}
+
 // The sun: its direction from the azimuth (around the vertical) and the height.
 void GameHost::updateSun() {
     float ce = std::cos(m_sunElevation);

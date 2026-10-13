@@ -111,6 +111,13 @@ void Runtime::fireClickObject(int obj, float3 point) {
     fire(Op::OnClickObject);
 }
 
+void Runtime::fireHouseClick(int house) {
+    if (!m_graph) return;
+    for (Node& n : m_graph->nodes)
+        if (n.def->op == Op::OnHouseClicked) m_cache[n.id] = {Value(), Value::Float((float)house)};
+    fire(Op::OnHouseClicked);
+}
+
 void Runtime::fireClickGround(float3 point) {
     if (!m_graph) return;
     for (Node& n : m_graph->nodes)
@@ -242,6 +249,8 @@ Value Runtime::output(const Node& n, int pin) {
         r = Value::Bool(free);
         break;
     }
+    case Op::HouseAt: r = Value::Float((float)m_world->houseAt((int)F(0), (int)F(1))); break;
+    case Op::HouseCount: r = Value::Float((float)m_world->houseCount()); break;
     case Op::CountPart: {
         std::string part = S(0);
         int c = 0;
@@ -317,6 +326,14 @@ void Runtime::exec(Node& n) {
     case Op::SetScale: { int o = Ob(1); if (o >= 0) m_world->setScale(o, V(2)); break; }
     case Op::Select: m_world->select(Ob(1)); break;
     case Op::SetRtsCamera: m_world->setRtsCamera(input(n, 1).asBool()); break;
+    case Op::PlaceHouse: {
+        int id = m_world->placeHouse(S(1), (int)F(2), (int)F(3), (int)F(4));
+        if (id < 0) error("maison non placée : " + S(1) + " (case prise, hors de la grille ou type inconnu)");
+        setOut(n, 1, Value::Float((float)id));
+        break;
+    }
+    case Op::RemoveHouse: m_world->removeHouse((int)F(1)); break;
+    case Op::TurnHouse: m_world->turnHouse((int)F(1)); break;
     case Op::Print: {
         std::string s = S(1);
         log.push_back(s);

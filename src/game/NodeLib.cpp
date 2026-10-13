@@ -37,6 +37,7 @@ std::vector<NodeDef> build() {
     const char* DA = "Data";
     const char* MA = "Math";
     const char* RT = "RTS";
+    const char* NA = "Native C++";
     std::vector<B> v;
     // events
     v.push_back(B(Op::OnStart, "event.start", "Begin Play", EV, "Runs once when Play starts.").event().execOut());
@@ -120,8 +121,16 @@ std::vector<NodeDef> build() {
     v.push_back(B(Op::SnapGrid, "rts.snap", "Snap to Grid", RT, "Rounds X and Z to the grid step (Y unchanged).").pure().inV("Position", float3(0, 0, 0)).inF("Step", 6).out("Position", V));
     v.push_back(B(Op::CellFree, "rts.cellFree", "Is Cell Free", RT, "True if no visible object occupies the cell (radius = half a step).")
                     .pure().inV("Position", float3(0, 0, 0)).inF("Step", 6).out("Free", Bo));
-    v.push_back(B(Op::SetRtsCamera, "rts.camera", "RTS Camera", RT, "Enables the RTS camera during play: ZQSD / WASD or arrows, screen edges, wheel, right-drag, Q/E (A/E on AZERTY) to turn.").execIn().inB("Active", true).execOut());
+    // Native C++ system: the camera, its HUD (+ Add buttons, sun dial), the mouse placement and the sun.
+    v.push_back(B(Op::SetRtsCamera, "rts.camera", "RTS Camera", NA, "Native C++ system of the RTS: camera (ZQSD / WASD, edges, wheel, right-drag, Q/E turn), HUD with the + Add buttons and the sun dial, house placement with the mouse, sun. Active switches it on or off.").execIn().inB("Active", true).execOut());
     v.push_back(B(Op::CountPart, "rts.count", "Count Objects", RT, "Number of visible objects of a type (empty = all).").pure().inS("Type", "CUBE").out("Count", F));
+    v.push_back(B(Op::PlaceHouse, "rts.placeHouse", "Place House", RT, "Places a house of the village on a grid cell (Cell X, Z = lower corner; Turn 0 to 3). House = its id, -1 if the cell is taken.")
+                    .execIn().inS("Type", "Small House").inF("Cell X", 0).inF("Cell Z", 0).inF("Turn", 0).execOut().out("House", F));
+    v.push_back(B(Op::RemoveHouse, "rts.removeHouse", "Remove House", RT, "Removes a house by its id.").execIn().inF("House", -1).execOut());
+    v.push_back(B(Op::TurnHouse, "rts.turnHouse", "Turn House", RT, "Turns a house a quarter turn, if the cells allow it.").execIn().inF("House", -1).execOut());
+    v.push_back(B(Op::HouseAt, "rts.houseAt", "House At Cell", RT, "Id of the house covering a cell, -1 if none.").pure().inF("Cell X", 0).inF("Cell Z", 0).out("House", F));
+    v.push_back(B(Op::HouseCount, "rts.houseCount", "Count Houses", RT, "Number of houses placed.").pure().out("Count", F));
+    v.push_back(B(Op::OnHouseClicked, "event.houseClicked", "House Clicked", EV, "Left click on a house during Play. House = its id.").event().execOut().out("House", F));
     std::vector<NodeDef> out;
     for (auto& b : v) out.push_back(b.d);
     return out;

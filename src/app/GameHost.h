@@ -67,6 +67,11 @@ public:
     void select(int obj) override;
     void message(const std::string& text) override;
     void setRtsCamera(bool on) override;
+    int placeHouse(const std::string& type, int cx, int cz, int rot) override;
+    bool removeHouse(int id) override;
+    bool turnHouse(int id) override;
+    int houseAt(int cx, int cz) const override;
+    int houseCount() const override;
 
 private:
     void play();
@@ -119,6 +124,7 @@ private:
     bool placeActive() const;
     int houseUnder(const vp3d::float3& o, const vp3d::float3& d, float& tHit) const;
     bool hasBuilding(int id) const;
+    int houseIndex(int id) const;
     void drawRtsHud();
     bool ensureHouseModel();
     // Sun (RTS play): azimuth and height from the dial (AppRts.cpp), restored on Stop
