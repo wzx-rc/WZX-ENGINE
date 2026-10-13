@@ -457,7 +457,15 @@ void GameHost::hudButton(const std::string& id, const std::string& label) {
     m_hudButtons.push_back({id, label});
 }
 
+// The house under the cursor is outlined like a selection: its halo while the cursor is on it (AppRts.cpp, updatePlacement).
+void GameHost::addHoverOutline(std::vector<int>& objects) const {
+    if (m_buildHover < 0 || m_buildHover >= (int)m_build.buildings().size()) return;
+    const int obj = m_build.buildings()[m_buildHover].object;
+    if (objectAlive(obj)) objects.push_back(obj);
+}
+
 void GameHost::setSun(float azimuth, float height) {
+    m_app.m_scene.sun.enabled = true;   // the Set Sun node lights the RTS (Stop gives back the scene's sun)
     m_sunAzimuth = radians(azimuth);
     m_sunElevation = radians(clampf(height, 10.0f, 85.0f));
     updateSun();

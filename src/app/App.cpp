@@ -290,7 +290,9 @@ void App::frame() {
         m_viewportRendered = true;
     } else if (m_viewportVisible) {
         if (m_previewActive) leavePreview();
-        m_renderer.setExtraSelection(m_multi);
+        std::vector<int> outlined = m_multi;
+        if (m_game) m_game->addHoverOutline(outlined);   // the house under the cursor: its halo
+        m_renderer.setExtraSelection(outlined);
         m_renderer.renderToTexture(m_scene, m_rs, m_vpPx, m_selected);
         m_gui.viewportTexture();   // refresh the SRV (the texture is recreated when the viewport size changes)
         m_viewportRendered = true;
