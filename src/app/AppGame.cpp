@@ -1,6 +1,8 @@
 // Game layer: Play mode, node graph editor hookup, builds, player mode and the local command API.
 #include "App.h"
 #include "GameHost.h"
+#include "atelier/ui_icons.h"
+#include <unordered_map>
 #include <shellapi.h>
 #include <ctime>
 #include <filesystem>
@@ -42,12 +44,41 @@ static std::string readFile(const fs::path& p) {
     return ss.str();
 }
 
+// Icon of each node type, from the Atelier icon set (the game layer only names the type).
+static void drawNodeIcon(ImDrawList* dl, const std::string& id, ImVec2 p, float size, ImU32 color) {
+    using atelier::Icon;
+    static const std::unordered_map<std::string, Icon> kIcons = {
+        {"event.start", Icon::Play},          {"event.tick", Icon::Refresh},        {"event.clickObject", Icon::Pin},
+        {"event.clickGround", Icon::Pin},     {"event.custom", Icon::Link},         {"event.key", Icon::Monitor},
+        {"flow.branch", Icon::Blueprint},     {"flow.sequence", Icon::List},        {"flow.delay", Icon::Animation},
+        {"flow.forEachPart", Icon::Cube},     {"flow.doOnce", Icon::Check},         {"flow.fireCustom", Icon::Link},
+        {"action.setPosition", Icon::Move},   {"action.moveTo", Icon::ArrowRight},  {"action.rotate", Icon::Rotate},
+        {"action.spawn", Icon::Cube},         {"action.destroy", Icon::Trash},      {"action.setColor", Icon::Material},
+        {"action.setScale", Icon::Scale},     {"action.select", Icon::Pin},         {"action.print", Icon::List},
+        {"action.setVar", Icon::Save},        {"action.addVar", Icon::Plus},        {"data.float", Icon::Plus},
+        {"data.bool", Icon::Check},           {"data.vec3", Icon::Move},            {"data.string", Icon::List},
+        {"data.getVar", Icon::Pin},           {"data.selected", Icon::Cube},        {"data.findObject", Icon::Search},
+        {"data.getPosition", Icon::Move},     {"data.partOf", Icon::Cube},          {"data.isValid", Icon::Check},
+        {"data.makeVec3", Icon::Move},        {"data.breakVec3", Icon::Move},       {"data.distance", Icon::Scale},
+        {"data.time", Icon::Animation},       {"math.add", Icon::Plus},             {"math.sub", Icon::ArrowLeft},
+        {"math.mul", Icon::Scale},            {"math.div", Icon::Scale},            {"math.greater", Icon::Check},
+        {"math.less", Icon::ArrowLeft},       {"math.equal", Icon::Check},          {"math.strEqual", Icon::Check},
+        {"math.and", Icon::Check},            {"math.or", Icon::Check},             {"math.not", Icon::Undo},
+        {"math.random", Icon::Refresh},       {"math.addVec3", Icon::Move},         {"math.scaleVec3", Icon::Scale},
+        {"math.concat", Icon::List},          {"rts.snap", Icon::Grid},             {"rts.cellFree", Icon::Grid},
+        {"rts.camera", Icon::Camera},         {"rts.count", Icon::Cube},
+    };
+    auto it = kIcons.find(id);
+    atelier::DrawIcon(dl, it == kIcons.end() ? Icon::Blueprint : it->second, p, size, color);
+}
+
 // --------------------------------------------------------------------------- setup
 
 GameHost::~GameHost() { m_server.stop(); }
 
 void GameHost::init() {
     m_editor.setFonts(m_app.m_gui.fontSmall, m_app.m_gui.fontBold);
+    m_editor.setNodeIconDrawer(&drawNodeIcon);
     fs::path exe(m_app.m_exeDir);
     std::error_code ec;
     if (fs::exists(exe / "game.json")) {
@@ -79,7 +110,7 @@ void GameHost::init() {
             SetWindowPos(h, nullptr, 0, 0, r.right - r.left, r.bottom - r.top, SWP_NOMOVE | SWP_NOZORDER);
         }
         std::string err;
-        if (!loadGraph(&err)) toast(L"Graphe introuvable : " + fromUtf8(err));
+        if (!loadGraph(&err)) toast(L"Graph not found: " + fromUtf8(err));
         if (cfg["commandApi"].b)
             for (int p = kApiPort; p < kApiPort + 10 && !m_server.running(); ++p) m_server.start(p);
         play();
@@ -98,7 +129,7 @@ void GameHost::init() {
     }
     for (int p = kApiPort; p < kApiPort + 10 && !m_server.running(); ++p) m_server.start(p);
     if (m_server.running())
-        toast(L"API de commandes : http://127.0.0.1:" + std::to_wstring(m_server.port()) + L"   ·   F3 graphe   ·   F5 Play   ·   F7 Build");
+        toast(L"Command API: http://127.0.0.1:" + std::to_wstring(m_server.port()) + L"   ·   F3 graph   ·   F5 Play   ·   F7 Build");
 }
 
 bool GameHost::saveGraph(std::string* err) {
@@ -127,13 +158,13 @@ void GameHost::defaultGraph() {
     };
     int start = g.addNode("event.start", float2(0, 0));
     int hello = g.addNode("action.print", float2(260, 0));
-    set(hello, "Texte", Value::Str("Cliquez une unité, puis le sol pour la déplacer. R : tourner, C : créer un cube."));
+    set(hello, "Text", Value::Str("Click a unit, then the ground to move it. R: rotate, C: spawn a cube."));
     L(start, "", hello, "");
 
     int click = g.addNode("event.clickObject", float2(0, 140));
     int sel = g.addNode("action.select", float2(260, 140));
     L(click, "", sel, "");
-    L(click, "Objet", sel, "Objet");
+    L(click, "Object", sel, "Object");
 
     int ground = g.addNode("event.clickGround", float2(0, 320));
     int selected = g.addNode("data.selected", float2(0, 440));
@@ -142,37 +173,37 @@ void GameHost::defaultGraph() {
     int snap = g.addNode("rts.snap", float2(230, 560));
     int move = g.addNode("action.moveTo", float2(760, 320));
     int done = g.addNode("action.print", float2(1040, 380));
-    set(done, "Texte", Value::Str("Unité arrivée"));
+    set(done, "Text", Value::Str("Unit arrived"));
     L(ground, "", branch, "");
-    L(selected, "Objet", valid, "Objet");
-    L(valid, "Valide", branch, "Condition");
-    L(branch, "Vrai", move, "");
-    L(selected, "Objet", move, "Objet");
+    L(selected, "Object", valid, "Object");
+    L(valid, "Valid", branch, "Condition");
+    L(branch, "True", move, "");
+    L(selected, "Object", move, "Object");
     L(ground, "Point", snap, "Position");
-    L(snap, "Position", move, "Cible");
-    L(move, "Arrivé", done, "");
+    L(snap, "Position", move, "Target");
+    L(move, "Arrived", done, "");
 
     int keyR = g.addNode("event.key", float2(0, 720));
-    set(keyR, "Touche", Value::Str("R"));
+    set(keyR, "Key", Value::Str("R"));
     int rot = g.addNode("action.rotate", float2(260, 720));
     L(keyR, "", rot, "");
-    L(selected, "Objet", rot, "Objet");
+    L(selected, "Object", rot, "Object");
 
     int keyC = g.addNode("event.key", float2(0, 860));
-    set(keyC, "Touche", Value::Str("C"));
+    set(keyC, "Key", Value::Str("C"));
     int rnd = g.addNode("math.random", float2(0, 960));
     set(rnd, "Min", Value::Float(-30));
     set(rnd, "Max", Value::Float(30));
     int mk = g.addNode("data.makeVec3", float2(230, 960));
-    L(rnd, "Valeur", mk, "X");
-    L(rnd, "Valeur", mk, "Z");
+    L(rnd, "Value", mk, "X");
+    L(rnd, "Value", mk, "Z");
     int snap2 = g.addNode("rts.snap", float2(500, 1000));
-    L(mk, "Vecteur", snap2, "Position");
+    L(mk, "Vector", snap2, "Position");
     int spawn = g.addNode("action.spawn", float2(760, 860));
     L(keyC, "", spawn, "");
     L(snap2, "Position", spawn, "Position");
     int count = g.addNode("action.addVar", float2(1040, 860));
-    set(count, "Nom", Value::Str("cubes"));
+    set(count, "Name", Value::Str("cubes"));
     L(spawn, "", count, "");
 }
 
@@ -417,8 +448,8 @@ bool GameHost::beginFrame() {
     case 3: {
         std::wstring out;
         std::string err;
-        if (build("", false, out, err)) toast(L"Build terminé : " + out);
-        else toast(L"Build impossible : " + fromUtf8(err));
+        if (build("", false, out, err)) toast(L"Build finished: " + out);
+        else toast(L"Build failed: " + fromUtf8(err));
         break;
     }
     default: break;
@@ -457,15 +488,18 @@ void GameHost::drawGraphWorkspace() {
         ImGui::SameLine(sideW - 64 * s);
         ImGui::TextDisabled("ASSET");
         ImGui::Separator();
-        ImGui::TextDisabled("GRAPHES");
-        ImGui::Selectable("Graphe du jeu", true);
+        ImGui::TextDisabled("GRAPHS");
+        ImGui::Selectable("Game Graph", true);
         ImGui::Spacing();
-        ImGui::TextDisabled("BIBLIOTHEQUE DE NOEUDS");
+        ImGui::TextDisabled("NODE LIBRARY");
+        ImGui::SameLine(sideW - 64 * s);
+        ImGui::TextDisabled("%d nodes", (int)nodeDefs().size());
         static char search[96] = {};
         ImGui::SetNextItemWidth(-FLT_MIN);
-        ImGui::InputTextWithHint("##libsearch", "Rechercher un noeud…", search, sizeof search);
+        ImGui::InputTextWithHint("##libsearch", "Search nodes…", search, sizeof search);
         std::string q = search;
         for (char& c : q) c = (char)tolower((unsigned char)c);
+        ImDrawList* dl = ImGui::GetWindowDrawList();
         std::string last;
         for (const NodeDef& d : nodeDefs()) {
             std::string label = d.label;
@@ -476,8 +510,16 @@ void GameHost::drawGraphWorkspace() {
                 ImGui::TextColored(ImColor(categoryAccentColor(d.category)), "%s", d.category.c_str());
                 last = d.category;
             }
+            // row: highlight and click from a selectable; icon, name and the "+" drawn on it (Atelier library)
             ImGui::PushID(d.id.c_str());
-            if (ImGui::Selectable(d.label.c_str())) m_editor.addNodeAtView(m_graph, d);
+            ImVec2 rmin = ImGui::GetCursorScreenPos();
+            bool clicked = ImGui::Selectable("##row", false, 0, ImVec2(0, 22 * s));
+            ImVec2 rmax = ImGui::GetItemRectMax();
+            float cy = (rmin.y + rmax.y) * 0.5f;
+            drawNodeIcon(dl, d.id, ImVec2(rmin.x + 6 * s, cy - 7 * s), 14 * s, categoryAccentColor(d.category));
+            dl->AddText(ImGui::GetFont(), 13 * s, ImVec2(rmin.x + 26 * s, cy - 7 * s), IM_COL32(201, 208, 216, 255), d.label.c_str());
+            atelier::DrawIcon(dl, atelier::Icon::Plus, ImVec2(rmax.x - 18 * s, cy - 6 * s), 12 * s, IM_COL32(132, 143, 155, 255));
+            if (clicked) m_editor.addNodeAtView(m_graph, d);
             if (ImGui::IsItemHovered() && !d.help.empty()) ImGui::SetTooltip("%s", d.help.c_str());
             ImGui::PopID();
         }
@@ -490,8 +532,8 @@ void GameHost::drawGraphWorkspace() {
     case NodeEditor::TogglePlay: m_playing ? stop() : play(); break;
     case NodeEditor::Save: {
         std::string err;
-        if (saveGraph(&err)) m_editor.status = "Graphe enregistré : " + toUtf8(m_graphPath);
-        else m_editor.status = "Échec de l'enregistrement : " + err;
+        if (saveGraph(&err)) m_editor.status = "Graph saved: " + toUtf8(m_graphPath);
+        else m_editor.status = "Save failed: " + err;
         break;
     }
     case NodeEditor::Close: setGraphOpen(false); break;
@@ -522,7 +564,7 @@ void GameHost::draw() {
             fg->AddRect(ImVec2(v.x + 1, v.y + 1), ImVec2(v.x + v.w - 1, v.y + v.h - 1), IM_COL32(0x3F, 0xB9, 0x50, 255), 0, 0, 2.5f);
             ImVec2 tl(v.x + v.w * 0.5f - 120, v.y + 10), br(tl.x + 240, tl.y + 26);
             fg->AddRectFilled(tl, br, IM_COL32(0x3F, 0xB9, 0x50, 230), 5);
-            const char* tag = "PLAY  ·  F5 pour arrêter";
+            const char* tag = "PLAY  ·  F5 to stop";
             ImVec2 ts = ImGui::CalcTextSize(tag);
             fg->AddText(ImVec2(tl.x + (240 - ts.x) * 0.5f, tl.y + (26 - ts.y) * 0.5f), IM_COL32(8, 19, 11, 255), tag);
         }
@@ -540,7 +582,7 @@ void GameHost::drawToolbar() {
     const ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |
                                    ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_AlwaysAutoResize;
     if (ImGui::Begin("##gamebar", nullptr, flags)) {
-        if (ImGui::Button(m_playing ? "Stop  F5" : "Jouer  F5")) m_pendingToolbar = 1;
+        if (ImGui::Button(m_playing ? "Stop  F5" : "Play  F5")) m_pendingToolbar = 1;
         ImGui::SameLine();
         if (ImGui::Button("Build  F7")) m_pendingToolbar = 3;
     }
@@ -1027,7 +1069,7 @@ std::string GameHost::command(const Json& j, int& status) {
         std::wstring out;
         std::string err;
         if (!build(j["profile"].str(), j["run"].b, out, err)) return fail(err);
-        toast(L"Build terminé : " + out);
+        toast(L"Build finished: " + out);
         return ok(", \"path\": " + jstr(toUtf8(out)));
     }
     if (cmd == "log") {

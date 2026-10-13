@@ -1,4 +1,6 @@
 // Node type registry: every node available in the graph editor and the command API.
+// Names, categories, pins and descriptions are in English (the Atelier graph style). Pin names are
+// stored in graph files; NodeDef::findIn / findOut still accept the former French names (Graph.cpp).
 #include "Graph.h"
 
 namespace game {
@@ -28,97 +30,98 @@ struct B {
 
 std::vector<NodeDef> build() {
     const PinType F = PinType::Float, Bo = PinType::Bool, V = PinType::Vec3, O = PinType::Object, S = PinType::String;
-    const char* EV = "Événements";
-    const char* FL = "Flux";
-    const char* AC = "Actions";
-    const char* DA = "Données";
-    const char* MA = "Maths";
+    const char* EV = "Events";
+    const char* IN = "Input";
+    const char* FL = "Flow Control";
+    const char* AC = "Scene";
+    const char* DA = "Data";
+    const char* MA = "Math";
     const char* RT = "RTS";
     std::vector<B> v;
     // events
-    v.push_back(B(Op::OnStart, "event.start", "Au démarrage", EV, "Déclenché une fois quand Play démarre.").event().execOut());
-    v.push_back(B(Op::OnTick, "event.tick", "À chaque frame", EV, "Déclenché à chaque image ; Delta = secondes écoulées.").event().execOut().out("Delta", F));
-    v.push_back(B(Op::OnClickObject, "event.clickObject", "Clic sur un objet", EV, "Clic gauche sur un objet pendant Play.")
-                    .event().execOut().out("Objet", O).out("Point", V));
-    v.push_back(B(Op::OnClickGround, "event.clickGround", "Clic au sol", EV, "Clic gauche dans le vide (plan Y = 0) pendant Play.")
+    v.push_back(B(Op::OnStart, "event.start", "Begin Play", EV, "Runs once when Play starts.").event().execOut());
+    v.push_back(B(Op::OnTick, "event.tick", "Event Tick", EV, "Runs every frame; Delta = seconds since the last frame.").event().execOut().out("Delta", F));
+    v.push_back(B(Op::OnClickObject, "event.clickObject", "Object Clicked", EV, "Left click on an object during Play.")
+                    .event().execOut().out("Object", O).out("Point", V));
+    v.push_back(B(Op::OnClickGround, "event.clickGround", "Ground Clicked", EV, "Left click on empty space (ground plane Y = 0) during Play.")
                     .event().execOut().out("Point", V));
-    v.push_back(B(Op::OnKey, "event.key", "Touche pressée", EV, "Touche du clavier (lettre, chiffre, ESPACE, ENTREE, F1..F12, HAUT...).")
-                    .event().inS("Touche", "R").execOut());
-    v.push_back(B(Op::OnCustom, "event.custom", "Événement personnalisé", EV, "Déclenché par le noeud « Appeler l'événement » du même nom.")
-                    .event().inS("Nom", "MonEvenement").execOut());
+    v.push_back(B(Op::OnCustom, "event.custom", "Custom Event", EV, "Runs when a « Call Event » node with the same name is reached.")
+                    .event().inS("Name", "MyEvent").execOut());
+    v.push_back(B(Op::OnKey, "event.key", "Keyboard Input", IN, "A keyboard key (letter, digit, SPACE, ENTER, F1..F12, UP...).")
+                    .event().inS("Key", "R").execOut());
     // flow
-    v.push_back(B(Op::Branch, "flow.branch", "Si", FL, "Continue par Vrai ou Faux selon la condition.")
-                    .execIn().inB("Condition", true).execOut("Vrai").execOut("Faux"));
-    v.push_back(B(Op::Sequence, "flow.sequence", "Séquence", FL, "Exécute les sorties dans l'ordre.")
-                    .execIn().execOut("Puis 1").execOut("Puis 2").execOut("Puis 3"));
-    v.push_back(B(Op::Delay, "flow.delay", "Délai", FL, "Attend un nombre de secondes puis continue.")
-                    .execIn().inF("Secondes", 1.0f).execOut());
-    v.push_back(B(Op::ForEachPart, "flow.forEachPart", "Pour chaque objet", FL, "Boucle sur les objets visibles d'un type (vide = tous).")
-                    .execIn().inS("Type", "CUBE").execOut("Boucle").out("Objet", O).execOut("Terminé"));
-    v.push_back(B(Op::DoOnce, "flow.doOnce", "Une seule fois", FL, "Ne laisse passer l'exécution qu'une fois par partie.")
+    v.push_back(B(Op::Branch, "flow.branch", "Branch", FL, "Continues on True or False depending on the condition.")
+                    .execIn().inB("Condition", true).execOut("True").execOut("False"));
+    v.push_back(B(Op::Sequence, "flow.sequence", "Sequence", FL, "Runs the outputs in order.")
+                    .execIn().execOut("Then 1").execOut("Then 2").execOut("Then 3"));
+    v.push_back(B(Op::Delay, "flow.delay", "Delay", FL, "Waits a number of seconds, then continues.")
+                    .execIn().inF("Seconds", 1.0f).execOut());
+    v.push_back(B(Op::ForEachPart, "flow.forEachPart", "For Each Object", FL, "Loops over the visible objects of a type (empty = all).")
+                    .execIn().inS("Type", "CUBE").execOut("Loop").out("Object", O).execOut("Completed"));
+    v.push_back(B(Op::DoOnce, "flow.doOnce", "Do Once", FL, "Lets execution pass only once per game.")
                     .execIn().execOut());
-    v.push_back(B(Op::FireCustom, "flow.fireCustom", "Appeler l'événement", FL, "Déclenche les « Événement personnalisé » portant ce nom.")
-                    .execIn().inS("Nom", "MonEvenement").execOut());
-    // actions
-    v.push_back(B(Op::SetPosition, "action.setPosition", "Placer l'objet", AC, "Téléporte l'objet à une position.")
-                    .execIn().in("Objet", O).inV("Position", float3(0, 0, 0)).execOut());
-    v.push_back(B(Op::MoveTo, "action.moveTo", "Déplacer vers", AC, "Déplace l'objet vers la cible à vitesse constante (unités/s). Arrivé se déclenche à l'arrivée.")
-                    .execIn().in("Objet", O).inV("Cible", float3(0, 0, 0)).inF("Vitesse", 20.0f).execOut().execOut("Arrivé"));
-    v.push_back(B(Op::RotateY, "action.rotate", "Tourner", AC, "Tourne l'objet autour de l'axe vertical (degrés).")
-                    .execIn().in("Objet", O).inF("Degrés", 45.0f).execOut());
-    v.push_back(B(Op::Spawn, "action.spawn", "Créer un objet", AC, "Crée un objet de la bibliothèque (CUBE, SPHERE, BALL).")
-                    .execIn().inS("Type", "CUBE").inV("Position", float3(0, 0, 0)).inV("Couleur", float3(0.8f, 0.2f, 0.2f)).execOut().out("Objet", O));
-    v.push_back(B(Op::Destroy, "action.destroy", "Détruire l'objet", AC, "Retire l'objet de la partie (restauré au Stop).")
-                    .execIn().in("Objet", O).execOut());
-    v.push_back(B(Op::SetColor, "action.setColor", "Changer la couleur", AC, "Couleur de base RVB entre 0 et 1.")
-                    .execIn().in("Objet", O).inV("Couleur", float3(1, 0.8f, 0.2f)).execOut());
-    v.push_back(B(Op::SetScale, "action.setScale", "Changer l'échelle", AC, "Échelle de l'objet (1 = taille normale).")
-                    .execIn().in("Objet", O).inV("Échelle", float3(1, 1, 1)).execOut());
-    v.push_back(B(Op::Select, "action.select", "Sélectionner", AC, "Met l'objet en surbrillance (aucun objet = désélectionne).")
-                    .execIn().in("Objet", O).execOut());
-    v.push_back(B(Op::Print, "action.print", "Afficher un message", AC, "Affiche un texte à l'écran et dans le journal.")
-                    .execIn().inS("Texte", "Bonjour").execOut());
-    v.push_back(B(Op::SetVar, "action.setVar", "Définir une variable", AC, "Stocke une valeur sous un nom (variables globales de la partie).")
-                    .execIn().inS("Nom", "score").inF("Valeur", 0).execOut());
-    v.push_back(B(Op::AddVar, "action.addVar", "Ajouter à une variable", AC, "Ajoute une quantité à une variable numérique.")
-                    .execIn().inS("Nom", "score").inF("Quantité", 1).execOut());
+    v.push_back(B(Op::FireCustom, "flow.fireCustom", "Call Event", FL, "Triggers the « Custom Event » nodes with this name.")
+                    .execIn().inS("Name", "MyEvent").execOut());
+    // scene actions
+    v.push_back(B(Op::SetPosition, "action.setPosition", "Set Position", AC, "Teleports the object to a position.")
+                    .execIn().in("Object", O).inV("Position", float3(0, 0, 0)).execOut());
+    v.push_back(B(Op::MoveTo, "action.moveTo", "Move To", AC, "Moves the object towards the target at a constant speed (units/s). Arrived fires on arrival.")
+                    .execIn().in("Object", O).inV("Target", float3(0, 0, 0)).inF("Speed", 20.0f).execOut().execOut("Arrived"));
+    v.push_back(B(Op::RotateY, "action.rotate", "Rotate Actor", AC, "Rotates the object around the vertical axis (degrees).")
+                    .execIn().in("Object", O).inF("Degrees", 45.0f).execOut());
+    v.push_back(B(Op::Spawn, "action.spawn", "Spawn Object", AC, "Creates an object from the library (CUBE, SPHERE, BALL).")
+                    .execIn().inS("Type", "CUBE").inV("Position", float3(0, 0, 0)).inV("Color", float3(0.8f, 0.2f, 0.2f)).execOut().out("Object", O));
+    v.push_back(B(Op::Destroy, "action.destroy", "Destroy Object", AC, "Removes the object from the game (restored on Stop).")
+                    .execIn().in("Object", O).execOut());
+    v.push_back(B(Op::SetColor, "action.setColor", "Set Color", AC, "Base colour RGB between 0 and 1.")
+                    .execIn().in("Object", O).inV("Color", float3(1, 0.8f, 0.2f)).execOut());
+    v.push_back(B(Op::SetScale, "action.setScale", "Set Scale", AC, "Object scale (1 = normal size).")
+                    .execIn().in("Object", O).inV("Scale", float3(1, 1, 1)).execOut());
+    v.push_back(B(Op::Select, "action.select", "Select", AC, "Highlights the object (no object = deselect).")
+                    .execIn().in("Object", O).execOut());
+    v.push_back(B(Op::Print, "action.print", "Print String", AC, "Shows a text on screen and in the log.")
+                    .execIn().inS("Text", "Hello").execOut());
+    v.push_back(B(Op::SetVar, "action.setVar", "Set Variable", AC, "Stores a value under a name (global variables of the game).")
+                    .execIn().inS("Name", "score").inF("Value", 0).execOut());
+    v.push_back(B(Op::AddVar, "action.addVar", "Add to Variable", AC, "Adds an amount to a numeric variable.")
+                    .execIn().inS("Name", "score").inF("Amount", 1).execOut());
     // data
-    v.push_back(B(Op::ConstFloat, "data.float", "Nombre", DA, "Valeur numérique constante.").pure().inF("Valeur", 1).out("Valeur", F));
-    v.push_back(B(Op::ConstBool, "data.bool", "Booléen", DA, "Vrai ou faux.").pure().inB("Valeur", true).out("Valeur", Bo));
-    v.push_back(B(Op::ConstVec3, "data.vec3", "Vecteur", DA, "Vecteur X, Y, Z constant.").pure().inV("Valeur", float3(0, 0, 0)).out("Valeur", V));
-    v.push_back(B(Op::ConstString, "data.string", "Texte", DA, "Chaîne de caractères constante.").pure().inS("Valeur", "").out("Valeur", S));
-    v.push_back(B(Op::GetVar, "data.getVar", "Lire une variable", DA, "Valeur d'une variable (0 si elle n'existe pas).").pure().inS("Nom", "score").out("Valeur", F));
-    v.push_back(B(Op::Selected, "data.selected", "Objet sélectionné", DA, "L'objet actuellement sélectionné.").pure().out("Objet", O));
-    v.push_back(B(Op::FindObject, "data.findObject", "Trouver un objet", DA, "Premier objet portant ce nom.").pure().inS("Nom", "Cube").out("Objet", O));
-    v.push_back(B(Op::GetPosition, "data.getPosition", "Position de l'objet", DA, "Position de l'objet.").pure().in("Objet", O).out("Position", V));
-    v.push_back(B(Op::PartOf, "data.partOf", "Type de l'objet", DA, "Identifiant de bibliothèque (CUBE, SPHERE...).").pure().in("Objet", O).out("Type", S));
-    v.push_back(B(Op::IsValid, "data.isValid", "Objet valide ?", DA, "Vrai si l'objet existe et n'a pas été détruit.").pure().in("Objet", O).out("Valide", Bo));
-    v.push_back(B(Op::MakeVec3, "data.makeVec3", "Composer un vecteur", DA, "X, Y, Z vers vecteur.").pure().inF("X", 0).inF("Y", 0).inF("Z", 0).out("Vecteur", V));
-    v.push_back(B(Op::BreakVec3, "data.breakVec3", "Décomposer un vecteur", DA, "Vecteur vers X, Y, Z.").pure().inV("Vecteur", float3(0, 0, 0)).out("X", F).out("Y", F).out("Z", F));
-    v.push_back(B(Op::Distance, "data.distance", "Distance", DA, "Distance entre deux points.").pure().inV("A", float3(0, 0, 0)).inV("B", float3(0, 0, 0)).out("Distance", F));
-    v.push_back(B(Op::Time, "data.time", "Temps de jeu", DA, "Secondes écoulées depuis Play.").pure().out("Secondes", F));
+    v.push_back(B(Op::ConstFloat, "data.float", "Float", DA, "Constant number.").pure().inF("Value", 1).out("Value", F));
+    v.push_back(B(Op::ConstBool, "data.bool", "Boolean", DA, "True or false.").pure().inB("Value", true).out("Value", Bo));
+    v.push_back(B(Op::ConstVec3, "data.vec3", "Vector 3", DA, "Constant vector X, Y, Z.").pure().inV("Value", float3(0, 0, 0)).out("Value", V));
+    v.push_back(B(Op::ConstString, "data.string", "Text", DA, "Constant text.").pure().inS("Value", "").out("Value", S));
+    v.push_back(B(Op::GetVar, "data.getVar", "Get Variable", DA, "Value of a variable (0 if it does not exist).").pure().inS("Name", "score").out("Value", F));
+    v.push_back(B(Op::Selected, "data.selected", "Selected Object", DA, "The currently selected object.").pure().out("Object", O));
+    v.push_back(B(Op::FindObject, "data.findObject", "Find Object", DA, "First object with this name.").pure().inS("Name", "Cube").out("Object", O));
+    v.push_back(B(Op::GetPosition, "data.getPosition", "Get Position", DA, "Position of the object.").pure().in("Object", O).out("Position", V));
+    v.push_back(B(Op::PartOf, "data.partOf", "Object Type", DA, "Library identifier (CUBE, SPHERE...).").pure().in("Object", O).out("Type", S));
+    v.push_back(B(Op::IsValid, "data.isValid", "Is Valid", DA, "True if the object exists and has not been destroyed.").pure().in("Object", O).out("Valid", Bo));
+    v.push_back(B(Op::MakeVec3, "data.makeVec3", "Make Vector 3", DA, "X, Y, Z to a vector.").pure().inF("X", 0).inF("Y", 0).inF("Z", 0).out("Vector", V));
+    v.push_back(B(Op::BreakVec3, "data.breakVec3", "Break Vector 3", DA, "Vector to X, Y, Z.").pure().inV("Vector", float3(0, 0, 0)).out("X", F).out("Y", F).out("Z", F));
+    v.push_back(B(Op::Distance, "data.distance", "Distance", DA, "Distance between two points.").pure().inV("A", float3(0, 0, 0)).inV("B", float3(0, 0, 0)).out("Distance", F));
+    v.push_back(B(Op::Time, "data.time", "Game Time", DA, "Seconds since Play started.").pure().out("Seconds", F));
     // maths / logic
-    v.push_back(B(Op::Add, "math.add", "A + B", MA, "Addition.").pure().inF("A", 0).inF("B", 0).out("Résultat", F));
-    v.push_back(B(Op::Sub, "math.sub", "A - B", MA, "Soustraction.").pure().inF("A", 0).inF("B", 0).out("Résultat", F));
-    v.push_back(B(Op::Mul, "math.mul", "A × B", MA, "Multiplication.").pure().inF("A", 1).inF("B", 1).out("Résultat", F));
-    v.push_back(B(Op::Div, "math.div", "A ÷ B", MA, "Division (0 si B = 0).").pure().inF("A", 1).inF("B", 1).out("Résultat", F));
-    v.push_back(B(Op::Greater, "math.greater", "A > B", MA, "Comparaison.").pure().inF("A", 0).inF("B", 0).out("Résultat", Bo));
-    v.push_back(B(Op::Less, "math.less", "A < B", MA, "Comparaison.").pure().inF("A", 0).inF("B", 0).out("Résultat", Bo));
-    v.push_back(B(Op::Equal, "math.equal", "A = B", MA, "Égalité numérique.").pure().inF("A", 0).inF("B", 0).out("Résultat", Bo));
-    v.push_back(B(Op::StrEqual, "math.strEqual", "Textes égaux", MA, "Compare deux textes.").pure().inS("A", "").inS("B", "").out("Résultat", Bo));
-    v.push_back(B(Op::And, "math.and", "ET", MA, "Vrai si les deux sont vrais.").pure().inB("A", true).inB("B", true).out("Résultat", Bo));
-    v.push_back(B(Op::Or, "math.or", "OU", MA, "Vrai si l'un des deux est vrai.").pure().inB("A", false).inB("B", false).out("Résultat", Bo));
-    v.push_back(B(Op::Not, "math.not", "NON", MA, "Inverse un booléen.").pure().inB("A", false).out("Résultat", Bo));
-    v.push_back(B(Op::Random, "math.random", "Aléatoire", MA, "Nombre aléatoire entre Min et Max (nouveau à chaque lecture).").pure().inF("Min", 0).inF("Max", 1).out("Valeur", F));
-    v.push_back(B(Op::AddVec3, "math.addVec3", "Vecteur A + B", MA, "Somme de deux vecteurs.").pure().inV("A", float3(0, 0, 0)).inV("B", float3(0, 0, 0)).out("Résultat", V));
-    v.push_back(B(Op::ScaleVec3, "math.scaleVec3", "Vecteur × nombre", MA, "Multiplie un vecteur.").pure().inV("Vecteur", float3(0, 0, 0)).inF("Facteur", 1).out("Résultat", V));
-    v.push_back(B(Op::Concat, "math.concat", "Assembler du texte", MA, "Texte A suivi de B (accepte nombres et vecteurs).").pure().inS("A", "").inS("B", "").out("Texte", S));
+    v.push_back(B(Op::Add, "math.add", "Add", MA, "Addition.").pure().inF("A", 0).inF("B", 0).out("Result", F));
+    v.push_back(B(Op::Sub, "math.sub", "Subtract", MA, "Subtraction.").pure().inF("A", 0).inF("B", 0).out("Result", F));
+    v.push_back(B(Op::Mul, "math.mul", "Multiply", MA, "Multiplication.").pure().inF("A", 1).inF("B", 1).out("Result", F));
+    v.push_back(B(Op::Div, "math.div", "Divide", MA, "Division (0 if B = 0).").pure().inF("A", 1).inF("B", 1).out("Result", F));
+    v.push_back(B(Op::Greater, "math.greater", "Greater Than", MA, "Tests whether A is greater than B.").pure().inF("A", 0).inF("B", 0).out("Result", Bo));
+    v.push_back(B(Op::Less, "math.less", "Less Than", MA, "Tests whether A is less than B.").pure().inF("A", 0).inF("B", 0).out("Result", Bo));
+    v.push_back(B(Op::Equal, "math.equal", "Equal", MA, "Numeric equality.").pure().inF("A", 0).inF("B", 0).out("Result", Bo));
+    v.push_back(B(Op::StrEqual, "math.strEqual", "Text Equal", MA, "Compares two texts.").pure().inS("A", "").inS("B", "").out("Result", Bo));
+    v.push_back(B(Op::And, "math.and", "And", MA, "True if both are true.").pure().inB("A", true).inB("B", true).out("Result", Bo));
+    v.push_back(B(Op::Or, "math.or", "Or", MA, "True if either is true.").pure().inB("A", false).inB("B", false).out("Result", Bo));
+    v.push_back(B(Op::Not, "math.not", "Not", MA, "Inverts a boolean.").pure().inB("A", false).out("Result", Bo));
+    v.push_back(B(Op::Random, "math.random", "Random", MA, "Random number between Min and Max (a new value each time it is read).").pure().inF("Min", 0).inF("Max", 1).out("Value", F));
+    v.push_back(B(Op::AddVec3, "math.addVec3", "Add Vector 3", MA, "Sum of two vectors.").pure().inV("A", float3(0, 0, 0)).inV("B", float3(0, 0, 0)).out("Result", V));
+    v.push_back(B(Op::ScaleVec3, "math.scaleVec3", "Scale Vector 3", MA, "Multiplies a vector by a number.").pure().inV("Vector", float3(0, 0, 0)).inF("Factor", 1).out("Result", V));
+    v.push_back(B(Op::Concat, "math.concat", "Join Text", MA, "Text A followed by B (accepts numbers and vectors).").pure().inS("A", "").inS("B", "").out("Text", S));
     // RTS
-    v.push_back(B(Op::SnapGrid, "rts.snap", "Aligner sur la grille", RT, "Arrondit X et Z au pas de grille (Y inchangé).").pure().inV("Position", float3(0, 0, 0)).inF("Pas", 6).out("Position", V));
-    v.push_back(B(Op::CellFree, "rts.cellFree", "Case libre ?", RT, "Vrai si aucun objet visible n'occupe la case (rayon = demi-pas).")
-                    .pure().inV("Position", float3(0, 0, 0)).inF("Pas", 6).out("Libre", Bo));
-    v.push_back(B(Op::SetRtsCamera, "rts.camera", "Caméra RTS", RT, "Active la caméra RTS pendant la partie : ZQSD ou WASD (positions physiques) ou flèches, bords de l'écran, molette, glisser au clic droit, touches Q/E (positions QWERTY, soit A/E sur AZERTY) pour tourner.").execIn().inB("Actif", true).execOut());
-    v.push_back(B(Op::CountPart, "rts.count", "Compter les objets", RT, "Nombre d'objets visibles d'un type (vide = tous).").pure().inS("Type", "CUBE").out("Nombre", F));
+    v.push_back(B(Op::SnapGrid, "rts.snap", "Snap to Grid", RT, "Rounds X and Z to the grid step (Y unchanged).").pure().inV("Position", float3(0, 0, 0)).inF("Step", 6).out("Position", V));
+    v.push_back(B(Op::CellFree, "rts.cellFree", "Is Cell Free", RT, "True if no visible object occupies the cell (radius = half a step).")
+                    .pure().inV("Position", float3(0, 0, 0)).inF("Step", 6).out("Free", Bo));
+    v.push_back(B(Op::SetRtsCamera, "rts.camera", "RTS Camera", RT, "Enables the RTS camera during play: ZQSD / WASD or arrows, screen edges, wheel, right-drag, Q/E (A/E on AZERTY) to turn.").execIn().inB("Active", true).execOut());
+    v.push_back(B(Op::CountPart, "rts.count", "Count Objects", RT, "Number of visible objects of a type (empty = all).").pure().inS("Type", "CUBE").out("Count", F));
     std::vector<NodeDef> out;
     for (auto& b : v) out.push_back(b.d);
     return out;

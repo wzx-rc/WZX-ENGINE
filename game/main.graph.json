@@ -4,7 +4,7 @@
   "name": "main",
   "nodes": [
     {"id": 1, "type": "event.start", "x": 0, "y": 0, "in": {}},
-    {"id": 2, "type": "action.print", "x": 260, "y": 0, "in": {"Texte": "Cliquez une unité, puis le sol pour la déplacer. R : tourner, C : créer un cube."}},
+    {"id": 2, "type": "action.print", "x": 260, "y": 0, "in": {"Texte": "Click a unit, then the ground to move it. R: rotate, C: spawn a cube."}},
     {"id": 3, "type": "event.clickObject", "x": 0, "y": 140, "in": {}},
     {"id": 4, "type": "action.select", "x": 260, "y": 140, "in": {}},
     {"id": 5, "type": "event.clickGround", "x": 0, "y": 320, "in": {}},
@@ -13,7 +13,7 @@
     {"id": 8, "type": "flow.branch", "x": 480, "y": 320, "in": {"Condition": true}},
     {"id": 9, "type": "rts.snap", "x": 230, "y": 560, "in": {"Position": [0, 0, 0], "Pas": 6}},
     {"id": 10, "type": "action.moveTo", "x": 760, "y": 320, "in": {"Cible": [0, 0, 0], "Vitesse": 20}},
-    {"id": 11, "type": "action.print", "x": 1040, "y": 380, "in": {"Texte": "Unité arrivée"}},
+    {"id": 11, "type": "action.print", "x": 1040, "y": 380, "in": {"Texte": "Unit arrived"}},
     {"id": 12, "type": "event.key", "x": 0, "y": 720, "in": {"Touche": "R"}},
     {"id": 13, "type": "action.rotate", "x": 260, "y": 720, "in": {"Degrés": 45}},
     {"id": 14, "type": "event.key", "x": 0, "y": 860, "in": {"Touche": "C"}},

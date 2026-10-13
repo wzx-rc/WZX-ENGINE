@@ -18,6 +18,10 @@ public:
     // Fonts for the canvas text (regular and bold); the ImGui default font is used when null.
     void setFonts(ImFont* regular, ImFont* bold) { m_font = regular; m_fontBold = bold; }
 
+    // Draws the icon of a node type (the app owns the icon set); called with the node type id.
+    using NodeIconFn = void (*)(ImDrawList* dl, const std::string& nodeId, ImVec2 p, float size, ImU32 color);
+    void setNodeIconDrawer(NodeIconFn f) { m_nodeIcon = f; }
+
     // Draws the editor in the rectangle `pos` / `size` (ImGui pixels) and handles its input.
     void draw(ImVec2 pos, ImVec2 size, float dpi, Graph& g, const Runtime* rt, bool playing);
     Action takeAction() { Action a = m_action; m_action = None; return a; }
@@ -70,6 +74,7 @@ private:
 
     ImFont* m_font = nullptr;
     ImFont* m_fontBold = nullptr;
+    NodeIconFn m_nodeIcon = nullptr;
     float m_dpi = 1.0f;
     ImVec2 m_origin;                       // canvas top-left (screen)
     ImVec2 m_canvas;                       // canvas size (screen)

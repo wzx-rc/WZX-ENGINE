@@ -55,7 +55,7 @@ float Runtime::lastRun(int nodeId) const {
 
 void Runtime::error(const std::string& e) {
     lastError = e;
-    log.push_back("Erreur : " + e);
+    log.push_back("Error: " + e);
     while (log.size() > 200) log.pop_front();
 }
 
@@ -148,8 +148,8 @@ void Runtime::execFrom(int nodeId, int outPin) {
         if (l.fromNode != nodeId || l.fromPin != outPin) continue;
         Node* n = m_graph->node(l.toNode);
         if (!n) return;
-        if (--m_budget < 0) { if (m_budget == -1) error("boucle infinie stoppée (trop de noeuds exécutés)"); return; }
-        if (m_depth >= kMaxDepth) { error("chaîne d'exécution trop profonde"); return; }
+        if (--m_budget < 0) { if (m_budget == -1) error("infinite loop stopped (too many nodes executed)"); return; }
+        if (m_depth >= kMaxDepth) { error("execution chain too deep"); return; }
         ++m_depth;
         exec(*n);
         --m_depth;
@@ -179,7 +179,7 @@ Value Runtime::output(const Node& n, int pin) {
         if (it != m_cache.end() && pin < (int)it->second.size() && it->second[pin].type == t) return it->second[pin];
         return Value::None(t);
     }
-    if (m_depth >= kMaxDepth) { error("cycle dans les données"); return Value::None(t); }
+    if (m_depth >= kMaxDepth) { error("cycle in the data"); return Value::None(t); }
     ++m_depth;
     Value r = Value::None(t);
     auto F = [&](int i) { return input(n, i).asFloat(); };

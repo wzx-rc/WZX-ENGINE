@@ -1,3 +1,4 @@
+#include <map>
 #include "Graph.h"
 #include "app/Json.h"
 #include <algorithm>
@@ -97,13 +98,30 @@ static bool valueFromJson(const Json& j, PinType t, Value& out) {
 
 // --------------------------------------------------------------------------- node defs
 
+// Pin names of the graph files written before the English names: still accepted when loading.
+static std::string legacyPinName(const std::string& n) {
+    static const std::map<std::string, std::string> kLegacy = {
+        {"Objet", "Object"}, {"Nom", "Name"}, {"Vrai", "True"}, {"Faux", "False"}, {"Puis 1", "Then 1"}, {"Puis 2", "Then 2"},
+        {"Puis 3", "Then 3"}, {"Secondes", "Seconds"}, {"Boucle", "Loop"}, {"Terminé", "Completed"}, {"Cible", "Target"},
+        {"Vitesse", "Speed"}, {"Arrivé", "Arrived"}, {"Degrés", "Degrees"}, {"Couleur", "Color"}, {"Échelle", "Scale"},
+        {"Texte", "Text"}, {"Valeur", "Value"}, {"Quantité", "Amount"}, {"Vecteur", "Vector"}, {"Résultat", "Result"},
+        {"Pas", "Step"}, {"Libre", "Free"}, {"Actif", "Active"}, {"Nombre", "Count"}, {"Facteur", "Factor"}, {"Valide", "Valid"},
+        {"Touche", "Key"}};
+    auto it = kLegacy.find(n);
+    return it == kLegacy.end() ? n : it->second;
+}
+
 int NodeDef::findIn(const std::string& n) const {
     for (size_t i = 0; i < ins.size(); ++i) if (ins[i].name == n) return (int)i;
+    const std::string e = legacyPinName(n);
+    for (size_t i = 0; i < ins.size(); ++i) if (ins[i].name == e) return (int)i;
     return -1;
 }
 
 int NodeDef::findOut(const std::string& n) const {
     for (size_t i = 0; i < outs.size(); ++i) if (outs[i].name == n) return (int)i;
+    const std::string e = legacyPinName(n);
+    for (size_t i = 0; i < outs.size(); ++i) if (outs[i].name == e) return (int)i;
     return -1;
 }
 

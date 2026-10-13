@@ -63,11 +63,12 @@ static std::string glyph(uint32_t cp) {
 
 // Node category colours of the Atelier graph (Event, Flow, Scene, Variables, Math, Rendering).
 static ImU32 catColor(const std::string& c) {
-    if (c == "Événements") return IM_COL32(218, 106, 128, 255);
-    if (c == "Flux") return IM_COL32(219, 166, 100, 255);
-    if (c == "Actions") return IM_COL32(117, 159, 229, 255);
-    if (c == "Données") return IM_COL32(186, 132, 203, 255);
-    if (c == "Maths") return IM_COL32(134, 189, 144, 255);
+    if (c == "Events") return IM_COL32(218, 106, 128, 255);
+    if (c == "Input") return IM_COL32(92, 192, 213, 255);
+    if (c == "Flow Control") return IM_COL32(219, 166, 100, 255);
+    if (c == "Scene") return IM_COL32(117, 159, 229, 255);
+    if (c == "Data") return IM_COL32(186, 132, 203, 255);
+    if (c == "Math") return IM_COL32(134, 189, 144, 255);
     if (c == "RTS") return IM_COL32(178, 146, 223, 255);
     return IM_COL32(150, 156, 166, 255);
 }
@@ -393,7 +394,7 @@ void NodeEditor::drawCanvas(Graph& g, const Runtime* rt) {
 void NodeEditor::drawHint(const Graph& g) {
     if (!g.nodes.empty()) return;
     ImDrawList* dl = ImGui::GetWindowDrawList();
-    const char* msg = "Graphe vide : clic droit pour ajouter un noeud (ex. « Clic sur un objet »).";
+    const char* msg = "Empty graph: right-click to add a node (e.g. « Ground Clicked »).";
     ImVec2 c = m_origin + m_canvas * 0.5f;
     ImFont* f = m_font ? m_font : ImGui::GetFont();
     ImVec2 ts = f->CalcTextSizeA(14 * m_dpi, FLT_MAX, 0, msg);
@@ -474,7 +475,7 @@ void NodeEditor::drawNode(Graph& g, Node& n, const Runtime* rt) {
     dl->AddRectFilled(p0, p1, kNode, 5 * s);
     dl->AddRectFilled(p0, ImVec2(p1.x, p0.y + kTitle * s), withA(color, 48), 5 * s, ImDrawFlags_RoundCornersTop);
     dl->AddRectFilled(ImVec2(p0.x, p0.y + 5 * s), ImVec2(p0.x + 3 * s, p0.y + 30 * s), color, 2 * s);
-    if (n.def->event) canvasText(dl, m_font, 14 * s, ImVec2(p0.x + 12 * s, p0.y + 17 * s), kText, glyph(0xE945));
+    if (m_nodeIcon) m_nodeIcon(dl, n.def->id, ImVec2(p0.x + 12 * s, p0.y + 10 * s), 16 * s, color);
     canvasText(dl, m_fontBold, 15 * s, ImVec2(p0.x + 36 * s, p0.y + 17 * s), kText, n.def->label);
     dl->AddCircleFilled(ImVec2(p1.x - 13 * s, p0.y + 17 * s), 2 * s, withA(color, 220));
     canvasText(dl, m_font, 8.5f * s, ImVec2(p0.x + 12 * s, p0.y + 39 * s), withA(color, 220), n.def->category);
@@ -491,9 +492,10 @@ void NodeEditor::drawNode(Graph& g, Node& n, const Runtime* rt) {
     }
 
     // border: active node in cyan, a node that just ran in its category colour
-    if (sel) dl->AddRect(p0, p1, kCyan, 5 * s, 0, 2 * s);
-    else dl->AddRect(p0, p1, hot ? IM_COL32(255, 210, 74, 255) : (color), 5 * s, 0, 1 * s);
-    if (hot) dl->AddRect(p0, p1, IM_COL32(255, 210, 74, 255), 5 * s, 0, 2 * s);
+    // outlines: half the former width; the selected node in cyan, a node that just ran in yellow
+    if (sel) dl->AddRect(p0, p1, kCyan, 5 * s, 0, 1 * s);
+    else dl->AddRect(p0, p1, kBorderC, 5 * s, 0, 0.5f * s);
+    if (hot) dl->AddRect(p0, p1, IM_COL32(255, 210, 74, 255), 5 * s, 0, 1 * s);
 
     // outputs: labels on the inner side of the pin
     for (int i = 0; i < (int)n.def->outs.size(); ++i) {
@@ -604,7 +606,7 @@ void NodeEditor::drawToolbar(ImVec2 pos, float width, bool playing) {
     float cy = (a.y + b.y) * 0.5f;
     std::string gi = glyph(0xE8A1);
     dl->AddText(f, 13 * d, ImVec2(a.x + 12 * d, cy - 7 * d), kCyan, gi.c_str());
-    canvasText(dl, m_font, 12 * d, ImVec2(a.x + 34 * d, cy), kText, "Graphe du jeu");
+    canvasText(dl, m_font, 12 * d, ImVec2(a.x + 34 * d, cy), kText, "Game Graph");
     canvasText(dl, m_font, 11 * d, ImVec2(a.x + 172 * d, cy), kMuted, "Event Graph");
     if (!status.empty()) canvasText(dl, m_font, 11 * d, ImVec2(a.x + 290 * d, cy), kMuted, status);
 
@@ -682,7 +684,7 @@ void NodeEditor::drawLog(const Runtime* rt) {
     float y = r0.y + 7 * d;
     for (int i = (int)rt->log.size() - lines; i < (int)rt->log.size(); ++i, y += lineH) {
         const std::string& s = rt->log[i];
-        bool err = s.rfind("Erreur", 0) == 0;
+        bool err = s.rfind("Error", 0) == 0;
         canvasText(dl, m_font, 11.5f * d, ImVec2(r0.x + 10 * d, y + lineH * 0.5f), err ? kRed : kMuted, s);
     }
     if (!vars.empty()) canvasText(dl, m_font, 11.5f * d, ImVec2(r0.x + 10 * d, y + lineH * 0.5f), kCyan, vars);
@@ -746,7 +748,7 @@ void NodeEditor::drawMenu(Graph& g) {
         ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(26 * d, 4 * d));
         ImGui::SetNextItemWidth(-FLT_MIN);
-        ImGui::InputTextWithHint("##search", fromNode ? "Noeuds compatibles… tapez pour filtrer" : "Tapez pour chercher un noeud…",
+        ImGui::InputTextWithHint("##search", fromNode ? "Compatible nodes… type to filter" : "Type to search for a node…",
                                  m_search, sizeof m_search);
         ImVec2 smin = ImGui::GetItemRectMin();
         std::string si = glyph(0xE721);
@@ -784,7 +786,7 @@ void NodeEditor::drawMenu(Graph& g) {
             addNodeFromMenu(g, *first);
             ImGui::CloseCurrentPopup();
         }
-        if (!first) ImGui::TextDisabled("Aucun noeud");
+        if (!first) ImGui::TextDisabled("No node");
         ImGui::EndChild();
         ImGui::PopStyleVar();
         ImGui::EndPopup();
@@ -886,7 +888,7 @@ void NodeEditor::handleInput(Graph& g, bool inArea, bool overWidget) {
                 pushUndo(g);
                 bool ok = m_linkFrom.output ? g.connect(m_linkFrom.node, m_linkFrom.pin, t.node, t.pin, &err)
                                             : g.connect(t.node, t.pin, m_linkFrom.node, m_linkFrom.pin, &err);
-                if (!ok) { m_undo.pop_back(); status = "Liaison impossible : " + err; }
+                if (!ok) { m_undo.pop_back(); status = "Connection impossible: " + err; }
                 else status.clear();
             } else if (t.pin < 0 && !hitNode(g, mouse) && inArea) {
                 openMenu(mouse, m_linkFrom);   // dropped in the void: pick a node to connect
