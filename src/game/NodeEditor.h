@@ -55,6 +55,8 @@ private:
     void drawLog(const Runtime* rt);
     void drawHint(const Graph& g);
     void drawToolbar(ImVec2 pos, float width, bool playing);
+    void drawFooter(ImVec2 pos, ImVec2 size, const Graph& g);
+    void drawMinimap(const Graph& g);
     void trackEdit(const Graph& g, bool activated, bool changed, bool deactivated);
     void drawMenu(Graph& g);
     void addNodeFromMenu(Graph& g, const NodeDef& d);

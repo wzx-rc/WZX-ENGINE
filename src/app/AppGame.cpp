@@ -453,6 +453,10 @@ void GameHost::drawGraphWorkspace() {
     const ImGuiWindowFlags sideFlags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
                                        ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings;
     if (ImGui::Begin("##nodelibrary", nullptr, sideFlags)) {
+        ImGui::TextUnformatted("My Blueprint");
+        ImGui::SameLine(sideW - 64 * s);
+        ImGui::TextDisabled("ASSET");
+        ImGui::Separator();
         ImGui::TextDisabled("GRAPHES");
         ImGui::Selectable("Graphe du jeu", true);
         ImGui::Spacing();
