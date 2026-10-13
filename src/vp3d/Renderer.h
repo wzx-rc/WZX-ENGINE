@@ -24,6 +24,8 @@ struct RenderSettings {
     int maxSamples = 4096;
     float exposure = 1.0f;
     bool denoise = true;
+    bool smoothShading = true;   // interpolated vertex normals; off = faceted polygons (geometric normals)
+    int aaLevel = 1;             // anti-aliasing: 0 off (no jitter), 1 standard (1 jittered path), 2 high (4 paths per frame)
     float denoiseStrength = 1.0f;
     bool bevel = true;
     float bevelScale = 1.0f;

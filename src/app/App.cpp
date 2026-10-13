@@ -94,6 +94,9 @@ bool App::init(HINSTANCE inst, const Options& opt) {
     m_rs.temporalCap = opt.temporalCap;
     m_turntable = opt.orbit;
     m_rs.denoise = opt.denoise;
+    m_rs.smoothShading = opt.smooth;
+    m_rs.aaLevel = opt.aaLevel;
+    m_rs.fireflyClamp = opt.clamp;
     m_rs.ddgiHysteresis = opt.hysteresis;
     if (opt.ddgi) m_rs.raster = false;
     ShowWindow(m_hwnd, SW_SHOWDEFAULT);
@@ -104,6 +107,7 @@ bool App::init(HINSTANCE inst, const Options& opt) {
     if (opt.bounces > 0) m_rs.maxBounces = opt.bounces;
     loadScene(opt.scene);
     m_swayBase = m_scene.camera.yaw;
+    if (opt.tab > 0) m_rightTab = opt.tab;
     if (opt.view >= 0 && opt.view < (int)m_views.size()) {
         m_activeView = opt.view;
         m_scene.camera = m_views[opt.view].cam;
@@ -278,7 +282,8 @@ void App::frame() {
     if (m_autoFocus && m_scene.camera.dof) m_scene.camera.focusDistance = m_scene.camera.distance;
 
     // Adaptive samples per frame: 1 while interacting, more when the view is still.
-    if (m_interacting || m_opt.motion || m_rs.temporal) m_adaptiveSpp = 1;
+    if (m_rs.temporal) m_adaptiveSpp = m_rs.aaLevel == 2 ? 4 : 1;
+    else if (m_interacting || m_opt.motion) m_adaptiveSpp = 1;
     else {
         float g = m_renderer.gpuFrameMs();
         if (g < 9.0f && m_adaptiveSpp < 8) m_adaptiveSpp++;
@@ -330,6 +335,17 @@ void App::benchFrame() {
     }
     m_benchPrev = img;
     m_bench.push_back({m_renderer.gpuFrameMs(), m_rs.ddgi ? m_renderer.giUpdateMs() : 0.0f, m_rs.ddgi ? m_renderer.giBlendMs() : 0.0f, flicker});
+    // Stability statistics: running sums of the pixel luminance over the frames from --stat-from (0-255 scale).
+    if (m_opt.statFrom >= 0 && (int)m_bench.size() - 1 >= m_opt.statFrom) {
+        const size_t n = img.size() / 4;
+        if (m_stat1.size() != n) { m_stat1.assign(n, 0.0); m_stat2.assign(n, 0.0); m_statCount = 0; }
+        for (size_t i = 0; i < n; ++i) {
+            double l = 0.2126 * img[i * 4] + 0.7152 * img[i * 4 + 1] + 0.0722 * img[i * 4 + 2];
+            m_stat1[i] += l;
+            m_stat2[i] += l * l;
+        }
+        ++m_statCount;
+    }
     if (m_opt.snapEvery > 0 && !m_opt.shotPath.empty() && (m_bench.size() - 1) % m_opt.snapEvery == 0) {
         wchar_t name[512];
         swprintf(name, 512, L"%s_f%04zu.png", m_opt.shotPath.c_str(), m_bench.size() - 1);
@@ -338,6 +354,28 @@ void App::benchFrame() {
     if (m_opt.motion) m_renderer.resetAccumulation();
     if ((int)m_bench.size() < m_opt.benchFrames) return;
 
+    // Per-pixel standard deviation of the luminance: bright = unstable pixel. Mean over all pixels and over the region.
+    std::vector<uint8_t> stdMap;
+    double statAll = 0.0, statRegion = 0.0;
+    if (m_statCount > 1) {
+        const size_t n = m_stat1.size();
+        stdMap.assign(n * 4, 255);
+        double rsum = 0.0;
+        int rcount = 0;
+        for (size_t i = 0; i < n; ++i) {
+            double mean = m_stat1[i] / m_statCount;
+            double var = std::max(0.0, m_stat2[i] / m_statCount - mean * mean) * m_statCount / (m_statCount - 1);
+            double sd = std::sqrt(var);
+            uint8_t v = (uint8_t)std::min(255.0, sd * m_opt.statGain);
+            stdMap[i * 4] = stdMap[i * 4 + 1] = stdMap[i * 4 + 2] = v;
+            statAll += sd;
+            int x = (int)(i % w), y = (int)(i / w);
+            if (m_opt.statRect[2] > m_opt.statRect[0] && x >= m_opt.statRect[0] && x < m_opt.statRect[2] &&
+                y >= m_opt.statRect[1] && y < m_opt.statRect[3]) { rsum += sd; ++rcount; }
+        }
+        statAll /= (double)n;
+        statRegion = rcount ? rsum / rcount : 0.0;
+    }
     FILE* f = _wfopen(m_opt.benchPath.c_str(), L"w");
     if (f) {
         fprintf(f, "frame,gpu_ms,gi_update_ms,gi_blend_ms,flicker_pct\n");
@@ -363,9 +401,12 @@ void App::benchFrame() {
                 (int)m_opt.motion, w, h, m_rs.ddgi ? m_renderer.giProbeCount() : 0u, m_renderer.giSpacing(), m_bench.size());
         fprintf(f, "# gpu_ms mean=%.3f p95=%.3f | gi_update_ms mean=%.3f p95=%.3f | gi_blend_ms mean=%.3f p95=%.3f | flicker_pct mean=%.3f p95=%.3f\n",
                 gm, gp, um, up, bm, bp, fm, fp);
+        if (m_statCount > 1)
+            fprintf(f, "# stability frames %d..%d: std_all=%.4f std_region=%.4f (gain %.1f)\n", m_opt.statFrom, (int)m_bench.size() - 1, statAll, statRegion, m_opt.statGain);
         fclose(f);
     }
     if (!m_opt.shotPath.empty()) savePng(m_opt.shotPath, img, w, h);
+    if (!m_opt.shotPath.empty() && !stdMap.empty()) savePng(m_opt.shotPath + L".std.png", stdMap, w, h);
     m_running = false;
 }
 
@@ -852,6 +893,16 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         else if (a == L"--temporal-cap") opt.temporalCap = _wtoi(next().c_str());
         else if (a == L"--orbit") opt.orbit = _wtoi(next().c_str()) != 0;
         else if (a == L"--denoise") opt.denoise = _wtoi(next().c_str()) != 0;
+        else if (a == L"--tab") opt.tab = _wtoi(next().c_str());
+        else if (a == L"--smooth") opt.smooth = _wtoi(next().c_str()) != 0;
+        else if (a == L"--aa") opt.aaLevel = _wtoi(next().c_str());
+        else if (a == L"--clamp") opt.clamp = (float)_wtof(next().c_str());
+        else if (a == L"--stat-from") opt.statFrom = _wtoi(next().c_str());
+        else if (a == L"--stat-gain") opt.statGain = (float)_wtof(next().c_str());
+        else if (a == L"--stat-rect") {
+            std::wstring s = next();
+            swscanf_s(s.c_str(), L"%d,%d,%d,%d", &opt.statRect[0], &opt.statRect[1], &opt.statRect[2], &opt.statRect[3]);
+        }
         else if (a == L"--sway") opt.sway = (float)_wtof(next().c_str());
         else if (a == L"--snap-every") opt.snapEvery = _wtoi(next().c_str());
         else if (a == L"--hysteresis") opt.hysteresis = (float)_wtof(next().c_str());

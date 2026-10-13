@@ -55,6 +55,7 @@ float3 WorldNormal(uint inst, uint prim, float2 bc, float3x4 w2o, out float3 ngO
     ns = normalize(mul(ns, m));
     ng = normalize(mul(ng, m));
     if (dot(ng, ns) < 0) ng = -ng;
+    if (F.flags & FRAME_FLAG_FLAT_SHADING) ns = ng;
     ngOut = ng;
     return ns;
 }

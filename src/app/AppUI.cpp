@@ -598,6 +598,12 @@ void App::drawRenderTab(Rect area) {
         if (ui.slider("r_maxspp", row(), L"Échant. max", ms, 16.0f, 16384.0f, L"%.0f", 92, true)) m_rs.maxSamples = (int)ms;
         bool dn = m_rs.denoise;
         if (ui.checkbox(row(), L"Débruitage (à-trous)", dn)) { m_rs.denoise = dn; ch = true; }
+        bool sm = m_rs.smoothShading;
+        if (ui.checkbox(row(), L"Lissage des polygones", sm)) { m_rs.smoothShading = sm; ch = true; }
+        static const std::vector<std::wstring> aaNames = {L"Anti-aliasing désactivé", L"Anti-aliasing standard", L"Anti-aliasing élevé (4 échantillons)"};
+        int aa = m_rs.aaLevel;
+        if (ui.dropdown("aa_level", Rect(x, y, w, 28), aaNames, aa)) { m_rs.aaLevel = aa; ch = true; }
+        y += 36;
         ch |= ui.slider("r_dn", row(), L"Force", m_rs.denoiseStrength, 0.1f, 4.0f, L"%.2f");
         ch |= ui.slider("r_clamp", row(), L"Anti-lucioles", m_rs.fireflyClamp, 1.0f, 200.0f, L"%.0f", 92, true);
         y += 6;

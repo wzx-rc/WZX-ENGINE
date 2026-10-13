@@ -707,6 +707,7 @@ uint32_t renderSignature(const RenderSettings& rs) {
     mix(&rs.fireflyClamp, sizeof(float));
     mix(&rs.sssScale, sizeof(float));
     mix(&rs.lightScale, sizeof(float));
+    mix(&rs.smoothShading, sizeof(bool));
     return h;
 }
 
@@ -803,7 +804,8 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
     fc.lightCount = m_lightCount;
     fc.samplesPerFrame = (uint32_t)std::max(1, rs.samplesPerFrame);
     fc.flags = (cam.dof ? FRAME_FLAG_DOF : 0) | (rs.bevel ? FRAME_FLAG_BEVEL : 0) | (rs.denoise ? FRAME_FLAG_DENOISE : 0) |
-               (scene.env.visibleToCamera ? FRAME_FLAG_ENV_VISIBLE : 0) | (rs.ddgi && !rs.raster ? FRAME_FLAG_ID_EDGES : 0);
+               (scene.env.visibleToCamera ? FRAME_FLAG_ENV_VISIBLE : 0) | (rs.ddgi && !rs.raster ? FRAME_FLAG_ID_EDGES : 0) |
+               (rs.smoothShading ? 0u : FRAME_FLAG_FLAT_SHADING) | (rs.aaLevel == 0 ? FRAME_FLAG_NO_JITTER : 0u);
     fc.envTop = scene.env.top;
     fc.envIntensity = scene.env.intensity;
     fc.envHorizon = scene.env.horizon;

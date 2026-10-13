@@ -103,7 +103,7 @@ float3 ShadePixel(float3 o, float3 d, inout uint rng, inout Guides g) {
 void main(uint3 id : SV_DispatchThreadID) {
     if (id.x >= F.resolution.x || id.y >= F.resolution.y) return;
     uint rng = Hash(id.x + id.y * 65521u + Hash(F.frameIndex * 9781u + 1u));
-    float2 jitter = F.sampleIndex == 0 ? float2(0.5, 0.5) : Rnd2(rng);
+    float2 jitter = (F.sampleIndex == 0 || (F.flags & FRAME_FLAG_NO_JITTER)) ? float2(0.5, 0.5) : Rnd2(rng);
     float2 uv = (float2(id.xy) + jitter) / float2(F.resolution);
     float2 ndc = float2(2.0 * uv.x - 1.0, 1.0 - 2.0 * uv.y);
     float3 dir = normalize(F.camFwd + F.camRight * (ndc.x * F.aspect * F.tanHalfFovY) + F.camUp * (ndc.y * F.tanHalfFovY));

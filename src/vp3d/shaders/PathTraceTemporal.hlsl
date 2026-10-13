@@ -11,12 +11,22 @@ void main(uint3 id : SV_DispatchThreadID) {
     uint2 p = id.xy;
     uint rng = Hash(p.x + p.y * 65521u + Hash(F.frameIndex * 9781u + 1u));
 
+    // Pixel-centre primary surface: it validates the history. A jittered sample on an edge may hit the other
+    // surface, which would drop the history every frame. The jittered samples are still averaged in (anti-aliasing).
+    float3 dirc = CurPixelDir(float2(p));
+    Hit hc;
+    bool okc = TraceClosest(F.camPos, dirc, 1e30, 0xFF & ~MASK_LIGHT_HIDDEN, hc);
+    float depthC = okc ? hc.t : 1e6;
+    float3 geomC = okc ? hc.Ng : -dirc;
+    float3 Pa = F.camPos + dirc * depthC;
+
     float3 sum = 0;
     Guides g0 = (Guides)0;
     float3 P0 = F.camPos;
     uint spp = max(F.samplesPerFrame, 1u);
     for (uint s = 0; s < spp; ++s) {
-        float2 uv = (float2(p) + Rnd2(rng)) / float2(F.resolution);
+        float2 jit = (F.flags & FRAME_FLAG_NO_JITTER) ? float2(0.5, 0.5) : Rnd2(rng);
+        float2 uv = (float2(p) + jit) / float2(F.resolution);
         float2 ndc = float2(2.0 * uv.x - 1.0, 1.0 - 2.0 * uv.y);
         float3 dir = normalize(F.camFwd + F.camRight * (ndc.x * F.aspect * F.tanHalfFovY) + F.camUp * (ndc.y * F.tanHalfFovY));
         float3 org = F.camPos;
@@ -38,9 +48,7 @@ void main(uint3 id : SV_DispatchThreadID) {
         }
     }
 
-    // Anchor on the pixel-centre ray at the hit depth: same direction function as the history (Temporal.hlsli).
-    float3 Pa = F.camPos + CurPixelDir(float2(p)) * g0.depth;
-    gTex[SLOT_ACCUM][p] = TemporalAccumulate(sum / spp, Pa, g0.geom, g0.depth);
+    gTex[SLOT_ACCUM][p] = TemporalAccumulate(sum / spp, Pa, geomC, depthC);
     gTex[SLOT_ALBEDO][p] = float4(g0.albedo, (float)g0.id);
-    gTex[SLOT_NORMAL][p] = float4(g0.geom, g0.depth);
+    gTex[SLOT_NORMAL][p] = float4(geomC, depthC);
 }

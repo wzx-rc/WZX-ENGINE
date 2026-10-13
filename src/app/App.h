@@ -60,8 +60,15 @@ struct Options {
     int temporalCap = 256;      // history length in frames (converges; the history is dropped on lighting changes)
     bool orbit = false;         // benchmark: turntable camera (moving view)
     bool denoise = true;        // edge-aware a-trous denoiser on the output
+    bool smooth = true;         // smooth (interpolated) normals; off = faceted polygons
+    int aaLevel = 1;            // anti-aliasing: 0 off, 1 standard, 2 high (4 paths per frame)
+    float clamp = 25.0f;        // firefly clamp (luminance per path)
+    int statFrom = -1;          // benchmark: first frame of the stability statistics (-1 = off)
+    float statGain = 20.0f;     // benchmark: gain of the stability map (<shot>.std.png)
+    int statRect[4] = {0, 0, 0, 0};   // benchmark: region x0,y0,x1,y1 for the mean deviation
     float sway = 0.0f;          // benchmark: oscillate the yaw by this amplitude (radians) around the start view
     int snapEvery = 0;          // benchmark: save a snapshot every N frames (<shot>_fNNNN.png)
+    int tab = 0;                // start with this right-panel tab (1 = render settings)
     float hysteresis = 0.97f;
     std::wstring benchPath;     // benchmark: per-frame timings (CSV) then exit
     int benchFrames = 300;
@@ -235,6 +242,8 @@ private:
     uint64_t m_lastTick = 0;
     float m_frameMs = 16.0f;
     int m_frameCounter = 0;
+    std::vector<double> m_stat1, m_stat2;   // benchmark: running sums of the luminance and its square
+    int m_statCount = 0;
     struct BenchRow { float gpu, giUpdate, giBlend, flicker; };
     std::vector<BenchRow> m_bench;
     std::vector<uint8_t> m_benchPrev;

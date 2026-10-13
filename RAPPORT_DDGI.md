@@ -119,3 +119,30 @@ Sphère animée (viewer, image 150) : cap 256 et cap 64 ne diffèrent que de 4,7
 2. Historique « souple » pour une lumière qui bouge (réduction progressive au lieu d'un effacement).
 3. Reprojection tenant compte de la PdC.
 4. Mesurer la traînée d'ombre sur une scène avec objets mobiles.
+
+## Lissage des polygones, anti-aliasing et scintillement des contours (13/10/2026)
+
+### Nouvelles options (menu Inspecteur > Rendu)
+- **Lissage des polygones** : normales interpolées (défaut) ou faces plates (normales géométriques). Effet faible sur les sphères, qui sont finement maillées ; les boîtes sont déjà plates.
+- **Anti-aliasing** : désactivé (pas de jitter), standard (1 chemin jitté par image, défaut), élevé (4 chemins par image).
+
+### Scintillement de la sphère or
+Cause : pas les reflets ni la zone dense, mais les contours (silhouettes des sphères, arêtes des boîtes). L'historique était validé avec la surface touchée par l'échantillon jitté. Quand cet échantillon tombait de l'autre côté d'une arête, l'historique était rejeté, et l'image repartait d'un seul échantillon. Écrêter les fireflies à 8 au lieu de 25 ne change presque rien (-4 %), donc ce n'est pas la passe de réflexion.
+
+Correction : la validation utilise maintenant la surface du rayon au centre du pixel, qui ne change pas d'une frame à l'autre. Les échantillons jittés sont toujours moyennés, donc l'anti-aliasing reste correct.
+
+Mesures (1203 x 700, 320 images, écart-type de la luminance par pixel sur les images 200 à 319, échelle 0-255) :
+
+| Configuration | Écart-type moyen | Écart-type sphère or | Coût GPU | Écart à la référence |
+|---|---|---|---|---|
+| Avant correction | 0,76 | 3,74 | 4,0 ms | 5,65 |
+| Après correction (défaut) | 0,40 | 0,69 | 4,0 ms | 4,54 |
+| Après correction, AA désactivé | 0,38 | 0,67 | 4,0 ms | 4,75 |
+| Après correction, AA élevé (4 chemins) | 0,29 | 0,50 | 10,8 ms | 4,37 |
+| Avant correction, écrêtage 8 | 0,72 | 3,57 | 4,0 ms | – |
+
+Pour l'anti-aliasing, « désactivé » donne des contours plus crénelés, « élevé » les lisse davantage mais coûte 2,7 fois plus de temps GPU.
+
+### Limites
+- Le mode DDGI (`GIShade`) garde l'ancienne validation : la correction n'y est pas encore portée.
+- Le lissage plat ne se voit presque pas sur cette scène. Il servira davantage sur des maillages grossiers (lathes, modèles importés).
