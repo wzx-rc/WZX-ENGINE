@@ -85,7 +85,10 @@ struct ScreenRect {
     bool contains(float px, float py) const { return px >= x && py >= y && px < x + w && py < y + h; }
 };
 
+class GameHost;
+
 class App {
+    friend class GameHost;   // game layer (GameHost.h, AppGame.cpp)
 public:
     bool init(HINSTANCE inst, const Options& opt);
     int run();
@@ -203,6 +206,7 @@ private:
     Options m_opt;
     vp3d::Renderer m_renderer;
     ImGuiLayer m_gui;
+    GameHost* m_game = nullptr;   // node graph, Play, builds, command API
     Scene m_scene;
     int m_sceneId = SCENE_CORNELL;
     int m_pendingScene = -1;

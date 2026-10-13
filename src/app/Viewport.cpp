@@ -1,6 +1,7 @@
 // Viewport: the path traced / raster image of the renderer, camera navigation, picking, selection rectangle,
 // move / rotate / scale gizmo and drag & drop from the content browser (overlays: AtelierUI.cpp).
 #include "App.h"
+#include "GameHost.h"
 #include "Icons.h"
 #include "imgui_internal.h"
 
@@ -41,7 +42,7 @@ void App::viewportCanvas(ImVec2 p0, ImVec2 size) {
     ImGui::SetCursorScreenPos(p0);
     ImGui::SetNextItemAllowOverlap();   // overlay buttons drawn on top of the image stay clickable
     ImGui::InvisibleButton("##viewport", size, ImGuiButtonFlags_MouseButtonLeft | ImGuiButtonFlags_MouseButtonRight | ImGuiButtonFlags_MouseButtonMiddle);
-    bool hovered = ImGui::IsItemHovered();
+    bool hovered = ImGui::IsItemHovered() && !(m_game && m_game->graphOpen());   // the graph editor covers the view
     ImDrawList* dl = ImGui::GetWindowDrawList();
     // the texture of the previous size is stretched for one frame when the panel is resized
     dl->AddImage(m_gui.viewportTexture(), p0, ImVec2(p0.x + size.x, p0.y + size.y));
