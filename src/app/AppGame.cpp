@@ -219,10 +219,12 @@ void GameHost::defaultGraph() {
 
 void GameHost::play() {
     if (m_playing) return;
+    if (m_placeMode) togglePlacement();   // the village is placed in the editor, not during Play
     Scene& s = m_app.m_scene;
     m_saveObjects = s.objects;
     m_saveMaterials = s.materials;
     m_saveSun = s.sun;
+    m_saveBuild = m_build;
     m_saveSelected = m_app.m_selected;
     m_saveTool = m_app.m_tool;
     m_app.m_tool = TOOL_SELECT;
@@ -238,7 +240,8 @@ void GameHost::stop() {
     m_rt.stop();
     m_playing = false;
     m_rtsCam = false;
-    clearBuildings();
+    m_build = m_saveBuild;   // the village of the editor comes back; the houses of the Play session go with the scene
+    resetTransient();
     Scene& s = m_app.m_scene;
     s.objects = m_saveObjects;
     s.materials = m_saveMaterials;
@@ -255,7 +258,7 @@ void GameHost::update(float dt) {
         updateRtsCamera(dt);
         updateSun();
     }
-    if (m_playing) updatePlacement(dt);
+    if (m_playing || m_placeMode || !m_build.buildings().empty()) updatePlacement(dt);
 }
 
 void GameHost::setRtsCamera(bool on) {
@@ -424,7 +427,8 @@ void GameHost::playInput() {
         float3 o, d;
         m_app.cameraRay(io.MousePos.x, io.MousePos.y, o, d);
         PickResult pr = pick(m_app.m_scene, o, d);
-        if (m_rtsCam && isBuilding(pr.object)) {
+        float tHouse = 0;
+        if (m_rtsCam && houseUnder(o, d, tHouse) >= 0 && tHouse <= pr.t) {
             // a house: the RTS placement takes the click (AppRts.cpp), the graph gets no event
         } else if (pr.object >= 0 && objectAlive(pr.object) && !m_app.m_scene.objects[pr.object].part.empty()) {
             m_rt.fireClickObject(pr.object, pr.position);
@@ -623,7 +627,7 @@ void GameHost::draw() {
             ImVec2 ts = ImGui::CalcTextSize(tag);
             fg->AddText(ImVec2(tl.x + (240 - ts.x) * 0.5f, tl.y + (26 - ts.y) * 0.5f), IM_COL32(8, 19, 11, 255), tag);
         }
-        if (m_rtsCam && viewVisible()) drawRtsHud();
+        if ((m_rtsCam || m_placeMode) && viewVisible()) drawRtsHud();
         drawToolbar();
     }
     drawToasts();
@@ -817,6 +821,7 @@ static const char* kHelp =
     "\"rts.list\": \"{} -> maisons sur la grille\", \"rts.add\": \"{type: index, pos?: [x,y,z]} -> index (Play, caméra RTS)\", "
     "\"rts.move\": \"{index, pos: [x,y,z]} -> placed\", \"rts.rotate\": \"{index}\", \"rts.remove\": \"{index}\", "
     "\"sun.set\": \"{azimuth?, elevation?} (degrés) -> soleil du cadran\", "
+    "\"village.mode\": \"{on: true|false} -> mode village de l'éditeur (vue Scene)\", "
     "\"input.key\": \"{key: R|ESPACE|...} (pendant Play)\", \"input.click\": \"{target} ou {pos:[x,y,z]} (pendant Play)\", "
     "\"graph.get\": \"{}\", \"graph.set\": \"{graph: {...}}\", \"graph.clear\": \"{}\", \"graph.nodeTypes\": \"{}\", "
     "\"graph.addNode\": \"{type, x?, y?, in?: {broche: valeur}} -> id\", \"graph.removeNode\": \"{id}\", "
@@ -874,7 +879,7 @@ std::string GameHost::command(const Json& j, int& status) {
     if (cmd == "state")
         return ok(", \"playing\": " + std::string(m_playing ? "true" : "false") + ", \"graphOpen\": " + (showGraph() ? "true" : "false") +
                   ", \"selected\": " + std::to_string(a.m_selected) + ", \"objects\": " + std::to_string(s.objects.size()) +
-                  ", \"rtsCamera\": " + std::string(m_rtsCam ? "true" : "false") + ", \"buildings\": " + std::to_string(m_build.buildings().size()) +
+                  ", \"rtsCamera\": " + std::string(m_rtsCam ? "true" : "false") + ", \"buildings\": " + std::to_string(m_build.buildings().size()) + ", \"placement\": " + std::string(m_placeMode ? "true" : "false") +
                   ", \"graphNodes\": " + std::to_string(m_graph.nodes.size()) + ", \"graphPath\": " + jstr(toUtf8(m_graphPath)) +
                   ", \"projectDir\": " + jstr(toUtf8(m_projectDir)) + ", \"lastBuild\": " + jstr(m_lastBuild) +
                   ", \"mouse\": [" + num(ImGui::GetIO().MousePos.x / m_app.m_dpi) + ", " + num(ImGui::GetIO().MousePos.y / m_app.m_dpi) + "], \"viewport\": [" + num(m_app.m_rcView.x) + ", " + num(m_app.m_rcView.y) + ", " + num(m_app.m_rcView.w) + ", " + num(m_app.m_rcView.h) + "]");
@@ -991,6 +996,10 @@ std::string GameHost::command(const Json& j, int& status) {
         updateSun();
         return ok(", \"azimuth\": " + num(degrees(m_sunAzimuth)) + ", \"elevation\": " + num(degrees(m_sunElevation)));
     }
+    if (cmd == "village.mode") {
+        if (j["on"].type == Json::Bool && j["on"].b != m_placeMode) togglePlacement();
+        return ok(", \"placement\": " + std::string(m_placeMode ? "true" : "false"));
+    }
     // RTS placement (AppRts.cpp): the houses, for tests and scripts
     if (cmd == "rts.list") {
         const std::vector<game::Building>& bs = m_build.buildings();
@@ -1010,7 +1019,7 @@ std::string GameHost::command(const Json& j, int& status) {
         return js.str();
     }
     if (cmd.rfind("rts.", 0) == 0) {
-        if (!m_playing || !m_rtsCam) return fail("Play avec le noeud Caméra RTS requis");
+        if (!placeActive()) return fail("mode village (vue Scene) ou Play avec le noeud Caméra RTS requis");
         if (cmd == "rts.add") {
             float3 at;
             if (!readVec(j["pos"], at)) at = viewCentreGround();

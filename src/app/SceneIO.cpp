@@ -1,5 +1,6 @@
 // Scene file format (.v3d.json).
 #include "App.h"
+#include "GameHost.h"
 #include "Json.h"
 #include <commdlg.h>
 #include <fstream>
@@ -36,7 +37,7 @@ bool App::saveSceneFile(const std::wstring& path) {
         first = false;
         ++count;
     }
-    js << "\n  ]\n}\n";
+    js << "\n  ],\n  \"village\": " << (m_game ? m_game->villageJson() : std::string("[]")) << "\n}\n";
     std::ofstream f(path, std::ios::binary);
     if (!f) return false;
     f << js.str();
@@ -85,6 +86,7 @@ bool App::loadSceneFile(const std::wstring& path) {
         if (preset != m.preset) applyPreset(m, preset, 1.0f);
         ++count;
     }
+    if (m_game) m_game->loadVillage(j["village"]);   // after the objects: the houses go on the grid
     const Json& c = j["camera"];
     if (c.type == Json::Object) {
         Camera& cam = m_scene.camera;

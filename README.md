@@ -22,7 +22,7 @@ Options : `--scene cornell|studio`, `--open scene.v3d.json`, `--view N`, `--sele
 
 - **Cornell Box** (F1, par défaut) : scène de test du path tracing (shader balls, matériaux).
 - **Studio** (F2) : sol quadrillé et lumières douces, sans objets.
-- Ctrl+S / Ctrl+O : enregistrer / ouvrir une scène au format `.v3d.json` (`vp3d-scene` v1, liste `objects`).
+- Ctrl+S / Ctrl+O : enregistrer / ouvrir une scène au format `.v3d.json` (`vp3d-scene` v1, listes `objects` et `village`).
 
 ## Modes de rendu
 
@@ -51,7 +51,7 @@ ACES (fit de Hill, RRT+ODT), AgX, AgX Punchy, Standard. Espace de travail : lin�
 - `src/app/` : éditeur (espaces de travail Atelier dessinés avec Dear ImGui)
   - `App` : fenêtre, boucle, édition (annuler, sélection, ajout…) · `ImGuiLayer` : backends Win32 + DX12, polices, textures · `Theme` : couleurs et réglages
   - `AtelierUI` : espace Scene et barre du haut · `atelier/` : Material Studio, Attribute Editor, palette partagée (`atelier_style.h`)
-  - `game/` : éditeur nodal du jeu (onglet Graph : `NodeEditor`, bibliothèque `NodeLib`, exécution `Runtime`, graphe `Graph`) et bases RTS : grille `Grid`, caméra `RtsCamera`, maisons `Placement` (placées et animées dans `src/app/AppRts.cpp`, pendant Play avec le nœud « Caméra RTS »)
+  - `game/` : éditeur nodal du jeu (onglet Graph : `NodeEditor`, bibliothèque `NodeLib`, exécution `Runtime`, graphe `Graph`) et bases RTS : grille `Grid`, caméra `RtsCamera`, maisons `Placement` (placées et animées dans `src/app/AppRts.cpp`, mode village dans la vue Scene, ou pendant Play avec le nœud « Caméra RTS » ; le village est sauvegardé dans la scène, clé `village`)
   - `Editor` : fenêtres Settings, Controls, About et vignettes du Content Browser
   - `Viewport` : image 3D (texture du renderer), caméra, sélection, gizmo, glisser-déposer
   - `Content` : palette, matériaux, primitives, scènes · `SceneIO` : fichiers de scène

@@ -44,6 +44,12 @@ public:
     void afterDraw();            // frame complete, before present (API screenshots)
     bool playerMode() const { return m_player; }
     bool rtsCameraOn() const { return m_rtsCam; }   // the viewport must not orbit the camera meanwhile
+    // The village (RTS houses): the editor's village mode, and the "village" section of the scene file
+    bool placementMode() const { return m_placeMode; }
+    void togglePlacement();                  // village mode of the editor (not during Play)
+    void resetVillage();                     // a new scene: no houses
+    std::string villageJson() const;
+    void loadVillage(const Json& list);
 
     // game::World
     int objectCount() const override;
@@ -89,7 +95,10 @@ private:
 
     // RTS placement (AppRts.cpp): houses on the grid, dragged in the view or out of the HUD, animated
     // and turned into scene objects. Simulated during Play; the input and the HUD need the RTS camera.
-    game::Placement m_build;
+    game::Placement m_build;             // the village being edited (or played)
+    game::Placement m_saveBuild;         // the village at the start of Play, restored on Stop
+    bool m_placeMode = false;            // village mode of the editor
+    vp3d::float3 m_houseMin, m_houseMax; // the house model's box (centred, base on y = 0)
     int m_houseMesh = -1, m_houseTex = -1, m_houseMat = -1;   // the house model (assets/HOUSE), see AppRts.cpp
     bool m_houseFailed = false;          // the model could not be loaded (reported once)
     int m_invalidMat = -1;               // red material of an invalid drop (this Play session)
@@ -106,8 +115,10 @@ private:
     int invalidMaterial();
     void finishDrag(bool cancelled);
     void removeBuilding(int idx);
-    void clearBuildings();
-    bool isBuilding(int obj) const;
+    void resetTransient();
+    bool placeActive() const;
+    int houseUnder(const vp3d::float3& o, const vp3d::float3& d, float& tHit) const;
+    bool hasBuilding(int id) const;
     void drawRtsHud();
     bool ensureHouseModel();
     // Sun (RTS play): azimuth and height from the dial (AppRts.cpp), restored on Stop
