@@ -34,6 +34,13 @@ struct RenderSettings {
     float vignette = 0.12f;
     bool raster = false;
     int tonemapper = 0;           // 0 ACES (Hill fit), 1 AgX, 2 AgX Punchy, 3 Standard (clip)          // light raster viewport instead of path tracing
+    // Real-time GI test: DDGI probe volume instead of path tracing (when raster is false).
+    bool ddgi = false;
+    int ddgiProbeBudget = 2048;   // target probe count over the scene bounds
+    float ddgiHysteresis = 0.97f;
+    int temporalCap = 256;        // history length in frames (exponential average window): 256 converges, 64 stays noisier
+    int ddgiView = 0;             // 0 full, 1 indirect only, 2 direct only
+    bool ddgiShowProbes = false;  // draw the probes as small spheres shaded with their irradiance
 };
 
 struct ViewRect { int x = 0, y = 0, w = 1, h = 1; };
@@ -65,6 +72,10 @@ public:
     void resetAccumulation() { m_sampleIndex = 0; }
     uint32_t sampleCount() const { return m_sampleIndex; }
     float gpuFrameMs() const { return m_gpuMs; }
+    float giUpdateMs() const { return m_giUpdateMs; }     // DDGI probe ray tracing
+    float giBlendMs() const { return m_giBlendMs; }       // DDGI probe blending
+    uint32_t giProbeCount() const { return m_giCounts[0] * m_giCounts[1] * m_giCounts[2]; }
+    float giSpacing() const { return m_giSpacing; }
     bool converged(const RenderSettings& rs) const { return m_sampleIndex >= (uint32_t)rs.maxSamples; }
 
     // Reads back the last tonemapped viewport image (RGBA8).
@@ -110,6 +121,10 @@ private:
     void createTargets(uint32_t w, uint32_t h);
     void uploadTextures(const Scene& scene);
     D3D12_GPU_DESCRIPTOR_HANDLE textureTable() const;
+    void setupProbeGrid(const RenderSettings& rs);
+    void recordDDGI(const RenderSettings& rs, UINT gx, UINT gy);
+    void copyHistory();
+    uint32_t sceneSignature(const Scene& scene) const;
     Buffer createBuffer(uint64_t size, D3D12_HEAP_TYPE heap, D3D12_RESOURCE_FLAGS flags, D3D12_RESOURCE_STATES state);
     void ensureUpload(Buffer& b, uint64_t size);
     void buildTLAS(const Scene& scene, bool buildAS);
@@ -134,6 +149,7 @@ private:
 
     ComPtr<ID3D12RootSignature> m_rootSig;
     ComPtr<ID3D12PipelineState> m_psoTrace, m_psoDenoise, m_psoTonemap;
+    ComPtr<ID3D12PipelineState> m_psoGIUpdate, m_psoGIBlend, m_psoGIShade;
     ComPtr<ID3D12DescriptorHeap> m_heap;
     uint32_t m_descSize = 0;
 
@@ -141,6 +157,8 @@ private:
     static constexpr int kTexCount = 6;
     // Material textures: SRVs after the render targets and the shadow map in m_heap (unused slots = null views).
     static constexpr uint32_t kMaxTextures = 16;
+    // DDGI and history UAVs sit after the texture table (heap offset kTexCount + 1 + kMaxTextures)
+    static constexpr uint32_t kGIHeapBase = kTexCount + 1 + kMaxTextures;
     std::vector<ComPtr<ID3D12Resource>> m_materialTex;
     ComPtr<ID3D12Resource> m_tex[kTexCount];
     uint32_t m_rtW = 0, m_rtH = 0;
@@ -167,6 +185,26 @@ private:
     double m_tsFreq = 1.0;
     float m_gpuMs = 0.0f;
     Buffer m_readback;
+
+    // DDGI probe volume: irradiance atlas, distance atlas, ray buffer, probe state (UAVs u6..u9)
+    static constexpr int kGITexCount = 4;
+    ComPtr<ID3D12Resource> m_giTex[kGITexCount];
+    Buffer m_giConstants;
+    uint32_t m_giCounts[3] = {0, 0, 0};
+    float3 m_giOrigin;
+    float m_giSpacing = 1.0f;
+    uint32_t m_giGridVersion = 0;
+    int m_giBudget = 0;
+    uint32_t m_giFrame = 0;
+    float m_giUpdateMs = 0.0f, m_giBlendMs = 0.0f;
+    bool m_giTimed = false;
+    Rng m_giRng;
+
+    // Temporal history: copies of ACCUM and NORMAL of the previous frame, and the camera they were rendered with.
+    ComPtr<ID3D12Resource> m_hist[2];
+    struct PrevCamera { float3 pos, right, up, fwd; float tanHalf = 1.0f, aspect = 1.0f; } m_prevCam;
+    bool m_historyValid = false;
+    uint32_t m_sceneSignature = 0;
 
     // Raster viewport
     static constexpr uint32_t kShadowSize = 2048, kMsaa = 4;

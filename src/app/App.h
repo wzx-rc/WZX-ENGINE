@@ -66,6 +66,12 @@ struct Options {
     int quality = 1;
     bool raster = true;         // light raster viewport by default, P toggles path tracing
     std::wstring openPath;      // scene file to open at startup
+    // DDGI probe GI (real-time mode)
+    bool ddgi = false;          // start in the real-time probe GI mode
+    int probes = 2048;          // target probe count over the scene bounds
+    int ddgiView = 0;           // 0 full, 1 indirect only, 2 direct only
+    int temporalCap = 256;      // history length in frames (converges; the history is dropped on lighting changes)
+    float hysteresis = 0.97f;
     int light = -1;             // test: 1 light mode, 0 dark mode
     bool openSettings = false;  // test: open the settings window at startup
     int workspace = 0;          // Atelier workspace at startup: 0 scene, 1 graph, 2 material

@@ -104,6 +104,12 @@ bool App::init(HINSTANCE inst, const Options& opt) {
     m_rs.raster = opt.raster;
     m_vpPx.w = (int)(960 * m_dpi);
     m_vpPx.h = (int)(540 * m_dpi);
+    m_rs.ddgi = opt.ddgi;
+    m_rs.ddgiProbeBudget = opt.probes;
+    m_rs.ddgiView = opt.ddgiView;
+    m_rs.temporalCap = opt.temporalCap;
+    m_rs.ddgiHysteresis = opt.hysteresis;
+    if (opt.ddgi) m_rs.raster = false;
     ShowWindow(m_hwnd, SW_SHOWDEFAULT);
     UpdateWindow(m_hwnd);
 
@@ -443,7 +449,8 @@ void App::handleShortcuts() {
     if (pressed(ImGuiKey_F1)) m_pendingScene = SCENE_CORNELL;
     if (pressed(ImGuiKey_F2)) m_pendingScene = SCENE_STUDIO;
     if (pressed(ImGuiKey_F12)) saveScreenshot(false);
-    if (pressed(ImGuiKey_P)) { m_rs.raster = !m_rs.raster; markDirty(); }
+    if (pressed(ImGuiKey_P)) { m_rs.raster = !m_rs.raster; m_rs.ddgi = false; markDirty(); }
+    if (pressed(ImGuiKey_L)) { m_rs.raster = false; m_rs.ddgi = !m_rs.ddgi; markDirty(); }   // real-time probe GI (DDGI); L again: path tracing
     if (pressed(ImGuiKey_Delete) && !placing) deleteSelected();
     if (io.WantCaptureKeyboard && !ImGui::IsWindowFocused(ImGuiFocusedFlags_AnyWindow)) return;
     if (pressed(ImGuiKey_Q)) m_tool = TOOL_SELECT;
@@ -711,6 +718,11 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         else if (a == L"--sizes") swscanf_s(next().c_str(), L"%f,%f,%f", &opt.sizes.x, &opt.sizes.y, &opt.sizes.z);
         else if (a == L"--main-color") swscanf_s(next().c_str(), L"%f,%f,%f", &opt.mainColor.x, &opt.mainColor.y, &opt.mainColor.z);
         else if (a == L"--workspace") { std::wstring w = next(); opt.workspace = w == L"graph" ? 1 : (w == L"material" ? 2 : 0); }
+        else if (a == L"--ddgi") opt.ddgi = _wtoi(next().c_str()) != 0;
+        else if (a == L"--probes") opt.probes = _wtoi(next().c_str());
+        else if (a == L"--ddgi-view") opt.ddgiView = _wtoi(next().c_str());
+        else if (a == L"--temporal-cap") opt.temporalCap = _wtoi(next().c_str());
+        else if (a == L"--hysteresis") opt.hysteresis = (float)_wtof(next().c_str());
         else if (a == L"--size") {
             std::wstring s = next();
             swscanf_s(s.c_str(), L"%dx%d", &opt.width, &opt.height);

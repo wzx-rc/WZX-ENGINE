@@ -28,6 +28,7 @@ Options : `--scene cornell|studio`, `--open scene.v3d.json`, `--view N`, `--sele
 
 - **Viewport (raster)** par défaut : PBR direct, shadow map PCF, MSAA 4x, ~1 ms GPU.
 - **Path tracing** (touche P ou bouton en haut du viewport) : le rendu progressif complet.
+- **GI sondes temps réel** (touche L, ou « GI » / « GI probes » dans les menus de rendu) : grille de sondes d'éclairage indirect mise à jour à chaque image, avec historique d'image. Expérimental ; rapport : `docs/RAPPORT_DDGI.md`. Options : `--ddgi 1`, `--probes N`, `--ddgi-view 0|1|2`, `--hysteresis x`.
 
 ## Transformations de vue
 
@@ -39,6 +40,7 @@ ACES (fit de Hill, RRT+ODT), AgX, AgX Punchy, Standard. Espace de travail : lin�
 - Clic gauche : sélection · Maj+clic / rectangle : sélection multiple · Double-clic : pivot + mise au point
 - Q / G / R : sélectionner / déplacer / tourner (gizmos flèches et anneaux) · Flèches, PgUp/PgDn : déplacer de 1 cm
 - Ctrl+Z / Ctrl+Y / Ctrl+D / Suppr · F : recadrer · T : rotation auto · F12 : capture PNG · F1 / F2 : scènes
+- P : path tracing / viewport · L : GI sondes temps réel (DDGI)
 
 ## Structure
 
@@ -47,7 +49,7 @@ ACES (fit de Hill, RRT+ODT), AgX, AgX Punchy, Standard. Espace de travail : lin�
   - `Scene`, `MeshGen` : description de scène, meshes procéduraux (box, sphère, lathe, shader ball)
   - `AssetImport` : import OBJ (positions, UV, normales) et images (WIC : jpg, png, bmp) ; textures de base (`Material::baseColorTex`) échantillonnées en raster et en traçage
   - `UI` : UI immédiate Direct2D/DirectWrite au-dessus du swapchain (D3D11On12), sans dépendance externe
-  - `shaders/` : `PathTrace.hlsl`, `Denoise.hlsl`, `Tonemap.hlsl`, `Raster.hlsl`
+  - `shaders/` : `PathTrace.hlsl`, `Denoise.hlsl`, `Tonemap.hlsl`, `Raster.hlsl`, GI sondes (`DDGIUpdate.hlsl`, `DDGIBlend.hlsl`, `GIShade.hlsl`, `DDGICommon.hlsli`, `Temporal.hlsli`)
 - `src/app/` : éditeur (espaces de travail Atelier dessinés avec Dear ImGui)
   - `App` : fenêtre, boucle, édition (annuler, sélection, ajout…) · `ImGuiLayer` : backends Win32 + DX12, polices, textures · `Theme` : couleurs et réglages
   - `AtelierUI` : espace Scene et barre du haut · `atelier/` : Material Studio, Attribute Editor, palette partagée (`atelier_style.h`)

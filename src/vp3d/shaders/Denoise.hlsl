@@ -24,6 +24,8 @@ void main(uint3 id : SV_DispatchThreadID) {
     float3 n = normalize(nd.xyz + 1e-6);
     float z = nd.w;
     float lc = Luminance(c);
+    bool idEdges = (F.flags & FRAME_FLAG_ID_EDGES) != 0;
+    float objId = gTex[SLOT_ALBEDO][p].w;
 
     const float kernel[3] = {3.0 / 8.0, 1.0 / 4.0, 1.0 / 16.0};
     float sigmaL = F.denoiseStrength * 4.0 / sqrt(spp);
@@ -42,6 +44,7 @@ void main(uint3 id : SV_DispatchThreadID) {
             float lq = Luminance(cq);
             float wl = exp(-abs(lc - lq) / (sigmaL * max(max(lc, lq), 0.02) + 1e-4));
             float w = kernel[abs(dx)] * kernel[abs(dy)] * wn * wz * wl;
+            if (idEdges && abs(gTex[SLOT_ALBEDO][q].w - objId) > 0.5) w = 0;
             sum += cq * w;
             wsum += w;
         }

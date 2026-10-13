@@ -56,6 +56,7 @@ float3 WorldNormal(uint inst, uint prim, float2 bc, float3x4 w2o, out float3 ngO
     ns = normalize(mul(ns, m));
     ng = normalize(mul(ng, m));
     if (dot(ng, ns) < 0) ng = -ng;
+    if (F.flags & FRAME_FLAG_FLAT_SHADING) ns = ng;
     ngOut = ng;
     return ns;
 }
@@ -341,6 +342,25 @@ bool SampleLight(float3 P, inout uint rng, out float3 L, out float dist, out flo
     return true;
 }
 
+// Same as SampleLight, with the random numbers given by the caller (stratified over frames).
+bool SampleLightU(float3 P, float3 us, out float3 L, out float dist, out float3 Le, out float pdf) {
+    L = 0; dist = 0; Le = 0; pdf = 0;
+    if (F.lightCount == 0) return false;
+    uint li = min((uint)(us.x * F.lightCount), F.lightCount - 1);
+    GpuLight l = gLights[li];
+    float2 u = us.yz;
+    float3 X = l.corner + l.edgeU * u.x + l.edgeV * u.y;
+    float3 d = X - P;
+    dist = length(d);
+    L = d / dist;
+    float3 Nl = normalize(cross(l.edgeU, l.edgeV));
+    float cosL = dot(-L, Nl);
+    if (cosL <= 1e-4) return false;
+    pdf = dist * dist / (cosL * l.area) / F.lightCount;
+    Le = l.radiance * F.lightScale;
+    return true;
+}
+
 float LightPdf(uint lightId, float3 dir, float t) {
     GpuLight l = gLights[lightId];
     float3 Nl = normalize(cross(l.edgeU, l.edgeV));
@@ -417,9 +437,10 @@ bool RandomWalk(inout Hit h, Surf s, inout float3 thr, inout uint rng) {
 
 struct Guides {
     float3 albedo;
-    float3 normal;
+    float3 normal;   // shading normal (guide for the denoiser)
     float depth;
     uint id;
+    float3 geom;     // geometric normal of the primary hit (stable under bevel jitter; used by reprojection)
 };
 
 float3 TracePath(float3 o, float3 d, inout uint rng, inout Guides g) {
@@ -432,7 +453,7 @@ float3 TracePath(float3 o, float3 d, inout uint rng, inout Guides g) {
         if (!TraceClosest(o, d, 1e30, mask, h)) {
             float3 env = Environment(d);
             radiance += thr * env;
-            if (bounce == 0) { g.albedo = 1; g.normal = -d; g.depth = 1e6; g.id = 0; }
+            if (bounce == 0) { g.albedo = 1; g.normal = -d; g.geom = -d; g.depth = 1e6; g.id = 0; }
             break;
         }
         GpuInstance gi = gInst[h.inst];
@@ -444,7 +465,7 @@ float3 TracePath(float3 o, float3 d, inout uint rng, inout Guides g) {
                 float w = specPrev ? 1.0 : PowerHeuristic(prevPdf, LightPdf(gi.lightId, d, h.t));
                 radiance += thr * Le * w;
             }
-            if (bounce == 0) { g.albedo = 1; g.normal = h.N; g.depth = h.t; g.id = h.inst + 1; }
+            if (bounce == 0) { g.albedo = 1; g.normal = h.N; g.geom = h.Ng; g.depth = h.t; g.id = h.inst + 1; }
             break;
         }
 
@@ -461,6 +482,7 @@ float3 TracePath(float3 o, float3 d, inout uint rng, inout Guides g) {
         if (bounce == 0) {
             g.albedo = s.trans > 0.5 ? 1.0.xxx : lerp(s.base, SpecF0(s) + 0.2, s.metal);
             g.normal = h.N;
+            g.geom = h.Ng;
             g.depth = h.t;
             g.id = h.inst + 1;
         }
@@ -542,6 +564,7 @@ float3 TracePath(float3 o, float3 d, inout uint rng, inout Guides g) {
     return radiance;
 }
 
+#ifndef VP3D_NO_MAIN   // the DDGI shaders include this file for its helpers
 [numthreads(8, 8, 1)]
 void main(uint3 id : SV_DispatchThreadID) {
     if (id.x >= F.resolution.x || id.y >= F.resolution.y) return;
@@ -595,3 +618,4 @@ void main(uint3 id : SV_DispatchThreadID) {
     gTex[SLOT_ALBEDO][id.xy] = alb;
     gTex[SLOT_NORMAL][id.xy] = nd;
 }
+#endif
