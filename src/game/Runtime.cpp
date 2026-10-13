@@ -31,6 +31,7 @@ void Runtime::start(Graph* g, World* w) {
     m_vars.clear();
     m_cache.clear();
     m_lastRun.clear();
+    trace.clear();
     m_timers.clear();
     m_movers.clear();
     m_doneOnce.clear();
@@ -137,6 +138,7 @@ void Runtime::fire(Op op, const std::function<bool(const Node&)>& filter) {
     for (int id : ids) {
         if (top) m_budget = kBudget;
         m_lastRun[id] = m_time;
+        recordRun(id);
         execFrom(id, 0);
         if (!m_graph) return;
     }
@@ -254,8 +256,14 @@ Value Runtime::output(const Node& n, int pin) {
     return r.type == t ? r : convert(r, t);
 }
 
+void Runtime::recordRun(int nodeId) {
+    trace.push_back(nodeId);
+    while (trace.size() > 300) trace.pop_front();
+}
+
 void Runtime::exec(Node& n) {
     m_lastRun[n.id] = m_time;
+    recordRun(n.id);
     auto F = [&](int i) { return input(n, i).asFloat(); };
     auto V = [&](int i) { return input(n, i).asVec3(); };
     auto S = [&](int i) { return input(n, i).asString(); };

@@ -244,6 +244,14 @@ void App::drawSettingsWindow() {
             ImGui::Checkbox("##af", &m_autoFocus);
             ImGui::EndTabItem();
         }
+        if (ImGui::BeginTabItem("Graph")) {
+            ImGui::Spacing();
+            propLabel("Node outline", labelW);
+            changed |= ImGui::Checkbox("##nodeOutline", &th::settings().graphOutline);
+            propLabel("Outline weight", labelW);
+            changed |= ImGui::SliderFloat("##outlineWeight", &th::settings().graphOutlineWeight, 0.25f, 3.0f, "%.2f px");
+            ImGui::EndTabItem();
+        }
         ImGui::EndTabBar();
     }
     if (changed) {

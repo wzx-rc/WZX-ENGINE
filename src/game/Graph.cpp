@@ -2,6 +2,8 @@
 #include "Graph.h"
 #include "app/Json.h"
 #include <algorithm>
+#include <functional>
+#include <set>
 #include <fstream>
 #include <sstream>
 
@@ -207,6 +209,7 @@ const Link* Graph::inputLink(int nodeId, int pin) const {
 void Graph::clear() {
     nodes.clear();
     links.clear();
+    groups.clear();
     nextId = 1;
     ++version;
 }
@@ -237,6 +240,14 @@ std::string Graph::toJson() const {
         const Node* b = node(l.toNode);
         js << (first ? "\n" : ",\n") << "    {\"from\": [" << l.fromNode << ", \"" << jsonEscape(a->def->outs[l.fromPin].name)
            << "\"], \"to\": [" << l.toNode << ", \"" << jsonEscape(b->def->ins[l.toPin].name) << "\"]}";
+        first = false;
+    }
+    js << "\n  ],\n  \"groups\": [";
+    first = true;
+    for (const Group& gr : groups) {
+        js << (first ? "\n" : ",\n") << "    {\"title\": \"" << jsonEscape(gr.title) << "\", \"x\": " << gr.x
+           << ", \"y\": " << gr.y << ", \"w\": " << gr.w << ", \"h\": " << gr.h
+           << ", \"category\": \"" << jsonEscape(gr.category) << "\"}";
         first = false;
     }
     js << "\n  ]\n}\n";
@@ -273,6 +284,16 @@ bool Graph::fromJson(const std::string& text, std::string* err) {
         std::string e;
         if (!g.connect(a, pa, b, pb, &e)) { if (err) *err = "lien invalide : " + e; return false; }
     }
+    for (const Json& jg : j["groups"].a) {
+        Group gr;
+        gr.title = jg["title"].str("GROUP");
+        gr.x = (float)jg["x"].num();
+        gr.y = (float)jg["y"].num();
+        gr.w = (float)jg["w"].num(400);
+        gr.h = (float)jg["h"].num(240);
+        gr.category = jg["category"].str("Flow Control");
+        g.groups.push_back(gr);
+    }
     g.version = version + 1;
     *this = std::move(g);
     return true;
@@ -291,6 +312,55 @@ bool Graph::load(const std::wstring& path, std::string* err) {
     std::stringstream ss;
     ss << f.rdbuf();
     return fromJson(ss.str(), err);
+}
+
+// --------------------------------------------------------------------------- validation
+
+std::vector<Diagnostic> Graph::validate() const {
+    std::vector<Diagnostic> out;
+    // exec links: an exec output leads to the node wired to it
+    std::map<int, std::vector<int>> next;
+    std::set<int> hasExecLink;
+    for (const Link& l : links) {
+        const Node* a = node(l.fromNode);
+        const Node* b = node(l.toNode);
+        if (!a || !b) continue;
+        if (a->def->outs[l.fromPin].type != PinType::Exec) continue;
+        next[a->id].push_back(b->id);
+        hasExecLink.insert(a->id);
+    }
+    // walk the flow from every event; reaching a node again on the same walk is a loop
+    std::set<int> reached, onWalk, looped;
+    std::function<void(int)> walk = [&](int id) {
+        if (onWalk.count(id)) {
+            if (looped.insert(id).second) out.push_back({2, "Execution loop: this node leads back to itself", id});
+            return;
+        }
+        if (!reached.insert(id).second) return;
+        onWalk.insert(id);
+        for (int nx : next[id]) walk(nx);
+        onWalk.erase(id);
+    };
+    bool anyEvent = false;
+    for (const Node& n : nodes) {
+        if (!n.def->event) continue;
+        anyEvent = true;
+        walk(n.id);
+    }
+    if (!anyEvent) out.push_back({1, "No event node: nothing runs on Play", 0});
+    for (const Node& n : nodes) {
+        if (n.def->event) {
+            bool hasExecOut = !n.def->outs.empty() && n.def->outs[0].type == PinType::Exec;
+            if (hasExecOut && !hasExecLink.count(n.id)) out.push_back({1, n.def->label + ": nothing is connected after this event", n.id});
+            continue;
+        }
+        bool hasExecIn = !n.def->ins.empty() && n.def->ins[0].type == PinType::Exec;
+        if (hasExecIn && !reached.count(n.id)) out.push_back({1, n.def->label + ": not reached from an event", n.id});
+        for (size_t i = 0; i < n.def->ins.size(); ++i)
+            if (n.def->ins[i].type == PinType::Object && !inputLink(n.id, (int)i))
+                out.push_back({1, n.def->label + ": the object input is not connected", n.id});
+    }
+    return out;
 }
 
 } // namespace game

@@ -148,6 +148,11 @@ bool GameHost::loadGraph(std::string* err) {
 void GameHost::defaultGraph() {
     Graph& g = m_graph;
     g.clear();
+    g.groups = {
+        Group{"INITIALISE ACTOR", -30, -50, 560, 330, "Scene"},
+        Group{"GAMEPLAY LOGIC", -30, 290, 1330, 390, "Flow Control"},
+        Group{"DATA & PARAMETERS", -30, 690, 1330, 560, "Math"},
+    };
     auto L = [&](int a, const char* out, int b, const char* in) {
         g.connect(a, g.node(a)->def->findOut(out), b, g.node(b)->def->findIn(in));
     };
@@ -448,8 +453,13 @@ bool GameHost::beginFrame() {
     case 3: {
         std::wstring out;
         std::string err;
-        if (build("", false, out, err)) toast(L"Build finished: " + out);
-        else toast(L"Build failed: " + fromUtf8(err));
+        if (build("", false, out, err)) {
+            toast(L"Build finished: " + out);
+            m_editor.addMessage(3, "Build finished: " + toUtf8(out));
+        } else {
+            toast(L"Build failed: " + fromUtf8(err));
+            m_editor.addMessage(2, "Build failed: " + err);
+        }
         break;
     }
     default: break;
@@ -527,13 +537,15 @@ void GameHost::drawGraphWorkspace() {
     ImGui::End();
 
     if (!m_graphFramed) { m_graphFramed = true; m_editor.frameAll(m_graph); }
+    m_editor.setOutline(th::settings().graphOutline, th::settings().graphOutlineWeight);
     m_editor.draw(canvasPos, canvasSize, s, m_graph, m_playing ? &m_rt : nullptr, m_playing);
     switch (m_editor.takeAction()) {
     case NodeEditor::TogglePlay: m_playing ? stop() : play(); break;
+    case NodeEditor::Compile: compileGraph(); break;
     case NodeEditor::Save: {
         std::string err;
-        if (saveGraph(&err)) m_editor.status = "Graph saved: " + toUtf8(m_graphPath);
-        else m_editor.status = "Save failed: " + err;
+        if (saveGraph(&err)) m_editor.addMessage(3, "Graph saved: " + toUtf8(m_graphPath));
+        else m_editor.addMessage(2, "Save failed: " + err);
         break;
     }
     case NodeEditor::Close: setGraphOpen(false); break;
@@ -544,6 +556,28 @@ void GameHost::drawGraphWorkspace() {
 
 bool GameHost::showGraph() const { return m_app.m_workspace == 1 && !m_player; }
 void GameHost::setGraphOpen(bool on) { m_app.m_workspace = on ? 1 : 0; }
+
+// Compile: saves the graph, checks its execution flow and lists the results in the Output panel.
+void GameHost::compileGraph() {
+    std::string err;
+    if (!saveGraph(&err)) {
+        m_editor.addMessage(2, "Compile failed: the graph could not be saved (" + err + ")");
+        return;
+    }
+    std::vector<Diagnostic> diags = m_graph.validate();
+    int errors = 0, warnings = 0;
+    for (const Diagnostic& d : diags) {
+        errors += d.level == 2;
+        warnings += d.level == 1;
+    }
+    m_editor.setDiagnostics(diags);
+    m_editor.clearModified();
+    std::string text = std::string(errors ? "Compile failed" : "Compile successful") + " · " + std::to_string(m_graph.nodes.size()) +
+                       " nodes · " + std::to_string(m_graph.links.size()) + " links";
+    if (warnings) text += " · " + std::to_string(warnings) + (warnings == 1 ? " warning" : " warnings");
+    if (errors) text += " · " + std::to_string(errors) + (errors == 1 ? " error" : " errors");
+    m_editor.addMessage(errors ? 2 : 3, text);
+}
 
 void GameHost::draw() {
     const ScreenRect& v = m_app.m_rcView;
@@ -763,7 +797,7 @@ static const char* kHelp =
     "\"graph.addNode\": \"{type, x?, y?, in?: {broche: valeur}} -> id\", \"graph.removeNode\": \"{id}\", "
     "\"graph.connect\": \"{from:[id, sortie], to:[id, entree]} (nom ou index de broche)\", "
     "\"graph.disconnect\": \"{id, pin, output}\", \"graph.setInput\": \"{id, pin, value}\", "
-    "\"graph.save\": \"{}\", \"graph.load\": \"{}\", \"graph.show\": \"{open: true|false}\", "
+    "\"graph.save\": \"{}\", \"graph.load\": \"{}\", \"graph.show\": \"{open: true|false, output?: 0|1|2}\", \"graph.compile\": \"{} -> diagnostics\", "
     "\"build\": \"{profile?, run?} -> dossier\", \"build.profiles\": \"{}\", "
     "\"screenshot\": \"{window?: true = fenetre entiere} -> fichier PNG\", \"log\": \"{} -> journal du graphe\"}}";
 
@@ -1050,7 +1084,11 @@ std::string GameHost::command(const Json& j, int& status) {
     }
     if (cmd == "graph.show") {
         setGraphOpen(j["open"].type == Json::Bool ? j["open"].b : true);
-
+        if (j["output"].type == Json::Number) m_editor.setOutputTab((int)j["output"].num());   // 0 Output, 1 Compiler Results, 2 Execution Trace
+        return ok();
+    }
+    if (cmd == "graph.compile") {
+        compileGraph();
         return ok();
     }
     // build / output

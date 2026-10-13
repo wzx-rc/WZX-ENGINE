@@ -416,6 +416,8 @@ void loadSettings(const std::wstring& file) {
         else if (k == "globalScale") g_settings.globalScale = std::clamp((float)atof(v.c_str()), 0.8f, 1.3f);
         else if (k == "lockBrightness") g_settings.lockBrightness = v != "0";
         else if (k == "language") g_settings.language = v;
+        else if (k == "graphOutline") g_settings.graphOutline = v != "0";
+        else if (k == "graphOutlineWeight") g_settings.graphOutlineWeight = std::clamp((float)atof(v.c_str()), 0.25f, 3.0f);
     }
 }
 
@@ -428,7 +430,8 @@ void saveSettings(const std::wstring& file) {
     snprintf(m, sizeof(m), "%.3f %.3f %.3f 1", s.mainColor.x, s.mainColor.y, s.mainColor.z);
     f << "light=" << (s.light ? 1 : 0) << "\nmainColor=" << m << "\ncustomAccent=" << (s.customAccent ? 1 : 0) << "\naccent=" << a
       << "\ntextScale=" << s.textScale << "\niconScale=" << s.iconScale << "\nlayoutScale=" << s.layoutScale << "\nglobalScale=" << s.globalScale
-      << "\nlockBrightness=" << (s.lockBrightness ? 1 : 0) << "\nlanguage=" << s.language << "\n";
+      << "\nlockBrightness=" << (s.lockBrightness ? 1 : 0) << "\nlanguage=" << s.language
+      << "\ngraphOutline=" << (s.graphOutline ? 1 : 0) << "\ngraphOutlineWeight=" << s.graphOutlineWeight << "\n";
 }
 
 } // namespace th

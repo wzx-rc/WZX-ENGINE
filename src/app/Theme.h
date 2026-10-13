@@ -45,6 +45,8 @@ struct UiSettings {
     float globalScale = 1.0f;             // Global UI: multiplies the text, icon and layout sizes
     bool lockBrightness = true;           // Main Color: only the hue counts (false: its brightness too)
     std::string language = "English";     // UI language (only English for now)
+    bool graphOutline = true;             // Graph tab: outline around each node
+    float graphOutlineWeight = 0.5f;      // Graph tab: outline thickness in px (the selected node gets twice this)
 };
 
 namespace th {

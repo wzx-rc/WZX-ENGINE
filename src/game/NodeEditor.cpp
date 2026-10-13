@@ -12,7 +12,8 @@ using vp3d::float2;
 // Geometry of the Atelier graph cards (graph units): 224 wide, title band 35, pins from 58 by 25,
 // a footer line of 23 at the bottom. Height = 81 + rows x 25, as in the Atelier graph.
 static const float kCardW = 224, kTitle = 35, kPinTop = 58, kRow = 25, kFooter = 23;
-static const float kHeaderPx = 37, kFooterPx = 24;     // canvas header and footer (DIPs)
+static const float kHeaderPx = 37, kFooterPx = 24, kInspectorPx = 284, kOutputPx = 151;   // DIPs
+static const float kGroupTitle = 25;                                                       // graph units
 
 // Atelier palette (Blue 01 defaults, atelier_style.h).
 static const ImU32 kBg = IM_COL32(23, 28, 32, 255), kPanel = IM_COL32(28, 33, 38, 255), kRaised = IM_COL32(37, 43, 49, 255),
@@ -52,6 +53,10 @@ static std::wstring fold(const std::wstring& s) {
 
 static ImU32 withA(ImU32 c, int a) { return (c & 0x00ffffffu) | ((ImU32)a << 24); }
 
+static ImU32 rgb(uint32_t c, float alpha = 1.0f) {
+    return IM_COL32((c >> 16) & 255, (c >> 8) & 255, c & 255, (int)(alpha * 255.0f + 0.5f));
+}
+
 // Segoe Fluent Icons glyph as UTF-8 (the icon range is merged into the editor fonts).
 static std::string glyph(uint32_t cp) {
     std::string s;
@@ -61,7 +66,7 @@ static std::string glyph(uint32_t cp) {
     return s;
 }
 
-// Node category colours of the Atelier graph (Event, Flow, Scene, Variables, Math, Rendering).
+// Node category colours of the Atelier graph (Event, Input, Flow, Scene, Variables, Math, Rendering).
 static ImU32 catColor(const std::string& c) {
     if (c == "Events") return IM_COL32(218, 106, 128, 255);
     if (c == "Input") return IM_COL32(92, 192, 213, 255);
@@ -84,6 +89,20 @@ static ImU32 pinColor(PinType t) {
     case PinType::String: return IM_COL32(213, 148, 204, 255);
     }
     return kText;
+}
+
+// Output levels: 0 info, 1 warning, 2 error, 3 success.
+static ImU32 levelColor(int level) {
+    if (level == 1) return kAmber;
+    if (level == 2) return kRed;
+    if (level == 3) return kGreen;
+    return kMuted;
+}
+static uint32_t levelIcon(int level) {
+    if (level == 1) return 0xE7BA;   // warning
+    if (level == 2) return 0xE783;   // error badge
+    if (level == 3) return 0xE73E;   // check
+    return 0xE946;                   // info
 }
 
 static bool hasVec3Input(const Node& n) {
@@ -219,6 +238,17 @@ int NodeEditor::hitNode(const Graph& g, ImVec2 m) const {
     return 0;
 }
 
+// Title bar of a group (the top 25 graph units of its frame).
+int NodeEditor::hitGroupTitle(const Graph& g, ImVec2 p) const {
+    for (int i = (int)g.groups.size() - 1; i >= 0; --i) {
+        const Group& gr = g.groups[i];
+        ImVec2 a = toScreen(ImVec2(gr.x, gr.y));
+        ImVec2 b = toScreen(ImVec2(gr.x + gr.w, gr.y + kGroupTitle));
+        if (p.x >= a.x && p.x < b.x && p.y >= a.y && p.y < b.y) return i;
+    }
+    return -1;
+}
+
 bool NodeEditor::selected(int id) const { return std::find(m_sel.begin(), m_sel.end(), id) != m_sel.end(); }
 
 // --------------------------------------------------------------------------- undo / edit helpers
@@ -245,6 +275,7 @@ void NodeEditor::undo(Graph& g) {
     g.fromJson(m_undo.back());
     m_undo.pop_back();
     m_sel.clear();
+    m_selGroup = -1;
     m_modified = true;
 }
 
@@ -275,7 +306,7 @@ void NodeEditor::duplicateSelection(Graph& g) {
 }
 
 void NodeEditor::doFrame(const Graph& g) {
-    if (g.nodes.empty() || m_canvas.x <= 0) { resetView(); return; }
+    if ((g.nodes.empty() && g.groups.empty()) || m_canvas.x <= 0) { resetView(); return; }
     float x0 = 1e9f, y0 = 1e9f, x1 = -1e9f, y1 = -1e9f;
     for (const Node& n : g.nodes) {
         x0 = std::min(x0, n.pos.x);
@@ -283,10 +314,16 @@ void NodeEditor::doFrame(const Graph& g) {
         x1 = std::max(x1, n.pos.x + nodeWidth(n));
         y1 = std::max(y1, n.pos.y + kPinTop + rowCount(n) * kRow + kFooter);
     }
+    for (const Group& gr : g.groups) {
+        x0 = std::min(x0, gr.x);
+        y0 = std::min(y0, gr.y);
+        x1 = std::max(x1, gr.x + gr.w);
+        y1 = std::max(y1, gr.y + gr.h);
+    }
     // fit in the canvas (margins in ImGui pixels), never below 0.6 : the graph is then cropped, not shrunk further
     float aw = m_canvas.x - 80 * m_dpi, ah = m_canvas.y - 90 * m_dpi;
     float fit = std::min(aw / std::max((x1 - x0) * m_dpi, 1.0f), ah / std::max((y1 - y0) * m_dpi, 1.0f));
-    m_zoom = std::min(std::max(fit, 0.6f), 1.2f);
+    m_zoom = std::min(std::max(fit, 0.45f), 1.2f);
     ImVec2 centre((x0 + x1) * 0.5f, (y0 + y1) * 0.5f);
     m_pan = centre - (m_canvas * 0.5f) / scale();
 }
@@ -300,13 +337,37 @@ void NodeEditor::openMenu(ImVec2 screen, PinRef from) {
     m_search[0] = 0;
 }
 
+// Selects a node and centres the view on it (Execution Trace and Compiler Results rows).
+void NodeEditor::focusNode(const Graph& g, int id) {
+    const Node* n = g.node(id);
+    if (!n) return;
+    m_sel = {id};
+    m_selGroup = -1;
+    ImVec2 c(n->pos.x + nodeWidth(*n) * 0.5f, n->pos.y + 40);
+    m_pan = c - (m_canvas * 0.5f) / scale();
+}
+
+// --------------------------------------------------------------------------- output
+
+void NodeEditor::addMessage(int level, const std::string& text, int node) {
+    m_messages.push_back({level, text, node});
+    if (m_messages.size() > 300) m_messages.erase(m_messages.begin());
+    m_scrollOutput = true;
+}
+
+void NodeEditor::setDiagnostics(const std::vector<Diagnostic>& d) {
+    m_diagnostics = d;
+    m_checked = true;
+    m_outTab = 1;
+}
+
 // --------------------------------------------------------------------------- drawing
 
 void NodeEditor::draw(ImVec2 pos, ImVec2 size, float dpi, Graph& g, const Runtime* rt, bool playing) {
     m_dpi = dpi > 0 ? dpi : 1.0f;
     for (Node& n : g.nodes) if (!n.def) n.def = findNodeDef(n.type);
 
-    // its own window over the viewport: the editor never shares a window with the panels
+    // one window over the whole graph workspace: canvas column (header, canvas, footer, output) and the Inspector
     ImGui::SetNextWindowPos(pos, ImGuiCond_Always);
     ImGui::SetNextWindowSize(size, ImGuiCond_Always);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
@@ -317,13 +378,16 @@ void NodeEditor::draw(ImVec2 pos, ImVec2 size, float dpi, Graph& g, const Runtim
                                       ImGuiWindowFlags_NoSavedSettings;
     ImGui::Begin("##nodegraph", nullptr, winFlags);
 
-    ImDrawList* dl = ImGui::GetWindowDrawList();
-    float headH = kHeaderPx * m_dpi, footH = kFooterPx * m_dpi;
-    drawToolbar(pos, size.x, playing);     // canvas header: breadcrumb and Compile / Run / Build
+    const float d = m_dpi;
+    const float inspW = kInspectorPx * d, outH = kOutputPx * d, headH = kHeaderPx * d, footH = kFooterPx * d;
+    const float cw = std::max(1.0f, size.x - inspW);     // canvas column: canvas, footer and output
+    drawToolbar(pos, cw, playing);                        // canvas header: breadcrumb and Compile / Run / Build
 
-    // canvas between the header and the footer
+    const float outY = pos.y + size.y - outH;             // output panel, bottom of the column
+    const float footY = outY - footH - 2 * d;             // footer right above it
     m_origin = ImVec2(pos.x, pos.y + headH);
-    m_canvas = ImVec2(size.x, std::max(1.0f, size.y - headH - footH));
+    m_canvas = ImVec2(cw, std::max(1.0f, footY - 2 * d - m_origin.y));
+    ImDrawList* dl = ImGui::GetWindowDrawList();
     dl->AddRectFilled(m_origin, m_origin + m_canvas, kCanvas);
 
     if (m_wantFrame) { doFrame(g); m_wantFrame = false; }
@@ -336,10 +400,11 @@ void NodeEditor::draw(ImVec2 pos, ImVec2 size, float dpi, Graph& g, const Runtim
     handleInput(g, inArea, overWidget);
 
     drawCanvas(g, rt);
-    drawLog(rt);
     drawHint(g);
     drawMinimap(g);
-    drawFooter(pos, size, g);
+    drawFooter(ImVec2(pos.x, footY), cw, g);
+    drawOutput(ImVec2(pos.x, outY), ImVec2(cw, outH), g, rt);
+    drawInspector(ImVec2(pos.x + cw, pos.y), ImVec2(inspW, size.y), g, rt);
     drawMenu(g);
     ImGui::End();
     ImGui::PopStyleColor();
@@ -363,6 +428,7 @@ void NodeEditor::drawCanvas(Graph& g, const Runtime* rt) {
     for (float x = c0.x - mx; x < c1.x; x += major) dl->AddLine(ImVec2(x, c0.y), ImVec2(x, c1.y), kGridLine);
     for (float y = c0.y - my; y < c1.y; y += major) dl->AddLine(ImVec2(c0.x, y), ImVec2(c1.x, y), kGridLine);
 
+    drawGroups(g);
     drawLinks(g, rt);
 
     // link being dragged
@@ -389,6 +455,21 @@ void NodeEditor::drawCanvas(Graph& g, const Runtime* rt) {
     for (Node& n : g.nodes) drawNode(g, n, rt);
     ImGui::SetWindowFontScale(1.0f);
     dl->PopClipRect();
+}
+
+// Group frames (Atelier): a tinted frame, a title bar and the title; behind the links and the nodes.
+void NodeEditor::drawGroups(const Graph& g) {
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    const float z = scale();
+    for (size_t i = 0; i < g.groups.size(); ++i) {
+        const Group& gr = g.groups[i];
+        ImVec2 a = toScreen(ImVec2(gr.x, gr.y)), b = toScreen(ImVec2(gr.x + gr.w, gr.y + gr.h));
+        ImU32 c = catColor(gr.category);
+        dl->AddRectFilled(a, b, withA(c, 9), 5 * z);
+        dl->AddRect(a, b, withA(c, (int)i == m_selGroup ? 130 : 45), 5 * z);
+        dl->AddRectFilled(a, ImVec2(b.x, a.y + kGroupTitle * z), withA(c, 15), 5 * z, ImDrawFlags_RoundCornersTop);
+        canvasText(dl, m_font, 10 * z, a + ImVec2(13 * z, kGroupTitle * z * 0.5f), withA(c, 210), gr.title);
+    }
 }
 
 void NodeEditor::drawHint(const Graph& g) {
@@ -491,11 +572,10 @@ void NodeEditor::drawNode(Graph& g, Node& n, const Runtime* rt) {
         dl->PopClipRect();
     }
 
-    // border: active node in cyan, a node that just ran in its category colour
-    // outlines: half the former width; the selected node in cyan, a node that just ran in yellow
-    if (sel) dl->AddRect(p0, p1, kCyan, 5 * s, 0, 1 * s);
-    else dl->AddRect(p0, p1, kBorderC, 5 * s, 0, 0.5f * s);
-    if (hot) dl->AddRect(p0, p1, IM_COL32(255, 210, 74, 255), 5 * s, 0, 1 * s);
+    // outline from the Graph settings; the selected node in cyan, a node that just ran in yellow
+    if (sel) dl->AddRect(p0, p1, kCyan, 5 * s, 0, 2 * m_outlineWeight * s);
+    else if (m_outline) dl->AddRect(p0, p1, kBorderC, 5 * s, 0, m_outlineWeight * s);
+    if (hot) dl->AddRect(p0, p1, IM_COL32(255, 210, 74, 255), 5 * s, 0, 2 * m_outlineWeight * s);
 
     // outputs: labels on the inner side of the pin
     for (int i = 0; i < (int)n.def->outs.size(); ++i) {
@@ -594,7 +674,7 @@ void NodeEditor::drawNode(Graph& g, Node& n, const Runtime* rt) {
     }
 }
 
-// Canvas header (Atelier): breadcrumb, status, and the Compile / Run / Build / Frame buttons on the right.
+// Canvas header (Atelier): breadcrumb, status, and the Compile / Run / Build / frame buttons on the right.
 void NodeEditor::drawToolbar(ImVec2 pos, float width, bool playing) {
     ImDrawList* dl = ImGui::GetWindowDrawList();
     const float d = m_dpi;
@@ -606,7 +686,7 @@ void NodeEditor::drawToolbar(ImVec2 pos, float width, bool playing) {
     float cy = (a.y + b.y) * 0.5f;
     std::string gi = glyph(0xE8A1);
     dl->AddText(f, 13 * d, ImVec2(a.x + 12 * d, cy - 7 * d), kCyan, gi.c_str());
-    canvasText(dl, m_font, 12 * d, ImVec2(a.x + 34 * d, cy), kText, "Game Graph");
+    canvasText(dl, m_fontBold, 12 * d, ImVec2(a.x + 34 * d, cy), kText, "Game Graph");
     canvasText(dl, m_font, 11 * d, ImVec2(a.x + 172 * d, cy), kMuted, "Event Graph");
     if (!status.empty()) canvasText(dl, m_font, 11 * d, ImVec2(a.x + 290 * d, cy), kMuted, status);
 
@@ -616,17 +696,17 @@ void NodeEditor::drawToolbar(ImVec2 pos, float width, bool playing) {
         x += (w + 6) * d;
         return pressed;
     };
-    if (btn("##tb_save", 103, 0xE73E, "Compile", false)) m_action = Save;
+    if (btn("##tb_compile", 103, 0xE73E, "Compile", false)) m_action = Compile;
     if (btn("##tb_play", 71, playing ? 0xE71A : 0xE768, playing ? "Stop" : "Run", playing)) m_action = TogglePlay;
     if (btn("##tb_build", 72, 0xE7B8, "Build", false)) m_action = Build;
     if (btn("##tb_frame", 28, 0xE9A6, "", false)) m_wantFrame = true;
 }
 
-// Bottom strip of the canvas: pin legend, counts and the compile state (Atelier footer).
-void NodeEditor::drawFooter(ImVec2 pos, ImVec2 size, const Graph& g) {
+// Bottom strip of the canvas: pin legend, counts and the modified / compiled state (Atelier footer).
+void NodeEditor::drawFooter(ImVec2 pos, float width, const Graph& g) {
     ImDrawList* dl = ImGui::GetWindowDrawList();
     const float d = m_dpi;
-    ImVec2 a(pos.x, pos.y + size.y - kFooterPx * d), b(pos.x + size.x, pos.y + size.y);
+    ImVec2 a = pos, b(pos.x + width, pos.y + kFooterPx * d);
     dl->AddRectFilled(a, b, kBg);
     static const char* names[] = {"Exec", "Float", "Bool", "Vector", "Entity", "String"};
     static const PinType types[] = {PinType::Exec, PinType::Float, PinType::Bool, PinType::Vec3, PinType::Object, PinType::String};
@@ -642,7 +722,7 @@ void NodeEditor::drawFooter(ImVec2 pos, ImVec2 size, const Graph& g) {
                m_modified ? "\xE2\x97\x8F  Modified" : "\xE2\x97\x8F  Compiled");
 }
 
-// Overview of the graph in the corner (Atelier): tiles coloured by category and the view rectangle.
+// Overview of the graph in the corner (Atelier): tiles coloured by category.
 void NodeEditor::drawMinimap(const Graph& g) {
     if (g.nodes.empty()) return;
     ImDrawList* dl = ImGui::GetWindowDrawList();
@@ -667,27 +747,295 @@ void NodeEditor::drawMinimap(const Graph& g) {
     }
 }
 
-void NodeEditor::drawLog(const Runtime* rt) {
-    if (!rt || rt->log.empty()) return;
+// --------------------------------------------------------------------------- inspector
+
+void NodeEditor::drawInspector(ImVec2 pos, ImVec2 size, Graph& g, const Runtime* rt) {
     ImDrawList* dl = ImGui::GetWindowDrawList();
     const float d = m_dpi;
-    int lines = std::min<int>(6, (int)rt->log.size());
-    std::string vars;
-    for (auto& kv : rt->variables()) vars += kv.first + " = " + kv.second.asString() + "   ";
-    float lineH = 17 * d;
-    float h = lines * lineH + 14 * d + (vars.empty() ? 0 : 18 * d);
-    float w = std::min(520.0f * d, m_canvas.x - 20 * d);
-    ImVec2 r0(m_origin.x + 10 * d, m_origin.y + m_canvas.y - h - 10 * d);
-    ImVec2 r1(r0.x + w, r0.y + h);
-    dl->AddRectFilled(r0, r1, kOverlay, 6 * d);
-    dl->AddRect(r0, r1, kBorderC, 6 * d);
-    float y = r0.y + 7 * d;
-    for (int i = (int)rt->log.size() - lines; i < (int)rt->log.size(); ++i, y += lineH) {
-        const std::string& s = rt->log[i];
-        bool err = s.rfind("Error", 0) == 0;
-        canvasText(dl, m_font, 11.5f * d, ImVec2(r0.x + 10 * d, y + lineH * 0.5f), err ? kRed : kMuted, s);
+    dl->AddRectFilled(pos, pos + size, kPanel);
+    dl->AddLine(pos, ImVec2(pos.x, pos.y + size.y), kBorderC);
+    canvasText(dl, m_font, 13 * d, pos + ImVec2(12 * d, 17 * d), kText, glyph(0xE946));
+    canvasText(dl, m_fontBold, 12 * d, pos + ImVec2(33 * d, 17 * d), kText, "Inspector");
+    bool group = m_selGroup >= 0 && m_selGroup < (int)g.groups.size();
+    bool node = !group && !m_sel.empty() && g.node(m_sel[0]) != nullptr;
+    canvasText(dl, m_font, 8 * d, pos + ImVec2(size.x - 14 * d, 17 * d), kMuted, group ? "GROUP" : (node ? "NODE" : "GRAPH"), true);
+
+    float bodyY = pos.y + 38 * d;
+    float w = size.x - 26 * d;
+    ImGui::SetCursorScreenPos(ImVec2(pos.x + 13 * d, bodyY));
+    ImGui::BeginChild("##inspector", ImVec2(w, std::max(1.0f, size.y - (bodyY - pos.y) - 8 * d)), ImGuiChildFlags_None,
+                      ImGuiWindowFlags_NoBackground);
+    if (group) drawInspectorGroup(g, w);
+    else if (node) drawInspectorNode(g, *g.node(m_sel[0]), w);
+    else drawInspectorGraph(g, rt, w);
+    ImGui::EndChild();
+}
+
+void NodeEditor::drawInspectorGroup(Graph& g, float w) {
+    Group& gr = g.groups[m_selGroup];
+    ImGui::TextColored(ImColor(catColor(gr.category)), "Group");
+    ImGui::TextDisabled("Title");
+    char buf[160] = {};
+    std::strncpy(buf, gr.title.c_str(), sizeof buf - 1);
+    ImGui::SetNextItemWidth(-FLT_MIN);
+    bool changed = ImGui::InputText("##gtitle", buf, sizeof buf);
+    if (changed) gr.title = buf;
+    trackEdit(g, ImGui::IsItemActivated(), changed, ImGui::IsItemDeactivatedAfterEdit());
+
+    ImGui::TextDisabled("Size");
+    float size[2] = {gr.w, gr.h};
+    ImGui::SetNextItemWidth(-FLT_MIN);
+    bool sized = ImGui::DragFloat2("##gsize", size, 1.0f, 80.0f, 4000.0f, "%.0f");
+    if (sized) { gr.w = size[0]; gr.h = size[1]; }
+    trackEdit(g, ImGui::IsItemActivated(), sized, ImGui::IsItemDeactivatedAfterEdit());
+
+    ImGui::Spacing();
+    ImGui::TextDisabled("Colour");
+    static const char* cats[] = {"Events", "Input", "Flow Control", "Scene", "Data", "Math", "RTS"};
+    for (const char* c : cats) {
+        ImGui::PushID(c);
+        ImGui::PushStyleColor(ImGuiCol_Text, catColor(c));
+        bool picked = ImGui::Selectable(c, gr.category == c);
+        ImGui::PopStyleColor();
+        if (picked && gr.category != c) { pushUndo(g); gr.category = c; }
+        ImGui::PopID();
     }
-    if (!vars.empty()) canvasText(dl, m_font, 11.5f * d, ImVec2(r0.x + 10 * d, y + lineH * 0.5f), kCyan, vars);
+    ImGui::Spacing();
+    if (ImGui::Button("Remove group", ImVec2(w, 0))) {
+        pushUndo(g);
+        g.groups.erase(g.groups.begin() + m_selGroup);
+        m_selGroup = -1;
+    }
+}
+
+void NodeEditor::drawInspectorNode(Graph& g, Node& n, float w) {
+    const NodeDef& def = *n.def;
+    ImU32 color = catColor(def.category);
+    const float d = m_dpi;
+
+    // header card: icon, name, category, what the node does
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    ImVec2 p = ImGui::GetCursorScreenPos();
+    dl->AddRectFilled(p, p + ImVec2(w, 56 * d), withA(color, 30), 4 * d);
+    dl->AddRect(p, p + ImVec2(w, 56 * d), withA(color, 120), 4 * d);
+    if (m_nodeIcon) m_nodeIcon(dl, def.id, p + ImVec2(10 * d, 13 * d), 22 * d, color);
+    canvasText(dl, m_fontBold, 14 * d, p + ImVec2(42 * d, 15 * d), kText, def.label);
+    canvasText(dl, m_font, 10 * d, p + ImVec2(42 * d, 37 * d), color, def.category);
+    ImGui::Dummy(ImVec2(w, 62 * d));
+    ImGui::PushTextWrapPos(0.0f);
+    ImGui::TextColored(ImColor(kMuted), "%s", def.help.c_str());
+    ImGui::PopTextWrapPos();
+
+    ImGui::Spacing();
+    ImGui::TextDisabled("NODE PROPERTIES");
+    ImGui::TextDisabled("Canvas position");
+    float at[2] = {n.pos.x, n.pos.y};
+    ImGui::SetNextItemWidth(-FLT_MIN);
+    bool moved = ImGui::DragFloat2("##npos", at, 1.0f, -10000.0f, 10000.0f, "%.0f");
+    if (moved) n.pos = float2(at[0], at[1]);
+    trackEdit(g, ImGui::IsItemActivated(), moved, ImGui::IsItemDeactivatedAfterEdit());
+
+    ImGui::Spacing();
+    ImGui::TextDisabled("DEFAULT VALUES");
+    bool any = false;
+    for (int i = 0; i < (int)def.ins.size(); ++i) {
+        const PinDef& p2 = def.ins[i];
+        if (p2.type == PinType::Exec || p2.type == PinType::Object || g.inputLink(n.id, i)) continue;
+        any = true;
+        ImGui::PushID(i);
+        ImGui::TextColored(ImColor(pinColor(p2.type)), "%s", p2.name.c_str());
+        ImGui::SetNextItemWidth(-FLT_MIN);
+        Value& v = n.inputs[i];
+        bool changed = false, done = false;
+        switch (p2.type) {
+        case PinType::Float:
+            changed = ImGui::DragFloat("##v", &v.f, std::max(0.02f, std::fabs(v.f) * 0.01f), 0, 0, "%.3f");
+            done = ImGui::IsItemDeactivatedAfterEdit();
+            break;
+        case PinType::Vec3:
+            changed = ImGui::DragFloat3("##v", &v.v.x, 0.05f, 0, 0, "%.2f");
+            done = ImGui::IsItemDeactivatedAfterEdit();
+            break;
+        case PinType::String: {
+            char buf[256] = {};
+            std::strncpy(buf, v.s.c_str(), sizeof buf - 1);
+            changed = ImGui::InputText("##v", buf, sizeof buf);
+            if (changed) v.s = buf;
+            done = ImGui::IsItemDeactivatedAfterEdit();
+            break;
+        }
+        case PinType::Bool: {
+            // a checkbox changes once per click: the graph before the click is the undo step
+            std::string before = g.toJson();
+            changed = ImGui::Checkbox("##v", &v.b);
+            if (changed) { m_undo.push_back(before); m_modified = true; }
+            break;
+        }
+        default: break;
+        }
+        if (p2.type != PinType::Bool) {
+            trackEdit(g, ImGui::IsItemActivated(), changed, done);
+        }
+        ImGui::PopID();
+    }
+    if (!any) ImGui::TextDisabled("No value to set on this node.");
+
+    ImGui::Spacing();
+    ImGui::TextDisabled("PINS & CONNECTIONS");
+    for (int side = 0; side < 2; ++side) {
+        const auto& pins = side ? def.outs : def.ins;
+        for (int i = 0; i < (int)pins.size(); ++i) {
+            ImVec2 c = ImGui::GetCursorScreenPos();
+            ImGui::GetWindowDrawList()->AddCircleFilled(c + ImVec2(5 * d, 8 * d), 3 * d, pinColor(pins[i].type));
+            ImGui::Indent(14 * d);
+            ImGui::TextUnformatted(pins[i].name.empty() ? (side ? "Out" : "In") : pins[i].name.c_str());
+            ImGui::SameLine(w - 62 * d);
+            ImGui::TextDisabled("%s", pinTypeName(pins[i].type));
+            ImGui::Unindent(14 * d);
+        }
+    }
+    ImGui::Spacing();
+    if (ImGui::Button("Disconnect all pins", ImVec2(w, 0))) {
+        pushUndo(g);
+        int id = n.id;
+        g.links.erase(std::remove_if(g.links.begin(), g.links.end(),
+                                     [&](const Link& l) { return l.fromNode == id || l.toNode == id; }),
+                      g.links.end());
+    }
+    if (m_sel.size() > 1) ImGui::TextColored(ImColor(kCyan), "%d nodes selected", (int)m_sel.size());
+}
+
+void NodeEditor::drawInspectorGraph(Graph& g, const Runtime* rt, float w) {
+    ImGui::TextUnformatted("Game Graph");
+    ImGui::TextDisabled("Gameplay graph of the game");
+    ImGui::Spacing();
+    ImGui::TextDisabled("GRAPH SUMMARY");
+    auto row = [&](const char* label, const std::string& value, ImU32 col) {
+        ImGui::TextDisabled("%s", label);
+        ImGui::SameLine(w - 90 * m_dpi);
+        ImGui::TextColored(ImColor(col), "%s", value.c_str());
+    };
+    row("Nodes", std::to_string(g.nodes.size()), kText);
+    row("Links", std::to_string(g.links.size()), kText);
+    row("Groups", std::to_string(g.groups.size()), kText);
+    row("Status", m_modified ? "Modified" : "Compiled", m_modified ? kAmber : kGreen);
+
+    ImGui::Spacing();
+    ImGui::TextDisabled("CANVAS CONTROLS");
+    ImGui::TextDisabled("Wheel to zoom, middle drag to pan");
+    ImGui::TextDisabled("Right click to add a node");
+    ImGui::TextDisabled("Drag pins to connect, Alt+click to detach");
+    ImGui::TextDisabled("Click a group title to move it with its nodes");
+
+    ImGui::Spacing();
+    ImGui::TextDisabled("NODE FAMILIES");
+    static const char* fams[] = {"Events", "Input", "Flow Control", "Scene", "Data", "Math", "RTS"};
+    for (const char* f : fams) {
+        ImVec2 c = ImGui::GetCursorScreenPos();
+        ImGui::GetWindowDrawList()->AddCircleFilled(c + ImVec2(5 * m_dpi, 8 * m_dpi), 4 * m_dpi, catColor(f));
+        ImGui::Indent(16 * m_dpi);
+        ImGui::TextUnformatted(f);
+        ImGui::Unindent(16 * m_dpi);
+    }
+
+    if (rt && !rt->trace.empty()) {
+        ImGui::Spacing();
+        ImGui::TextDisabled("RUN RESULT");
+        ImGui::TextUnformatted((std::to_string(rt->trace.size()) + " executed steps").c_str());
+        for (const auto& kv : rt->variables()) {
+            std::string line = kv.first + " = " + kv.second.asString();
+            ImGui::TextDisabled("%s", line.c_str());
+        }
+    }
+}
+
+// --------------------------------------------------------------------------- output panel
+
+void NodeEditor::drawOutput(ImVec2 pos, ImVec2 size, Graph& g, const Runtime* rt) {
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    const float d = m_dpi;
+    dl->AddRectFilled(pos, pos + size, kPanel, 4 * d);
+    dl->AddRect(pos, pos + size, kBorderC, 4 * d);
+
+    // tabs and the clear button, as in the Atelier output panel
+    struct Tab { const char* id; const char* label; uint32_t icon; float width; };
+    static const Tab tabs[] = {{"##out0", "Output", 0xE946, 87}, {"##out1", "Compiler Results", 0xE73E, 142},
+                               {"##out2", "Execution Trace", 0xE768, 140}};
+    float x = pos.x + 8 * d;
+    for (int i = 0; i < 3; ++i) {
+        if (barButton(dl, m_font, tabs[i].id, ImVec2(x, pos.y + 4 * d), ImVec2(x + tabs[i].width * d, pos.y + 29 * d),
+                      tabs[i].icon, tabs[i].label, m_outTab == i, d))
+            m_outTab = i;
+        x += (tabs[i].width + 5) * d;
+    }
+    if (barButton(dl, m_font, "##outclear", ImVec2(pos.x + size.x - 37 * d, pos.y + 5 * d),
+                  ImVec2(pos.x + size.x - 11 * d, pos.y + 28 * d), 0xE74D, "", false, d)) {
+        m_messages.clear();
+        m_diagnostics.clear();
+    }
+
+    ImGui::SetCursorScreenPos(ImVec2(pos.x + 10 * d, pos.y + 36 * d));
+    ImGui::BeginChild("##outrows", ImVec2(size.x - 20 * d, std::max(1.0f, size.y - 42 * d)), ImGuiChildFlags_None,
+                      ImGuiWindowFlags_NoBackground);
+    if (m_outTab == 2) {
+        // execution trace: the nodes run since Play, click to select one
+        if (!rt || rt->trace.empty()) {
+            ImGui::TextDisabled("Run the graph to see its execution trace.");
+        } else {
+            int index = 0;
+            for (int id : rt->trace) {
+                ++index;
+                const Node* n = g.node(id);
+                std::string label = std::to_string(index) + "   " + (n ? n->def->label : std::string("(removed node)")) +
+                                    "   #" + std::to_string(id);
+                ImGui::PushID(index);
+                ImGui::PushStyleColor(ImGuiCol_Text, kGreen);
+                if (ImGui::Selectable(label.c_str(), selected(id)) && n) focusNode(g, id);
+                ImGui::PopStyleColor();
+                ImGui::PopID();
+            }
+        }
+    } else if (m_outTab == 1) {
+        // compiler results of the last Compile, click a row to select its node
+        if (m_diagnostics.empty()) {
+            ImGui::TextDisabled(m_checked ? "No problem found." : "Press Compile to check the graph.");
+        }
+        for (size_t i = 0; i < m_diagnostics.size(); ++i) {
+            const Diagnostic& dg = m_diagnostics[i];
+            std::string label = glyph(levelIcon(dg.level)) + "  " + dg.text;
+            ImGui::PushID((int)i);
+            ImGui::PushStyleColor(ImGuiCol_Text, levelColor(dg.level));
+            if (ImGui::Selectable(label.c_str()) && dg.node) focusNode(g, dg.node);
+            ImGui::PopStyleColor();
+            ImGui::PopID();
+        }
+    } else {
+        // output log: messages of the editor, then the runtime log of the last Play
+        for (size_t i = 0; i < m_messages.size(); ++i) {
+            const OutputMessage& m = m_messages[i];
+            std::string label = glyph(levelIcon(m.level)) + "  " + m.text;
+            ImGui::PushID((int)i);
+            ImGui::PushStyleColor(ImGuiCol_Text, levelColor(m.level));
+            if (ImGui::Selectable(label.c_str()) && m.node) focusNode(g, m.node);
+            ImGui::PopStyleColor();
+            ImGui::PopID();
+        }
+        if (rt) {
+            for (size_t i = 0; i < rt->log.size(); ++i) {
+                const std::string& line = rt->log[i];
+                bool err = line.rfind("Error", 0) == 0;
+                ImGui::PushStyleColor(ImGuiCol_Text, err ? kRed : kText);
+                ImGui::TextUnformatted(line.c_str());
+                ImGui::PopStyleColor();
+            }
+        }
+        if (m_messages.empty() && (!rt || rt->log.empty())) ImGui::TextDisabled("Nothing to show yet.");
+    }
+    if (m_scrollOutput) {
+        ImGui::SetScrollHereY(1.0f);
+        m_scrollOutput = false;
+    }
+    ImGui::EndChild();
 }
 
 // Creates the node picked in the popup, wired to the pin the popup was opened from.
@@ -708,6 +1056,7 @@ void NodeEditor::addNodeFromMenu(Graph& g, const NodeDef& d) {
         }
     }
     m_sel = {id};
+    m_selGroup = -1;
 }
 
 void NodeEditor::drawMenu(Graph& g) {
@@ -760,6 +1109,19 @@ void NodeEditor::drawMenu(Graph& g) {
         const NodeDef* first = nullptr;
         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(26 * d, 3 * d));
         ImGui::BeginChild("##nodelist", ImVec2(0, 0));
+        if (q.empty() && !fromNode) {
+            // adds a group frame at the popup position (Atelier "Add comment group")
+            if (ImGui::Selectable("+ Add group", false, 0, ImVec2(0, 22 * d))) {
+                pushUndo(g);
+                Group gr;
+                gr.x = std::round(m_menuGraph.x / 8) * 8;
+                gr.y = std::round(m_menuGraph.y / 8) * 8;
+                g.groups.push_back(gr);
+                m_selGroup = (int)g.groups.size() - 1;
+                m_sel.clear();
+                ImGui::CloseCurrentPopup();
+            }
+        }
         std::string lastCat;
         for (const NodeDef& nd : nodeDefs()) {
             if (!compatibleWithPin(nd)) continue;
@@ -811,11 +1173,18 @@ void NodeEditor::handleInput(Graph& g, bool inArea, bool overWidget) {
 
     // keyboard (not while a widget takes text)
     if (!io.WantTextInput && (inArea || ImGui::IsWindowFocused())) {
-        if (ImGui::IsKeyPressed(ImGuiKey_Delete)) deleteSelection(g);
+        if (ImGui::IsKeyPressed(ImGuiKey_Delete)) {
+            if (!m_sel.empty()) deleteSelection(g);
+            else if (m_selGroup >= 0 && m_selGroup < (int)g.groups.size()) {
+                pushUndo(g);
+                g.groups.erase(g.groups.begin() + m_selGroup);
+                m_selGroup = -1;
+            }
+        }
         if (ctrl && ImGui::IsKeyPressed(ImGuiKey_D)) duplicateSelection(g);
         if (ctrl && ImGui::IsKeyPressed(ImGuiKey_Z)) undo(g);
-        if (ctrl && ImGui::IsKeyPressed(ImGuiKey_A)) { m_sel.clear(); for (const Node& n : g.nodes) m_sel.push_back(n.id); }
-        if (ImGui::IsKeyPressed(ImGuiKey_Escape)) m_sel.clear();
+        if (ctrl && ImGui::IsKeyPressed(ImGuiKey_A)) { m_sel.clear(); m_selGroup = -1; for (const Node& n : g.nodes) m_sel.push_back(n.id); }
+        if (ImGui::IsKeyPressed(ImGuiKey_Escape)) { m_sel.clear(); m_selGroup = -1; }
         if (!ctrl && ImGui::IsKeyPressed(ImGuiKey_F)) frameAll(g);
     }
 
@@ -848,13 +1217,26 @@ void NodeEditor::handleInput(Graph& g, bool inArea, bool overWidget) {
             } else if (!selected(id)) {
                 m_sel = {id};
             }
+            m_selGroup = -1;
             // bring to front
             auto it = std::find_if(g.nodes.begin(), g.nodes.end(), [&](const Node& n) { return n.id == id; });
             if (it != g.nodes.end() && it + 1 != g.nodes.end()) { Node n = *it; g.nodes.erase(it); g.nodes.push_back(n); }
             if (selected(id)) m_drag = DragNodes;
         } else {
-            if (!ctrl && !shift) m_sel.clear();
-            m_drag = DragMarquee;
+            int gi = hitGroupTitle(g, mouse);
+            if (gi >= 0) {
+                // a group moves with the nodes whose corner is inside its frame
+                m_sel.clear();
+                m_selGroup = gi;
+                m_groupNodes.clear();
+                const Group& gr = g.groups[gi];
+                for (const Node& n : g.nodes)
+                    if (n.pos.x >= gr.x && n.pos.x < gr.x + gr.w && n.pos.y >= gr.y && n.pos.y < gr.y + gr.h) m_groupNodes.push_back(n.id);
+                m_drag = DragGroup;
+            } else {
+                if (!ctrl && !shift) { m_sel.clear(); m_selGroup = -1; }
+                m_drag = DragMarquee;
+            }
         }
     }
     if (inArea && ImGui::IsMouseClicked(1) && m_drag == DragNone) {
@@ -876,6 +1258,21 @@ void NodeEditor::handleInput(Graph& g, bool inArea, bool overWidget) {
             if (!m_dragMoved) { pushUndo(g); m_dragMoved = true; }
             for (int id : m_sel)
                 if (Node* n = g.node(id)) n->pos = n->pos + float2(delta.x / scale(), delta.y / scale());
+            m_modified = true;
+        }
+        break;
+    case DragGroup:
+        if (!io.MouseDown[0]) {
+            m_drag = DragNone;
+        } else if (delta.x != 0 || delta.y != 0) {
+            if (!m_dragMoved) { pushUndo(g); m_dragMoved = true; }
+            float2 dg(delta.x / scale(), delta.y / scale());
+            if (m_selGroup >= 0 && m_selGroup < (int)g.groups.size()) {
+                g.groups[m_selGroup].x += dg.x;
+                g.groups[m_selGroup].y += dg.y;
+            }
+            for (int id : m_groupNodes)
+                if (Node* n = g.node(id)) n->pos = n->pos + dg;
             m_modified = true;
         }
         break;

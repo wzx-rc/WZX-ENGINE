@@ -64,6 +64,7 @@ private:
     void play();
     void stop();
     bool saveGraph(std::string* err = nullptr);
+    void compileGraph();
     bool loadGraph(std::string* err = nullptr);
     void defaultGraph();
     std::vector<BuildProfile> loadProfiles();

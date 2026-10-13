@@ -48,6 +48,7 @@ public:
     // Editor feedback: time (in play seconds) a node last ran, for highlighting.
     float lastRun(int nodeId) const;
     std::deque<std::string> log;          // most recent last, capped
+    std::deque<int> trace;                // ids of the nodes run since Play, most recent last, capped (Execution Trace)
     std::string lastError;
 
 private:
@@ -68,6 +69,7 @@ private:
     std::map<std::string, Value> m_vars;
     std::map<int, std::vector<Value>> m_cache;   // outputs of impure nodes (event payloads, loop items...)
     std::map<int, float> m_lastRun;
+    void recordRun(int nodeId);
     std::vector<Timer> m_timers;
     std::vector<Mover> m_movers;
     std::map<int, bool> m_doneOnce;

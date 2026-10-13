@@ -1,7 +1,8 @@
-// game - Blueprint-style node graph editor drawn with Dear ImGui. The canvas (grid, links,
-// nodes, pins) is drawn with the draw list; the inline values are native ImGui widgets and the
-// add-node menu is an ImGui popup. The host gives it a rectangle, the graph and (optionally)
-// the running Runtime for execution highlights, and reads back the requested action.
+// game - Blueprint-style node graph editor drawn with Dear ImGui, in the Atelier graph style: canvas
+// (grid, groups, links, nodes, pins), the Inspector on the right and the Output panel at the bottom.
+// The canvas is drawn with the draw list; the inline values are native ImGui widgets and the add-node
+// menu is an ImGui popup. The host gives it a rectangle, the graph and (optionally) the running
+// Runtime for execution highlights and the trace, and reads back the requested action.
 #pragma once
 #include "Runtime.h"
 #include "imgui.h"
@@ -13,16 +14,20 @@ namespace game {
 
 class NodeEditor {
 public:
-    enum Action { None, TogglePlay, Save, Close, Build };
+    enum Action { None, TogglePlay, Save, Compile, Close, Build };
 
     // Fonts for the canvas text (regular and bold); the ImGui default font is used when null.
     void setFonts(ImFont* regular, ImFont* bold) { m_font = regular; m_fontBold = bold; }
+
+    // Outlines around the nodes (Graph settings): off hides them; the selected node keeps its highlight.
+    void setOutline(bool on, float weight) { m_outline = on; m_outlineWeight = weight; }
 
     // Draws the icon of a node type (the app owns the icon set); called with the node type id.
     using NodeIconFn = void (*)(ImDrawList* dl, const std::string& nodeId, ImVec2 p, float size, ImU32 color);
     void setNodeIconDrawer(NodeIconFn f) { m_nodeIcon = f; }
 
-    // Draws the editor in the rectangle `pos` / `size` (ImGui pixels) and handles its input.
+    // Draws the whole graph workspace in the rectangle `pos` / `size` (ImGui pixels): canvas header,
+    // canvas, Inspector (right) and Output panel (bottom), and handles their input.
     void draw(ImVec2 pos, ImVec2 size, float dpi, Graph& g, const Runtime* rt, bool playing);
     Action takeAction() { Action a = m_action; m_action = None; return a; }
     // Centres the view on all nodes at the next draw.
@@ -32,11 +37,18 @@ public:
     void resetView() { m_pan = ImVec2(-40, -60); m_zoom = 1.0f; }
     bool modified() const { return m_modified; }
     void clearModified() { m_modified = false; }
-    std::string status;                   // small message shown in the toolbar
+    std::string status;                   // small message shown in the canvas header
+
+    // Output panel: a message (0 info, 1 warning, 2 error, 3 success) and the node it concerns (0 = none).
+    void addMessage(int level, const std::string& text, int node = 0);
+    // Results of the last Compile (shown in the "Compiler Results" tab).
+    void setDiagnostics(const std::vector<Diagnostic>& d);
+    void setOutputTab(int tab) { m_outTab = tab < 0 ? 0 : (tab > 2 ? 2 : tab); }   // 0 Output, 1 Compiler Results, 2 Execution Trace
 
 private:
     struct PinRef { int node = 0, pin = -1; bool output = false; };
-    enum Drag { DragNone, DragNodes, DragLink, DragPan, DragMarquee };
+    struct OutputMessage { int level = 0; std::string text; int node = 0; };
+    enum Drag { DragNone, DragNodes, DragLink, DragPan, DragMarquee, DragGroup };
 
     float scale() const { return m_zoom * m_dpi; }     // graph units -> ImGui pixels
     ImVec2 toScreen(ImVec2 g) const { return m_origin + (g - m_pan) * scale(); }
@@ -50,17 +62,24 @@ private:
     bool overInlineWidget(const Graph& g, ImVec2 p) const;
     PinRef hitPin(const Graph& g, ImVec2 p) const;
     int hitNode(const Graph& g, ImVec2 p) const;
+    int hitGroupTitle(const Graph& g, ImVec2 p) const;   // index of the group whose title bar is under p, or -1
     bool selected(int id) const;
 
     void handleInput(Graph& g, bool inArea, bool overWidget);
     void drawCanvas(Graph& g, const Runtime* rt);
+    void drawGroups(const Graph& g);
     void drawLinks(const Graph& g, const Runtime* rt);
     void drawNode(Graph& g, Node& n, const Runtime* rt);
-    void drawLog(const Runtime* rt);
     void drawHint(const Graph& g);
     void drawToolbar(ImVec2 pos, float width, bool playing);
-    void drawFooter(ImVec2 pos, ImVec2 size, const Graph& g);
+    void drawFooter(ImVec2 pos, float width, const Graph& g);
     void drawMinimap(const Graph& g);
+    void drawInspector(ImVec2 pos, ImVec2 size, Graph& g, const Runtime* rt);
+    void drawInspectorGroup(Graph& g, float w);
+    void drawInspectorNode(Graph& g, Node& n, float w);
+    void drawInspectorGraph(Graph& g, const Runtime* rt, float w);
+    void drawOutput(ImVec2 pos, ImVec2 size, Graph& g, const Runtime* rt);
+    void focusNode(const Graph& g, int id);
     void trackEdit(const Graph& g, bool activated, bool changed, bool deactivated);
     void drawMenu(Graph& g);
     void addNodeFromMenu(Graph& g, const NodeDef& d);
@@ -75,15 +94,18 @@ private:
     ImFont* m_font = nullptr;
     ImFont* m_fontBold = nullptr;
     NodeIconFn m_nodeIcon = nullptr;
+    bool m_outline = true;
+    float m_outlineWeight = 0.5f;
     float m_dpi = 1.0f;
     ImVec2 m_origin;                       // canvas top-left (screen)
     ImVec2 m_canvas;                       // canvas size (screen)
     ImVec2 m_pan{-40, -60};                // graph units at the top-left corner
     float m_zoom = 1.0f;
     std::vector<int> m_sel;
+    int m_selGroup = -1;                   // selected group (index), -1 = none
     std::vector<std::string> m_undo;
     Action m_action = None;
-    bool m_modified = false;
+    bool m_modified = true;                // not compiled or saved yet
     bool m_wantFrame = false;
 
     // interaction
@@ -92,6 +114,7 @@ private:
     ImVec2 m_pressPos, m_rightPos;
     bool m_dragMoved = false;
     int m_rightButton = 0;
+    std::vector<int> m_groupNodes;         // nodes inside the group being moved
 
     // add-node popup
     bool m_menuRequest = false;            // open the popup at the next draw
@@ -101,6 +124,13 @@ private:
     ImVec2 m_menuScreen, m_menuGraph;
     PinRef m_menuFrom;
     char m_search[128] = {};
+
+    // output panel
+    std::vector<OutputMessage> m_messages;
+    std::vector<Diagnostic> m_diagnostics;
+    int m_outTab = 0;                      // 0 Output, 1 Compiler Results, 2 Execution Trace
+    bool m_scrollOutput = false;
+    bool m_checked = false;                // a Compile has run (Compiler Results)
 };
 
 // Bright colour of a node category (library headers).
