@@ -280,6 +280,44 @@ void NodeEditor::undo(Graph& g) {
     m_modified = true;
 }
 
+// Arrange: two cards that overlap are separated by moving the lower one under the upper one (with a gap).
+// Only the overlapping nodes move, and only downwards, so the layout of the others is kept.
+int NodeEditor::arrangeOverlaps(Graph& g) {
+    const float gap = 16.0f;   // graph units between the moved card and the one above it
+    std::string before = g.toJson();
+    std::vector<float> y0;
+    for (const Node& n : g.nodes) y0.push_back(n.pos.y);
+    auto height = [&](const Node& n) { return kPinTop + rowCount(n) * kRow + kFooter; };
+    std::vector<Node*> order;
+    for (Node& n : g.nodes) order.push_back(&n);
+    for (int pass = 0; pass < 64; ++pass) {
+        std::stable_sort(order.begin(), order.end(), [](const Node* a, const Node* b) {
+            return a->pos.y != b->pos.y ? a->pos.y < b->pos.y : a->pos.x < b->pos.x;
+        });
+        bool any = false;
+        for (size_t i = 0; i < order.size(); ++i)
+            for (size_t j = i + 1; j < order.size(); ++j) {
+                const Node& a = *order[i];
+                Node& b = *order[j];
+                bool side = b.pos.x < a.pos.x + nodeWidth(a) && a.pos.x < b.pos.x + nodeWidth(b);
+                bool stacked = b.pos.y < a.pos.y + height(a) && a.pos.y < b.pos.y + height(b);
+                if (side && stacked) {
+                    b.pos.y = a.pos.y + height(a) + gap;
+                    any = true;
+                }
+            }
+        if (!any) break;
+    }
+    int moved = 0;
+    for (size_t k = 0; k < g.nodes.size(); ++k) if (g.nodes[k].pos.y != y0[k]) ++moved;
+    if (moved) {
+        m_undo.push_back(before);
+        if (m_undo.size() > 100) m_undo.erase(m_undo.begin());
+        m_modified = true;
+    }
+    return moved;
+}
+
 void NodeEditor::deleteSelection(Graph& g) {
     if (m_sel.empty()) return;
     pushUndo(g);
@@ -696,12 +734,13 @@ void NodeEditor::drawToolbar(ImVec2 pos, float width, bool playing) {
     canvasText(dl, m_font, 11 * d, ImVec2(a.x + 172 * d, cy), kMuted, "Event Graph");
     if (!status.empty()) canvasText(dl, m_font, 11 * d, ImVec2(a.x + 290 * d, cy), kMuted, status);
 
-    float x = b.x - (103 + 71 + 72 + 28 + 4 * 6 + 12) * d, y0 = a.y + 6 * d, h = 25 * d;
+    float x = b.x - (84 + 103 + 71 + 72 + 28 + 5 * 6 + 12) * d, y0 = a.y + 6 * d, h = 25 * d;
     auto btn = [&](const char* id, float w, uint32_t icon, const char* label, bool active) {
         bool pressed = barButton(dl, m_font, id, ImVec2(x, y0), ImVec2(x + w * d, y0 + h), icon, label, active, d);
         x += (w + 6) * d;
         return pressed;
     };
+    if (btn("##tb_arrange", 84, 0xE8CB, "Arrange", false)) m_action = Arrange;
     if (btn("##tb_compile", 103, 0xE73E, "Compile", false)) m_action = Compile;
     if (btn("##tb_play", 71, playing ? 0xE71A : 0xE768, playing ? "Stop" : "Run", playing)) m_action = TogglePlay;
     if (btn("##tb_build", 72, 0xE7B8, "Build", false)) m_action = Build;

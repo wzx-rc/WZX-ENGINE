@@ -39,6 +39,17 @@ void Runtime::start(Graph* g, World* w) {
     for (Node& n : g->nodes) if (!n.def) n.def = findNodeDef(n.type);
     log.push_back("--- Play ---");
     fire(Op::OnStart);
+    // A native system node that no exec link reaches (the RTS Camera left alone on the graph) takes
+    // effect when Play starts, from its own inputs. A linked one runs when the graph reaches it.
+    std::vector<int> natives;
+    for (const Node& n : g->nodes)
+        if (n.def->op == Op::SetRtsCamera && !g->inputLink(n.id, 0)) natives.push_back(n.id);
+    for (int id : natives) {
+        Node* n = m_graph ? m_graph->node(id) : nullptr;
+        if (!n) continue;
+        m_budget = kBudget;
+        exec(*n);
+    }
 }
 
 void Runtime::stop() {

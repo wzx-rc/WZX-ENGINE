@@ -14,7 +14,7 @@ namespace game {
 
 class NodeEditor {
 public:
-    enum Action { None, TogglePlay, Save, Compile, Close, Build };
+    enum Action { None, TogglePlay, Save, Compile, Close, Build, Arrange };
 
     // Fonts for the canvas text (regular and bold); the ImGui default font is used when null.
     void setFonts(ImFont* regular, ImFont* bold) { m_font = regular; m_fontBold = bold; }
@@ -32,6 +32,8 @@ public:
     Action takeAction() { Action a = m_action; m_action = None; return a; }
     // Centres the view on all nodes at the next draw.
     void frameAll(const Graph&) { m_wantFrame = true; }
+    // Arrange: moves the nodes that overlap down, under the node above them (one undo step). Returns the count moved.
+    int arrangeOverlaps(Graph& g);
     // Adds a node of the library at the centre of the view (from the node library panel).
     void addNodeAtView(Graph& g, const NodeDef& d);
     void resetView() { m_pan = ImVec2(-40, -60); m_zoom = 1.0f; }

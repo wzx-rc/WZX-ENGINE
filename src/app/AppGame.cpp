@@ -581,6 +581,11 @@ void GameHost::drawGraphWorkspace() {
     switch (m_editor.takeAction()) {
     case NodeEditor::TogglePlay: m_playing ? stop() : play(); break;
     case NodeEditor::Compile: compileGraph(); break;
+    case NodeEditor::Arrange: {
+        int moved = m_editor.arrangeOverlaps(m_graph);
+        m_editor.addMessage(moved ? 3 : 0, moved ? "Arranged " + std::to_string(moved) + " overlapping node(s)" : std::string("No overlapping node"));
+        break;
+    }
     case NodeEditor::Save: {
         std::string err;
         if (saveGraph(&err)) m_editor.addMessage(3, "Graph saved: " + toUtf8(m_graphPath));
@@ -843,7 +848,7 @@ static const char* kHelp =
     "\"graph.addNode\": \"{type, x?, y?, in?: {broche: valeur}} -> id\", \"graph.removeNode\": \"{id}\", "
     "\"graph.connect\": \"{from:[id, sortie], to:[id, entree]} (nom ou index de broche)\", "
     "\"graph.disconnect\": \"{id, pin, output}\", \"graph.setInput\": \"{id, pin, value}\", "
-    "\"graph.save\": \"{}\", \"graph.load\": \"{}\", \"graph.show\": \"{open: true|false, output?: 0|1|2}\", \"graph.compile\": \"{} -> diagnostics\", "
+    "\"graph.save\": \"{}\", \"graph.load\": \"{}\", \"graph.show\": \"{open: true|false, output?: 0|1|2}\", \"graph.compile\": \"{} -> diagnostics\", \"graph.arrange\": \"{} -> nodes deplaces\", "
     "\"build\": \"{profile?, run?} -> dossier\", \"build.profiles\": \"{}\", "
     "\"screenshot\": \"{window?: true = fenetre entiere} -> fichier PNG\", \"log\": \"{} -> journal du graphe\"}}";
 
@@ -1194,6 +1199,9 @@ std::string GameHost::command(const Json& j, int& status) {
     if (cmd == "graph.compile") {
         compileGraph();
         return ok();
+    }
+    if (cmd == "graph.arrange") {
+        return ok(", \"moved\": " + std::to_string(m_editor.arrangeOverlaps(m_graph)));
     }
     // build / output
     if (cmd == "build.profiles") {
