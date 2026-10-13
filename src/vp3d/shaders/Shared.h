@@ -30,6 +30,7 @@ struct uint4 { uint x, y, z, w; };
 #define FRAME_FLAG_ID_EDGES  16u   // denoiser does not blend across objects (DDGI mode: short history)
 #define FRAME_FLAG_FLAT_SHADING 32u   // faceted polygons: geometric normals instead of interpolated ones
 #define FRAME_FLAG_NO_JITTER 64u      // anti-aliasing off: no sub-pixel jitter
+#define FRAME_FLAG_CENTRE_VALID 128u  // stable edges: the pixel-centre surface validates the history
 
 #define NO_LIGHT 0xFFFFFFFFu
 

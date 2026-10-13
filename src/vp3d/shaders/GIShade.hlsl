@@ -149,14 +149,18 @@ void main(uint3 id : SV_DispatchThreadID) {
     }
 
     // Temporal accumulation with reprojection (Temporal.hlsli). The guides are the current frame's.
-    // Pixel-centre primary surface validates the history (as in PathTraceTemporal.hlsl): a jittered sample on an
-    // edge would otherwise reset the history every frame. The jittered sample is still averaged in (anti-aliasing).
-    float3 dirc = CurPixelDir(float2(id.xy));
-    Hit hc;
-    bool okc = TraceClosest(F.camPos, dirc, 1e30, 0xFF & ~MASK_LIGHT_HIDDEN, hc);
-    float depthC = okc ? hc.t : 1e6;
-    float3 geomC = okc ? hc.Ng : -dirc;
-    gTex[SLOT_ACCUM][id.xy] = TemporalAccumulate(L, F.camPos + dirc * depthC, geomC, depthC);
+    // Stable edges (flag): the pixel-centre surface validates the history, see PathTraceTemporal.hlsl.
+    if (F.flags & FRAME_FLAG_CENTRE_VALID) {
+        float3 dirc = CurPixelDir(float2(id.xy));
+        Hit hc;
+        bool okc = TraceClosest(F.camPos, dirc, 1e30, 0xFF & ~MASK_LIGHT_HIDDEN, hc);
+        float depthC = okc ? hc.t : 1e6;
+        float3 geomC = okc ? hc.Ng : -dirc;
+        gTex[SLOT_ACCUM][id.xy] = TemporalAccumulate(L, F.camPos + dirc * depthC, geomC, depthC);
+        gTex[SLOT_NORMAL][id.xy] = float4(geomC, depthC);
+    } else {
+        gTex[SLOT_ACCUM][id.xy] = TemporalAccumulate(L, F.camPos + CurPixelDir(float2(id.xy)) * g.depth, g.geom, g.depth);
+        gTex[SLOT_NORMAL][id.xy] = float4(g.geom, g.depth);
+    }
     gTex[SLOT_ALBEDO][id.xy] = float4(g.albedo, (float)g.id);
-    gTex[SLOT_NORMAL][id.xy] = float4(geomC, depthC);
 }

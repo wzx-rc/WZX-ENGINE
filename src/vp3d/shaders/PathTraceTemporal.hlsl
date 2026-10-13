@@ -48,7 +48,14 @@ void main(uint3 id : SV_DispatchThreadID) {
         }
     }
 
-    gTex[SLOT_ACCUM][p] = TemporalAccumulate(sum / spp, Pa, geomC, depthC);
+    // Stable edges (flag): the pixel-centre surface validates the history. Otherwise the jittered sample does:
+    // a sub-pixel edge then resets the history, which avoids the halos behind moving objects but flickers on edges.
+    if (F.flags & FRAME_FLAG_CENTRE_VALID) {
+        gTex[SLOT_ACCUM][p] = TemporalAccumulate(sum / spp, Pa, geomC, depthC);
+        gTex[SLOT_NORMAL][p] = float4(geomC, depthC);
+    } else {
+        gTex[SLOT_ACCUM][p] = TemporalAccumulate(sum / spp, F.camPos + CurPixelDir(float2(p)) * g0.depth, g0.geom, g0.depth);
+        gTex[SLOT_NORMAL][p] = float4(g0.geom, g0.depth);
+    }
     gTex[SLOT_ALBEDO][p] = float4(g0.albedo, (float)g0.id);
-    gTex[SLOT_NORMAL][p] = float4(geomC, depthC);
 }

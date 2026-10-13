@@ -228,7 +228,7 @@ void Viewer::frame() {
 
     // Animation: a sphere bouncing across the box, the ceiling light sliding.
     if (animSphere || animLight) {
-        animT += dt;
+        animT += 1.0f / 60.0f;   // fixed step: the animation is the same in every run (benchmarks, comparisons)
         if (animSphere) {
             Object& o = scene.objects[animObject];
             o.position = animBase + float3(std::sin(animT * 0.9f) * 16.0f, std::sin(animT * 1.7f) * 12.0f, std::cos(animT * 0.9f) * 10.0f);
@@ -418,6 +418,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         else if (a == L"--denoise") v.rs.denoise = _wtoi(next().c_str()) != 0;
         else if (a == L"--hysteresis") v.rs.ddgiHysteresis = (float)_wtof(next().c_str());
         else if (a == L"--aa") v.rs.aaLevel = _wtoi(next().c_str());
+        else if (a == L"--stable-edges") v.rs.stableEdges = _wtoi(next().c_str()) != 0;
         else if (a == L"--stat-from") v.statFrom = _wtoi(next().c_str());
         else if (a == L"--stat-gain") v.statGain = (float)_wtof(next().c_str());
         else if (a == L"--stat-rect") {

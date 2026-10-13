@@ -61,6 +61,7 @@ struct Options {
     bool orbit = false;         // benchmark: turntable camera (moving view)
     bool denoise = true;        // edge-aware a-trous denoiser on the output
     bool smooth = true;         // smooth (interpolated) normals; off = faceted polygons
+    bool stableEdges = false;   // benchmark/viewer: validate the history on the pixel-centre surface
     int aaLevel = 1;            // anti-aliasing: 0 off, 1 standard, 2 high (4 paths per frame)
     float clamp = 25.0f;        // firefly clamp (luminance per path)
     int statFrom = -1;          // benchmark: first frame of the stability statistics (-1 = off)

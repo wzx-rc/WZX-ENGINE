@@ -163,3 +163,20 @@ Ce qui a été réduit : les contours (silhouettes, même cause que pour l'appli
 Ce qui reste : un petit point brillant en haut de la sphère, qui est le reflet du plafonnier. Tests qui ne le réduisent pas : écrêtage des fireflies (à 200 : identique), lumière stratifiée, 4 rayons de reflet, jitter désactivé (1,17), hystérésis des sondes (0,90 : 1,07). Le débruitage le réduit de moitié (2,44 sans débruitage). C'est une variance d'échantillonnage : un seul chemin par pixel et par image, avec un reflet très vif. La réduire demande plus d'échantillons sur ces pixels (le mode « Anti-aliasing élevé » de l'application réduit ce type de point d'environ 27 %, pour 2,7 fois le temps GPU).
 
 Observation : avec une hystérésis de 0,995 (valeur hors interface), l'image DDGI devient noire. Non traité, car la touche H n'utilise que 0,97 et 0,90.
+
+## Halos temporels : validation des contours (13/10/2026)
+
+Constat : la validation de l'historique sur le rayon central (commits a1bec5c et 9970f1d) supprime le scintillement des contours, mais elle garde pendant 256 images le mélange des pixels de bord. Quand un objet bouge, l'ancienne couleur reste sur les bords : des halos apparaissent autour des objets.
+
+Décision : retour à la validation précédente par défaut (contours sans halo). La validation au centre reste disponible avec la case « Contours stables (halos possibles) » (`--stable-edges 1` dans l'application et le viewer).
+
+| Réglage | Sphère + contours (écart-type, images 200 à 319) | Aspect |
+|---|---|---|
+| Défaut (validation précédente) | 1,32 | contours propres, sans halo |
+| Contours stables | 0,80 | points brillants sur les bords, halos possibles |
+
+Contrôle visuel (sphère orange animée, image 150) : défaut propre ; contours stables avec points brillants sur le bord.
+
+Piste non implémentée : garder la validation au centre pour la stabilité, mais limiter la mémoire des pixels dont le bord change (par exemple 16 images au lieu de 256). Les halos durent alors moins longtemps, et les contours restent plus stables qu'avec le défaut.
+
+Viewer : l'animation avance d'un pas fixe de 1/60 s, pour que les comparaisons soient reproductibles.

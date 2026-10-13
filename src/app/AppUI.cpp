@@ -600,6 +600,8 @@ void App::drawRenderTab(Rect area) {
         if (ui.checkbox(row(), L"Débruitage (à-trous)", dn)) { m_rs.denoise = dn; ch = true; }
         bool sm = m_rs.smoothShading;
         if (ui.checkbox(row(), L"Lissage des polygones", sm)) { m_rs.smoothShading = sm; ch = true; }
+        bool se = m_rs.stableEdges;
+        if (ui.checkbox(row(), L"Contours stables (halos possibles)", se)) { m_rs.stableEdges = se; ch = true; }
         static const std::vector<std::wstring> aaNames = {L"Anti-aliasing désactivé", L"Anti-aliasing standard", L"Anti-aliasing élevé (4 échantillons)"};
         int aa = m_rs.aaLevel;
         if (ui.dropdown("aa_level", Rect(x, y, w, 28), aaNames, aa)) { m_rs.aaLevel = aa; ch = true; }

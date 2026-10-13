@@ -96,6 +96,7 @@ bool App::init(HINSTANCE inst, const Options& opt) {
     m_rs.denoise = opt.denoise;
     m_rs.smoothShading = opt.smooth;
     m_rs.aaLevel = opt.aaLevel;
+    m_rs.stableEdges = opt.stableEdges;
     m_rs.fireflyClamp = opt.clamp;
     m_rs.ddgiHysteresis = opt.hysteresis;
     if (opt.ddgi) m_rs.raster = false;
@@ -896,6 +897,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         else if (a == L"--tab") opt.tab = _wtoi(next().c_str());
         else if (a == L"--smooth") opt.smooth = _wtoi(next().c_str()) != 0;
         else if (a == L"--aa") opt.aaLevel = _wtoi(next().c_str());
+        else if (a == L"--stable-edges") opt.stableEdges = _wtoi(next().c_str()) != 0;
         else if (a == L"--clamp") opt.clamp = (float)_wtof(next().c_str());
         else if (a == L"--stat-from") opt.statFrom = _wtoi(next().c_str());
         else if (a == L"--stat-gain") opt.statGain = (float)_wtof(next().c_str());
