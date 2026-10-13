@@ -249,7 +249,7 @@ void App::drawSettingsWindow() {
             propLabel("Node outline", labelW);
             changed |= ImGui::Checkbox("##nodeOutline", &th::settings().graphOutline);
             propLabel("Outline weight", labelW);
-            changed |= ImGui::SliderFloat("##outlineWeight", &th::settings().graphOutlineWeight, 0.25f, 3.0f, "%.2f px");
+            changed |= ImGui::SliderFloat("##outlineWeight", &th::settings().graphOutlineWeight, 0.1f, 3.0f, "%.2f px");
             ImGui::EndTabItem();
         }
         ImGui::EndTabBar();

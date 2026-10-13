@@ -417,7 +417,7 @@ void loadSettings(const std::wstring& file) {
         else if (k == "lockBrightness") g_settings.lockBrightness = v != "0";
         else if (k == "language") g_settings.language = v;
         else if (k == "graphOutline") g_settings.graphOutline = v != "0";
-        else if (k == "graphOutlineWeight") g_settings.graphOutlineWeight = std::clamp((float)atof(v.c_str()), 0.25f, 3.0f);
+        else if (k == "graphOutlineWeight") g_settings.graphOutlineWeight = std::clamp((float)atof(v.c_str()), 0.1f, 3.0f);
     }
 }
 

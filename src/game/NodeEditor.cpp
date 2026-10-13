@@ -618,7 +618,7 @@ void NodeEditor::drawNode(Graph& g, Node& n, const Runtime* rt) {
         dl->AddRect(ImVec2(p0.x - h, p0.y - h), ImVec2(p1.x + h, p1.y + h), c, 5 * s + h, 0, w);
     };
     if (sel) outside(kCyan, 2 * m_outlineWeight * s);
-    else if (m_outline) outside(color, m_outlineWeight * s);
+    else if (m_outline) outside(withA(color, 128), m_outlineWeight * s);   // the node colour, half transparent
     if (hot) outside(IM_COL32(255, 210, 74, 255), 2 * m_outlineWeight * s);
 
     // outputs: labels on the inner side of the pin
