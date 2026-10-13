@@ -33,7 +33,10 @@ public:
     // Called by App::frame after ImGui::NewFrame. Returns true when the game layer owns the
     // keyboard this frame (App then skips its shortcuts).
     bool beginFrame();
-    bool graphOpen() const { return m_showGraph && !m_player; }   // the graph editor covers the viewport
+    bool showGraph() const;                        // the Graph tab of the editor is open (node editor)
+    void setGraphOpen(bool on);
+    bool graphOpen() const { return showGraph(); }   // the graph editor covers the viewport
+    void drawGraphWorkspace();
     void update(float dt);
     void draw();                 // after the editor UI (or alone in player mode)
     void afterDraw();            // frame complete, before present (API screenshots)
@@ -86,7 +89,7 @@ private:
     game::Runtime m_rt;
     game::NodeEditor m_editor;
     game::CommandServer m_server;
-    bool m_showGraph = false;
+    bool m_graphFramed = false;      // the view was centred on the graph once
     bool m_playing = false;
     bool m_player = false;
     bool m_playerFps = false;

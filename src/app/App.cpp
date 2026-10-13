@@ -2,7 +2,6 @@
 #include "GameHost.h"
 #include "backends/imgui_impl_win32.h"
 #include "vp3d/shaders/Shared.h"
-#include "atelier/graph_ui.h"
 #include "atelier/material_ui.h"
 #include <shellapi.h>
 #include <wincodec.h>
@@ -101,7 +100,6 @@ bool App::init(HINSTANCE inst, const Options& opt) {
     m_workspace = opt.workspace;
     m_matHost.app = this;
     atelier::material::SetPreviewHost(&m_matHost);
-    atelier::graph::Initialize(toUtf8(m_exeDir + L"\\BP_AncientCoast.agraph"));
     atelier::material::Initialize(toUtf8(m_exeDir + L"\\MaterialLibrary.amat"));
     m_rs.raster = opt.raster;
     m_vpPx.w = (int)(960 * m_dpi);
@@ -141,7 +139,6 @@ int App::run() {
     delete m_game;
     m_game = nullptr;
     atelier::material::Shutdown();
-    atelier::graph::Shutdown();
     m_gui.shutdown();
     m_renderer.shutdown();
     return 0;

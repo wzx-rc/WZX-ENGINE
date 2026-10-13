@@ -399,9 +399,9 @@ bool GameHost::beginFrame() {
     if (!io.WantTextInput) {
         if (!m_player) {
             if (ImGui::IsKeyPressed(ImGuiKey_F3, false)) {
-                m_showGraph = !m_showGraph;
-                static bool framed = false;
-                if (m_showGraph && !framed) { framed = true; m_editor.frameAll(m_graph); }
+                setGraphOpen(!showGraph());
+
+
             }
             if (ImGui::IsKeyPressed(ImGuiKey_F5, false)) m_playing ? stop() : play();
             if (ImGui::IsKeyPressed(ImGuiKey_F7, false)) m_pendingToolbar = 3;
@@ -413,7 +413,7 @@ bool GameHost::beginFrame() {
     // toolbar buttons (drawn in draw(), applied here on the next frame)
     switch (m_pendingToolbar) {
     case 1: m_playing ? stop() : play(); break;
-    case 2: m_showGraph = true; m_editor.frameAll(m_graph); break;
+    case 2: setGraphOpen(true); break;
     case 3: {
         std::wstring out;
         std::string err;
@@ -425,7 +425,7 @@ bool GameHost::beginFrame() {
     }
     m_pendingToolbar = 0;
 
-    if (m_showGraph && !m_player) return true;   // the graph editor owns the keys
+    if (graphOpen()) return true;   // the graph editor owns the keys
     if (m_playing) {
         playInput();
         return true;
@@ -434,6 +434,70 @@ bool GameHost::beginFrame() {
 }
 
 // --------------------------------------------------------------------------- drawing
+
+// The Graph tab of the editor: node library on the left, the node editor on the canvas.
+void GameHost::drawGraphWorkspace() {
+    ImGuiViewport* vp = ImGui::GetMainViewport();
+    const float s = m_app.m_dpi;
+    const float top = vp->WorkPos.y + m_app.m_atelierTop;   // below the editor top bar
+    const float sideW = 230 * s;
+    const float h = std::max(1.0f, vp->WorkPos.y + vp->WorkSize.y - top);
+    const ImVec2 sidePos(vp->WorkPos.x, top);
+    const ImVec2 canvasPos(vp->WorkPos.x + sideW, top);
+    const ImVec2 canvasSize(std::max(1.0f, vp->WorkSize.x - sideW), h);
+
+    // node library: graphs, then the nodes grouped by category (click = add at the centre of the view)
+    ImGui::SetNextWindowPos(sidePos, ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(sideW, h), ImGuiCond_Always);
+    ImGui::SetNextWindowBgAlpha(1.0f);
+    const ImGuiWindowFlags sideFlags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
+                                       ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings;
+    if (ImGui::Begin("##nodelibrary", nullptr, sideFlags)) {
+        ImGui::TextDisabled("GRAPHES");
+        ImGui::Selectable("Graphe du jeu", true);
+        ImGui::Spacing();
+        ImGui::TextDisabled("BIBLIOTHEQUE DE NOEUDS");
+        static char search[96] = {};
+        ImGui::SetNextItemWidth(-FLT_MIN);
+        ImGui::InputTextWithHint("##libsearch", "Rechercher un noeud…", search, sizeof search);
+        std::string q = search;
+        for (char& c : q) c = (char)tolower((unsigned char)c);
+        std::string last;
+        for (const NodeDef& d : nodeDefs()) {
+            std::string label = d.label;
+            for (char& c : label) c = (char)tolower((unsigned char)c);
+            if (!q.empty() && label.find(q) == std::string::npos) continue;
+            if (d.category != last) {
+                ImGui::Spacing();
+                ImGui::TextColored(ImColor(categoryAccentColor(d.category)), "%s", d.category.c_str());
+                last = d.category;
+            }
+            ImGui::PushID(d.id.c_str());
+            if (ImGui::Selectable(d.label.c_str())) m_editor.addNodeAtView(m_graph, d);
+            if (ImGui::IsItemHovered() && !d.help.empty()) ImGui::SetTooltip("%s", d.help.c_str());
+            ImGui::PopID();
+        }
+    }
+    ImGui::End();
+
+    if (!m_graphFramed) { m_graphFramed = true; m_editor.frameAll(m_graph); }
+    m_editor.draw(canvasPos, canvasSize, s, m_graph, m_playing ? &m_rt : nullptr, m_playing);
+    switch (m_editor.takeAction()) {
+    case NodeEditor::TogglePlay: m_playing ? stop() : play(); break;
+    case NodeEditor::Save: {
+        std::string err;
+        if (saveGraph(&err)) m_editor.status = "Graphe enregistré : " + toUtf8(m_graphPath);
+        else m_editor.status = "Échec de l'enregistrement : " + err;
+        break;
+    }
+    case NodeEditor::Close: setGraphOpen(false); break;
+    case NodeEditor::Build: m_pendingToolbar = 3; break;
+    default: break;
+    }
+}
+
+bool GameHost::showGraph() const { return m_app.m_workspace == 1 && !m_player; }
+void GameHost::setGraphOpen(bool on) { m_app.m_workspace = on ? 1 : 0; }
 
 void GameHost::draw() {
     const ScreenRect& v = m_app.m_rcView;
@@ -446,20 +510,8 @@ void GameHost::draw() {
         drawToasts();
         return;
     }
-    if (m_showGraph) {
-        m_editor.draw(ImVec2(v.x, v.y), ImVec2(v.w, v.h), m_app.m_dpi, m_graph, m_playing ? &m_rt : nullptr, m_playing);
-        switch (m_editor.takeAction()) {
-        case NodeEditor::TogglePlay: m_playing ? stop() : play(); break;
-        case NodeEditor::Save: {
-            std::string err;
-            if (saveGraph(&err)) m_editor.status = "Graphe enregistré : " + toUtf8(m_graphPath);
-            else m_editor.status = "Échec de l'enregistrement : " + err;
-            break;
-        }
-        case NodeEditor::Close: m_showGraph = false; break;
-        case NodeEditor::Build: m_pendingToolbar = 3; break;
-        default: break;
-        }
+    if (showGraph()) {
+        drawGraphWorkspace();
     } else {
         if (m_playing) {
             ImDrawList* fg = ImGui::GetForegroundDrawList();
@@ -486,8 +538,6 @@ void GameHost::drawToolbar() {
     if (ImGui::Begin("##gamebar", nullptr, flags)) {
         if (ImGui::Button(m_playing ? "Stop  F5" : "Jouer  F5")) m_pendingToolbar = 1;
         ImGui::SameLine();
-        if (ImGui::Button("Graphe  F3")) m_pendingToolbar = 2;
-        ImGui::SameLine();
         if (ImGui::Button("Build  F7")) m_pendingToolbar = 3;
     }
     ImGui::End();
@@ -498,7 +548,7 @@ void GameHost::drawToasts() {
     m_toasts.erase(std::remove_if(m_toasts.begin(), m_toasts.end(), [&](const Toast& t) { return now - t.t > 5000; }), m_toasts.end());
     const ScreenRect& v = m_app.m_rcView;
     float d = m_app.m_dpi;
-    float y = v.y + (m_showGraph ? 46 : 48) * d;
+    float y = v.y + (showGraph() ? 46 : 48) * d;
     const ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoSavedSettings |
                                    ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoMove;
     int i = 0;
@@ -717,7 +767,7 @@ std::string GameHost::command(const Json& j, int& status) {
 
     if (cmd == "help") return kHelp;
     if (cmd == "state")
-        return ok(", \"playing\": " + std::string(m_playing ? "true" : "false") + ", \"graphOpen\": " + (m_showGraph ? "true" : "false") +
+        return ok(", \"playing\": " + std::string(m_playing ? "true" : "false") + ", \"graphOpen\": " + (showGraph() ? "true" : "false") +
                   ", \"selected\": " + std::to_string(a.m_selected) + ", \"objects\": " + std::to_string(s.objects.size()) +
                   ", \"graphNodes\": " + std::to_string(m_graph.nodes.size()) + ", \"graphPath\": " + jstr(toUtf8(m_graphPath)) +
                   ", \"projectDir\": " + jstr(toUtf8(m_projectDir)) + ", \"lastBuild\": " + jstr(m_lastBuild) +
@@ -953,8 +1003,8 @@ std::string GameHost::command(const Json& j, int& status) {
         return ok(", \"path\": " + jstr(toUtf8(m_graphPath)));
     }
     if (cmd == "graph.show") {
-        m_showGraph = j["open"].type == Json::Bool ? j["open"].b : true;
-        if (m_showGraph) m_editor.frameAll(m_graph);
+        setGraphOpen(j["open"].type == Json::Bool ? j["open"].b : true);
+
         return ok();
     }
     // build / output

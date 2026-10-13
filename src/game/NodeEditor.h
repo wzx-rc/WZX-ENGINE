@@ -23,6 +23,8 @@ public:
     Action takeAction() { Action a = m_action; m_action = None; return a; }
     // Centres the view on all nodes at the next draw.
     void frameAll(const Graph&) { m_wantFrame = true; }
+    // Adds a node of the library at the centre of the view (from the node library panel).
+    void addNodeAtView(Graph& g, const NodeDef& d);
     void resetView() { m_pan = ImVec2(-40, -60); m_zoom = 1.0f; }
     bool modified() const { return m_modified; }
     void clearModified() { m_modified = false; }
@@ -93,5 +95,8 @@ private:
     PinRef m_menuFrom;
     char m_search[128] = {};
 };
+
+// Bright colour of a node category (library headers).
+ImU32 categoryAccentColor(const std::string& category);
 
 } // namespace game

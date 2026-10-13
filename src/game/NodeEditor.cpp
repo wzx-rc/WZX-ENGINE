@@ -901,4 +901,13 @@ void NodeEditor::handleInput(Graph& g, bool inArea, bool overWidget) {
     }
 }
 
+// Adds a node of the library at the centre of the view (no pin to wire to).
+void NodeEditor::addNodeAtView(Graph& g, const NodeDef& d) {
+    m_menuFrom = PinRef();
+    m_menuGraph = toGraph(m_origin + m_canvas * 0.5f);
+    addNodeFromMenu(g, d);
+}
+
+ImU32 categoryAccentColor(const std::string& category) { return rgb(categoryAccent(category)); }
+
 } // namespace game

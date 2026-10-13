@@ -5,7 +5,6 @@
 #include "AtelierIcons.h"
 #include "Icons.h"
 #include "atelier/atelier_style.h"
-#include "atelier/graph_ui.h"
 #include "atelier/material_ui.h"
 #include <cctype>
 
@@ -239,12 +238,6 @@ static void syncAtelierStyle() {
 
 void App::drawAtelier() {
     syncAtelierStyle();
-    // Graph Editor and Material Studio are the Atelier modules, drawn full window (src/app/atelier)
-    if (m_workspace == 1) {
-        if (atelier::graph::Draw()) m_workspace = 0;
-        else if (atelier::graph::WantsMaterials()) m_workspace = 2;
-        return;
-    }
     if (m_workspace == 2) {
         int target = atelier::material::Draw();
         if (target) m_workspace = target == 1 ? 0 : 1;
@@ -270,20 +263,23 @@ void App::drawAtelier() {
 
     AtelierState& A = m_atl;
     atlTopBar(X, Y, W);
+    m_atelierTop = 42 * s;   // the game layer draws the Graph tab below this bar
     float maxL = std::max(185.0f, std::min(360.0f, W / s - 680)), maxR = std::max(248.0f, std::min(400.0f, W / s - 650)), maxB = std::max(141.0f, H / s - 430);
     A.leftW = std::clamp(A.leftW, 185.0f, maxL);
     A.rightW = std::clamp(A.rightW, 248.0f, maxR);
     A.bottomH = std::clamp(A.bottomH, 140.0f, maxB);
     float lw = A.leftW * s, rw = A.rightW * s, bh = A.bottomH * s, top = Y + 42 * s;
     float cx = X + lw + 12 * s, cw = W - lw - 12 * s - rw - 12 * s;
-    atlHierarchy(X + 5 * s, top, lw, H - 52 * s);
-    atlViewport(cx, top, cw, H - 42 * s - bh - 18 * s);
-    atlContent(cx, Y + H - bh - 8 * s, cw, bh);
-    atlInspector(X + W - rw - 6 * s, top, rw, H - 52 * s);
-    dl = ImGui::GetWindowDrawList();
-    Splitter("splitLeft", {X + lw + 5 * s, top, 7 * s, H - 52 * s}, A.leftW, 185, maxL, true);
-    Splitter("splitRight", {X + W - rw - 12 * s, top, 6 * s, H - 52 * s}, A.rightW, 248, maxR, true, true);
-    Splitter("splitBottom", {cx, Y + H - bh - 13 * s, cw, 5 * s}, A.bottomH, 140, maxB, false, true);
+    if (m_workspace == 0) {   // the Scene panels; the Graph tab is drawn by the game layer
+        atlHierarchy(X + 5 * s, top, lw, H - 52 * s);
+        atlViewport(cx, top, cw, H - 42 * s - bh - 18 * s);
+        atlContent(cx, Y + H - bh - 8 * s, cw, bh);
+        atlInspector(X + W - rw - 6 * s, top, rw, H - 52 * s);
+        dl = ImGui::GetWindowDrawList();
+        Splitter("splitLeft", {X + lw + 5 * s, top, 7 * s, H - 52 * s}, A.leftW, 185, maxL, true);
+        Splitter("splitRight", {X + W - rw - 12 * s, top, 6 * s, H - 52 * s}, A.rightW, 248, maxR, true, true);
+        Splitter("splitBottom", {cx, Y + H - bh - 13 * s, cw, 5 * s}, A.bottomH, 140, maxB, false, true);
+    }
 
     // toast (status messages), as in graph_ui.cpp
     if (!m_status.empty() && GetTickCount64() - m_statusTime < 3500) {

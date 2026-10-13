@@ -262,6 +262,7 @@ private:
     // fps
     uint64_t m_lastTick = 0;
     float m_frameMs = 16.0f;
+    float m_atelierTop = 42.0f;   // height of the editor top bar (AtelierUI.cpp); the Graph tab starts below it
     float m_dt = 1.0f / 60.0f;
     int m_frameCounter = 0;
 };
