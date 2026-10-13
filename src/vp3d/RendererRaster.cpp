@@ -23,6 +23,8 @@ struct RasterConstants {
     float3 envBottom; uint32_t keyLight;
     float3 ambient; float shadowTexel;
     float3 keyPos; float lightScale;
+    float3 sunDir; float sunOn;
+    float3 sunRadiance; float pad;
 };
 
 struct DrawConstants {
@@ -297,22 +299,27 @@ void Renderer::recordRaster(const Scene& scene, const RenderSettings& rs, const 
     setRows(rc.viewProj, 2, f * A, -dot(f, eye) * A + B);
     setRows(rc.viewProj, 3, f, -dot(f, eye));
 
-    // Key light = the strongest enabled area light; it gets the shadow map.
+    // Key light = the sun when enabled, else the strongest enabled area light; it gets the shadow map.
     int key = -1;
     float best = 0;
     int li = 0;
     float3 keyCenter(0, 50, 0);
-    for (const AreaLight& l : scene.lights) {
-        if (!l.enabled) continue;
-        float pw = (l.color.x + l.color.y + l.color.z) * l.intensity * l.width * l.height;
-        if (pw > best) { best = pw; key = li; keyCenter = l.position; }
-        ++li;
+    float3 c = m_sceneCenter;
+    float R = m_sceneRadius * 1.05f;
+    bool sun = scene.sun.enabled && scene.sun.intensity > 0;
+    if (sun) {
+        keyCenter = c + normalize(scene.sun.direction) * (R * 3.0f);
+    } else {
+        for (const AreaLight& l : scene.lights) {
+            if (!l.enabled) continue;
+            float pw = (l.color.x + l.color.y + l.color.z) * l.intensity * l.width * l.height;
+            if (pw > best) { best = pw; key = li; keyCenter = l.position; }
+            ++li;
+        }
     }
-    float3 lz = normalize(m_sceneCenter - keyCenter);
+    float3 lz = normalize(c - keyCenter);
     float3 ref = std::fabs(lz.y) > 0.99f ? float3(1, 0, 0) : float3(0, 1, 0);
     float3 lx = normalize(cross(ref, lz)), ly = cross(lz, lx);
-    float R = m_sceneRadius * 1.05f;
-    float3 c = m_sceneCenter;
     setRows(rc.lightViewProj, 0, lx / R, -dot(lx, c) / R);
     setRows(rc.lightViewProj, 1, ly / R, -dot(ly, c) / R);
     setRows(rc.lightViewProj, 2, lz / (2 * R), (-dot(lz, c) + R) / (2 * R));
@@ -335,6 +342,9 @@ void Renderer::recordRaster(const Scene& scene, const RenderSettings& rs, const 
     rc.shadowTexel = 1.0f / kShadowSize;
     rc.keyPos = keyCenter;
     rc.lightScale = rs.lightScale;
+    rc.sunDir = normalize(scene.sun.direction);
+    rc.sunOn = sun ? 1.0f : 0.0f;
+    rc.sunRadiance = scene.sun.color * scene.sun.intensity;
     memcpy(m_rasterCB.mapped, &rc, sizeof(rc));
 
     m_cmd->SetGraphicsRootSignature(m_rasterRoot.Get());
@@ -378,7 +388,7 @@ void Renderer::recordRaster(const Scene& scene, const RenderSettings& rs, const 
     m_cmd->RSSetViewports(1, &svp);
     m_cmd->RSSetScissorRects(1, &ssc);
     m_cmd->SetPipelineState(m_psoShadow.Get());
-    if (key >= 0)
+    if (key >= 0 || sun)
         for (const Draw& d : m_draws)
             if (!(d.flags & 7u) && !isTransparent(d)) drawOne(d);
     transition(m_shadowMap.Get(), D3D12_RESOURCE_STATE_DEPTH_WRITE, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);

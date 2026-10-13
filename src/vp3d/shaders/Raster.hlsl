@@ -15,6 +15,8 @@ struct RasterConstants {
     float3 envBottom; uint keyLight;
     float3 ambient; float shadowTexel;
     float3 keyPos; float lightScale;
+    float3 sunDir; float sunOn;          // direction towards the sun, 1 when the sun is the key light
+    float3 sunRadiance; float pad;
 };
 ConstantBuffer<RasterConstants> R : register(b0);
 
@@ -192,6 +194,18 @@ float4 Shade(VSOut i, bool ghost) {
             spec += D_GGX(NoH, acL) * V_Smith(NoV, NoL, acL) * 0.04 * m.coat * (ac * ac) / max(acL * acL, 1e-4);
         }
         color += (diff + spec) * E * NoL * shadow;
+    }
+    if (R.sunOn > 0) {
+        float3 L = R.sunDir;
+        float NoL = saturate(dot(N, L));
+        if (NoL > 0) {
+            float3 H = normalize(V + L);
+            float NoH = saturate(dot(N, H));
+            float3 F = Fresnel(f0, saturate(dot(V, H)));
+            float3 spec = D_GGX(NoH, a) * V_Smith(NoV, NoL, a) * F;
+            float3 diff = diffuseCol / PI * (1 - F);
+            color += (diff + spec) * R.sunRadiance * R.lightScale * NoL * Shadow(i.wpos, N);
+        }
     }
     // Hemisphere ambient + reflection of the environment, darkened in cavities facing down.
     float3 sky = Environment(N) + R.ambient * (0.65 + 0.35 * N.y);

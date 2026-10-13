@@ -108,6 +108,13 @@ private:
     void clearBuildings();
     bool isBuilding(int obj) const;
     void drawRtsHud();
+    // Sun (RTS play): azimuth and height from the dial (AppRts.cpp), restored on Stop
+    vp3d::SunLight m_saveSun;
+    float m_sunAzimuth = vp3d::radians(220.0f);
+    float m_sunElevation = vp3d::radians(48.0f);
+    float m_sunGrabAnim = 0.0f;         // the sun bounces when the dial is grabbed
+    void updateSun();
+    void drawSunDial();
 
     App& m_app;
     game::Graph m_graph;

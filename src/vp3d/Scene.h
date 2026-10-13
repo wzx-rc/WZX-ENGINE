@@ -79,6 +79,14 @@ struct AreaLight {
     void basis(float3& U, float3& V, float3& N) const;
 };
 
+// Distant sun (directional light). Raster: key light with the shadow map. Path tracing: a small, far area light.
+struct SunLight {
+    bool enabled = false;
+    float3 direction{0.4f, 0.8f, 0.3f};   // towards the sun
+    float3 color{1.0f, 0.93f, 0.82f};
+    float intensity = 3.2f;               // irradiance on a surface facing the sun
+};
+
 struct Environment {
     float3 top{0.05f, 0.05f, 0.06f};
     float3 horizon{0.08f, 0.08f, 0.09f};
@@ -112,6 +120,7 @@ struct Scene {
     std::vector<Material> materials;
     std::vector<Object> objects;
     std::vector<AreaLight> lights;
+    SunLight sun;                // distant sun: the RTS play turns it on (off by default)
     Environment env;
     Camera camera;               // default camera
     float gridScale = 1.0f;      // grid spacing for MAT_FLAG_GRID

@@ -221,6 +221,84 @@ void GameHost::drawRtsHud() {
         ImGui::TextDisabled("Drag a house onto the grid  ·  R rotate  ·  Del delete");
     }
     ImGui::End();
+    drawSunDial();
+}
+
+// The sun: its direction from the azimuth (around the vertical) and the height.
+void GameHost::updateSun() {
+    float ce = std::cos(m_sunElevation);
+    m_app.m_scene.sun.direction = normalize(float3(std::sin(m_sunAzimuth) * ce, std::sin(m_sunElevation), std::cos(m_sunAzimuth) * ce));
+}
+
+// Sun dial, top right of the view. The top of the dial is where the camera looks: the sun sits on the
+// ring (drag it to turn the light), the arrow in the centre gives the direction of the shadows, and the
+// slider sets the height of the sun.
+void GameHost::drawSunDial() {
+    const ScreenRect& v = m_app.m_rcView;
+    ImGuiIO& io = ImGui::GetIO();
+    const float d = m_app.m_dpi;
+    const float R = 62 * d;
+    const ImVec2 c(v.r() - R - 28 * d, v.y + 180 * d + R);   // below the viewport statistics box
+    ImGui::SetNextWindowPos(ImVec2(c.x - R - 20 * d, c.y - R - 20 * d), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(2 * R + 40 * d, 2 * R + 80 * d), ImGuiCond_Always);
+    const ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |
+                                   ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoBackground;
+    if (ImGui::Begin("##sundial", nullptr, flags)) {
+        if (ImGui::IsWindowHovered()) m_buildHud = true;
+        ImGui::SetCursorScreenPos(ImVec2(c.x - R - 14 * d, c.y - R - 14 * d));
+        ImGui::InvisibleButton("##dial", ImVec2(2 * R + 28 * d, 2 * R + 28 * d));
+        // the view on the ground: f = forward, r = right (the dial turns with the camera)
+        float3 right, up, fwd;
+        m_app.m_scene.camera.basis(right, up, fwd);
+        float3 f(fwd.x, 0, fwd.z), r(right.x, 0, right.z);
+        f = length(f) > 1e-4f ? normalize(f) : float3(0, 0, 1);
+        r = length(r) > 1e-4f ? normalize(r) : float3(1, 0, 0);
+        if (ImGui::IsItemActivated()) m_sunGrabAnim = 1.0f;
+        if (ImGui::IsItemActive()) {
+            m_buildHud = true;   // the camera does not move while the dial is held
+            float dx = io.MousePos.x - c.x, dy = io.MousePos.y - c.y;
+            if (dx * dx + dy * dy > 4.0f) {
+                float a = std::atan2(dx, -dy);   // 0 at the top, clockwise
+                float3 h = f * std::cos(a) + r * std::sin(a);
+                m_sunAzimuth = std::atan2(h.x, h.z);
+            }
+        }
+        m_sunGrabAnim = std::max(0.0f, m_sunGrabAnim - io.DeltaTime * 3.0f);
+        float3 sunH(std::sin(m_sunAzimuth), 0, std::cos(m_sunAzimuth));
+        float th = std::atan2(dot(sunH, r), dot(sunH, f));
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        dl->AddCircleFilled(c, R, IM_COL32(20, 26, 36, 190), 64);
+        dl->AddCircle(c, R, IM_COL32(230, 236, 245, 230), 64, 3 * d);
+        dl->AddCircle(c, R * 0.55f, IM_COL32(230, 236, 245, 60), 48, 1 * d);
+        // arrow in the centre: the direction of the shadows (opposite of the sun)
+        ImVec2 ad(-std::sin(th), std::cos(th));
+        ImVec2 tip(c.x + ad.x * R * 0.42f, c.y + ad.y * R * 0.42f), tail(c.x - ad.x * R * 0.18f, c.y - ad.y * R * 0.18f);
+        dl->AddLine(tail, tip, IM_COL32(200, 210, 225, 220), 3 * d);
+        ImVec2 pr(-ad.y, ad.x);
+        float ah = 9 * d;
+        dl->AddTriangleFilled(ImVec2(tip.x + ad.x * ah, tip.y + ad.y * ah), ImVec2(tip.x + pr.x * ah * 0.7f, tip.y + pr.y * ah * 0.7f),
+                              ImVec2(tip.x - pr.x * ah * 0.7f, tip.y - pr.y * ah * 0.7f), IM_COL32(200, 210, 225, 220));
+        // the sun on the ring (it bounces when grabbed)
+        ImVec2 sp(c.x + std::sin(th) * R, c.y - std::cos(th) * R);
+        float pulse = 1.0f + 0.35f * std::sin(m_sunGrabAnim * 3.14159265f) + (ImGui::IsItemActive() ? 0.12f : 0.0f);
+        float sr = 11 * d * pulse;
+        float t = (float)ImGui::GetTime();
+        for (int k = 0; k < 8; ++k) {
+            float a = k * 3.14159265f / 4 + t * 0.5f;
+            dl->AddLine(ImVec2(sp.x + std::cos(a) * sr * 1.3f, sp.y + std::sin(a) * sr * 1.3f),
+                        ImVec2(sp.x + std::cos(a) * sr * 1.8f, sp.y + std::sin(a) * sr * 1.8f), IM_COL32(255, 210, 80, 255), 2.5f * d);
+        }
+        dl->AddCircleFilled(sp, sr, IM_COL32(255, 214, 90, 255), 24);
+        dl->AddCircle(sp, sr, IM_COL32(200, 120, 20, 255), 24, 1.5f * d);
+        // height of the sun
+        ImGui::SetCursorScreenPos(ImVec2(c.x - R, c.y + R + 22 * d));
+        ImGui::SetNextItemWidth(2 * R);
+        float elev = degrees(m_sunElevation);
+        if (ImGui::SliderFloat("##elev", &elev, 10.0f, 85.0f, "Height %.0f°")) m_sunElevation = radians(elev);
+        if (ImGui::IsItemActive()) m_buildHud = true;
+    }
+    ImGui::End();
+    updateSun();
 }
 
 } // namespace app

@@ -445,6 +445,35 @@ void Renderer::buildTLAS(const Scene& scene, bool buildAS) {
         gl.instance = (uint32_t)inst;
         lights.push_back(gl);
     }
+    // Path tracing: the sun becomes a small area light far away (hidden from the camera), with the same irradiance.
+    if (scene.sun.enabled && scene.sun.intensity > 0) {
+        const float dist = 2000.0f, size = 60.0f;
+        AreaLight sl;
+        sl.position = normalize(scene.sun.direction) * dist;
+        sl.target = float3(0, 0, 0);
+        float3 U, V, N;
+        sl.basis(U, V, N);
+        float3 radiance = scene.sun.color * (scene.sun.intensity * dist * dist / (size * size));
+        gpu::GpuMaterial lm = {};
+        lm.emission = radiance;
+        lm.roughness = 1.0f;
+        lm.ior = 1.5f;
+        uint32_t matId = (uint32_t)mats.size();
+        mats.push_back(lm);
+        Affine xf = Affine::fromBasis(U * size, V * size, N, sl.position);
+        uint32_t lightId = (uint32_t)lights.size();
+        int inst = addInstance(m_quadMesh, xf, matId, lightId, MASK_LIGHT_HIDDEN);
+        if (inst >= 0) {
+            gpu::GpuLight gl = {};
+            gl.corner = sl.position - U * (size * 0.5f) - V * (size * 0.5f);
+            gl.edgeU = U * size;
+            gl.edgeV = V * size;
+            gl.area = size * size;
+            gl.radiance = radiance;
+            gl.instance = (uint32_t)inst;
+            lights.push_back(gl);
+        }
+    }
     m_lightCount = (uint32_t)lights.size();
     if (lights.empty()) lights.push_back(gpu::GpuLight{});
     if (insts.empty()) insts.push_back(gpu::GpuInstance{});
