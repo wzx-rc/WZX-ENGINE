@@ -117,7 +117,7 @@ std::vector<NodeDef> build() {
     v.push_back(B(Op::SnapGrid, "rts.snap", "Aligner sur la grille", RT, "Arrondit X et Z au pas de grille (Y inchangé).").pure().inV("Position", float3(0, 0, 0)).inF("Pas", 6).out("Position", V));
     v.push_back(B(Op::CellFree, "rts.cellFree", "Case libre ?", RT, "Vrai si aucun objet visible n'occupe la case (rayon = demi-pas).")
                     .pure().inV("Position", float3(0, 0, 0)).inF("Pas", 6).out("Libre", Bo));
-    v.push_back(B(Op::SetRtsCamera, "rts.camera", "Caméra RTS", RT, "Active la caméra RTS pendant la partie : ZQSD ou flèches, bords de l'écran, molette, glisser au clic droit, Q/E pour tourner.").execIn().inB("Actif", true).execOut());
+    v.push_back(B(Op::SetRtsCamera, "rts.camera", "Caméra RTS", RT, "Active la caméra RTS pendant la partie : ZQSD ou WASD (positions physiques) ou flèches, bords de l'écran, molette, glisser au clic droit, touches Q/E (positions QWERTY, soit A/E sur AZERTY) pour tourner.").execIn().inB("Actif", true).execOut());
     v.push_back(B(Op::CountPart, "rts.count", "Compter les objets", RT, "Nombre d'objets visibles d'un type (vide = tous).").pure().inS("Type", "CUBE").out("Nombre", F));
     std::vector<NodeDef> out;
     for (auto& b : v) out.push_back(b.d);

@@ -240,10 +240,13 @@ void GameHost::updateRtsCamera(float dt) {
     bool inView = v.contains(io.MousePos.x, io.MousePos.y) && !ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId);
     game::CameraInput in;
     if (!io.WantTextInput) {
+        // physical positions (QWERTY scan codes), so ZQSD on AZERTY and WASD on QWERTY both work;
+        // turning uses the QWERTY Q/E positions (A/E on AZERTY)
         auto k = [](ImGuiKey key) { return ImGui::IsKeyDown(key) ? 1.0f : 0.0f; };
-        in.moveZ = k(ImGuiKey_W) + k(ImGuiKey_UpArrow) - k(ImGuiKey_S) - k(ImGuiKey_DownArrow);
-        in.moveX = k(ImGuiKey_D) + k(ImGuiKey_RightArrow) - k(ImGuiKey_A) - k(ImGuiKey_LeftArrow);
-        in.turn = k(ImGuiKey_E) - k(ImGuiKey_Q);
+        auto phys = [](UINT scan) { UINT vk = MapVirtualKeyW(scan, MAPVK_VSC_TO_VK); return vk && (GetAsyncKeyState(vk) & 0x8000) ? 1.0f : 0.0f; };
+        in.moveZ = phys(0x11) + k(ImGuiKey_UpArrow) - phys(0x1F) - k(ImGuiKey_DownArrow);   // W / S
+        in.moveX = phys(0x20) + k(ImGuiKey_RightArrow) - phys(0x1E) - k(ImGuiKey_LeftArrow); // D / A
+        in.turn = phys(0x12) - phys(0x10);                                                   // E / Q
     }
     in.fast = io.KeyShift;
     if (inView) {
