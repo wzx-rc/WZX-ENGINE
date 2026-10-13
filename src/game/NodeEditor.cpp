@@ -9,7 +9,7 @@ namespace game {
 
 using vp3d::float2;
 
-static const float kHeader = 26, kRow = 24, kPad = 8;   // graph units
+static const float kHeader = 40, kRow = 24, kFooter = 22, kPad = 8;   // graph units: title band, rows, description line
 static const float kBarH = 36;                           // toolbar height (DIPs)
 
 // Colours of the editor (same palette as the former immediate UI).
@@ -69,14 +69,25 @@ static ImU32 pinColor(PinType t) {
     return rgb(0xFFFFFF);
 }
 
-static uint32_t categoryHex(const std::string& c) {
-    if (c == "Événements") return 0x8E2F2F;
-    if (c == "Flux") return 0x4A505A;
-    if (c == "Actions") return 0x255294;
-    if (c == "Données") return 0x2F6E42;
-    if (c == "Maths") return 0x2B6668;
-    if (c == "RTS") return 0x91601F;
-    return 0x444444;
+static uint32_t categoryHeader(const std::string& c) {
+    if (c == "Événements") return 0x6E3441;
+    if (c == "Flux") return 0x6B5628;
+    if (c == "Actions") return 0x2F4F78;
+    if (c == "Données") return 0x4B3A6B;
+    if (c == "Maths") return 0x2E5846;
+    if (c == "RTS") return 0x7A5224;
+    return 0x444A54;
+}
+
+// Bright tone of a category (labels, menu dots)
+static uint32_t categoryAccent(const std::string& c) {
+    if (c == "Événements") return 0xE06C75;
+    if (c == "Flux") return 0xE5B567;
+    if (c == "Actions") return 0x6CA8F0;
+    if (c == "Données") return 0xB48EE0;
+    if (c == "Maths") return 0x7BD39B;
+    if (c == "RTS") return 0xE8A25C;
+    return 0xAAB0BA;
 }
 
 static bool hasVec3Input(const Node& n) {
@@ -150,7 +161,7 @@ int NodeEditor::rowCount(const Node& n) const {
 ImVec2 NodeEditor::nodeMin(const Node& n) const { return toScreen(ImVec2(n.pos.x, n.pos.y)); }
 
 ImVec2 NodeEditor::nodeMax(const Node& n) const {
-    ImVec2 size(nodeWidth(n), kHeader + rowCount(n) * kRow + kPad);   // graph units
+    ImVec2 size(nodeWidth(n), kHeader + rowCount(n) * kRow + kFooter + kPad);   // graph units
     return nodeMin(n) + size * scale();
 }
 
@@ -283,7 +294,7 @@ void NodeEditor::doFrame(const Graph& g) {
         x0 = std::min(x0, n.pos.x);
         y0 = std::min(y0, n.pos.y);
         x1 = std::max(x1, n.pos.x + nodeWidth(n));
-        y1 = std::max(y1, n.pos.y + kHeader + rowCount(n) * kRow + kPad);
+        y1 = std::max(y1, n.pos.y + kHeader + rowCount(n) * kRow + kFooter + kPad);
     }
     // fit in the canvas (margins in ImGui pixels), never below 0.6 : the graph is then cropped, not shrunk further
     float aw = m_canvas.x - 80 * m_dpi, ah = m_canvas.y - 90 * m_dpi;
@@ -478,16 +489,32 @@ void NodeEditor::drawNode(Graph& g, Node& n, const Runtime* rt) {
     if (p1.x < m_origin.x || p0.x > m_origin.x + m_canvas.x || p1.y < m_origin.y || p0.y > m_origin.y + m_canvas.y) return;
     bool sel = selected(n.id);
     bool hot = rt && rt->running() && rt->time() - rt->lastRun(n.id) < 0.25f;
-    ImU32 headCol = n.def->pure ? rgb(0x4A505A) : rgb(categoryHex(n.def->category));
+    ImU32 headCol = n.def->pure ? rgb(0x3A3F47) : rgb(categoryHeader(n.def->category));
 
-    dl->AddRectFilled(p0 + ImVec2(3 * s, 4 * s), p1 + ImVec2(3 * s, 4 * s), rgb(0x000000, 0.35f), 7 * s);
-    dl->AddRectFilled(p0, p1, rgb(0x1C1F24, 0.97f), 7 * s);
-    dl->AddRectFilled(p0, ImVec2(p1.x, p0.y + kHeader * s), headCol, 7 * s, ImDrawFlags_RoundCornersTop);
-    float tx = p0.x + (n.def->event ? 24 : 9) * s;
-    if (n.def->event) canvasText(dl, m_font, 11 * s, ImVec2(p0.x + 6 * s, p0.y + kHeader * s * 0.5f), rgb(0xFFFFFF, 0.9f), glyph(0xE945));
-    canvasText(dl, m_fontBold, 12.5f * s, ImVec2(tx, p0.y + kHeader * s * 0.5f), rgb(0xFFFFFF), n.def->label);
-    if (hot || sel) dl->AddRect(p0, p1, hot ? rgb(0xFFD24A) : rgb(kAccent), 7 * s, 0, 2.0f * s);
-    else dl->AddRect(p0, p1, rgb(kBorder), 7 * s, 0, 1.0f * s);
+    // card: soft shadow, body, rounded header in the category colour
+    dl->AddRectFilled(p0 + ImVec2(2 * s, 5 * s), p1 + ImVec2(2 * s, 5 * s), rgb(0x000000, 0.45f), 8 * s);
+    dl->AddRectFilled(p0, p1, rgb(0x25282E, 0.98f), 8 * s);
+    dl->AddRectFilled(p0, ImVec2(p1.x, p0.y + kHeader * s), headCol, 8 * s, ImDrawFlags_RoundCornersTop);
+
+    // header: optional event icon, title, category line, node number
+    float tx = p0.x + (n.def->event ? 27 : 10) * s;
+    if (n.def->event) canvasText(dl, m_font, 12 * s, ImVec2(p0.x + 9 * s, p0.y + 14 * s), rgb(0xFFFFFF, 0.9f), glyph(0xE945));
+    canvasText(dl, m_fontBold, 12.5f * s, ImVec2(tx, p0.y + 14 * s), rgb(0xFFFFFF), n.def->label);
+    canvasText(dl, m_font, 9.5f * s, ImVec2(tx, p0.y + 30 * s), rgb(0xFFFFFF, 0.65f), n.def->category);
+    char idx[16];
+    snprintf(idx, sizeof idx, "#%03d", n.id);
+    canvasText(dl, m_font, 9.5f * s, ImVec2(p1.x - 9 * s, p0.y + 14 * s), rgb(0xFFFFFF, 0.5f), idx, true);
+
+    // border: selection / running node in colour, otherwise a faint edge
+    if (hot || sel) dl->AddRect(p0, p1, hot ? rgb(0xFFD24A) : rgb(kAccent), 8 * s, 0, 2.0f * s);
+    else dl->AddRect(p0, p1, rgb(0x3A3F47), 8 * s, 0, 1.0f * s);
+
+    // footer: what the node does
+    if (!n.def->help.empty()) {
+        float fy = p1.y - kFooter * s;
+        dl->AddLine(ImVec2(p0.x + 8 * s, fy), ImVec2(p1.x - 8 * s, fy), rgb(0x3A3F47));
+        canvasText(dl, m_font, 10 * s, ImVec2(p0.x + 10 * s, fy + kFooter * s * 0.5f), rgb(0x8A919C), n.def->help);
+    }
 
     // outputs
     for (int i = 0; i < (int)n.def->outs.size(); ++i) {
@@ -496,7 +523,7 @@ void NodeEditor::drawNode(Graph& g, Node& n, const Runtime* rt) {
         bool conn = false;
         for (const Link& l : g.links) if (l.fromNode == n.id && l.fromPin == i) { conn = true; break; }
         drawPinShape(dl, pp, p.type, conn, s);
-        if (!p.name.empty()) canvasText(dl, m_font, 11.5f * s, ImVec2(p1.x - 8 * s, pp.y), rgb(kText), p.name, true);
+        if (!p.name.empty()) canvasText(dl, m_font, 11.5f * s, ImVec2(p1.x - 10 * s, pp.y), rgb(kText), p.name, true);
     }
 
     // inputs
@@ -720,14 +747,14 @@ void NodeEditor::drawMenu(Graph& g) {
             if (!first) first = &nd;
             if (q.empty() && nd.category != lastCat) {
                 ImGui::Dummy(ImVec2(0, 2 * d));
-                ImGui::TextColored(ImColor(rgb(categoryHex(nd.category))), "%s", nd.category.c_str());
+                ImGui::TextColored(ImColor(rgb(categoryAccent(nd.category))), "%s", nd.category.c_str());
                 lastCat = nd.category;
             }
             ImGui::PushID(nd.id.c_str());
             bool clicked = ImGui::Selectable(nd.label.c_str(), false, 0, ImVec2(0, 22 * d));
             ImVec2 rmin = ImGui::GetItemRectMin();
             ImGui::GetWindowDrawList()->AddCircleFilled(ImVec2(rmin.x + 14 * d, rmin.y + 11 * d), 3.5f * d,
-                                                        rgb(categoryHex(nd.category)));
+                                                        rgb(categoryAccent(nd.category)));
             if (ImGui::IsItemHovered() && !nd.help.empty()) ImGui::SetTooltip("%s", nd.help.c_str());
             if (clicked) {
                 addNodeFromMenu(g, nd);
