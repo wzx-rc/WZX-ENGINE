@@ -79,6 +79,7 @@ GameHost::~GameHost() { m_server.stop(); }
 void GameHost::init() {
     m_editor.setFonts(m_app.m_gui.fontSmall, m_app.m_gui.fontBold);
     m_editor.setNodeIconDrawer(&drawNodeIcon);
+    m_build.init(20, 20, 1.0f);   // the RTS grid: 20 x 20 cells of 1 unit, as in the RTS starter
     fs::path exe(m_app.m_exeDir);
     std::error_code ec;
     if (fs::exists(exe / "game.json")) {
@@ -164,7 +165,9 @@ void GameHost::defaultGraph() {
     int start = g.addNode("event.start", float2(0, 0));
     int hello = g.addNode("action.print", float2(260, 0));
     set(hello, "Text", Value::Str("Click a unit, then the ground to move it. R: rotate, C: spawn a cube."));
-    L(start, "", hello, "");
+    int cam = g.addNode("rts.camera", float2(260, -120));   // the RTS camera, and the house placement, start with Play
+    L(start, "", cam, "");
+    L(cam, "", hello, "");
 
     int click = g.addNode("event.clickObject", float2(0, 140));
     int sel = g.addNode("action.select", float2(260, 140));
@@ -234,6 +237,7 @@ void GameHost::stop() {
     m_rt.stop();
     m_playing = false;
     m_rtsCam = false;
+    clearBuildings();
     Scene& s = m_app.m_scene;
     s.objects = m_saveObjects;
     s.materials = m_saveMaterials;
@@ -246,6 +250,7 @@ void GameHost::stop() {
 void GameHost::update(float dt) {
     if (m_playing) m_rt.tick(dt);
     if (m_playing && m_rtsCam) updateRtsCamera(dt);
+    if (m_playing) updatePlacement(dt);
 }
 
 void GameHost::setRtsCamera(bool on) {
@@ -273,7 +278,7 @@ void GameHost::updateRtsCamera(float dt) {
     ImGuiIO& io = ImGui::GetIO();
     const ScreenRect& v = m_app.m_rcView;
     const float e = 6 * m_app.m_dpi;
-    bool inView = v.contains(io.MousePos.x, io.MousePos.y) && !ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId);
+    bool inView = viewVisible() && !m_buildHud && v.contains(io.MousePos.x, io.MousePos.y) && !ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId);
     game::CameraInput in;
     if (!io.WantTextInput) {
         // physical positions (QWERTY scan codes), so ZQSD on AZERTY and WASD on QWERTY both work;
@@ -403,11 +408,14 @@ void GameHost::toast(const std::wstring& s) {
 void GameHost::playInput() {
     ImGuiIO& io = ImGui::GetIO();
     const ScreenRect& v = m_app.m_rcView;
-    if (ImGui::IsMouseClicked(0) && v.contains(io.MousePos.x, io.MousePos.y) && !ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId)) {
+    if (viewVisible() && ImGui::IsMouseClicked(0) && !m_buildHud && v.contains(io.MousePos.x, io.MousePos.y) &&
+        !ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId)) {
         float3 o, d;
         m_app.cameraRay(io.MousePos.x, io.MousePos.y, o, d);
         PickResult pr = pick(m_app.m_scene, o, d);
-        if (pr.object >= 0 && objectAlive(pr.object) && !m_app.m_scene.objects[pr.object].part.empty()) {
+        if (m_rtsCam && isBuilding(pr.object)) {
+            // a house: the RTS placement takes the click (AppRts.cpp), the graph gets no event
+        } else if (pr.object >= 0 && objectAlive(pr.object) && !m_app.m_scene.objects[pr.object].part.empty()) {
             m_rt.fireClickObject(pr.object, pr.position);
         } else if (std::fabs(d.y) > 1e-5f) {
             float t = -o.y / d.y;
@@ -581,12 +589,14 @@ void GameHost::compileGraph() {
 
 void GameHost::draw() {
     const ScreenRect& v = m_app.m_rcView;
+    m_buildHud = false;   // set again by drawRtsHud() when the HUD is drawn
     if (m_player) {
         if (m_playerFps) {
             char b[64];
             snprintf(b, sizeof b, "%.0f FPS", 1000.0f / std::max(m_app.m_frameMs, 0.1f));
             ImGui::GetForegroundDrawList()->AddText(ImVec2(v.x + 10, v.y + 6), IM_COL32(170, 170, 170, 255), b);
         }
+        if (m_rtsCam) drawRtsHud();
         drawToasts();
         return;
     }
@@ -602,6 +612,7 @@ void GameHost::draw() {
             ImVec2 ts = ImGui::CalcTextSize(tag);
             fg->AddText(ImVec2(tl.x + (240 - ts.x) * 0.5f, tl.y + (26 - ts.y) * 0.5f), IM_COL32(8, 19, 11, 255), tag);
         }
+        if (m_rtsCam && viewVisible()) drawRtsHud();
         drawToolbar();
     }
     drawToasts();
@@ -792,6 +803,8 @@ static const char* kHelp =
     "\"object.delete\": \"{target}\", \"object.select\": \"{target|null}\", "
     "\"camera.set\": \"{target?:[x,y,z], yaw?, pitch?, distance?}\", "
     "\"play\": \"{}\", \"stop\": \"{}\", "
+    "\"rts.list\": \"{} -> maisons sur la grille\", \"rts.add\": \"{type: index, pos?: [x,y,z]} -> index (Play, caméra RTS)\", "
+    "\"rts.move\": \"{index, pos: [x,y,z]} -> placed\", \"rts.rotate\": \"{index}\", \"rts.remove\": \"{index}\", "
     "\"input.key\": \"{key: R|ESPACE|...} (pendant Play)\", \"input.click\": \"{target} ou {pos:[x,y,z]} (pendant Play)\", "
     "\"graph.get\": \"{}\", \"graph.set\": \"{graph: {...}}\", \"graph.clear\": \"{}\", \"graph.nodeTypes\": \"{}\", "
     "\"graph.addNode\": \"{type, x?, y?, in?: {broche: valeur}} -> id\", \"graph.removeNode\": \"{id}\", "
@@ -849,6 +862,7 @@ std::string GameHost::command(const Json& j, int& status) {
     if (cmd == "state")
         return ok(", \"playing\": " + std::string(m_playing ? "true" : "false") + ", \"graphOpen\": " + (showGraph() ? "true" : "false") +
                   ", \"selected\": " + std::to_string(a.m_selected) + ", \"objects\": " + std::to_string(s.objects.size()) +
+                  ", \"rtsCamera\": " + std::string(m_rtsCam ? "true" : "false") + ", \"buildings\": " + std::to_string(m_build.buildings().size()) +
                   ", \"graphNodes\": " + std::to_string(m_graph.nodes.size()) + ", \"graphPath\": " + jstr(toUtf8(m_graphPath)) +
                   ", \"projectDir\": " + jstr(toUtf8(m_projectDir)) + ", \"lastBuild\": " + jstr(m_lastBuild) +
                   ", \"mouse\": [" + num(ImGui::GetIO().MousePos.x / m_app.m_dpi) + ", " + num(ImGui::GetIO().MousePos.y / m_app.m_dpi) + "], \"viewport\": [" + num(m_app.m_rcView.x) + ", " + num(m_app.m_rcView.y) + ", " + num(m_app.m_rcView.w) + ", " + num(m_app.m_rcView.h) + "]");
@@ -958,6 +972,52 @@ std::string GameHost::command(const Json& j, int& status) {
             return fail("préciser target ou pos");
         }
         return ok();
+    }
+    // RTS placement (AppRts.cpp): the houses, for tests and scripts
+    if (cmd == "rts.list") {
+        const std::vector<game::Building>& bs = m_build.buildings();
+        const std::vector<game::BuildingType>& ts = m_build.types();
+        std::ostringstream js;
+        js << "{\"ok\": true, \"dragging\": " << m_build.dragging() << ", \"types\": [";
+        for (size_t k = 0; k < ts.size(); ++k) js << (k ? ", " : "") << jstr(ts[k].name);
+        js << "], \"buildings\": [";
+        for (size_t i = 0; i < bs.size(); ++i) {
+            const game::Building& b = bs[i];
+            js << (i ? ",\n  " : "\n  ") << "{\"index\": " << i << ", \"type\": " << jstr(ts[b.type].name) << ", \"cell\": [" << b.cell.x << ", "
+               << b.cell.z << "], \"rot\": " << b.rot << ", \"placed\": " << (b.placed ? "true" : "false") << ", \"pos\": " << vec(b.pos)
+               << ", \"object\": " << b.object << "}";
+        }
+        js << "\n]}";
+        return js.str();
+    }
+    if (cmd.rfind("rts.", 0) == 0) {
+        if (!m_playing || !m_rtsCam) return fail("Play avec le noeud Caméra RTS requis");
+        if (cmd == "rts.add") {
+            float3 at;
+            if (!readVec(j["pos"], at)) at = viewCentreGround();
+            int idx = placeNew((int)j["type"].num(0), at);
+            if (idx < 0) return fail("type inconnu ou pas de place libre sur la grille");
+            const game::Building& b = m_build.buildings()[idx];
+            return ok(", \"index\": " + std::to_string(idx) + ", \"cell\": [" + std::to_string(b.cell.x) + ", " + std::to_string(b.cell.z) + "]");
+        }
+        if (m_build.dragging() >= 0) return fail("un bâtiment est déjà en main");
+        int i = (int)j["index"].num(-1);
+        if (i < 0 || i >= (int)m_build.buildings().size()) return fail("bâtiment introuvable (voir rts.list)");
+        if (cmd == "rts.rotate") return ok(", \"turned\": " + std::string(m_build.rotate(i) ? "true" : "false"));
+        if (cmd == "rts.remove") {
+            removeBuilding(i);
+            return ok();
+        }
+        if (cmd == "rts.move") {
+            float3 p;
+            if (!readVec(j["pos"], p)) return fail("préciser pos [x, y, z]");
+            m_build.beginDrag(i, m_build.buildings()[i].pos, false);
+            m_build.updateDrag(p, true);
+            bool valid = m_build.dragValid();
+            finishDrag(false);
+            return ok(", \"placed\": " + std::string(valid ? "true" : "false"));
+        }
+        return fail("commande inconnue : " + cmd + " (rts.list, rts.add, rts.move, rts.rotate, rts.remove)");
     }
     // graph
     if (cmd == "graph.get") return "{\"ok\": true, \"path\": " + jstr(toUtf8(m_graphPath)) + ", \"graph\": " + m_graph.toJson() + "}";

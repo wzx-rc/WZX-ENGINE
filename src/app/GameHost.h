@@ -4,9 +4,11 @@
 #include "Json.h"
 #include "game/CommandServer.h"
 #include "game/NodeEditor.h"
+#include "game/Placement.h"
 #include "game/RtsCamera.h"
 #include "game/Runtime.h"
 #include "vp3d/Scene.h"
+#include <map>
 #include <string>
 #include <vector>
 
@@ -84,6 +86,28 @@ private:
     void drawToolbar();
     void drawToasts();
     void toast(const std::wstring& s);
+
+    // RTS placement (AppRts.cpp): houses on the grid, dragged in the view or out of the HUD, animated
+    // and turned into scene objects. Simulated during Play; the input and the HUD need the RTS camera.
+    game::Placement m_build;
+    std::map<int, int> m_buildMat;       // building id -> its own material
+    int m_invalidMat = -1;               // red material of an invalid drop (this Play session)
+    int m_buildHover = -1, m_buildSelected = -1, m_buildPress = -1;
+    ImVec2 m_buildPressPos;
+    bool m_buildHud = false;             // the mouse is over the RTS HUD (set by draw)
+    bool m_hudDrag = false;              // a house is dragged out of the HUD
+    ImVec2 m_hudPress;
+    bool viewVisible() const;
+    vp3d::float3 viewCentreGround() const;
+    int placeNew(int type, const vp3d::float3& at);
+    void updatePlacement(float dt);
+    void syncBuildings();
+    int invalidMaterial();
+    void finishDrag(bool cancelled);
+    void removeBuilding(int idx);
+    void clearBuildings();
+    bool isBuilding(int obj) const;
+    void drawRtsHud();
 
     App& m_app;
     game::Graph m_graph;
