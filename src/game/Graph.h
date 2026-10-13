@@ -121,6 +121,7 @@ public:
     // Returns false (and sets err) if the pins are incompatible.
     bool connect(int fromNode, int fromPin, int toNode, int toPin, std::string* err = nullptr);
     void disconnectPin(int nodeId, int pin, bool output);
+    void removeLink(const Link& l);   // this link only: a flow input can take several links
     const Link* inputLink(int nodeId, int pin) const;
     static bool compatible(PinType out, PinType in);
     void clear();

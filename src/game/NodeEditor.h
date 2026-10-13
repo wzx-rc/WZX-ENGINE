@@ -20,7 +20,7 @@ public:
     void setFonts(ImFont* regular, ImFont* bold) { m_font = regular; m_fontBold = bold; }
 
     // Outlines around the nodes (Graph settings): off hides them; the selected node keeps its highlight.
-    void setOutline(bool on, float weight) { m_outline = on; m_outlineWeight = weight; }
+    void setOutline(bool on, float weight, ImU32 selectColor) { m_outline = on; m_outlineWeight = weight; m_selectColor = selectColor; }
 
     // Draws the icon of a node type (the app owns the icon set); called with the node type id.
     using NodeIconFn = void (*)(ImDrawList* dl, const std::string& nodeId, ImVec2 p, float size, ImU32 color);
@@ -98,6 +98,7 @@ private:
     NodeIconFn m_nodeIcon = nullptr;
     bool m_outline = true;
     float m_outlineWeight = 0.5f;
+    ImU32 m_selectColor = IM_COL32(102, 186, 208, 255);   // outline of the selected node (Graph settings)
     float m_dpi = 1.0f;
     ImVec2 m_origin;                       // canvas top-left (screen)
     ImVec2 m_canvas;                       // canvas size (screen)
@@ -113,6 +114,8 @@ private:
     // interaction
     Drag m_drag = DragNone;
     PinRef m_linkFrom;
+    bool m_linkPicked = false;             // the link being dragged was taken from an input (dropped in the void, it stays detached)
+    Link m_picked;                         // that link, put back when it cannot connect
     ImVec2 m_pressPos, m_rightPos;
     bool m_dragMoved = false;
     int m_rightButton = 0;

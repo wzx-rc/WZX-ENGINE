@@ -576,7 +576,7 @@ void GameHost::drawGraphWorkspace() {
     ImGui::End();
 
     if (!m_graphFramed) { m_graphFramed = true; m_editor.frameAll(m_graph); }
-    m_editor.setOutline(th::settings().graphOutline, th::settings().graphOutlineWeight);
+    m_editor.setOutline(th::settings().graphOutline, th::settings().graphOutlineWeight, ImGui::ColorConvertFloat4ToU32(th::settings().graphSelectColor));
     m_editor.draw(canvasPos, canvasSize, s, m_graph, m_playing ? &m_rt : nullptr, m_playing);
     switch (m_editor.takeAction()) {
     case NodeEditor::TogglePlay: m_playing ? stop() : play(); break;

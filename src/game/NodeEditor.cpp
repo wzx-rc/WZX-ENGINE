@@ -617,7 +617,7 @@ void NodeEditor::drawNode(Graph& g, Node& n, const Runtime* rt) {
         float h = w * 0.5f;
         dl->AddRect(ImVec2(p0.x - h, p0.y - h), ImVec2(p1.x + h, p1.y + h), c, 5 * s + h, 0, w);
     };
-    if (sel) outside(kCyan, 2 * m_outlineWeight * s);
+    if (sel) outside(m_selectColor, 2 * m_outlineWeight * s);
     else if (m_outline) outside(withA(color, 128), m_outlineWeight * s);   // the node colour, half transparent
     if (hot) outside(IM_COL32(255, 210, 74, 255), 2 * m_outlineWeight * s);
 
@@ -969,7 +969,7 @@ void NodeEditor::drawInspectorGraph(Graph& g, const Runtime* rt, float w) {
     ImGui::TextDisabled("CANVAS CONTROLS");
     ImGui::TextDisabled("Wheel to zoom, middle drag to pan");
     ImGui::TextDisabled("Right click to add a node");
-    ImGui::TextDisabled("Drag pins to connect, Alt+click to detach");
+    ImGui::TextDisabled("Drag pins to connect, drag a linked input to detach it, Alt+click to detach");
     ImGui::TextDisabled("Click a group title to move it with its nodes");
 
     ImGui::Spacing();
@@ -1239,20 +1239,21 @@ void NodeEditor::handleInput(Graph& g, bool inArea, bool overWidget) {
         m_dragMoved = false;
         PinRef p = hitPin(g, mouse);
         if (p.pin >= 0) {
-            const Node* n = g.node(p.node);
             if (alt) {
                 pushUndo(g);
                 g.disconnectPin(p.node, p.pin, p.output);
-            } else if (!p.output && n->def->ins[p.pin].type != PinType::Exec && g.inputLink(p.node, p.pin)) {
-                // pick up an existing data link from its input end
-                const Link* l = g.inputLink(p.node, p.pin);
-                PinRef src{l->fromNode, l->fromPin, true};
+            } else if (!p.output && g.inputLink(p.node, p.pin)) {
+                // pick up an existing link (data or flow) from its input end: dragged out, it detaches
+                m_picked = *g.inputLink(p.node, p.pin);
+                PinRef src{m_picked.fromNode, m_picked.fromPin, true};
                 pushUndo(g);
-                g.disconnectPin(p.node, p.pin, false);
+                g.removeLink(m_picked);
                 m_linkFrom = src;
+                m_linkPicked = true;
                 m_drag = DragLink;
             } else {
                 m_linkFrom = p;
+                m_linkPicked = false;
                 m_drag = DragLink;
             }
         } else if (int id = hitNode(g, mouse)) {
@@ -1325,16 +1326,23 @@ void NodeEditor::handleInput(Graph& g, bool inArea, bool overWidget) {
         if (!io.MouseDown[0]) {
             m_drag = DragNone;
             PinRef t = hitPin(g, mouse);
+            bool connected = false;
             if (t.pin >= 0 && t.output != m_linkFrom.output) {
                 std::string err;
                 pushUndo(g);
                 bool ok = m_linkFrom.output ? g.connect(m_linkFrom.node, m_linkFrom.pin, t.node, t.pin, &err)
                                             : g.connect(t.node, t.pin, m_linkFrom.node, m_linkFrom.pin, &err);
                 if (!ok) { m_undo.pop_back(); status = "Connection impossible: " + err; }
-                else status.clear();
-            } else if (t.pin < 0 && !hitNode(g, mouse) && inArea) {
+                else { status.clear(); connected = true; }
+            }
+            if (m_linkPicked) {
+                // taken from an input: on a pin that refuses it, it goes back; anywhere else it stays detached
+                if (!connected && t.pin >= 0) g.connect(m_picked.fromNode, m_picked.fromPin, m_picked.toNode, m_picked.toPin);
+                else if (!connected) status = "Link detached";
+            } else if (!connected && t.pin < 0 && !hitNode(g, mouse) && inArea) {
                 openMenu(mouse, m_linkFrom);   // dropped in the void: pick a node to connect
             }
+            m_linkPicked = false;
         }
         break;
     case DragPan:

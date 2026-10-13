@@ -81,7 +81,7 @@ copies de travail `_ddgi-test/`, `_nodal-editor/`, `_rts-test/`, et les dossiers
   - Mode : Dark / Light (le mode clair est volontairement un peu atténué).
   - Main Color : teinte des panneaux et des fonds (Graphite = noir neutre, Blue Slate = bleuté d'origine, Midnight, Forest, Plum, Umber ou couleur libre).
   - Accent Color : sélection, boutons actifs, surlignages.
-  - Graph : Node outline (contours des nœuds, activable, dans la couleur du node à 50 %) et Outline weight (épaisseur, de 0,1 à 3 px).
+  - Graph : Node outline (contours des nœuds, activable, dans la couleur du node à 50 %) et Outline weight (épaisseur, de 0,1 à 3 px), et Selection outline (couleur du contour du node sélectionné).
   - Text size, Icon size, Layout size (espacement : plus compact en dessous de 100 %, plus aéré au-dessus).
 - Couleurs partagées par tous les espaces : `src/app/atelier/atelier_style.h`, recalculées à chaque image depuis ces réglages. Métriques et couleurs de base : `assets/themes/Blue 01.theme`.
 - Tests en ligne de commande (sans enregistrer) : `--light 0|1`, `--main-color r,g,b`, `--sizes texte,icônes,layout`, `--settings`.
