@@ -197,6 +197,7 @@ void GameHost::stop() {
     if (!m_playing) return;
     m_rt.stop();
     m_playing = false;
+    m_rtsCam = false;
     Scene& s = m_app.m_scene;
     s.objects = m_saveObjects;
     s.materials = m_saveMaterials;
@@ -208,6 +209,65 @@ void GameHost::stop() {
 
 void GameHost::update(float dt) {
     if (m_playing) m_rt.tick(dt);
+    if (m_playing && m_rtsCam) updateRtsCamera(dt);
+}
+
+void GameHost::setRtsCamera(bool on) {
+    if (on && !m_rtsCam) {
+        const vp3d::Camera& c = m_app.m_scene.camera;
+        m_cam.reset(c.target, c.yaw, std::min(c.distance, 14.0f));   // the RTS starting view (prototype default)
+    }
+    m_rtsCam = on;
+    m_rmbDrag = false;
+}
+
+bool GameHost::groundUnderMouse(float3& p) const {
+    ImVec2 m = ImGui::GetIO().MousePos;
+    float3 o, d;
+    m_app.cameraRay(m.x, m.y, o, d);
+    if (std::fabs(d.y) < 1e-5f) return false;
+    float t = -o.y / d.y;
+    if (t <= 0) return false;
+    p = o + d * t;
+    return true;
+}
+
+// RTS camera (node "Caméra RTS"): keys, screen edges, wheel zoom to the cursor, right drag, middle turn.
+void GameHost::updateRtsCamera(float dt) {
+    ImGuiIO& io = ImGui::GetIO();
+    const ScreenRect& v = m_app.m_rcView;
+    const float e = 6 * m_app.m_dpi;
+    bool inView = v.contains(io.MousePos.x, io.MousePos.y) && !ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId);
+    game::CameraInput in;
+    if (!io.WantTextInput) {
+        auto k = [](ImGuiKey key) { return ImGui::IsKeyDown(key) ? 1.0f : 0.0f; };
+        in.moveZ = k(ImGuiKey_W) + k(ImGuiKey_UpArrow) - k(ImGuiKey_S) - k(ImGuiKey_DownArrow);
+        in.moveX = k(ImGuiKey_D) + k(ImGuiKey_RightArrow) - k(ImGuiKey_A) - k(ImGuiKey_LeftArrow);
+        in.turn = k(ImGuiKey_E) - k(ImGuiKey_Q);
+    }
+    in.fast = io.KeyShift;
+    if (inView) {
+        if (io.MousePos.x < v.x + e) in.moveX -= 1;
+        if (io.MousePos.x > v.r() - e) in.moveX += 1;
+        if (io.MousePos.y < v.y + e) in.moveZ += 1;
+        if (io.MousePos.y > v.b() - e) in.moveZ -= 1;
+        in.wheel = io.MouseWheel;
+        float3 g;
+        if (groundUnderMouse(g)) { in.hasCursorGround = true; in.cursorGround = g; }
+    }
+    m_cam.update(in, dt);
+    if (inView && ImGui::IsMouseDown(1)) {
+        float3 g;
+        if (groundUnderMouse(g)) {
+            if (!m_rmbDrag) { m_rmbDrag = true; m_rmbGrab = g; }
+            else m_cam.dragTo(m_rmbGrab, g);
+        }
+    } else {
+        m_rmbDrag = false;
+    }
+    if (inView && ImGui::IsMouseDown(2)) m_cam.addYaw(io.MouseDelta.x * 0.01f);
+    m_cam.apply(m_app.m_scene.camera);
+    m_app.cameraChanged();
 }
 
 // --------------------------------------------------------------------------- World

@@ -4,6 +4,7 @@
 #include "Json.h"
 #include "game/CommandServer.h"
 #include "game/NodeEditor.h"
+#include "game/RtsCamera.h"
 #include "game/Runtime.h"
 #include "vp3d/Scene.h"
 #include <string>
@@ -37,6 +38,7 @@ public:
     void draw();                 // after the editor UI (or alone in player mode)
     void afterDraw();            // frame complete, before present (API screenshots)
     bool playerMode() const { return m_player; }
+    bool rtsCameraOn() const { return m_rtsCam; }   // the viewport must not orbit the camera meanwhile
 
     // game::World
     int objectCount() const override;
@@ -53,6 +55,7 @@ public:
     int selected() const override;
     void select(int obj) override;
     void message(const std::string& text) override;
+    void setRtsCamera(bool on) override;
 
 private:
     void play();
@@ -68,6 +71,12 @@ private:
     int resolveObject(const Json& t) const;
     std::string uniqueName(const std::string& base) const;
     void playInput();
+    void updateRtsCamera(float dt);
+    bool groundUnderMouse(vp3d::float3& p) const;
+    bool m_rtsCam = false;            // "Caméra RTS" node is active
+    bool m_rmbDrag = false;
+    vp3d::float3 m_rmbGrab;
+    game::RtsCamera m_cam;
     void drawToolbar();
     void drawToasts();
     void toast(const std::wstring& s);

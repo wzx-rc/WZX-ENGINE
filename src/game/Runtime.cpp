@@ -308,6 +308,7 @@ void Runtime::exec(Node& n) {
     case Op::SetColor: { int o = Ob(1); if (o >= 0) m_world->setColor(o, V(2)); break; }
     case Op::SetScale: { int o = Ob(1); if (o >= 0) m_world->setScale(o, V(2)); break; }
     case Op::Select: m_world->select(Ob(1)); break;
+    case Op::SetRtsCamera: m_world->setRtsCamera(input(n, 1).asBool()); break;
     case Op::Print: {
         std::string s = S(1);
         log.push_back(s);

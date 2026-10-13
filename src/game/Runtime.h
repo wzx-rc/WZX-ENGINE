@@ -26,6 +26,7 @@ public:
     virtual int selected() const = 0;
     virtual void select(int obj) = 0;
     virtual void message(const std::string& text) = 0;
+    virtual void setRtsCamera(bool on) { (void)on; }   // "Caméra RTS" node: the host owns the camera
 };
 
 class Runtime {

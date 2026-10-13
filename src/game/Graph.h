@@ -55,7 +55,7 @@ enum class Op {
     // maths / logic
     Add, Sub, Mul, Div, Greater, Less, Equal, StrEqual, And, Or, Not, Random, AddVec3, ScaleVec3, Concat,
     // RTS
-    SnapGrid, CellFree, CountPart,
+    SnapGrid, CellFree, CountPart, SetRtsCamera,
 };
 
 struct NodeDef {
