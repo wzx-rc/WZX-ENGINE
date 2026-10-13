@@ -52,7 +52,8 @@ private:
     void drawNode(Graph& g, Node& n, const Runtime* rt);
     void drawLog(const Runtime* rt);
     void drawHint(const Graph& g);
-    void drawToolbar(bool playing);
+    void drawToolbar(ImVec2 pos, float width, bool playing);
+    void trackEdit(const Graph& g, bool activated, bool changed, bool deactivated);
     void drawMenu(Graph& g);
     void addNodeFromMenu(Graph& g, const NodeDef& d);
 
@@ -86,6 +87,7 @@ private:
     // add-node popup
     bool m_menuRequest = false;            // open the popup at the next draw
     std::string m_snap;                    // graph before the inline edit in progress (undo)
+    bool m_editChanged = false;            // the inline edit in progress has changed the value
     bool m_focusSearch = false;
     ImVec2 m_menuScreen, m_menuGraph;
     PinRef m_menuFrom;

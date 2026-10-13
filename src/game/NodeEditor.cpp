@@ -10,6 +10,12 @@ namespace game {
 using vp3d::float2;
 
 static const float kHeader = 26, kRow = 24, kPad = 8;   // graph units
+static const float kBarH = 36;                           // toolbar height (DIPs)
+
+// Colours of the editor (same palette as the former immediate UI).
+static const uint32_t kField = 0x101216, kBorder = 0x262A31, kText = 0xE4E6EA, kTextDim = 0x979DA6,
+                      kTextFaint = 0x5F6670, kAccent = 0x4C8DFF, kAccentDim = 0x1E3A66, kCard = 0x20242A,
+                      kCardHover = 0x2A2F36, kPanel2 = 0x1B1F24, kPopup = 0x1A1D22, kRed = 0xE5534B, kGreen = 0x57C35B;
 
 static std::wstring widen(const std::string& s) {
     if (s.empty()) return L"";
@@ -42,6 +48,15 @@ static ImU32 rgb(uint32_t c, float alpha = 1.0f) {
     return IM_COL32((c >> 16) & 255, (c >> 8) & 255, c & 255, (int)(alpha * 255.0f + 0.5f));
 }
 
+// Segoe Fluent Icons glyph as UTF-8 (the icon range is merged into the editor fonts).
+static std::string glyph(uint32_t cp) {
+    std::string s;
+    s += (char)(0xE0 | (cp >> 12));
+    s += (char)(0x80 | ((cp >> 6) & 0x3F));
+    s += (char)(0x80 | (cp & 0x3F));
+    return s;
+}
+
 static ImU32 pinColor(PinType t) {
     switch (t) {
     case PinType::Exec: return rgb(0xF2F2F2);
@@ -54,14 +69,14 @@ static ImU32 pinColor(PinType t) {
     return rgb(0xFFFFFF);
 }
 
-static ImU32 categoryColor(const std::string& c) {
-    if (c == "Événements") return rgb(0x8E2F2F);
-    if (c == "Flux") return rgb(0x4A505A);
-    if (c == "Actions") return rgb(0x255294);
-    if (c == "Données") return rgb(0x2F6E42);
-    if (c == "Maths") return rgb(0x2B6668);
-    if (c == "RTS") return rgb(0x91601F);
-    return rgb(0x444444);
+static uint32_t categoryHex(const std::string& c) {
+    if (c == "Événements") return 0x8E2F2F;
+    if (c == "Flux") return 0x4A505A;
+    if (c == "Actions") return 0x255294;
+    if (c == "Données") return 0x2F6E42;
+    if (c == "Maths") return 0x2B6668;
+    if (c == "RTS") return 0x91601F;
+    return 0x444444;
 }
 
 static bool hasVec3Input(const Node& n) {
@@ -69,10 +84,8 @@ static bool hasVec3Input(const Node& n) {
     return false;
 }
 
-static float2 toF2(ImVec2 p) { return float2(p.x, p.y); }
-static ImVec2 toIm(float2 p) { return ImVec2(p.x, p.y); }
-
-// Text on the draw list, sized in ImGui pixels. `right` aligns the text to a right edge.
+// Text on the draw list, sized in ImGui pixels, vertically centred on p.y.
+// `right` aligns the text to p.x (its right edge).
 static void canvasText(ImDrawList* dl, ImFont* font, float size, ImVec2 p, ImU32 col, const std::string& s, bool right = false) {
     if (s.empty()) return;
     ImFont* f = font ? font : ImGui::GetFont();
@@ -80,6 +93,38 @@ static void canvasText(ImDrawList* dl, ImFont* font, float size, ImVec2 p, ImU32
     if (right) p.x -= ts.x;
     p.y -= ts.y * 0.5f;
     dl->AddText(f, size, p, col, s.c_str());
+}
+
+// Native hit area on a rectangle (screen pixels). `pressed` is true on the frame of the click.
+struct Hit { bool pressed = false, hovered = false, active = false, activated = false, deactivated = false; };
+
+static Hit hitArea(const char* id, ImVec2 a, ImVec2 b) {
+    Hit h;
+    ImGui::SetCursorScreenPos(a);
+    h.pressed = ImGui::InvisibleButton(id, ImVec2(std::max(1.0f, b.x - a.x), std::max(1.0f, b.y - a.y)),
+                                       ImGuiButtonFlags_MouseButtonLeft);
+    h.hovered = ImGui::IsItemHovered();
+    h.active = ImGui::IsItemActive();
+    h.activated = ImGui::IsItemActivated();
+    h.deactivated = ImGui::IsItemDeactivated();
+    return h;
+}
+
+// Toolbar button: icon and label centred, accent when active.
+static bool barButton(ImDrawList* dl, ImFont* font, const char* id, ImVec2 a, ImVec2 b, uint32_t icon, const char* label,
+                      bool active, float d) {
+    Hit h = hitArea(id, a, b);
+    dl->AddRectFilled(a, b, active ? rgb(kAccentDim) : rgb(h.hovered ? kCardHover : kCard), 4 * d);
+    dl->AddRect(a, b, active ? rgb(kAccent, 0.7f) : rgb(kBorder), 4 * d);
+    ImFont* f = font ? font : ImGui::GetFont();
+    std::string ic = glyph(icon);
+    ImVec2 is = f->CalcTextSizeA(13 * d, FLT_MAX, 0, ic.c_str());
+    ImVec2 ls = f->CalcTextSizeA(12.5f * d, FLT_MAX, 0, label);
+    float total = is.x + 7 * d + ls.x;
+    float x = (a.x + b.x - total) * 0.5f, cy = (a.y + b.y) * 0.5f;
+    dl->AddText(f, 13 * d, ImVec2(x, cy - is.y * 0.5f), active ? rgb(kAccent) : rgb(kText), ic.c_str());
+    dl->AddText(f, 12.5f * d, ImVec2(x + is.x + 7 * d, cy - ls.y * 0.5f), rgb(kText), label);
+    return h.pressed;
 }
 
 // --------------------------------------------------------------------------- layout
@@ -102,7 +147,7 @@ int NodeEditor::rowCount(const Node& n) const {
     return std::max(1, base + k);
 }
 
-ImVec2 NodeEditor::nodeMin(const Node& n) const { return toScreen(toIm(n.pos)); }
+ImVec2 NodeEditor::nodeMin(const Node& n) const { return toScreen(ImVec2(n.pos.x, n.pos.y)); }
 
 ImVec2 NodeEditor::nodeMax(const Node& n) const {
     ImVec2 size(nodeWidth(n), kHeader + rowCount(n) * kRow + kPad);   // graph units
@@ -186,6 +231,17 @@ void NodeEditor::pushUndo(const Graph& g) {
     m_modified = true;
 }
 
+// An inline edit is one undo step: the graph is kept at the press, committed at the release.
+void NodeEditor::trackEdit(const Graph& g, bool activated, bool changed, bool deactivated) {
+    if (activated) { m_snap = g.toJson(); m_editChanged = false; }
+    if (changed) { m_editChanged = true; m_modified = true; }
+    if (deactivated && m_editChanged) {
+        m_undo.push_back(m_snap);
+        if (m_undo.size() > 100) m_undo.erase(m_undo.begin());
+        m_editChanged = false;
+    }
+}
+
 void NodeEditor::undo(Graph& g) {
     if (m_undo.empty()) return;
     g.fromJson(m_undo.back());
@@ -261,21 +317,23 @@ void NodeEditor::draw(ImVec2 pos, ImVec2 size, float dpi, Graph& g, const Runtim
                                       ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse |
                                       ImGuiWindowFlags_NoSavedSettings;
     ImGui::Begin("##nodegraph", nullptr, winFlags);
-    drawToolbar(playing);
+
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    float barH = kBarH * m_dpi;
+    drawToolbar(pos, size.x, playing);
 
     // canvas below the toolbar
-    float toolbarH = ImGui::GetCursorScreenPos().y - pos.y + 4 * m_dpi;
-    m_origin = ImVec2(pos.x, pos.y + toolbarH);
-    m_canvas = ImVec2(size.x, std::max(1.0f, size.y - toolbarH));
-    ImDrawList* dl = ImGui::GetWindowDrawList();
+    m_origin = ImVec2(pos.x, pos.y + barH);
+    m_canvas = ImVec2(size.x, std::max(1.0f, size.y - barH));
     dl->AddRectFilled(m_origin, m_origin + m_canvas, rgb(0x121417));
 
     if (m_wantFrame) { doFrame(g); m_wantFrame = false; }
 
     // input: the canvas owns the mouse unless a widget or the popup is under it
+    ImGuiIO& io = ImGui::GetIO();
     bool inArea = ImGui::IsWindowHovered() && ImGui::IsMouseHoveringRect(m_origin, m_origin + m_canvas) &&
                   !ImGui::IsPopupOpen("##addnode") && !ImGui::IsAnyItemActive();
-    bool overWidget = ImGui::GetIO().MousePos.x >= 0 && overInlineWidget(g, ImGui::GetIO().MousePos);
+    bool overWidget = overInlineWidget(g, io.MousePos);
     handleInput(g, inArea, overWidget);
 
     drawCanvas(g, rt);
@@ -328,8 +386,8 @@ void NodeEditor::drawCanvas(Graph& g, const Runtime* rt) {
     if (m_drag == DragMarquee) {
         ImVec2 a(std::min(m_pressPos.x, io.MousePos.x), std::min(m_pressPos.y, io.MousePos.y));
         ImVec2 b(std::max(m_pressPos.x, io.MousePos.x), std::max(m_pressPos.y, io.MousePos.y));
-        dl->AddRectFilled(a, b, rgb(0x4C8DFF, 0.12f));
-        dl->AddRect(a, b, rgb(0x4C8DFF, 0.7f));
+        dl->AddRectFilled(a, b, rgb(kAccent, 0.12f));
+        dl->AddRect(a, b, rgb(kAccent, 0.7f));
     }
 
     // nodes: the body is drawn first, then its inline widgets on top
@@ -346,7 +404,7 @@ void NodeEditor::drawHint(const Graph& g) {
     ImVec2 c = m_origin + m_canvas * 0.5f;
     ImFont* f = m_font ? m_font : ImGui::GetFont();
     ImVec2 ts = f->CalcTextSizeA(14 * m_dpi, FLT_MAX, 0, msg);
-    dl->AddText(f, 14 * m_dpi, ImVec2(c.x - ts.x * 0.5f, c.y - ts.y * 0.5f), rgb(0x979DA6), msg);
+    dl->AddText(f, 14 * m_dpi, ImVec2(c.x - ts.x * 0.5f, c.y - ts.y * 0.5f), rgb(kTextDim), msg);
 }
 
 void NodeEditor::drawLinks(const Graph& g, const Runtime* rt) {
@@ -386,6 +444,33 @@ static void drawPinShape(ImDrawList* dl, ImVec2 p, PinType t, bool connected, fl
     }
 }
 
+// Boxed numeric value dragged horizontally (drag = change, Shift = finer), as in the former editor.
+// Returns true when the value changed this frame.
+static bool dragBox(ImDrawList* dl, ImFont* font, const Hit& h, ImVec2 a, ImVec2 b, float& v, float speed, const char* fmt,
+                    float s, float dpi, const char* axis = nullptr, uint32_t axisColor = 0) {
+    dl->AddRectFilled(a, b, rgb(kField), 4 * s);
+    dl->AddRect(a, b, h.active ? rgb(kAccent) : rgb(h.hovered ? kTextFaint : kBorder), 4 * s);
+    float tx = a.x + 6 * s;
+    if (axis) {
+        ImVec2 tag(a.x + 8 * s, (a.y + b.y) * 0.5f);
+        canvasText(dl, font, 11 * s, tag, rgb(axisColor), axis);
+        dl->AddLine(ImVec2(a.x + 16 * s, a.y + 5 * s), ImVec2(a.x + 16 * s, b.y - 5 * s), rgb(kBorder));
+        tx = a.x + 21 * s;
+    }
+    char buf[48];
+    snprintf(buf, sizeof buf, fmt, v);
+    canvasText(dl, font, 12 * s, ImVec2(tx, (a.y + b.y) * 0.5f), rgb(kText), buf);
+    if (h.active) {
+        ImGuiIO& io = ImGui::GetIO();
+        float d = io.MouseDelta.x / dpi;
+        if (d != 0) {
+            v += d * speed * (io.KeyShift ? 0.1f : 1.0f);
+            return true;
+        }
+    }
+    return false;
+}
+
 void NodeEditor::drawNode(Graph& g, Node& n, const Runtime* rt) {
     ImDrawList* dl = ImGui::GetWindowDrawList();
     const float s = scale();
@@ -393,15 +478,16 @@ void NodeEditor::drawNode(Graph& g, Node& n, const Runtime* rt) {
     if (p1.x < m_origin.x || p0.x > m_origin.x + m_canvas.x || p1.y < m_origin.y || p0.y > m_origin.y + m_canvas.y) return;
     bool sel = selected(n.id);
     bool hot = rt && rt->running() && rt->time() - rt->lastRun(n.id) < 0.25f;
-    ImU32 hc = categoryColor(n.def->category);
-    ImU32 headCol = n.def->pure ? rgb(0x4A505A) : hc;
+    ImU32 headCol = n.def->pure ? rgb(0x4A505A) : rgb(categoryHex(n.def->category));
 
     dl->AddRectFilled(p0 + ImVec2(3 * s, 4 * s), p1 + ImVec2(3 * s, 4 * s), rgb(0x000000, 0.35f), 7 * s);
     dl->AddRectFilled(p0, p1, rgb(0x1C1F24, 0.97f), 7 * s);
     dl->AddRectFilled(p0, ImVec2(p1.x, p0.y + kHeader * s), headCol, 7 * s, ImDrawFlags_RoundCornersTop);
-    canvasText(dl, m_fontBold, 12.5f * s, ImVec2(p0.x + 9 * s, p0.y + kHeader * s * 0.5f), rgb(0xFFFFFF), n.def->label);
-    if (hot || sel) dl->AddRect(p0, p1, hot ? rgb(0xFFD24A) : rgb(0x4C8DFF), 7 * s, 0, 2.0f * s);
-    else dl->AddRect(p0, p1, rgb(0x262A31), 7 * s, 0, 1.0f * s);
+    float tx = p0.x + (n.def->event ? 24 : 9) * s;
+    if (n.def->event) canvasText(dl, m_font, 11 * s, ImVec2(p0.x + 6 * s, p0.y + kHeader * s * 0.5f), rgb(0xFFFFFF, 0.9f), glyph(0xE945));
+    canvasText(dl, m_fontBold, 12.5f * s, ImVec2(tx, p0.y + kHeader * s * 0.5f), rgb(0xFFFFFF), n.def->label);
+    if (hot || sel) dl->AddRect(p0, p1, hot ? rgb(0xFFD24A) : rgb(kAccent), 7 * s, 0, 2.0f * s);
+    else dl->AddRect(p0, p1, rgb(kBorder), 7 * s, 0, 1.0f * s);
 
     // outputs
     for (int i = 0; i < (int)n.def->outs.size(); ++i) {
@@ -410,7 +496,7 @@ void NodeEditor::drawNode(Graph& g, Node& n, const Runtime* rt) {
         bool conn = false;
         for (const Link& l : g.links) if (l.fromNode == n.id && l.fromPin == i) { conn = true; break; }
         drawPinShape(dl, pp, p.type, conn, s);
-        if (!p.name.empty()) canvasText(dl, m_font, 11.5f * s, ImVec2(p1.x - 8 * s, pp.y), rgb(0xE4E6EA), p.name, true);
+        if (!p.name.empty()) canvasText(dl, m_font, 11.5f * s, ImVec2(p1.x - 8 * s, pp.y), rgb(kText), p.name, true);
     }
 
     // inputs
@@ -421,80 +507,117 @@ void NodeEditor::drawNode(Graph& g, Node& n, const Runtime* rt) {
         drawPinShape(dl, pp, p.type, conn, s);
         if (p.type == PinType::Exec) continue;
         float labelW = p.type == PinType::Vec3 ? 70.0f : 88.0f;
-        canvasText(dl, m_font, 11.5f * s, ImVec2(p0.x + 14 * s, pp.y), rgb(0x979DA6), p.name);
-        if (p.type == PinType::Object) continue;
+        canvasText(dl, m_font, 11.5f * s, ImVec2(p0.x + 14 * s, pp.y), rgb(kTextDim), p.name);
+        if (p.type == PinType::Object || conn) continue;
         Value& v = n.inputs[i];
-        if (conn) continue;
 
         ImVec2 a, b;
         if (!inlineArea(g, n, i, a, b)) {
             // small zoom: the value as text, no widget
-            if (p.type == PinType::Vec3 || p.type == PinType::Float || p.type == PinType::Bool || p.type == PinType::String)
-                canvasText(dl, m_font, 11 * s, ImVec2(p0.x + (14 + labelW) * s, pp.y), rgb(0x5F6670), v.asString());
+            canvasText(dl, m_font, 11 * s, ImVec2(p0.x + (14 + labelW) * s, pp.y), rgb(kTextFaint), v.asString());
             continue;
         }
 
-        // native widget at the pin's row. A click on it keeps the graph as it was before the edit;
-        // the edit is one undo step, committed when the widget is released (or at the checkbox click).
+        // native items on the value area; the ids are scoped per node and pin
         ImGui::PushID(n.id * 64 + i);
-        bool clickIn = ImGui::IsMouseClicked(0) && ImGui::IsMouseHoveringRect(a, b);
-        if (clickIn) m_snap = g.toJson();
-        ImGui::SetCursorScreenPos(a);
-        ImGui::SetNextItemWidth(std::max(10.0f, b.x - a.x));
-        bool changed = false, done = false;
         switch (p.type) {
         case PinType::Float: {
+            Hit h = hitArea("##f", a, b);
             float speed = std::max(0.02f, std::fabs(v.f) * 0.01f);
-            changed = ImGui::DragFloat("##v", &v.f, speed, 0, 0, "%.2f");
-            done = ImGui::IsItemDeactivatedAfterEdit();
-            break;
-        }
-        case PinType::Bool: {
-            ImGui::SetCursorScreenPos(ImVec2(b.x - 18 * s, a.y + 2 * s));
-            changed = ImGui::Checkbox("##v", &v.b);
-            done = changed;
+            bool changed = dragBox(dl, m_font, h, a, b, v.f, speed, "%.2f", s, m_dpi);
+            trackEdit(g, h.activated, changed, h.deactivated);
             break;
         }
         case PinType::Vec3: {
-            changed = ImGui::DragFloat3("##v", &v.v.x, 0.05f, 0, 0, "%.1f");
-            done = ImGui::IsItemDeactivatedAfterEdit();
+            static const char* axes[3] = {"X", "Y", "Z"};
+            static const uint32_t axc[3] = {kRed, kGreen, kAccent};
+            float cw = (b.x - a.x - 4 * s) / 3;
+            for (int k = 0; k < 3; ++k) {
+                ImVec2 fa(a.x + k * (cw + 2 * s), a.y), fb(fa.x + cw, b.y);
+                ImGui::PushID(k);
+                Hit h = hitArea("##v", fa, fb);
+                float speed = std::max(0.05f, std::fabs(v.v[k]) * 0.01f);
+                bool changed = dragBox(dl, m_font, h, fa, fb, v.v[k], speed, "%.1f", s, m_dpi, s >= 0.95f ? axes[k] : nullptr, axc[k]);
+                trackEdit(g, h.activated, changed, h.deactivated);
+                ImGui::PopID();
+            }
+            break;
+        }
+        case PinType::Bool: {
+            ImVec2 ba(b.x - 16 * s, pp.y - 8 * s), bb(b.x, pp.y + 8 * s);
+            Hit h = hitArea("##b", ba, bb);
+            dl->AddRectFilled(ba, bb, rgb(kField), 3 * s);
+            dl->AddRect(ba, bb, rgb(h.hovered ? kAccent : kBorder), 3 * s);
+            if (v.b) {
+                std::string ck = glyph(0xE73E);
+                ImFont* f = m_font ? m_font : ImGui::GetFont();
+                ImVec2 cs = f->CalcTextSizeA(11 * s, FLT_MAX, 0, ck.c_str());
+                dl->AddText(f, 11 * s, ImVec2((ba.x + bb.x - cs.x) * 0.5f, (ba.y + bb.y - cs.y) * 0.5f), rgb(kAccent), ck.c_str());
+            }
+            if (h.pressed) {
+                // one click, one undo step: the graph before the toggle is kept
+                m_snap = g.toJson();
+                v.b = !v.b;
+                m_modified = true;
+                m_undo.push_back(m_snap);
+                if (m_undo.size() > 100) m_undo.erase(m_undo.begin());
+            }
             break;
         }
         case PinType::String: {
+            ImGui::SetCursorScreenPos(a);
+            ImGui::SetNextItemWidth(std::max(10.0f, b.x - a.x));
+            ImGui::PushStyleColor(ImGuiCol_FrameBg, rgb(kField));
+            ImGui::PushStyleColor(ImGuiCol_Border, rgb(kBorder));
+            ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 4 * s);
+            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(6 * s, 2 * s));
             char buf[256] = {};
             std::strncpy(buf, v.s.c_str(), sizeof buf - 1);
-            changed = ImGui::InputText("##v", buf, sizeof buf);
+            bool changed = ImGui::InputText("##s", buf, sizeof buf);
             if (changed) v.s = buf;
-            done = ImGui::IsItemDeactivatedAfterEdit();
+            trackEdit(g, ImGui::IsItemActivated(), changed, ImGui::IsItemDeactivatedAfterEdit());
+            ImGui::PopStyleVar(2);
+            ImGui::PopStyleColor(2);
             break;
         }
         default: break;
         }
         ImGui::PopID();
-        if (changed) m_modified = true;
-        if (done && !m_snap.empty()) {
-            m_undo.push_back(m_snap);
-            if (m_undo.size() > 100) m_undo.erase(m_undo.begin());
-            m_snap.clear();
-        }
     }
 }
 
-void NodeEditor::drawToolbar(bool playing) {
-    float d = m_dpi;
-    ImGui::SetCursorPos(ImVec2(8 * d, 4 * d));
-    if (ImGui::Button(playing ? "Stop" : "Jouer")) m_action = TogglePlay;
-    ImGui::SameLine();
-    if (ImGui::Button("Enregistrer")) m_action = Save;
-    ImGui::SameLine();
-    if (ImGui::Button("Build")) m_action = Build;
-    ImGui::SameLine();
-    if (ImGui::Button("Recadrer")) m_wantFrame = true;
-    ImGui::SameLine();
-    if (ImGui::Button("Fermer (F3)")) m_action = Close;
-    ImGui::SameLine();
-    if (status.empty()) ImGui::TextDisabled("Clic droit : ajouter  ·  Glisser une broche : relier  ·  Alt+clic : délier  ·  Suppr  ·  Ctrl+D  ·  Ctrl+Z");
-    else ImGui::TextUnformatted(status.c_str());
+void NodeEditor::drawToolbar(ImVec2 pos, float width, bool playing) {
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    const float d = m_dpi;
+    ImVec2 a = pos, b = pos + ImVec2(width, kBarH * d);
+    dl->AddRectFilled(a, b, rgb(kPanel2, 0.96f));
+    dl->AddLine(ImVec2(a.x, b.y - 0.5f), ImVec2(b.x, b.y - 0.5f), rgb(kBorder));
+
+    ImFont* f = m_font ? m_font : ImGui::GetFont();
+    float cy = (a.y + b.y) * 0.5f;
+    std::string gi = glyph(0xE8A1);
+    dl->AddText(f, 15 * d, ImVec2(a.x + 10 * d, cy - 9 * d), rgb(kAccent), gi.c_str());
+    canvasText(dl, m_fontBold, 13 * d, ImVec2(a.x + 34 * d, cy), rgb(kText), "Graphe du jeu");
+
+    float x = a.x + 160 * d, y0 = a.y + 5 * d, h = 26 * d;
+    auto btn = [&](const char* id, float w, uint32_t icon, const char* label, bool active) {
+        bool pressed = barButton(dl, m_font, id, ImVec2(x, y0), ImVec2(x + w * d, y0 + h), icon, label, active, d);
+        x += (w + 6) * d;
+        return pressed;
+    };
+    if (btn("##tb_play", 96, playing ? 0xE71A : 0xE768, playing ? "Stop" : "Jouer", playing)) m_action = TogglePlay;
+    if (btn("##tb_save", 112, 0xE74E, "Enregistrer", false)) m_action = Save;
+    if (btn("##tb_build", 96, 0xE7B8, "Build", false)) m_action = Build;
+    if (btn("##tb_frame", 100, 0xE9A6, "Recadrer", false)) m_wantFrame = true;
+
+    // hint, or the last message of the editor
+    float closeX = b.x - 112 * d;
+    std::string hint = status.empty() ? "Clic droit : ajouter  ·  Glisser une broche : relier  ·  Alt+clic : délier  ·  Suppr  ·  Ctrl+D  ·  Ctrl+Z" : status;
+    dl->PushClipRect(ImVec2(x + 8 * d, a.y), ImVec2(closeX - 8 * d, b.y), true);
+    canvasText(dl, m_font, 11.5f * d, ImVec2(x + 8 * d, cy), rgb(status.empty() ? kTextDim : kText), hint);
+    dl->PopClipRect();
+
+    if (btn("##tb_close", 104, 0xE711, "Fermer (F3)", false)) m_action = Close;
 }
 
 void NodeEditor::drawLog(const Runtime* rt) {
@@ -510,14 +633,14 @@ void NodeEditor::drawLog(const Runtime* rt) {
     ImVec2 r0(m_origin.x + 10 * d, m_origin.y + m_canvas.y - h - 10 * d);
     ImVec2 r1(r0.x + w, r0.y + h);
     dl->AddRectFilled(r0, r1, rgb(0x0B0C0E, 0.85f), 6 * d);
-    dl->AddRect(r0, r1, rgb(0x262A31), 6 * d);
+    dl->AddRect(r0, r1, rgb(kBorder), 6 * d);
     float y = r0.y + 7 * d;
     for (int i = (int)rt->log.size() - lines; i < (int)rt->log.size(); ++i, y += lineH) {
         const std::string& s = rt->log[i];
         bool err = s.rfind("Erreur", 0) == 0;
-        canvasText(dl, m_font, 11.5f * d, ImVec2(r0.x + 10 * d, y + lineH * 0.5f), err ? rgb(0xE5534B) : rgb(0x979DA6), s);
+        canvasText(dl, m_font, 11.5f * d, ImVec2(r0.x + 10 * d, y + lineH * 0.5f), err ? rgb(kRed) : rgb(kTextDim), s);
     }
-    if (!vars.empty()) canvasText(dl, m_font, 11.5f * d, ImVec2(r0.x + 10 * d, y + lineH * 0.5f), rgb(0x4C8DFF), vars);
+    if (!vars.empty()) canvasText(dl, m_font, 11.5f * d, ImVec2(r0.x + 10 * d, y + lineH * 0.5f), rgb(kAccent), vars);
 }
 
 // Creates the node picked in the popup, wired to the pin the popup was opened from.
@@ -545,55 +668,85 @@ void NodeEditor::drawMenu(Graph& g) {
         ImGui::OpenPopup("##addnode");
         m_menuRequest = false;
     }
+    const float d = m_dpi;
+    // the former menu look: dark card, rounded, search field on top, rows 22 high
+    ImGui::PushStyleColor(ImGuiCol_PopupBg, rgb(kPopup));
+    ImGui::PushStyleColor(ImGuiCol_Border, rgb(kBorder));
+    ImGui::PushStyleColor(ImGuiCol_HeaderHovered, rgb(kAccentDim));
+    ImGui::PushStyleColor(ImGuiCol_HeaderActive, rgb(kAccentDim));
+    ImGui::PushStyleVar(ImGuiStyleVar_PopupRounding, 8 * d);
+    ImGui::PushStyleVar(ImGuiStyleVar_PopupBorderSize, 1.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(4 * d, 4 * d));
     ImGui::SetNextWindowPos(m_menuScreen, ImGuiCond_Appearing);
-    ImGui::SetNextWindowSize(ImVec2(290 * m_dpi, 380 * m_dpi));
-    if (!ImGui::BeginPopup("##addnode")) return;
+    ImGui::SetNextWindowSize(ImVec2(270 * d, 400 * d));
+    bool open = ImGui::BeginPopup("##addnode");
+    if (open) {
+        const Node* fromNode = m_menuFrom.pin >= 0 ? g.node(m_menuFrom.node) : nullptr;
+        PinType fromType = PinType::Exec;
+        if (fromNode) fromType = m_menuFrom.output ? fromNode->def->outs[m_menuFrom.pin].type : fromNode->def->ins[m_menuFrom.pin].type;
+        // a node can be added from a pin only if one of its pins accepts the pin's type
+        auto compatibleWithPin = [&](const NodeDef& nd) -> bool {
+            if (!fromNode) return true;
+            const auto& pins = m_menuFrom.output ? nd.ins : nd.outs;
+            for (const PinDef& p : pins)
+                if (m_menuFrom.output ? Graph::compatible(fromType, p.type) : Graph::compatible(p.type, fromType)) return true;
+            return false;
+        };
 
-    const Node* fromNode = m_menuFrom.pin >= 0 ? g.node(m_menuFrom.node) : nullptr;
-    PinType fromType = PinType::Exec;
-    if (fromNode) fromType = m_menuFrom.output ? fromNode->def->outs[m_menuFrom.pin].type : fromNode->def->ins[m_menuFrom.pin].type;
-    // a node can be added from a pin only if one of its pins accepts the pin's type
-    auto compatibleWithPin = [&](const NodeDef& d) -> bool {
-        if (!fromNode) return true;
-        const auto& pins = m_menuFrom.output ? d.ins : d.outs;
-        for (const PinDef& p : pins)
-            if (m_menuFrom.output ? Graph::compatible(fromType, p.type) : Graph::compatible(p.type, fromType)) return true;
-        return false;
-    };
+        // search field with its icon
+        if (m_focusSearch) { ImGui::SetKeyboardFocusHere(); m_focusSearch = false; }
+        ImGui::PushStyleColor(ImGuiCol_FrameBg, rgb(kField));
+        ImGui::PushStyleColor(ImGuiCol_Border, rgb(kAccent, 0.7f));
+        ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 5 * d);
+        ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(26 * d, 4 * d));
+        ImGui::SetNextItemWidth(-FLT_MIN);
+        ImGui::InputTextWithHint("##search", fromNode ? "Noeuds compatibles… tapez pour filtrer" : "Tapez pour chercher un noeud…",
+                                 m_search, sizeof m_search);
+        ImVec2 smin = ImGui::GetItemRectMin();
+        std::string si = glyph(0xE721);
+        ImGui::GetWindowDrawList()->AddText(ImGui::GetFont(), 12 * d, ImVec2(smin.x + 6 * d, smin.y + 5 * d), rgb(kTextDim), si.c_str());
+        ImGui::PopStyleVar(3);
+        ImGui::PopStyleColor(2);
+        std::wstring q = fold(widen(m_search));
 
-    if (m_focusSearch) { ImGui::SetKeyboardFocusHere(); m_focusSearch = false; }
-    ImGui::SetNextItemWidth(-FLT_MIN);
-    ImGui::InputTextWithHint("##search", fromNode ? "Noeuds compatibles…" : "Rechercher un noeud…", m_search, sizeof m_search);
-    std::wstring q = fold(widen(m_search));
-
-    const NodeDef* first = nullptr;
-    ImGui::BeginChild("##nodelist", ImVec2(0, 0));
-    std::string lastCat;
-    for (const NodeDef& d : nodeDefs()) {
-        if (!compatibleWithPin(d)) continue;
-        if (!q.empty() && fold(widen(d.label)).find(q) == std::wstring::npos && fold(widen(d.id)).find(q) == std::wstring::npos) continue;
-        if (!first) first = &d;
-        if (q.empty() && d.category != lastCat) {
-            if (!lastCat.empty()) ImGui::Separator();
-            ImGui::TextColored(ImColor(categoryColor(d.category)), "%s", d.category.c_str());
-            lastCat = d.category;
+        const NodeDef* first = nullptr;
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(26 * d, 3 * d));
+        ImGui::BeginChild("##nodelist", ImVec2(0, 0));
+        std::string lastCat;
+        for (const NodeDef& nd : nodeDefs()) {
+            if (!compatibleWithPin(nd)) continue;
+            if (!q.empty() && fold(widen(nd.label)).find(q) == std::wstring::npos && fold(widen(nd.id)).find(q) == std::wstring::npos) continue;
+            if (!first) first = &nd;
+            if (q.empty() && nd.category != lastCat) {
+                ImGui::Dummy(ImVec2(0, 2 * d));
+                ImGui::TextColored(ImColor(rgb(categoryHex(nd.category))), "%s", nd.category.c_str());
+                lastCat = nd.category;
+            }
+            ImGui::PushID(nd.id.c_str());
+            bool clicked = ImGui::Selectable(nd.label.c_str(), false, 0, ImVec2(0, 22 * d));
+            ImVec2 rmin = ImGui::GetItemRectMin();
+            ImGui::GetWindowDrawList()->AddCircleFilled(ImVec2(rmin.x + 14 * d, rmin.y + 11 * d), 3.5f * d,
+                                                        rgb(categoryHex(nd.category)));
+            if (ImGui::IsItemHovered() && !nd.help.empty()) ImGui::SetTooltip("%s", nd.help.c_str());
+            if (clicked) {
+                addNodeFromMenu(g, nd);
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::PopID();
         }
-        ImGui::PushID(d.id.c_str());
-        if (ImGui::Selectable(d.label.c_str())) {
-            addNodeFromMenu(g, d);
+        // Enter picks the first match
+        if (first && ImGui::IsKeyPressed(ImGuiKey_Enter)) {
+            addNodeFromMenu(g, *first);
             ImGui::CloseCurrentPopup();
         }
-        if (ImGui::IsItemHovered() && !d.help.empty()) ImGui::SetTooltip("%s", d.help.c_str());
-        ImGui::PopID();
+        if (!first) ImGui::TextDisabled("Aucun noeud");
+        ImGui::EndChild();
+        ImGui::PopStyleVar();
+        ImGui::EndPopup();
     }
-    // Enter picks the first match
-    if (first && ImGui::IsKeyPressed(ImGuiKey_Enter)) {
-        addNodeFromMenu(g, *first);
-        ImGui::CloseCurrentPopup();
-    }
-    if (!first) ImGui::TextDisabled("Aucun noeud");
-    ImGui::EndChild();
-    ImGui::EndPopup();
+    ImGui::PopStyleVar(3);
+    ImGui::PopStyleColor(4);
 }
 
 // --------------------------------------------------------------------------- input
