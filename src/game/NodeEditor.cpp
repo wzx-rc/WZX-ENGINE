@@ -75,7 +75,6 @@ static ImU32 catColor(const std::string& c) {
     if (c == "Data") return IM_COL32(186, 132, 203, 255);
     if (c == "Math") return IM_COL32(134, 189, 144, 255);
     if (c == "RTS") return IM_COL32(178, 146, 223, 255);
-    if (c == "Native C++") return IM_COL32(255, 190, 40, 255);   // gold: the C++ nodes stand out
     return IM_COL32(150, 156, 166, 255);
 }
 

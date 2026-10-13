@@ -46,13 +46,6 @@ static std::string readFile(const fs::path& p) {
 
 // Icon of each node type, from the Atelier icon set (the game layer only names the type).
 static void drawNodeIcon(ImDrawList* dl, const std::string& id, ImVec2 p, float size, ImU32 color) {
-    if (id == "rts.camera") {   // native C++ node: a "C++" badge in its colour, not an icon
-        const float w = size * 1.7f;
-        dl->AddRectFilled(p, ImVec2(p.x + w, p.y + size), color, 3 * size / 14.0f);
-        ImVec2 ts = ImGui::CalcTextSize("C++");
-        dl->AddText(ImVec2(p.x + (w - ts.x) * 0.5f, p.y + (size - ts.y) * 0.5f), IM_COL32(40, 28, 4, 255), "C++");
-        return;
-    }
     using atelier::Icon;
     static const std::unordered_map<std::string, Icon> kIcons = {
         {"event.start", Icon::Play},          {"event.tick", Icon::Refresh},        {"event.clickObject", Icon::Pin},
@@ -76,6 +69,8 @@ static void drawNodeIcon(ImDrawList* dl, const std::string& id, ImVec2 p, float 
         {"rts.camera", Icon::Camera},         {"rts.count", Icon::Cube},
         {"rts.placeHouse", Icon::Plus},       {"rts.removeHouse", Icon::Trash},     {"rts.turnHouse", Icon::Rotate},
         {"rts.houseAt", Icon::Grid},          {"rts.houseCount", Icon::Cube},       {"event.houseClicked", Icon::Pin},
+        {"rts.cellAt", Icon::Grid},           {"rts.setSun", Icon::Sun},            {"rts.hudButton", Icon::Blueprint},
+        {"event.hudButton", Icon::Pin},
     };
     auto it = kIcons.find(id);
     atelier::DrawIcon(dl, it == kIcons.end() ? Icon::Blueprint : it->second, p, size, color);
@@ -229,6 +224,7 @@ void GameHost::defaultGraph() {
 void GameHost::play() {
     if (m_playing) return;
     if (m_placeMode) togglePlacement();   // the village is placed in the editor, not during Play
+    m_hudButtons.clear();                 // the graph declares them again when Play starts
     Scene& s = m_app.m_scene;
     m_saveObjects = s.objects;
     m_saveMaterials = s.materials;
@@ -249,6 +245,7 @@ void GameHost::stop() {
     m_rt.stop();
     m_playing = false;
     m_rtsCam = false;
+    m_hudButtons.clear();
     m_build = m_saveBuild;   // the village of the editor comes back; the houses of the Play session go with the scene
     resetTransient();
     Scene& s = m_app.m_scene;

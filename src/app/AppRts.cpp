@@ -366,8 +366,19 @@ void GameHost::drawRtsHud() {
                                    ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_AlwaysAutoResize;
     if (ImGui::Begin("##rtshud", nullptr, flags)) {
         m_buildHud = ImGui::IsWindowHovered();
+        if (m_playing) {   // Play: the buttons declared by the graph
+            for (size_t k = 0; k < m_hudButtons.size(); ++k) {
+                ImGui::PushID((int)k);
+                const std::string label = m_hudButtons[k].second;
+                const std::string id = m_hudButtons[k].first;
+                if (ImGui::Button(label.c_str())) m_rt.fireHudButton(id);
+                ImGui::PopID();
+                ImGui::SameLine();
+            }
+            ImGui::NewLine();
+        }
         const std::vector<BuildingType>& types = m_build.types();
-        for (int t = 0; t < (int)types.size(); ++t) {
+        for (int t = 0; t < (int)types.size() && !m_playing; ++t) {   // village mode of the editor: built-in buttons
             ImGui::PushID(t);
             std::string label = "+ Add " + types[t].name;
             const bool clicked = ImGui::Button(label.c_str());   // true only for a click: pressed and released on the button
@@ -402,12 +413,9 @@ int GameHost::houseIndex(int id) const {
     return -1;
 }
 
-int GameHost::placeHouse(const std::string& type, int cx, int cz, int rot) {
-    int t = -1;
-    for (int k = 0; k < (int)m_build.types().size(); ++k)
-        if (m_build.types()[k].name == type) t = k;
-    if (t < 0) return -1;
-    int idx = m_build.place(t, Cell{cx, cz}, rot);
+int GameHost::placeHouse(int type, int cx, int cz, int rot) {
+    if (type < 0 || type >= (int)m_build.types().size()) return -1;
+    int idx = m_build.place(type, Cell{cx, cz}, rot);
     return idx < 0 ? -1 : m_build.buildings()[idx].id;
 }
 
@@ -436,6 +444,28 @@ int GameHost::houseCount() const {
     int n = 0;
     for (const game::Building& b : m_build.buildings()) n += b.placed;
     return n;
+}
+
+// HUD buttons and the sun, from the graph (Play). The buttons are declared by "HUD Button" nodes.
+void GameHost::hudButton(const std::string& id, const std::string& label) {
+    for (auto& b : m_hudButtons)
+        if (b.first == id) {
+            b.second = label;
+            return;
+        }
+    m_hudButtons.push_back({id, label});
+}
+
+void GameHost::setSun(float azimuth, float height) {
+    m_sunAzimuth = radians(azimuth);
+    m_sunElevation = radians(clampf(height, 10.0f, 85.0f));
+    updateSun();
+}
+
+void GameHost::cellAt(float x, float z, int& cx, int& cz) const {
+    Cell c = m_build.grid().snapOrigin(float3(x, 0, z), 1, 1);
+    cx = c.x;
+    cz = c.z;
 }
 
 // The sun: its direction from the azimuth (around the vertical) and the height.

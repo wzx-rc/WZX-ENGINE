@@ -118,6 +118,13 @@ void Runtime::fireHouseClick(int house) {
     fire(Op::OnHouseClicked);
 }
 
+void Runtime::fireHudButton(const std::string& id) {
+    if (!m_graph) return;
+    for (Node& n : m_graph->nodes)
+        if (n.def->op == Op::OnHudButton) m_cache[n.id] = {Value(), Value::Str(id)};
+    fire(Op::OnHudButton);
+}
+
 void Runtime::fireClickGround(float3 point) {
     if (!m_graph) return;
     for (Node& n : m_graph->nodes)
@@ -251,6 +258,13 @@ Value Runtime::output(const Node& n, int pin) {
     }
     case Op::HouseAt: r = Value::Float((float)m_world->houseAt((int)F(0), (int)F(1))); break;
     case Op::HouseCount: r = Value::Float((float)m_world->houseCount()); break;
+    case Op::CellAt: {
+        int cx = 0, cz = 0;
+        float3 p = V(0);
+        m_world->cellAt(p.x, p.z, cx, cz);
+        r = Value::Float((float)(pin == 0 ? cx : cz));
+        break;
+    }
     case Op::CountPart: {
         std::string part = S(0);
         int c = 0;
@@ -327,13 +341,15 @@ void Runtime::exec(Node& n) {
     case Op::Select: m_world->select(Ob(1)); break;
     case Op::SetRtsCamera: m_world->setRtsCamera(input(n, 1).asBool()); break;
     case Op::PlaceHouse: {
-        int id = m_world->placeHouse(S(1), (int)F(2), (int)F(3), (int)F(4));
-        if (id < 0) error("maison non placée : " + S(1) + " (case prise, hors de la grille ou type inconnu)");
+        int id = m_world->placeHouse((int)F(1), (int)F(2), (int)F(3), (int)F(4));
+        if (id < 0) error("maison non placée (case prise ou hors de la grille)");
         setOut(n, 1, Value::Float((float)id));
         break;
     }
     case Op::RemoveHouse: m_world->removeHouse((int)F(1)); break;
     case Op::TurnHouse: m_world->turnHouse((int)F(1)); break;
+    case Op::HudButton: m_world->hudButton(S(1), S(2)); break;
+    case Op::SetSun: m_world->setSun(F(1), F(2)); break;
     case Op::Print: {
         std::string s = S(1);
         log.push_back(s);

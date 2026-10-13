@@ -67,7 +67,10 @@ public:
     void select(int obj) override;
     void message(const std::string& text) override;
     void setRtsCamera(bool on) override;
-    int placeHouse(const std::string& type, int cx, int cz, int rot) override;
+    int placeHouse(int type, int cx, int cz, int rot) override;
+    void hudButton(const std::string& id, const std::string& label) override;
+    void setSun(float azimuth, float height) override;
+    void cellAt(float x, float z, int& cx, int& cz) const override;
     bool removeHouse(int id) override;
     bool turnHouse(int id) override;
     int houseAt(int cx, int cz) const override;
@@ -103,6 +106,7 @@ private:
     game::Placement m_build;             // the village being edited (or played)
     game::Placement m_saveBuild;         // the village at the start of Play, restored on Stop
     bool m_placeMode = false;            // village mode of the editor
+    std::vector<std::pair<std::string, std::string>> m_hudButtons;   // HUD buttons declared by the graph (Play): id, label
     vp3d::float3 m_houseMin, m_houseMax; // the house model's box (centred, base on y = 0)
     int m_houseMesh = -1, m_houseTex = -1, m_houseMat = -1;   // the house model (assets/HOUSE), see AppRts.cpp
     bool m_houseFailed = false;          // the model could not be loaded (reported once)
