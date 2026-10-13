@@ -49,7 +49,8 @@ ACES (fit de Hill, RRT+ODT), AgX, AgX Punchy, Standard. Espace de travail : lin�
   - `shaders/` : `PathTrace.hlsl`, `Denoise.hlsl`, `Tonemap.hlsl`, `Raster.hlsl`
 - `src/app/` : éditeur (espaces de travail Atelier dessinés avec Dear ImGui)
   - `App` : fenêtre, boucle, édition (annuler, sélection, ajout…) · `ImGuiLayer` : backends Win32 + DX12, polices, textures · `Theme` : couleurs et réglages
-  - `AtelierUI` : espace Scene · `atelier/` : Graph Editor, Material Studio, Attribute Editor, palette partagée (`atelier_style.h`)
+  - `AtelierUI` : espace Scene et barre du haut · `atelier/` : Material Studio, Attribute Editor, palette partagée (`atelier_style.h`)
+  - `game/` : éditeur nodal du jeu (onglet Graph : `NodeEditor`, bibliothèque `NodeLib`, exécution `Runtime`, graphe `Graph`)
   - `Editor` : fenêtres Settings, Controls, About et vignettes du Content Browser
   - `Viewport` : image 3D (texture du renderer), caméra, sélection, gizmo, glisser-déposer
   - `Content` : palette, matériaux, primitives, scènes · `SceneIO` : fichiers de scène
@@ -71,13 +72,15 @@ copies de travail `_ddgi-test/`, `_nodal-editor/`, `_rts-test/`, et les dossiers
 
 - Trois espaces de travail plein écran dans le style du Graph Editor Atelier (même barre du haut, boutons Scene / Graph / Materials, panneaux à titre, échelle de référence 1600 × 900).
   - Scene : `src/app/AtelierUI.cpp`, branché sur le moteur.
-  - Graph Editor et Material Studio : modules Atelier de `src/app/atelier`. Le panneau de droite du Material Studio est l'Attribute Editor (`inspector.cpp`, livrable Atelier-Design-AttributEditor).
+  - Graph : éditeur nodal du jeu (`src/game`), dans le style Atelier : bibliothèque de nœuds à gauche, canevas avec groupes, Inspector à droite, panneau de sortie en bas (Output, Compiler Results, Execution Trace). Compile sauvegarde le graphe et le valide. L'ancien graphe Atelier est archivé dans `archive/atelier-graph/`.
+  - Material Studio : module Atelier de `src/app/atelier`. Le panneau de droite du Material Studio est l'Attribute Editor (`inspector.cpp`, livrable Atelier-Design-AttributEditor).
   - Les fonctions pas encore développées (Build, Play…) restent visibles mais désactivées.
   - Espace au démarrage : `--workspace scene|graph|material`.
 - Fenêtre **Settings** (icône engrenage de la barre du haut, ou Project › Settings…), enregistrée dans `build/bin/wzx_settings.ini` :
   - Mode : Dark / Light (le mode clair est volontairement un peu atténué).
   - Main Color : teinte des panneaux et des fonds (Graphite = noir neutre, Blue Slate = bleuté d'origine, Midnight, Forest, Plum, Umber ou couleur libre).
   - Accent Color : sélection, boutons actifs, surlignages.
+  - Graph : Node outline (contours des nœuds, activable) et Outline weight (épaisseur, de 0,25 à 3 px).
   - Text size, Icon size, Layout size (espacement : plus compact en dessous de 100 %, plus aéré au-dessus).
 - Couleurs partagées par tous les espaces : `src/app/atelier/atelier_style.h`, recalculées à chaque image depuis ces réglages. Métriques et couleurs de base : `assets/themes/Blue 01.theme`.
 - Tests en ligne de commande (sans enregistrer) : `--light 0|1`, `--main-color r,g,b`, `--sizes texte,icônes,layout`, `--settings`.

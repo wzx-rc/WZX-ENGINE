@@ -1,5 +1,5 @@
 // "Atelier" layout, Scene workspace: the engine scene editor drawn in the visual language of the Atelier
-// Graph Editor (atelier/graph_ui.cpp): same header, panel titles, buttons, metrics (1600 x 900 reference)
+// Graph Editor (atelier/archive/atelier-graph/former Atelier graph.cpp): same header, panel titles, buttons, metrics (1600 x 900 reference)
 // and the shared Atelier palette (atelier/atelier_style.h), fed by the theme settings.
 #include "App.h"
 #include "AtelierIcons.h"
@@ -37,7 +37,7 @@ const ImU32 kGreen = IM_COL32(120, 185, 132, 255), kAmber = IM_COL32(219, 166, 1
 std::string lower(std::string t) { for (auto& c : t) c = (char)std::tolower((unsigned char)c); return t; }
 bool matches(const std::string& t, const char* q) { return !*q || lower(t).find(lower(q)) != std::string::npos; }
 
-// --- helpers of graph_ui.cpp (sizes in reference pixels, text scaled by the user text size)
+// --- helpers of archive/atelier-graph/former Atelier graph.cpp (sizes in reference pixels, text scaled by the user text size)
 float ts() { return P().textScale; }
 void Text(float x, float y, const std::string& text, ImU32 color, float size = 12) { dl->AddText(font, size * s * ts(), ImVec2(x, y), color, text.c_str()); }
 ImVec2 TextSize(const std::string& text, float size = 12) { return font->CalcTextSizeA(size * s * ts(), 10000, 0, text.c_str()); }
@@ -72,7 +72,7 @@ bool Hit(const char* id, R r, bool enabled = true) {
     ImGui::EndDisabled();
     return q && enabled;
 }
-// graph_ui Button: raised box with border, icon at 8, label at 28; iconOnly centres the icon
+// former Atelier graph Button: raised box with border, icon at 8, label at 28; iconOnly centres the icon
 bool Button(const char* id, R r, const char* label, Icon icon, bool active = false, bool iconOnly = false, bool enabled = true) {
     bool q = Hit(id, r, enabled);
     bool hover = enabled && ImGui::IsItemHovered();
@@ -111,7 +111,7 @@ bool Search(const char* id, R r, char* value, size_t length, const char* hint) {
     Glyph(Icon::Search, r.x + 8 * s, r.y + (r.h - 11 * s) / 2, 11, P().muted);
     return q;
 }
-// panel frame with the graph_ui title row: icon, title, small tag on the right
+// panel frame with the former Atelier graph title row: icon, title, small tag on the right
 void Panel(R r, Icon icon, const char* title, const char* tag, ImU32 iconColor) {
     Box(r, P().panel, 4, true);
     Glyph(icon, r.x + 12 * s, r.y + 12 * s, 13, iconColor);
@@ -245,7 +245,7 @@ void App::drawAtelier() {
     }
     ImGuiViewport* vp = ImGui::GetMainViewport();
     float X = vp->WorkPos.x, Y = vp->WorkPos.y, W = vp->WorkSize.x, H = vp->WorkSize.y;
-    s = std::clamp(std::min(W / 1600.0f, H / 900.0f), 0.8f, 1.6f) * P().layoutScale;   // scale rule of graph_ui.cpp, layout size setting
+    s = std::clamp(std::min(W / 1600.0f, H / 900.0f), 0.8f, 1.6f) * P().layoutScale;   // scale rule of archive/atelier-graph/former Atelier graph.cpp, layout size setting
     ImGui::SetNextWindowPos(vp->WorkPos);
     ImGui::SetNextWindowSize(vp->WorkSize);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
@@ -281,7 +281,7 @@ void App::drawAtelier() {
         Splitter("splitBottom", {cx, Y + H - bh - 13 * s, cw, 5 * s}, A.bottomH, 140, maxB, false, true);
     }
 
-    // toast (status messages), as in graph_ui.cpp
+    // toast (status messages), as in archive/atelier-graph/former Atelier graph.cpp
     if (!m_status.empty() && GetTickCount64() - m_statusTime < 3500) {
         std::string t = toUtf8(m_status);
         ImVec2 z = TextSize(t, 11);
@@ -293,7 +293,7 @@ void App::drawAtelier() {
     ImGui::End();
 }
 
-// --------------------------------------------------------------------------- header (graph_ui HeaderBar)
+// --------------------------------------------------------------------------- header (former Atelier graph HeaderBar)
 
 void App::atlTopBar(float x0, float y0, float width) {
     Box({x0, y0, width, 37 * s}, P().bar, 0);
@@ -391,7 +391,7 @@ void App::atlTopBar(float x0, float y0, float width) {
     Glyph(Icon::ChevronDown, x0 + width - 24 * s, y0 + 15 * s, 9, P().muted);
 }
 
-// --------------------------------------------------------------------------- left panel (graph_ui Palette)
+// --------------------------------------------------------------------------- left panel (former Atelier graph Palette)
 
 void App::atlHierarchy(float x, float y, float w, float h) {
     AtelierState& A = m_atl;
@@ -436,7 +436,7 @@ void App::atlHierarchy(float x, float y, float w, float h) {
     const float rowH = 27 * s;
     bool filtering = A.sceneSearch[0] != 0;
 
-    // category heading of graph_ui (coloured, 10 px) with a fold arrow
+    // category heading of former Atelier graph (coloured, 10 px) with a fold arrow
     auto heading = [&](const char* id, const char* name, ImU32 color, bool& open, int n) {
         R hr = {px, yy, pw, 21 * s};
         if (Hit(id, hr)) open = !open;
@@ -536,7 +536,7 @@ void App::atlHierarchy(float x, float y, float w, float h) {
     dl = ImGui::GetWindowDrawList();
 }
 
-// --------------------------------------------------------------------------- viewport (graph_ui CanvasHeader + Canvas + Footer)
+// --------------------------------------------------------------------------- viewport (former Atelier graph CanvasHeader + Canvas + Footer)
 
 void App::atlViewport(float x, float y, float w, float h) {
     // header
@@ -651,7 +651,7 @@ void App::atlViewport(float x, float y, float w, float h) {
         dl->AddRectFilled(a, ImVec2(a.x + 240 * s * prog, a.y + 3 * s), prog >= 1 ? kGreen : P().accent, 2 * s);
     }
     dl->PopClipRect();
-    // footer (graph_ui Footer): state of the tools and of the renderer
+    // footer (former Atelier graph Footer): state of the tools and of the renderer
     R fr = {x, r.y + r.h + 3 * s, w, 24 * s};
     Box(fr, P().bg, 0);
     float fx = fr.x + 9 * s;
@@ -670,7 +670,7 @@ void App::atlViewport(float x, float y, float w, float h) {
     Text(fr.x + fr.w - 116 * s, fr.y + 6 * s, m_rs.raster ? "●  Real time" : "●  Path tracing", m_rs.raster ? kGreen : P().accent, 9);
 }
 
-// --------------------------------------------------------------------------- bottom panel (graph_ui Output)
+// --------------------------------------------------------------------------- bottom panel (former Atelier graph Output)
 
 void App::atlContent(float x, float y, float w, float h) {
     AtelierState& A = m_atl;
@@ -916,7 +916,7 @@ void App::atlContent(float x, float y, float w, float h) {
     }
 }
 
-// --------------------------------------------------------------------------- inspector (graph_ui Inspector)
+// --------------------------------------------------------------------------- inspector (former Atelier graph Inspector)
 
 void App::atlInspector(float x, float y, float w, float h) {
     AtelierState& A = m_atl;
