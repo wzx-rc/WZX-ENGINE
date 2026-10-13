@@ -3,7 +3,6 @@
 #pragma once
 #include "Json.h"
 #include "game/CommandServer.h"
-#include "game/GameUI.h"
 #include "game/NodeEditor.h"
 #include "game/Runtime.h"
 #include "vp3d/Scene.h"
@@ -74,8 +73,6 @@ private:
     void toast(const std::wstring& s);
 
     App& m_app;
-    vp3d::UI m_ui;               // immediate widgets on the ImGui foreground list (game/GameUI.h)
-    vp3d::Rect viewRect() const { return vp3d::Rect(m_app.m_rcView.x / m_ui.dpi, m_app.m_rcView.y / m_ui.dpi, m_app.m_rcView.w / m_ui.dpi, m_app.m_rcView.h / m_ui.dpi); }   // DIPs
     game::Graph m_graph;
     game::Runtime m_rt;
     game::NodeEditor m_editor;
@@ -92,9 +89,6 @@ private:
     int m_saveSelected = -1;
     int m_saveTool = 0;
     std::vector<bool> m_destroyed;
-    // floating toolbar
-    struct Btn { vp3d::Rect r; int action; };
-    std::vector<Btn> m_toolbar;
     int m_pendingToolbar = 0;
     struct Toast { std::wstring text; uint64_t t; };
     std::vector<Toast> m_toasts;

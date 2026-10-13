@@ -47,7 +47,7 @@ static std::string readFile(const fs::path& p) {
 GameHost::~GameHost() { m_server.stop(); }
 
 void GameHost::init() {
-    m_ui.setFonts(m_app.m_gui.fontSmall, m_app.m_gui.fontBold);
+    m_editor.setFonts(m_app.m_gui.fontSmall, m_app.m_gui.fontBold);
     fs::path exe(m_app.m_exeDir);
     std::error_code ec;
     if (fs::exists(exe / "game.json")) {
@@ -300,61 +300,54 @@ void GameHost::toast(const std::wstring& s) {
 
 // --------------------------------------------------------------------------- per-frame input
 
-static const struct { int vk; const char* name; } kKeys[] = {
-    {VK_SPACE, "ESPACE"}, {VK_RETURN, "ENTREE"}, {VK_ESCAPE, "ECHAP"}, {VK_DELETE, "SUPPR"}, {VK_TAB, "TAB"},
-    {VK_UP, "HAUT"}, {VK_DOWN, "BAS"}, {VK_LEFT, "GAUCHE"}, {VK_RIGHT, "DROITE"},
-};
-
+// Game clicks and keys (Play in the editor, or the built game).
 void GameHost::playInput() {
-    App& a = m_app;
-    UI& ui = m_ui;
-    if (ui.mousePressed[0] && viewRect().contains(ui.mx, ui.my) && !ui.popupOpen()) {
+    ImGuiIO& io = ImGui::GetIO();
+    const ScreenRect& v = m_app.m_rcView;
+    if (ImGui::IsMouseClicked(0) && v.contains(io.MousePos.x, io.MousePos.y) && !ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId)) {
         float3 o, d;
-        a.cameraRay(ui.mx * ui.dpi, ui.my * ui.dpi, o, d);
-        PickResult pr = pick(a.m_scene, o, d);
-        if (pr.object >= 0 && objectAlive(pr.object) && !a.m_scene.objects[pr.object].part.empty()) {
+        m_app.cameraRay(io.MousePos.x, io.MousePos.y, o, d);
+        PickResult pr = pick(m_app.m_scene, o, d);
+        if (pr.object >= 0 && objectAlive(pr.object) && !m_app.m_scene.objects[pr.object].part.empty()) {
             m_rt.fireClickObject(pr.object, pr.position);
         } else if (std::fabs(d.y) > 1e-5f) {
             float t = -o.y / d.y;
             if (t > 0) m_rt.fireClickGround(o + d * t);
         }
-        ui.mousePressed[0] = false;   // the editor tools must not see game clicks
     }
-    if (ui.textFocused()) return;
-    for (int k = 'A'; k <= 'Z'; ++k) if (ui.keyPressed(k)) m_rt.fireKey(std::string(1, (char)k));
-    for (int k = '0'; k <= '9'; ++k) if (ui.keyPressed(k)) m_rt.fireKey(std::string(1, (char)k));
-    for (int f = 1; f <= 12; ++f) if (ui.keyPressed(VK_F1 + f - 1)) m_rt.fireKey("F" + std::to_string(f));
-    for (auto& k : kKeys) if (ui.keyPressed(k.vk)) m_rt.fireKey(k.name);
+    if (io.WantTextInput) return;
+    for (int k = ImGuiKey_A; k <= ImGuiKey_Z; ++k)
+        if (ImGui::IsKeyPressed((ImGuiKey)k, true)) m_rt.fireKey(std::string(1, (char)('A' + k - ImGuiKey_A)));
+    for (int k = ImGuiKey_0; k <= ImGuiKey_9; ++k)
+        if (ImGui::IsKeyPressed((ImGuiKey)k, true)) m_rt.fireKey(std::string(1, (char)('0' + k - ImGuiKey_0)));
+    for (int k = ImGuiKey_F1; k <= ImGuiKey_F12; ++k)
+        if (ImGui::IsKeyPressed((ImGuiKey)k, true)) m_rt.fireKey("F" + std::to_string(k - ImGuiKey_F1 + 1));
+    static const struct { ImGuiKey key; const char* name; } kKeys[] = {
+        {ImGuiKey_Space, "ESPACE"}, {ImGuiKey_Enter, "ENTREE"}, {ImGuiKey_Escape, "ECHAP"}, {ImGuiKey_Delete, "SUPPR"},
+        {ImGuiKey_Tab, "TAB"}, {ImGuiKey_UpArrow, "HAUT"}, {ImGuiKey_DownArrow, "BAS"}, {ImGuiKey_LeftArrow, "GAUCHE"},
+        {ImGuiKey_RightArrow, "DROITE"},
+    };
+    for (auto& k : kKeys) if (ImGui::IsKeyPressed(k.key, true)) m_rt.fireKey(k.name);
 }
-
-// Graph editor clicks are drawn after the editor UI: hide them from the widgets underneath.
-static bool s_stashPressed[3], s_stashDouble;
-static float s_stashWheel;
-static bool s_stashed = false;
 
 bool GameHost::beginFrame() {
     handleRequests();
-    ImVec2 ds = ImGui::GetIO().DisplaySize;
-    m_ui.newFrame(m_app.m_dpi, ds.x / m_app.m_dpi, ds.y / m_app.m_dpi);
-    UI& ui = m_ui;
-    if (!ui.textFocused()) {
+    ImGuiIO& io = ImGui::GetIO();
+    if (!io.WantTextInput) {
         if (!m_player) {
-            if (ui.keyPressed(VK_F3)) {
+            if (ImGui::IsKeyPressed(ImGuiKey_F3, false)) {
                 m_showGraph = !m_showGraph;
                 static bool framed = false;
                 if (m_showGraph && !framed) { framed = true; m_editor.frameAll(m_graph); }
             }
-            if (ui.keyPressed(VK_F5)) m_playing ? stop() : play();
-            if (ui.keyPressed(VK_F7)) m_pendingToolbar = 3;
+            if (ImGui::IsKeyPressed(ImGuiKey_F5, false)) m_playing ? stop() : play();
+            if (ImGui::IsKeyPressed(ImGuiKey_F7, false)) m_pendingToolbar = 3;
         } else {
-            if (ui.keyPressed(VK_ESCAPE)) PostMessageW(m_app.m_hwnd, WM_CLOSE, 0, 0);
-            if (m_playerPathTracing && ui.keyPressed('P')) { m_app.m_rs.raster = !m_app.m_rs.raster; m_app.markDirty(); }
+            if (ImGui::IsKeyPressed(ImGuiKey_Escape, false)) PostMessageW(m_app.m_hwnd, WM_CLOSE, 0, 0);
+            if (m_playerPathTracing && ImGui::IsKeyPressed(ImGuiKey_P, false)) { m_app.m_rs.raster = !m_app.m_rs.raster; m_app.markDirty(); }
         }
     }
-    // floating toolbar (drawn in draw(), rectangles from the previous frame)
-    if (!m_player && !m_showGraph && ui.mousePressed[0])
-        for (const Btn& b : m_toolbar)
-            if (b.r.contains(ui.mx, ui.my)) { m_pendingToolbar = b.action; ui.mousePressed[0] = false; break; }
+    // toolbar buttons (drawn in draw(), applied here on the next frame)
     switch (m_pendingToolbar) {
     case 1: m_playing ? stop() : play(); break;
     case 2: m_showGraph = true; m_editor.frameAll(m_graph); break;
@@ -369,18 +362,7 @@ bool GameHost::beginFrame() {
     }
     m_pendingToolbar = 0;
 
-    s_stashed = false;
-    if (m_showGraph && !m_player) {
-        if (viewRect().contains(ui.mx, ui.my)) {
-            for (int i = 0; i < 3; ++i) { s_stashPressed[i] = ui.mousePressed[i]; ui.mousePressed[i] = false; }
-            s_stashDouble = ui.mouseDoubleClick;
-            s_stashWheel = ui.wheel;
-            ui.mouseDoubleClick = false;
-            ui.wheel = 0;
-            s_stashed = true;
-        }
-        return true;
-    }
+    if (m_showGraph && !m_player) return true;   // the graph editor owns the keys
     if (m_playing) {
         playInput();
         return true;
@@ -390,57 +372,19 @@ bool GameHost::beginFrame() {
 
 // --------------------------------------------------------------------------- drawing
 
-void GameHost::drawToolbar() {
-    UI& ui = m_ui;
-    const vp3d::Rect v = viewRect();
-    const float bw = 116, bh = 30, gap = 6;
-    float x = v.cx() - (bw * 3 + gap * 2) * 0.5f, y = v.b() - bh - 12;
-    m_toolbar.clear();
-    Rect r0(x, y, bw, bh), r1(x + bw + gap, y, bw, bh), r2(x + 2 * (bw + gap), y, bw, bh);
-    ui.fill(Rect(r0.x - 5, y - 5, bw * 3 + gap * 2 + 10, bh + 10), Color::hex(0x0E1013, 0.85f), 8);
-    ui.button(r0, m_playing ? L"Stop  F5" : L"Jouer  F5", m_playing, m_playing ? 0xE71A : 0xE768);
-    ui.button(r1, L"Graphe  F3", false, 0xE8A1);
-    ui.button(r2, L"Build  F7", false, 0xE7B8);
-    m_toolbar = {{r0, 1}, {r1, 2}, {r2, 3}};
-}
-
-void GameHost::drawToasts() {
-    UI& ui = m_ui;
-    uint64_t now = GetTickCount64();
-    m_toasts.erase(std::remove_if(m_toasts.begin(), m_toasts.end(), [&](const Toast& t) { return now - t.t > 5000; }), m_toasts.end());
-    const vp3d::Rect v = viewRect();
-    float y = v.y + (m_showGraph ? 46 : 48);
-    for (const Toast& t : m_toasts) {
-        float w = std::min(ui.textWidth(t.text, 13) + 32, v.w - 40);
-        float a = clampf((5000.0f - (now - t.t)) / 600.0f, 0, 1);
-        Rect r(v.cx() - w * 0.5f, y, w, 30);
-        ui.fill(r, Color::hex(0x0E1013, 0.88f * a), 6);
-        ui.stroke(r, ui.theme.accent.withAlpha(0.6f * a), 6);
-        ui.text(t.text, r, ui.theme.text.withAlpha(a), 13, false, Align::Center);
-        y += 36;
-    }
-}
-
 void GameHost::draw() {
-    UI& ui = m_ui;
-    const vp3d::Rect v = viewRect();
+    const ScreenRect& v = m_app.m_rcView;
     if (m_player) {
         if (m_playerFps) {
-            wchar_t b[64];
-            swprintf(b, 64, L"%.0f FPS", 1000.0f / std::max(m_app.m_frameMs, 0.1f));
-            ui.text(b, Rect(v.x + 10, v.y + 6, 120, 20), ui.theme.textDim, 12);
+            char b[64];
+            snprintf(b, sizeof b, "%.0f FPS", 1000.0f / std::max(m_app.m_frameMs, 0.1f));
+            ImGui::GetForegroundDrawList()->AddText(ImVec2(v.x + 10, v.y + 6), IM_COL32(170, 170, 170, 255), b);
         }
         drawToasts();
-        m_ui.end();
         return;
     }
     if (m_showGraph) {
-        if (s_stashed) {
-            for (int i = 0; i < 3; ++i) ui.mousePressed[i] = s_stashPressed[i];
-            ui.mouseDoubleClick = s_stashDouble;
-            ui.wheel = s_stashWheel;
-        }
-        m_editor.draw(ui, v, m_graph, m_playing ? &m_rt : nullptr, m_playing);
+        m_editor.draw(ImVec2(v.x, v.y), ImVec2(v.w, v.h), m_app.m_dpi, m_graph, m_playing ? &m_rt : nullptr, m_playing);
         switch (m_editor.takeAction()) {
         case NodeEditor::TogglePlay: m_playing ? stop() : play(); break;
         case NodeEditor::Save: {
@@ -455,15 +399,57 @@ void GameHost::draw() {
         }
     } else {
         if (m_playing) {
-            ui.stroke(Rect(v.x + 1, v.y + 1, v.w - 2, v.h - 2), Color::hex(0x3FB950), 0, 2.5f);
-            Rect tag(v.cx() - 120, v.y + 10, 240, 26);
-            ui.fill(tag, Color::hex(0x3FB950, 0.9f), 5);
-            ui.text(L"PLAY  ·  F5 pour arrêter", tag, Color::hex(0x08130B), 12.5f, true, Align::Center);
+            ImDrawList* fg = ImGui::GetForegroundDrawList();
+            fg->AddRect(ImVec2(v.x + 1, v.y + 1), ImVec2(v.x + v.w - 1, v.y + v.h - 1), IM_COL32(0x3F, 0xB9, 0x50, 255), 0, 0, 2.5f);
+            ImVec2 tl(v.x + v.w * 0.5f - 120, v.y + 10), br(tl.x + 240, tl.y + 26);
+            fg->AddRectFilled(tl, br, IM_COL32(0x3F, 0xB9, 0x50, 230), 5);
+            const char* tag = "PLAY  ·  F5 pour arrêter";
+            ImVec2 ts = ImGui::CalcTextSize(tag);
+            fg->AddText(ImVec2(tl.x + (240 - ts.x) * 0.5f, tl.y + (26 - ts.y) * 0.5f), IM_COL32(8, 19, 11, 255), tag);
         }
         drawToolbar();
     }
     drawToasts();
-    m_ui.end();
+}
+
+// Floating bar at the bottom of the view, outside the graph editor.
+void GameHost::drawToolbar() {
+    const ScreenRect& v = m_app.m_rcView;
+    float d = m_app.m_dpi;
+    ImGui::SetNextWindowPos(ImVec2(v.x + v.w * 0.5f, v.y + v.h - 12 * d), ImGuiCond_Always, ImVec2(0.5f, 1.0f));
+    ImGui::SetNextWindowBgAlpha(0.85f);
+    const ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |
+                                   ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_AlwaysAutoResize;
+    if (ImGui::Begin("##gamebar", nullptr, flags)) {
+        if (ImGui::Button(m_playing ? "Stop  F5" : "Jouer  F5")) m_pendingToolbar = 1;
+        ImGui::SameLine();
+        if (ImGui::Button("Graphe  F3")) m_pendingToolbar = 2;
+        ImGui::SameLine();
+        if (ImGui::Button("Build  F7")) m_pendingToolbar = 3;
+    }
+    ImGui::End();
+}
+
+void GameHost::drawToasts() {
+    uint64_t now = GetTickCount64();
+    m_toasts.erase(std::remove_if(m_toasts.begin(), m_toasts.end(), [&](const Toast& t) { return now - t.t > 5000; }), m_toasts.end());
+    const ScreenRect& v = m_app.m_rcView;
+    float d = m_app.m_dpi;
+    float y = v.y + (m_showGraph ? 46 : 48) * d;
+    const ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoSavedSettings |
+                                   ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoMove;
+    int i = 0;
+    for (const Toast& t : m_toasts) {
+        float a = clampf((5000.0f - (now - t.t)) / 600.0f, 0, 1);
+        ImGui::SetNextWindowPos(ImVec2(v.x + v.w * 0.5f, y), ImGuiCond_Always, ImVec2(0.5f, 0.0f));
+        ImGui::PushStyleVar(ImGuiStyleVar_Alpha, a);
+        ImGui::SetNextWindowBgAlpha(0.88f);
+        std::string id = "##toast" + std::to_string(i++);
+        if (ImGui::Begin(id.c_str(), nullptr, flags)) ImGui::TextUnformatted(toUtf8(t.text).c_str());
+        ImGui::End();
+        ImGui::PopStyleVar();
+        y += 36 * d;
+    }
 }
 
 void GameHost::afterDraw() {
@@ -672,7 +658,7 @@ std::string GameHost::command(const Json& j, int& status) {
                   ", \"selected\": " + std::to_string(a.m_selected) + ", \"objects\": " + std::to_string(s.objects.size()) +
                   ", \"graphNodes\": " + std::to_string(m_graph.nodes.size()) + ", \"graphPath\": " + jstr(toUtf8(m_graphPath)) +
                   ", \"projectDir\": " + jstr(toUtf8(m_projectDir)) + ", \"lastBuild\": " + jstr(m_lastBuild) +
-                  ", \"mouse\": [" + num(m_ui.mx) + ", " + num(m_ui.my) + "], \"viewport\": [" + num(a.m_rcView.x) + ", " + num(a.m_rcView.y) + ", " + num(a.m_rcView.w) + ", " + num(a.m_rcView.h) + "]");
+                  ", \"mouse\": [" + num(ImGui::GetIO().MousePos.x / m_app.m_dpi) + ", " + num(ImGui::GetIO().MousePos.y / m_app.m_dpi) + "], \"viewport\": [" + num(m_app.m_rcView.x) + ", " + num(m_app.m_rcView.y) + ", " + num(m_app.m_rcView.w) + ", " + num(m_app.m_rcView.h) + "]");
     if (cmd == "scene.get") return sceneJson();
     if (cmd == "scene.new") {
         if (m_playing) stop();
