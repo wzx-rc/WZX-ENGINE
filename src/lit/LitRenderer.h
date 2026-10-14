@@ -106,6 +106,8 @@ private:
     uint32_t m_gridVersion = 0;
     int m_gridBudget = 0;
     uint32_t m_giFrame = 0, m_capBase = 0, m_capSeen = 0, m_capSlots = 0;
+    int m_capWarmup = 0;   // frames left of the warm-up after a grid change (1024 probes per frame, no hysteresis)
+    static constexpr uint32_t kCaptureMax = 256;   // per frame: each draw of a face maps the dynamic draw constants (256 B each)
     vp3d::Rng m_giRng{12345};
     RefCntAutoPtr<Diligent::ITexture> m_giIrr, m_giDist, m_giRays, m_giProbe;
     RefCntAutoPtr<Diligent::ITexture> m_capTex, m_capAlbedo, m_capNormal, m_capDepth;

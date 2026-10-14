@@ -507,7 +507,7 @@ void ddgiConstants(const ProbeGrid& grid, const DDGIFrame& f, Rng& rng, gpu::DDG
     c.frame = f.frame;
     c.temporalMax = std::max(1u, f.temporalMax);
     c.view = (uint32_t)f.view;
-    c.flags = (f.showProbes ? 1u : 0u) | (f.rasterCapture ? 2u : 0u);
+    c.flags = (f.showProbes ? 1u : 0u) | (f.rasterCapture ? 2u : 0u) | (f.warmup ? 4u : 0u);
     c.captureBase = f.captureBase;
     c.captureSlots = f.captureSlots;
     c.captureSeen = f.captureSeen;

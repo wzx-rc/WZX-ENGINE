@@ -231,6 +231,10 @@ private:
     // Raster probe capture: cube faces of m_capSlots probes (kProbeFace texels each), depth, first probe of the batch
     ComPtr<ID3D12Resource> m_capTex, m_capAlbedo, m_capNormal, m_capDepth;
     uint32_t m_capSlots = 0, m_capBase = 0, m_capSeen = 0;
+    // Warm-up after a grid change: frames left during which 1024 probes are captured per frame without hysteresis, so
+    // the indirect light settles in a fraction of a second instead of several cycles of 32 probes per frame.
+    int m_capWarmup = 0;
+    static constexpr uint32_t kCaptureMax = 1024;   // probes per capture (16 texel rows each, textures stop at 16384)
     ComPtr<ID3D12PipelineState> m_psoProbe, m_psoProbeBg;
     uint32_t m_giCounts[3] = {0, 0, 0};
     float3 m_giOrigin;

@@ -1046,6 +1046,7 @@ void Renderer::setupProbeGrid(const RenderSettings& rs) {
     m_capSeen = 0;
 
     uint32_t total = n[0] * n[1] * n[2];
+    m_capWarmup = 4 * (int)((total + kCaptureMax - 1) / kCaptureMax);   // four full passes: the bounces settle
     struct TexDesc { uint32_t w, h; DXGI_FORMAT fmt; };
     const TexDesc td[kGITexCount] = {
         {n[0] * n[1] * (DDGI_IRR_N + 2), n[2] * (DDGI_IRR_N + 2), DXGI_FORMAT_R16G16B16A16_FLOAT},
@@ -1108,6 +1109,7 @@ void Renderer::recordDDGI(const RenderSettings& rs, UINT gx, UINT gy, bool shade
     f.view = rs.ddgiView;
     f.showProbes = rs.ddgiShowProbes;
     f.rasterCapture = rs.ddgiRaster;
+    f.warmup = rs.ddgiRaster && m_capWarmup > 0;
     f.captureBase = m_capBase;
     f.captureSlots = m_capSlots;
     f.captureSeen = rs.ddgiRaster ? std::min(total, m_capSeen + m_capSlots) : total;
@@ -1150,6 +1152,7 @@ void Renderer::recordDDGI(const RenderSettings& rs, UINT gx, UINT gy, bool shade
     if (rs.ddgiRaster) {
         m_capSeen = c.captureSeen;
         m_capBase = (m_capBase + m_capSlots) % total;
+        if (m_capWarmup > 0) --m_capWarmup;
     }
 }
 
@@ -1410,8 +1413,9 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
         m_cmd->EndQuery(m_queryHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 0);
         setupProbeGrid(rs);
         if (rs.ddgiRaster) {
-            // At most 1024 probes per frame: the capture is 16 texels per probe row, D3D12 textures stop at 16384.
-            ensureCapture(std::min(std::min(giProbeCount(), 1024u), (uint32_t)std::max(1, rs.ddgiCaptureProbes)));
+            // Warm-up: every probe in a few frames; then the requested batch (at most kCaptureMax per frame).
+            const uint32_t slots = m_capWarmup > 0 ? kCaptureMax : (uint32_t)std::max(1, rs.ddgiCaptureProbes);
+            ensureCapture(std::min(std::min(giProbeCount(), kCaptureMax), slots));
             recordRaster(scene, rs, vp, true);   // shadow map + cube captures of the next probes
         }
         m_cmd->SetComputeRootSignature(m_rootSig.Get());

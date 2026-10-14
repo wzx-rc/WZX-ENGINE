@@ -77,6 +77,8 @@ using namespace Diligent;
     IEngineFactoryVk* factory = GetEngineFactoryVk();
     EngineVkCreateInfo ci;
     ci.Features.ShaderResourceRuntimeArrays = DEVICE_FEATURE_STATE_OPTIONAL;
+    ci.DynamicHeapSize = 32 << 20;   // the DDGI probe captures map the draw constants thousands of times per frame
+    ci.DynamicHeapPageSize = 2 << 20;
     factory->CreateDeviceAndContextsVk(ci, &_device, &_context);
     if (!_device) {
         [self showError:@"No Vulkan (MoltenVK) device."];

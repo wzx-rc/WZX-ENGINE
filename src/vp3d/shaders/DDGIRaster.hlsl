@@ -61,7 +61,7 @@ void main(uint3 gid : SV_GroupID, uint3 tid3 : SV_GroupThreadID) {
     // First capture of this probe: no history yet. Later captures blend over a cycle of total / slots frames.
     const bool fresh = G.captureSeen < total && p + G.captureSlots >= G.captureSeen;
     float h = max(pow(G.hysteresis, ceil((float)total / max(G.captureSlots, 1u))), 0.5);
-    if (G.frame == 0 || fresh) h = 0.0;
+    if (G.frame == 0 || fresh || (G.flags & 4u) != 0u) h = 0.0;   // warm-up after a grid change: every capture replaces the tile
     const float3 origin = ProbePos(ProbeCoord(p));
 
     // 1) Every texel of the six faces: radiance (environment on a miss) plus the diffuse bounce from the probes.

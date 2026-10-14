@@ -210,6 +210,8 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show) {
         IEngineFactoryVk* f = GetEngineFactoryVk();
         EngineVkCreateInfo ci;
         ci.Features.ShaderResourceRuntimeArrays = DEVICE_FEATURE_STATE_OPTIONAL;
+        ci.DynamicHeapSize = 32 << 20;   // the DDGI probe captures map the draw constants thousands of times per frame
+        ci.DynamicHeapPageSize = 2 << 20;
         f->CreateDeviceAndContextsVk(ci, &g_device, &g_context);
         if (g_device) f->CreateSwapChainVk(g_device, g_context, sc, window, &g_swapChain);
         factory = f;
@@ -219,6 +221,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show) {
         IEngineFactoryD3D12* f = GetEngineFactoryD3D12();
         EngineD3D12CreateInfo ci;
         ci.Features.ShaderResourceRuntimeArrays = DEVICE_FEATURE_STATE_OPTIONAL;
+        ci.DynamicHeapPageSize = 8 << 20;   // the DDGI probe captures map the draw constants thousands of times per frame
         f->CreateDeviceAndContextsD3D12(ci, &g_device, &g_context);
         if (g_device) f->CreateSwapChainD3D12(g_device, g_context, sc, FullScreenModeDesc{}, window, &g_swapChain);
         factory = f;

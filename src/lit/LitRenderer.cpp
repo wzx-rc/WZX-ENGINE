@@ -556,8 +556,9 @@ void LitRenderer::render(const vp3d::Scene& scene, const Settings& settings, ITe
 
 void LitRenderer::ensureProbes(const vp3d::Scene& scene, const Settings& settings) {
     const int budget = std::max(8, settings.ddgiProbeBudget);
-    const uint32_t slots = std::min(1024u, std::max(1u, (uint32_t)settings.ddgiCaptureProbes));   // 16 texels per row, 16384 max
     const bool grid = !m_giIrr || m_gridVersion != scene.geometryVersion || m_gridBudget != budget;
+    // Warm-up: every probe in a few frames; then the requested batch (at most kCaptureMax per frame, 16 texel rows each).
+    const uint32_t slots = (grid || m_capWarmup > 0) ? kCaptureMax : std::min(kCaptureMax, std::max(1u, (uint32_t)settings.ddgiCaptureProbes));
     if (!grid && m_capTex && m_capSlots == std::min(slots, m_grid.total())) return;
     m_ctx->Flush();
     m_ctx->WaitForIdle();
@@ -575,6 +576,7 @@ void LitRenderer::ensureProbes(const vp3d::Scene& scene, const Settings& setting
         m_giDist = makeTexture2D(m_device, "Lit DDGI distance", m_grid.distW(), m_grid.distH(), TEX_FORMAT_RGBA16_FLOAT, rw);
         m_giRays = makeTexture2D(m_device, "Lit DDGI rays", DDGI_RAYS, m_grid.total(), TEX_FORMAT_RGBA32_FLOAT, rw);
         m_giProbe = makeTexture2D(m_device, "Lit DDGI probe state", m_grid.total(), 1, TEX_FORMAT_RGBA16_FLOAT, rw);
+        m_capWarmup = 4 * (int)((m_grid.total() + kCaptureMax - 1) / kCaptureMax);   // four full passes: the bounces settle
     }
     m_capSlots = std::min(slots, m_grid.total());
     const uint32_t F = kProbeFace;
@@ -596,6 +598,7 @@ void LitRenderer::recordProbes(const vp3d::Scene& scene, const Settings& setting
     f.view = settings.ddgiView;
     f.showProbes = settings.showProbes;
     f.rasterCapture = true;
+    f.warmup = m_capWarmup > 0;
     f.captureBase = m_capBase;
     f.captureSlots = m_capSlots;
     f.captureSeen = std::min(total, m_capSeen + m_capSlots);
@@ -628,36 +631,43 @@ void LitRenderer::recordProbes(const vp3d::Scene& scene, const Settings& setting
         m[row * 4 + 2] = v.z;
         m[row * 4 + 3] = w;
     };
-    for (uint32_t s = 0; s < m_capSlots; ++s) {
+    // Two passes over the faces, the environment then the geometry, so each pipeline commits its resources once per
+    // frame: a commit per face would exhaust the dynamic descriptor heap of the frame (thousands of faces in the warm-up).
+    // The face constants are a dynamic buffer mapped per face; Diligent picks the latest mapping up at each draw.
+    auto faceConstants = [&](uint32_t s, uint32_t face) {
         const uint32_t p = (m_capBase + s) % total;
         const float3 o = float3((float)(p % m_grid.counts[0]), (float)((p / m_grid.counts[0]) % m_grid.counts[1]), (float)(p / nxy)) *
                              m_grid.spacing + m_grid.origin;
+        const float3 fwd = kFwd[face], up = kUp[face], right = cross(up, fwd);
+        MapHelper<float> pc(m_ctx, m_probeCB, MAP_WRITE, MAP_FLAG_DISCARD);   // view-projection rows, probe position
+        float* m = pc;
+        setRows(m, 0, right, -dot(right, o));
+        setRows(m, 1, up, -dot(up, o));
+        setRows(m, 2, fwd * pA, -dot(fwd, o) * pA + pB);
+        setRows(m, 3, fwd, -dot(fwd, o));
+        m[16] = o.x; m[17] = o.y; m[18] = o.z; m[19] = 0;
+        Viewport vp((float)(face * F), (float)(s * F), (float)F, (float)F);
+        Rect sc((Int32)(face * F), (Int32)(s * F), (Int32)((face + 1) * F), (Int32)((s + 1) * F));
+        m_ctx->SetViewports(1, &vp, capW, capH);
+        m_ctx->SetScissorRects(1, &sc, capW, capH);
+    };
+    m_ctx->SetPipelineState(m_pso[P_PROBE_BG]);   // environment first, geometry over it
+    m_ctx->CommitShaderResources(m_srb[P_PROBE_BG], RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+    for (uint32_t s = 0; s < m_capSlots; ++s)
         for (uint32_t face = 0; face < 6; ++face) {
-            const float3 fwd = kFwd[face], up = kUp[face], right = cross(up, fwd);
-            {
-                MapHelper<float> pc(m_ctx, m_probeCB, MAP_WRITE, MAP_FLAG_DISCARD);   // view-projection rows, probe position
-                float* m = pc;
-                setRows(m, 0, right, -dot(right, o));
-                setRows(m, 1, up, -dot(up, o));
-                setRows(m, 2, fwd * pA, -dot(fwd, o) * pA + pB);
-                setRows(m, 3, fwd, -dot(fwd, o));
-                m[16] = o.x; m[17] = o.y; m[18] = o.z; m[19] = 0;
-            }
-            Viewport vp((float)(face * F), (float)(s * F), (float)F, (float)F);
-            Rect sc((Int32)(face * F), (Int32)(s * F), (Int32)((face + 1) * F), (Int32)((s + 1) * F));
-            m_ctx->SetViewports(1, &vp, capW, capH);
-            m_ctx->SetScissorRects(1, &sc, capW, capH);
-            m_ctx->SetPipelineState(m_pso[P_PROBE_BG]);   // environment first, geometry over it
-            m_ctx->CommitShaderResources(m_srb[P_PROBE_BG], RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+            faceConstants(s, face);
             DrawAttribs bg;
             bg.NumVertices = 3;
             m_ctx->Draw(bg);
-            m_ctx->SetPipelineState(m_pso[P_PROBE]);
-            m_ctx->CommitShaderResources(m_srb[P_PROBE], RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+        }
+    m_ctx->SetPipelineState(m_pso[P_PROBE]);
+    m_ctx->CommitShaderResources(m_srb[P_PROBE], RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+    for (uint32_t s = 0; s < m_capSlots; ++s)
+        for (uint32_t face = 0; face < 6; ++face) {
+            faceConstants(s, face);
             for (const vp3d::lit::Draw& d : m_data.draws)
                 if (!(d.flags & 7u) && !vp3d::lit::isTransparent(scene, d)) drawOne(d);
         }
-    }
     m_ctx->SetRenderTargets(0, nullptr, nullptr, RESOURCE_STATE_TRANSITION_MODE_NONE);
 
     // 2) rays of the captured probes from the captures, then the blend into the atlases (all probes seen so far).
@@ -680,6 +690,7 @@ void LitRenderer::recordProbes(const vp3d::Scene& scene, const Settings& setting
     // The batch just captured is the one the next frame starts after.
     m_capSeen = f.captureSeen;
     m_capBase = (m_capBase + m_capSlots) % total;
+    if (m_capWarmup > 0) --m_capWarmup;
 }
 
 } // namespace lit

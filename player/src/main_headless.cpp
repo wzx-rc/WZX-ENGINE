@@ -113,6 +113,7 @@ int main(int argc, char** argv) {
         if (f && f->LoadD3D12()) {
             EngineD3D12CreateInfo ci;
             ci.Features.ShaderResourceRuntimeArrays = DEVICE_FEATURE_STATE_OPTIONAL;
+            ci.DynamicHeapPageSize = 8 << 20;   // the DDGI probe captures map the draw constants thousands of times per frame
             if (std::getenv("WZX_VALIDATE")) ci.SetValidationLevel(VALIDATION_LEVEL_2);   // D3D12 debug layer + GPU validation
             f->CreateDeviceAndContextsD3D12(ci, &device, &context);
             factory = f;
@@ -124,6 +125,8 @@ int main(int argc, char** argv) {
         IEngineFactoryVk* f = GetEngineFactoryVk();
         EngineVkCreateInfo ci;
         ci.Features.ShaderResourceRuntimeArrays = DEVICE_FEATURE_STATE_OPTIONAL;
+        ci.DynamicHeapSize = 32 << 20;   // the DDGI probe captures map the draw constants thousands of times per frame
+        ci.DynamicHeapPageSize = 2 << 20;
         f->CreateDeviceAndContextsVk(ci, &device, &context);
         factory = f;
     }

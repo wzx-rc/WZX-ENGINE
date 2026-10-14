@@ -143,6 +143,7 @@ struct DDGIFrame {
     int view = 0;                // 0 full, 1 indirect only, 2 direct only
     bool showProbes = false;
     bool rasterCapture = false;  // probe rays from raster cube captures
+    bool warmup = false;         // raster capture after a grid change: no hysteresis, the whole grid captured in a few frames
     uint32_t captureBase = 0, captureSlots = 0, captureSeen = 0;   // see DDGIConstants
 };
 void ddgiConstants(const ProbeGrid& grid, const DDGIFrame& f, Rng& rng, gpu::DDGIConstants& out);
