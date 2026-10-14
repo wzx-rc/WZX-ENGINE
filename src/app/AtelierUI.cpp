@@ -565,10 +565,10 @@ void App::atlViewport(float x, float y, float w, float h) {
     // tools (right to left): shading, view | stats, grid, frame | snapping, axes, scale, rotate, move
     float bx = hr.x + hr.w - 8 * s, by = hr.y + 6 * s;
     auto right = [&](float bw) { bx -= bw; float r0 = bx; bx -= 6 * s; return r0; };
-    static const char* modes[] = {"Lit", "Progressive", "GI"};
+    static const char* modes[] = {"Lit", "Metal iOS", "Progressive", "GI"};
     int mode = renderMode();
-    if (Combo("atlShading", {right(118 * s), by, 118 * s, 24 * s}, mode, modes, 3, Icon::Sun)) setRenderMode(mode);
-    Tip("Lit: real-time raster · Progressive: path tracing, exact, denoiser optional · GI: real-time probes (DDGI)");
+    if (Combo("atlShading", {right(118 * s), by, 118 * s, 24 * s}, mode, modes, 4, Icon::Sun)) setRenderMode(mode);
+    Tip("Lit: real-time raster · Metal iOS: Lit + GI probes without ray tracing, as the iOS build · Progressive: path tracing, exact, denoiser optional · GI: real-time probes (DDGI, ray traced)");
     if (Combo("atlView", {right(118 * s), by, 118 * s, 24 * s}, m_viewMode, views, 6, Icon::Camera)) setViewAxis(m_viewMode);
     bx -= 6 * s;
     if (Button("atlStats", {right(28 * s), by, 28 * s, 24 * s}, "", Icon::Monitor, m_showStats, true)) m_showStats = !m_showStats;
@@ -680,7 +680,7 @@ void App::atlViewport(float x, float y, float w, float h) {
     Text(fx + 13 * s, fr.y + 6 * s, m_magnet ? "Snapping" : "Free", P().muted, 9);
     std::string info = std::to_string(objs) + " objects  /  " + triText + " triangles";
     Text(fr.x + fr.w - 290 * s, fr.y + 6 * s, info, P().muted, 9);
-    static const char* modeNames[] = {"●  Real time", "●  Progressive PT", "●  GI probes"};
+    static const char* modeNames[] = {"●  Real time", "●  Metal iOS", "●  Progressive PT", "●  GI probes"};
     Text(fr.x + fr.w - 116 * s, fr.y + 6 * s, modeNames[renderMode()], m_rs.raster ? kGreen : P().accent, 9);
 }
 
@@ -1197,7 +1197,7 @@ void App::atlInspectorLighting(float x, float y, float w, float) {
 // tracing ones, and the progressive and GI engines have theirs. Each option has an info icon.
 void App::atlInspectorRender(float x, float y, float w, float) {
     bool ch = false, act = false;
-    static const char* names[] = {"Real time (raster)", "Progressive path tracing", "GI probes (DDGI)"};
+    static const char* names[] = {"Real time (raster)", "Metal iOS (raster + GI probes)", "Progressive path tracing", "GI probes (DDGI, ray traced)"};
     const int mode = renderMode();
     Text(x, y, names[mode], P().text, 14);
     y += 25 * s;
@@ -1295,7 +1295,7 @@ void App::atlInspectorRender(float x, float y, float w, float) {
         y += 19 * s;
         Text(x, y, "Emissive objects light as sphere lights (no shadow).", P().muted, 11);
         y += 25 * s;
-    } else if (mode == 1) {
+    } else if (mode == 2) {
         Label(x, y, "SAMPLES");
         y += 24 * s;
         sliderI("##msp", "Max samples", m_rs.maxSamples, 16, 16384, "%.0f", "Samples per pixel of the progressive image before it stops. More = cleaner, slower.");
@@ -1321,14 +1321,20 @@ void App::atlInspectorRender(float x, float y, float w, float) {
         info("##gview_i", x + w - 18 * s, y + 5 * s, "Full image, only the indirect light, or only the direct light (debug).");
         y += 36 * s;
         check("##sp", "Show probes", m_rs.ddgiShowProbes, "Draws the probes as small spheres to check their placement.");
-        check("##rom", "Reset history when objects move", m_rs.resetOnMove, "When an object moves, its old light stays in the history. This clears it.");
-        sliderF("##rd", "Fade after a move", m_rs.resetDelay, 0.2f, 2.0f, "%.1f s", "How long the old history fades out after a move.");
-        y += 8 * s;
-        Label(x, y, "HISTORY");
-        y += 24 * s;
-        sliderI("##tcap", "History length", m_rs.temporalCap, 16, 1024, "%.0f frames", "How many frames the image is averaged over. Longer = steadier.");
-        y += 8 * s;
-        denoiser();
+        if (mode == 1) {   // Metal iOS: probes captured in raster, no image history
+            sliderI("##cap", "Probes captured per frame", m_rs.ddgiCaptureProbes, 1, 512, "%.0f", "Probes refreshed each frame (six faces each). The whole grid is refreshed in total / this frames: more = reacts faster to moving lights, more GPU cost.");
+            Text(x, y, "No ray tracing: what the iOS build renders.", P().muted, 11);
+            y += 22 * s;
+        } else {
+            check("##rom", "Reset history when objects move", m_rs.resetOnMove, "When an object moves, its old light stays in the history. This clears it.");
+            sliderF("##rd", "Fade after a move", m_rs.resetDelay, 0.2f, 2.0f, "%.1f s", "How long the old history fades out after a move.");
+            y += 8 * s;
+            Label(x, y, "HISTORY");
+            y += 24 * s;
+            sliderI("##tcap", "History length", m_rs.temporalCap, 16, 1024, "%.0f frames", "How many frames the image is averaged over. Longer = steadier.");
+            y += 8 * s;
+            denoiser();
+        }
     }
     if (ch) markDirty();
 }
@@ -1350,9 +1356,9 @@ void App::atlInspectorWorld(float x, float y, float w, float) {
     y += 35 * s;
     Text(x, y, "Rendering", P().muted, 11);
     y += 19 * s;
-    static const char* modes[] = {"Real time", "Progressive", "GI probes (DDGI)"};
+    static const char* modes[] = {"Real time", "Metal iOS", "Progressive", "GI probes (DDGI)"};
     int mode = renderMode();
-    if (Combo("worldRender", {x, y, w, 27 * s}, mode, modes, 3, Icon::Sun)) setRenderMode(mode);
+    if (Combo("worldRender", {x, y, w, 27 * s}, mode, modes, 4, Icon::Sun)) setRenderMode(mode);
     y += 43 * s;
     Label(x, y, "SCENE SUMMARY");
     y += 25 * s;

@@ -482,7 +482,7 @@ bool GameHost::beginFrame() {
             if (ImGui::IsKeyPressed(ImGuiKey_F7, false)) openBuildWindow();
         } else {
             if (ImGui::IsKeyPressed(ImGuiKey_Escape, false)) PostMessageW(m_app.m_hwnd, WM_CLOSE, 0, 0);
-            if (m_playerPathTracing && ImGui::IsKeyPressed(ImGuiKey_P, false)) m_app.setRenderMode(m_app.m_rs.raster ? 1 : 0);
+            if (m_playerPathTracing && ImGui::IsKeyPressed(ImGuiKey_P, false)) m_app.setRenderMode(m_app.m_rs.raster ? 2 : 0);
         }
     }
     // toolbar buttons (drawn in draw(), applied here on the next frame)

@@ -114,7 +114,7 @@ bool App::init(HINSTANCE inst, const Options& opt) {
     m_rs.ddgiView = opt.ddgiView;
     m_rs.temporalCap = opt.temporalCap;
     m_rs.ddgiHysteresis = opt.hysteresis;
-    if (!opt.raster) setRenderMode(opt.ddgi ? 2 : 1);
+    if (!opt.raster) setRenderMode(opt.ddgi ? (opt.ddgiRaster ? 1 : 3) : 2);
     ShowWindow(m_hwnd, SW_SHOWDEFAULT);
     UpdateWindow(m_hwnd);
 
@@ -197,23 +197,24 @@ void App::markDirty() {
     m_interacting = true;
 }
 
-// Modes of the viewport: 0 real time (raster), 1 progressive path tracing (exact, denoiser optional),
-// 2 real-time GI probes (DDGI).
+// Modes of the viewport: 0 Lit (real-time raster), 1 Metal iOS (Lit + DDGI probes without ray tracing, what the iOS
+// build renders), 2 progressive path tracing (exact, denoiser optional), 3 GI probes with ray tracing (DDGI).
 void App::setRenderMode(int mode) {
     m_rs.raster = mode == 0;
     m_rs.historyFixes = true;
-    m_rs.ddgi = mode == 2;
+    m_rs.ddgi = mode == 1 || mode == 3;
+    m_rs.ddgiRaster = mode == 1;
     // progressive: exact, no denoiser by default (the option is in the Render tab); GI: off by default (it blurs shadows)
     m_rs.denoise = false;
-    m_quality = mode == 1 ? 1 : 0;
+    m_quality = mode == 2 ? 1 : 0;
     applyQuality();
     markDirty();
 }
 
 int App::renderMode() const {
     if (m_rs.raster) return 0;
-    if (m_rs.ddgi) return 2;
-    return 1;
+    if (m_rs.ddgi) return m_rs.ddgiRaster ? 1 : 3;
+    return 2;
 }
 
 void App::applyQuality() {
@@ -566,8 +567,8 @@ void App::handleShortcuts() {
     if (pressed(ImGuiKey_F2)) m_pendingScene = SCENE_STUDIO;
     if (pressed(ImGuiKey_F3)) m_pendingScene = SCENE_LOOKDEV;
     if (pressed(ImGuiKey_F12)) saveScreenshot(false);
-    if (pressed(ImGuiKey_P)) setRenderMode(m_rs.raster ? 1 : 0);            // viewport <-> progressive path tracing
-    if (pressed(ImGuiKey_L)) setRenderMode(m_rs.ddgi ? 1 : 2);              // real-time probe GI (DDGI) <-> progressive path tracing
+    if (pressed(ImGuiKey_P)) setRenderMode(m_rs.raster ? 2 : 0);            // Lit <-> progressive path tracing
+    if (pressed(ImGuiKey_L)) setRenderMode(m_rs.ddgi ? 2 : 3);              // ray traced probe GI (DDGI) <-> progressive path tracing
     if (pressed(ImGuiKey_Delete) && !placing) deleteSelected();
     if (io.WantCaptureKeyboard && !ImGui::IsWindowFocused(ImGuiFocusedFlags_AnyWindow)) return;
     if (pressed(ImGuiKey_Q)) m_tool = TOOL_SELECT;
