@@ -13,6 +13,7 @@ namespace player {
 struct Options {
     std::string scene = "lookdev";   // milestone 1: the LookDev scene only
     std::string hdri = "sky";        // "sky" (built-in procedural sky), "none", or an .hdr / .exr file
+    bool sun = false;                // scene sun on (as in RTS play), for the parity tests
 };
 
 class Player {

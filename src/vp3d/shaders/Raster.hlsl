@@ -19,7 +19,7 @@ struct RasterConstants {
     float3 sunRadiance; float sunFromEnv;   // sunFromEnv: the key is the sun of the HDRI (its highlight is in the reflections)
     float4 shIrr[9];                     // HDRI irradiance (cosine-convolved SH, without the sun), image space
     float envMapOn; float envRotation; float envMapIntensity; float envMips;
-    float envVisible; float pad1; float pad2; float pad3;
+    float envVisible; uint sunLight; float pad2; float pad3;   // sunLight: index of the path tracer's sun quad (skipped here)
 };
 ConstantBuffer<RasterConstants> R : register(b0);
 
@@ -244,6 +244,9 @@ float4 Shade(VSOut i, bool ghost) {
             color += (diffuseCol / PI * (1 - F) + spec) * E * NoL;
             continue;
         }
+        // The sun is drawn once, by the directional term below (with the shadow map): its area light copy, made
+        // for the path tracer, is skipped (it doubled the sun and left the shadows half lit).
+        if (li == R.sunLight) continue;
         float3 c = l.corner + (l.edgeU + l.edgeV) * 0.5;
         float3 Ln = normalize(cross(l.edgeU, l.edgeV));
         float3 Lv = c - i.wpos;

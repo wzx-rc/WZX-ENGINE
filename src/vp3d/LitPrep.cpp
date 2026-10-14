@@ -176,6 +176,7 @@ void buildSceneData(const Scene& scene, const Geometry& geo, const std::vector<b
             gl.area = size * size;
             gl.radiance = radiance;
             gl.instance = (uint32_t)inst;
+            out.sunLight = (uint32_t)lights.size();
             lights.push_back(gl);
         }
     }
@@ -430,6 +431,7 @@ void computeFrame(const Scene& scene, const SceneData& data, const Environment* 
     rc.envMapIntensity = scene.env.hdriIntensity;
     rc.envMips = envMap ? (float)env->mips.size() : 1.0f;
     rc.envVisible = scene.env.visibleToCamera ? 1.0f : 0.0f;
+    rc.sunLight = data.sunLight;
     castShadows = key >= 0 || sun || envSun;
 }
 

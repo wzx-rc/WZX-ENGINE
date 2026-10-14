@@ -26,6 +26,7 @@ bool Player::init(Diligent::IRenderDevice* device, Diligent::IDeviceContext* con
         m_scene.env.hdri = img;
         m_scene.env.hdriRotation = app::lookDevHdriRotation(*img);
     }
+    m_scene.sun.enabled = options.sun;
     m_home = m_scene.camera;
     return m_renderer.init(device, context, factory, shaderDirs, outputFormat, error);
 }

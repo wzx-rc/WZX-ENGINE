@@ -27,7 +27,7 @@ struct RasterConstants {
     float3 sunRadiance; float sunFromEnv;
     float shIrr[9][4];
     float envMapOn; float envRotation; float envMapIntensity; float envMips;
-    float envVisible; float pad1, pad2, pad3;
+    float envVisible; uint32_t sunLight; float pad2, pad3;
 };
 
 struct DrawConstants {
@@ -393,6 +393,7 @@ void Renderer::recordRaster(const Scene& scene, const RenderSettings& rs, const 
     rc.envMapIntensity = scene.env.hdriIntensity;
     rc.envMips = m_envMips;
     rc.envVisible = scene.env.visibleToCamera ? 1.0f : 0.0f;
+    rc.sunLight = m_sunLight;
     memcpy(m_rasterCB.mapped, &rc, sizeof(rc));
 
     m_cmd->SetGraphicsRootSignature(m_rasterRoot.Get());

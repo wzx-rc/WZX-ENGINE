@@ -43,6 +43,7 @@ struct SceneData {
     std::vector<gpu::GpuMaterial> materials;   // scene materials, then the light materials
     std::vector<gpu::GpuLight> lights;         // never empty (a zero light when there is none)
     uint32_t lightCount = 0;                   // real lights in `lights`
+    uint32_t sunLight = NO_LIGHT;              // the sun's area light (path tracing only, skipped by the raster pass)
     std::vector<Draw> draws;
     float3 center;                             // bounds of the scene without huge ground planes (shadow map)
     float radius = 10.0f;
@@ -91,7 +92,7 @@ struct RasterConstants {
     float3 sunRadiance; float sunFromEnv;
     float shIrr[9][4];
     float envMapOn; float envRotation; float envMapIntensity; float envMips;
-    float envVisible; float pad1, pad2, pad3;
+    float envVisible; uint32_t sunLight; float pad2, pad3;
 };
 
 struct DrawConstants {

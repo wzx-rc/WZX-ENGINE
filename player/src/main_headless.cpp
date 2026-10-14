@@ -1,7 +1,7 @@
 // WZX Player, headless: renders one image of the scene with the Lit renderer into a PNG, without a window.
 // Used to compare the targets with each other and with the editor (docs/RENDU_PARITE.md):
 //   WZXPlayerHeadless --out lookdev.png [--width 1280 --height 720] [--hdri sky|none|file.hdr]
-//                     [--backend d3d12|vk] [--shaders dir1;dir2]
+//                     [--backend d3d12|vk] [--shaders dir1;dir2] [--sun]
 // Windows uses DirectX 12 by default, other systems Vulkan (on Linux, Mesa lavapipe renders without a GPU).
 #include "Player.h"
 
@@ -45,6 +45,7 @@ int main(int argc, char** argv) {
         else if (a == "--backend") backend = next();
         else if (a == "--shaders") shaders = next();
         else if (a == "--frames") frames = std::atoi(next().c_str());
+        else if (a == "--sun") opt.sun = true;
     }
 
     RefCntAutoPtr<IRenderDevice> device;

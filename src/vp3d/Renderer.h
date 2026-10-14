@@ -189,6 +189,7 @@ private:
     Buffer m_tlas, m_tlasScratch;
     uint32_t m_tlasCapacity = 0;
     uint32_t m_lightCount = 0;
+    uint32_t m_sunLight = 0xFFFFFFFFu;   // the sun's area light (path tracing; the raster pass skips it)
     std::vector<int> m_objectToInstance;
     std::vector<int> m_extraSelection;
     uint32_t m_sceneGeometryVersion = 0;
