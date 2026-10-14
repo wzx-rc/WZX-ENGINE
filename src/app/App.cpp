@@ -98,6 +98,7 @@ bool App::init(HINSTANCE inst, const Options& opt) {
     m_themeTestOnly = opt.light >= 0 || opt.mainColor.x >= 0 || opt.sizes.x > 0;
     m_showSettings = opt.openSettings;
     m_workspace = opt.workspace;
+    if (opt.inspectorTab >= 0 && opt.inspectorTab <= 3) m_atl.inspectorTab = opt.inspectorTab;
     m_matHost.app = this;
     atelier::material::SetPreviewHost(&m_matHost);
     atelier::material::Initialize(toUtf8(m_exeDir + L"\\MaterialLibrary.amat"));
@@ -275,7 +276,7 @@ void App::loadScene(int id) {
 
 static void listEnvFiles(const std::wstring& dir, bool hdrOnly, std::vector<std::wstring>& out) {
     WIN32_FIND_DATAW fd;
-    HANDLE h = FindFirstFileW((dir + L"\*").c_str(), &fd);
+    HANDLE h = FindFirstFileW((dir + L"\\*").c_str(), &fd);
     if (h == INVALID_HANDLE_VALUE) return;
     do {
         if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
@@ -291,8 +292,8 @@ static void listEnvFiles(const std::wstring& dir, bool hdrOnly, std::vector<std:
 
 std::vector<std::wstring> App::hdriFiles() const {
     std::vector<std::wstring> v;
-    listEnvFiles(m_exeDir + L"\..\..\01 - INBOX", true, v);
-    listEnvFiles(m_exeDir + L"\assets\hdri", false, v);
+    listEnvFiles(m_exeDir + L"\\..\\..\\01 - INBOX", true, v);
+    listEnvFiles(m_exeDir + L"\\assets\\hdri", false, v);
     return v;
 }
 
@@ -333,6 +334,27 @@ bool App::setHdri(const std::wstring& path) {
     m_scene.env.hdri = img;
     m_hdriPath = path;
     m_lastHdri = path;
+    // LookDev: the sun of the image is turned behind the camera, on its right, so that the spheres are lit from the front.
+    if (m_sceneId == SCENE_LOOKDEV) {
+        float peak = 0;
+        double mean = 0;
+        uint32_t px = 0;
+        for (uint32_t y = 0; y < img->height; ++y)
+            for (uint32_t x = 0; x < img->width; ++x) {
+                float3 c = img->texel(x, y);
+                float l = 0.2126f * c.x + 0.7152f * c.y + 0.0722f * c.z;
+                mean += l;
+                if (l > peak) { peak = l; px = x; }
+            }
+        mean /= (double)img->width * img->height;
+        if (peak > 30.0f * (float)mean) {
+            float az = ((px + 0.5f) / img->width - 0.5f) * 2.0f * kPi;   // azimuth of the sun in the image
+            float r = radians(145.0f) - az;
+            m_scene.env.hdriRotation = std::atan2(std::sin(r), std::cos(r));
+        } else {
+            m_scene.env.hdriRotation = 0.0f;
+        }
+    }
     markDirty();
     return true;
 }
@@ -799,6 +821,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         auto next = [&]() -> std::wstring { return i + 1 < argc ? std::wstring(argv[++i]) : std::wstring(); };
         if (a == L"--scene") { std::wstring sc = next(); opt.scene = sc == L"studio" ? app::SCENE_STUDIO : (sc == L"lookdev" ? app::SCENE_LOOKDEV : app::SCENE_CORNELL); }
         else if (a == L"--hdri") opt.hdri = next();
+        else if (a == L"--tab") opt.inspectorTab = _wtoi(next().c_str());
         else if (a == L"--raster") opt.raster = _wtoi(next().c_str()) != 0;
         else if (a == L"--open") opt.openPath = next();
         else if (a.size() > 5 && a.find(L".json") != std::wstring::npos) opt.openPath = a;

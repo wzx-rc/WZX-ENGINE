@@ -1247,12 +1247,12 @@ void App::atlInspectorRender(float x, float y, float w, float) {
         int cur = m_hdriPath.empty() ? 0 : (m_hdriPath == L"sky" ? 1 : -1);
         for (size_t i = 0; i < files.size(); ++i) {
             std::wstring f = files[i];
-            std::wstring n = f.substr(f.find_last_of(L"\/") + 1);
+            std::wstring n = f.substr(f.find_last_of(L"\\/") + 1);
             names.push_back(toUtf8(n) + (f.find(L"01 - INBOX") != std::wstring::npos ? "  (inbox)" : ""));
             if (_wcsicmp(f.c_str(), m_hdriPath.c_str()) == 0) cur = (int)i + 2;
         }
         if (cur < 0) {   // loaded from another folder (Load...)
-            std::wstring n = m_hdriPath.substr(m_hdriPath.find_last_of(L"\/") + 1);
+            std::wstring n = m_hdriPath.substr(m_hdriPath.find_last_of(L"\\/") + 1);
             names.push_back(toUtf8(n));
             files.push_back(m_hdriPath);
             cur = (int)names.size() - 1;
@@ -1266,7 +1266,7 @@ void App::atlInspectorRender(float x, float y, float w, float) {
         if (Button("##hdriLoad", R{x + w - bw - 22 * s, y, bw, 28 * s}, "Load…", Icon::FolderOpen)) m_pendingAction = 3;
         info("##hdri_i", x + w - 18 * s, y + 5 * s,
              "Image that surrounds the scene: it lights it, shows in reflections and in the background.\n"
-             "Files: .hdr and .exr (half/float, uncompressed, RLE or ZIP) are read as they are; jpg/png are\n"
+             "Files: .hdr and .exr (half/float, uncompressed, RLE, ZIP or PIZ) are read as they are; jpg/png are\n"
              "converted to linear but have no real dynamic range (no sun). Images wider than 4096 are reduced.\n"
              "The list shows the .hdr/.exr of 01 - INBOX and the images of assets/hdri.");
         y += 36 * s;
