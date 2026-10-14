@@ -178,6 +178,10 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show) {
         else if (a == L"--backend" && i + 1 < argc) backend = utf8(argv[++i]);
         else if (a == L"--scene" && i + 1 < argc) opt.scene = utf8(argv[++i]);
         else if (a == L"--data" && i + 1 < argc) opt.dataDir = utf8(argv[++i]);
+        else if (a == L"--ddgi" && i + 1 < argc) opt.ddgi = _wtoi(argv[++i]) != 0;   // DDGI probes without ray tracing
+        else if (a == L"--ddgi-view" && i + 1 < argc) opt.ddgiView = _wtoi(argv[++i]);
+        else if (a == L"--probes" && i + 1 < argc) opt.ddgiProbes = _wtoi(argv[++i]);
+        else if (a == L"--show-probes" && i + 1 < argc) opt.showProbes = _wtoi(argv[++i]) != 0;
     }
     LocalFree(argv);
 
