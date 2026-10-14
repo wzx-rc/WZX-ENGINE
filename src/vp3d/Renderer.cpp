@@ -131,11 +131,23 @@ bool Renderer::init(HWND hwnd, uint32_t width, uint32_t height, const std::wstri
 
     D3D12_DESCRIPTOR_HEAP_DESC hd = {};
     hd.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-    hd.NumDescriptors = kGIHeapBase + kGITexCount + 2;  // + shadow map SRV + material textures + DDGI UAVs + history UAVs
+    hd.NumDescriptors = kEnvHeapSlot + 1;  // + shadow map SRV + material textures + DDGI UAVs + history UAVs + HDRI SRV
     hd.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
     m_device->CreateDescriptorHeap(&hd, IID_PPV_ARGS(&m_heap));
     m_descSize = m_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 
+    {   // no HDRI yet: null texture view and a small zeroed table buffer
+        D3D12_SHADER_RESOURCE_VIEW_DESC sv = {};
+        sv.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
+        sv.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+        sv.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+        sv.Texture2D.MipLevels = 1;
+        D3D12_CPU_DESCRIPTOR_HANDLE h = m_heap->GetCPUDescriptorHandleForHeapStart();
+        h.ptr += (SIZE_T)kEnvHeapSlot * m_descSize;
+        m_device->CreateShaderResourceView(nullptr, &sv, h);
+        m_envDist = createBuffer(256, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ);
+        memset(m_envDist.mapped, 0, 256);
+    }
     if (!createPipelines(error)) return false;
     if (!createRasterPipelines(error)) return false;
 
@@ -176,7 +188,12 @@ bool Renderer::createPipelines(std::string* error) {
     histRange.NumDescriptors = 2;
     histRange.BaseShaderRegister = 10;
 
-    D3D12_ROOT_PARAMETER p[13] = {};
+    D3D12_DESCRIPTOR_RANGE envRange = {};
+    envRange.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+    envRange.NumDescriptors = 1;
+    envRange.BaseShaderRegister = 7;
+
+    D3D12_ROOT_PARAMETER p[15] = {};
     p[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
     p[0].Descriptor.ShaderRegister = 0;
     p[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
@@ -200,6 +217,11 @@ bool Renderer::createPipelines(std::string* error) {
     p[12].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;   // u10, u11 temporal history
     p[12].DescriptorTable.NumDescriptorRanges = 1;
     p[12].DescriptorTable.pDescriptorRanges = &histRange;
+    p[13].ParameterType = D3D12_ROOT_PARAMETER_TYPE_SRV;   // t6 HDRI sampling tables
+    p[13].Descriptor.ShaderRegister = 6;
+    p[14].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;   // t7 HDRI texture
+    p[14].DescriptorTable.NumDescriptorRanges = 1;
+    p[14].DescriptorTable.pDescriptorRanges = &envRange;
 
     D3D12_STATIC_SAMPLER_DESC ss = {};   // gLinearWrap (s0) of the path tracer
     ss.Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
@@ -208,7 +230,7 @@ bool Renderer::createPipelines(std::string* error) {
     ss.ShaderRegister = 0;
 
     D3D12_ROOT_SIGNATURE_DESC rsd = {};
-    rsd.NumParameters = 13;
+    rsd.NumParameters = 15;
     rsd.pParameters = p;
     rsd.NumStaticSamplers = 1;
     rsd.pStaticSamplers = &ss;
@@ -369,6 +391,8 @@ void Renderer::setScene(const Scene& scene) {
         g.indexCount = (uint32_t)m.indices.size();
         g.vertexCount = (uint32_t)m.vertices.size();
         m.bounds(g.bmin, g.bmax);
+        g.center = (g.bmin + g.bmax) * 0.5f;
+        for (auto& v : m.vertices) g.radius = std::max(g.radius, length(v.pos - g.center));
         for (auto& v : m.vertices) verts.push_back({v.pos, v.nrm, v.uv});
         inds.insert(inds.end(), m.indices.begin(), m.indices.end());
         m_meshes.push_back(g);
@@ -397,7 +421,8 @@ void Renderer::setScene(const Scene& scene) {
         if (g.indexCount == 0) continue;
         D3D12_RAYTRACING_GEOMETRY_DESC geo = {};
         geo.Type = D3D12_RAYTRACING_GEOMETRY_TYPE_TRIANGLES;
-        geo.Flags = D3D12_RAYTRACING_GEOMETRY_FLAG_OPAQUE;
+        // non-opaque glass instances are reported once to the shadow rays (ShadowTransmittance)
+        geo.Flags = D3D12_RAYTRACING_GEOMETRY_FLAG_OPAQUE | D3D12_RAYTRACING_GEOMETRY_FLAG_NO_DUPLICATE_ANYHIT_INVOCATION;
         geo.Triangles.VertexBuffer.StartAddress = m_vb.va() + (uint64_t)g.vertexOffset * sizeof(gpu::GpuVertex);
         geo.Triangles.VertexBuffer.StrideInBytes = sizeof(gpu::GpuVertex);
         geo.Triangles.VertexFormat = DXGI_FORMAT_R32G32B32_FLOAT;
@@ -526,6 +551,249 @@ void Renderer::uploadTextures(const Scene& scene) {
     }
 }
 
+
+namespace {
+
+uint16_t floatToHalf(float f) {
+    uint32_t x;
+    memcpy(&x, &f, 4);
+    uint32_t sign = (x >> 16) & 0x8000;
+    int32_t e = (int32_t)((x >> 23) & 0xFF) - 127 + 15;
+    uint32_t m = x & 0x7FFFFF;
+    if (e >= 31) return (uint16_t)(sign | 0x7BFF);   // clamp to the largest half (no inf)
+    if (e <= 0) {
+        if (e < -10) return (uint16_t)sign;
+        m |= 0x800000;
+        return (uint16_t)(sign | ((m >> (14 - e)) + ((m >> (13 - e)) & 1)));
+    }
+    uint32_t h = sign | ((uint32_t)e << 10) | (m >> 13);
+    return (uint16_t)(h + ((m >> 12) & 1));   // round to nearest
+}
+
+// Real SH basis (order 2), same assignment as EnvIrradiance in Raster.hlsl.
+void shBasis(const float3& d, float y[9]) {
+    y[0] = 0.282095f;
+    y[1] = 0.488603f * d.y;
+    y[2] = 0.488603f * d.z;
+    y[3] = 0.488603f * d.x;
+    y[4] = 1.092548f * d.x * d.y;
+    y[5] = 1.092548f * d.y * d.z;
+    y[6] = 0.315392f * (3.0f * d.z * d.z - 1.0f);
+    y[7] = 1.092548f * d.x * d.z;
+    y[8] = 0.546274f * (d.x * d.x - d.y * d.y);
+}
+
+float3 latLongDir(float u, float v) {
+    float ph = (u - 0.5f) * 2.0f * kPi, th = v * kPi;
+    return float3(std::sin(th) * std::sin(ph), std::cos(th), -std::sin(th) * std::cos(ph));
+}
+
+float lum(const float3& c) { return 0.2126f * c.x + 0.7152f * c.y + 0.0722f * c.z; }
+
+} // namespace
+
+// Uploads the HDRI: RGBA16F texture with a box-filtered mip chain (raster reflections use the mips), the importance
+// sampling tables of the path tracer, the irradiance SH and the sun of the image (raster key light).
+void Renderer::uploadEnvironment(const EnvImagePtr& img) {
+    waitIdle();
+    m_envImage = img;
+    m_envW = m_envH = 0;
+    m_envSunValid = false;
+    if (!img || img->width < 2 || img->height < 1 || img->rgb.size() < (size_t)img->width * img->height * 3) return;
+
+    // mip chain (RGB float), level 0 = the image
+    struct Level { uint32_t w, h; std::vector<float> rgb; };
+    std::vector<Level> mips;
+    mips.push_back({img->width, img->height, img->rgb});
+    while (mips.back().w > 1 || mips.back().h > 1) {
+        const Level& s = mips.back();
+        Level d{std::max(1u, s.w / 2), std::max(1u, s.h / 2), {}};
+        d.rgb.resize((size_t)d.w * d.h * 3);
+        for (uint32_t y = 0; y < d.h; ++y)
+            for (uint32_t x = 0; x < d.w; ++x) {
+                uint32_t x0 = std::min(x * 2, s.w - 1), x1 = std::min(x * 2 + 1, s.w - 1);
+                uint32_t y0 = std::min(y * 2, s.h - 1), y1 = std::min(y * 2 + 1, s.h - 1);
+                for (int c = 0; c < 3; ++c)
+                    d.rgb[((size_t)y * d.w + x) * 3 + c] =
+                        0.25f * (s.rgb[((size_t)y0 * s.w + x0) * 3 + c] + s.rgb[((size_t)y0 * s.w + x1) * 3 + c] +
+                                 s.rgb[((size_t)y1 * s.w + x0) * 3 + c] + s.rgb[((size_t)y1 * s.w + x1) * 3 + c]);
+            }
+        mips.push_back(std::move(d));
+    }
+
+    // texture
+    UINT levels = (UINT)mips.size();
+    D3D12_RESOURCE_DESC d = {};
+    d.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+    d.Width = img->width;
+    d.Height = img->height;
+    d.DepthOrArraySize = 1;
+    d.MipLevels = (UINT16)levels;
+    d.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
+    d.SampleDesc.Count = 1;
+    auto hp = heapProps(D3D12_HEAP_TYPE_DEFAULT);
+    m_envTex.Reset();
+    if (FAILED(m_device->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &d, D3D12_RESOURCE_STATE_COPY_DEST, nullptr,
+                                                 IID_PPV_ARGS(&m_envTex))))
+        return;
+    std::vector<D3D12_PLACED_SUBRESOURCE_FOOTPRINT> fp(levels);
+    UINT64 total = 0;
+    m_device->GetCopyableFootprints(&d, 0, levels, 0, fp.data(), nullptr, nullptr, &total);
+    Buffer stage = createBuffer(total, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ);
+    for (UINT l = 0; l < levels; ++l) {
+        const Level& L = mips[l];
+        for (uint32_t y = 0; y < L.h; ++y) {
+            uint16_t* row = (uint16_t*)((uint8_t*)stage.mapped + fp[l].Offset + (size_t)y * fp[l].Footprint.RowPitch);
+            for (uint32_t x = 0; x < L.w; ++x) {
+                const float* p = &L.rgb[((size_t)y * L.w + x) * 3];
+                row[x * 4 + 0] = floatToHalf(p[0]);
+                row[x * 4 + 1] = floatToHalf(p[1]);
+                row[x * 4 + 2] = floatToHalf(p[2]);
+                row[x * 4 + 3] = floatToHalf(1.0f);
+            }
+        }
+    }
+    beginCommands();
+    for (UINT l = 0; l < levels; ++l) {
+        D3D12_TEXTURE_COPY_LOCATION dl = {}, sl = {};
+        dl.pResource = m_envTex.Get();
+        dl.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+        dl.SubresourceIndex = l;
+        sl.pResource = stage.res.Get();
+        sl.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
+        sl.PlacedFootprint = fp[l];
+        m_cmd->CopyTextureRegion(&dl, 0, 0, 0, &sl, nullptr);
+    }
+    transition(m_envTex.Get(), D3D12_RESOURCE_STATE_COPY_DEST,
+               D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+    executeAndWait();
+    D3D12_SHADER_RESOURCE_VIEW_DESC sv = {};
+    sv.Format = d.Format;
+    sv.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+    sv.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+    sv.Texture2D.MipLevels = levels;
+    D3D12_CPU_DESCRIPTOR_HANDLE h = m_heap->GetCPUDescriptorHandleForHeapStart();
+    h.ptr += (SIZE_T)kEnvHeapSlot * m_descSize;
+    m_device->CreateShaderResourceView(m_envTex.Get(), &sv, h);
+    m_envMips = (float)levels;
+
+    // Sampling tables on the first level at most 1024 wide (the sun stays a few texels wide).
+    size_t li = 0;
+    while (mips[li].w > 1024 && li + 1 < mips.size()) ++li;
+    const Level& S = mips[li];
+    const uint32_t W = S.w, H = S.h;
+    std::vector<float> func((size_t)W * H), dist((size_t)W * H + (size_t)H * (W + 1) + H + 1);
+    double sum = 0;
+    for (uint32_t y = 0; y < H; ++y) {
+        float st = std::sin((y + 0.5f) / H * kPi);
+        for (uint32_t x = 0; x < W; ++x) {
+            const float* p = &S.rgb[((size_t)y * W + x) * 3];
+            float f = std::max(lum(float3(p[0], p[1], p[2])), 0.0f) * st;
+            func[(size_t)y * W + x] = f;
+            sum += f;
+        }
+    }
+    if (sum <= 0) {   // black image: uniform tables
+        std::fill(func.begin(), func.end(), 1.0f);
+        sum = (double)W * H;
+    }
+    // a small floor keeps every direction reachable by the sampling
+    float floorV = (float)(sum / ((double)W * H)) * 1e-3f;
+    sum = 0;
+    for (float& f : func) { f += floorV; sum += f; }
+    std::copy(func.begin(), func.end(), dist.begin());
+    size_t condBase = (size_t)W * H, margBase = condBase + (size_t)H * (W + 1);
+    std::vector<double> rowSum(H);
+    for (uint32_t y = 0; y < H; ++y) {
+        double acc = 0;
+        for (uint32_t x = 0; x < W; ++x) acc += func[(size_t)y * W + x];
+        rowSum[y] = acc;
+        double run = 0;
+        float* cdf = &dist[condBase + (size_t)y * (W + 1)];
+        cdf[0] = 0;
+        for (uint32_t x = 0; x < W; ++x) {
+            run += func[(size_t)y * W + x];
+            cdf[x + 1] = (float)(run / acc);
+        }
+        cdf[W] = 1.0f;
+    }
+    {
+        double run = 0;
+        float* cdf = &dist[margBase];
+        cdf[0] = 0;
+        for (uint32_t y = 0; y < H; ++y) {
+            run += rowSum[y];
+            cdf[y + 1] = (float)(run / sum);
+        }
+        cdf[H] = 1.0f;
+    }
+    Buffer up = createBuffer(dist.size() * sizeof(float), D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ);
+    memcpy(up.mapped, dist.data(), dist.size() * sizeof(float));
+    m_envDist = up;   // read directly from the upload heap (a few MB, read through the GPU caches)
+    m_envW = W;
+    m_envH = H;
+    m_envPdfScale = (float)((double)W * H / sum);
+
+    // Sun of the image: the brightest texel, if it stands well above the mean, and the bright texels around it
+    // (6 degrees). The raster viewport uses it as its key light (with the shadow map) and leaves it out of the SH.
+    uint32_t bx = 0, by = 0;
+    float peak = 0;
+    double meanL = 0;
+    for (uint32_t y = 0; y < H; ++y)
+        for (uint32_t x = 0; x < W; ++x) {
+            const float* p = &S.rgb[((size_t)y * W + x) * 3];
+            float l = lum(float3(p[0], p[1], p[2]));
+            meanL += l;
+            if (l > peak) { peak = l; bx = x; by = y; }
+        }
+    meanL /= (double)W * H;
+    float3 sunDir = latLongDir((bx + 0.5f) / W, (by + 0.5f) / H);
+    std::vector<uint8_t> isSun((size_t)W * H, 0);
+    float3 sunE(0.0f), sunAxis(0.0f);
+    const float dOmega0 = (2.0f * kPi / W) * (kPi / H);
+    if (peak > 30.0f * (float)meanL) {
+        const float cosCone = std::cos(radians(6.0f));
+        for (uint32_t y = 0; y < H; ++y) {
+            float st = std::sin((y + 0.5f) / H * kPi);
+            for (uint32_t x = 0; x < W; ++x) {
+                float3 dir = latLongDir((x + 0.5f) / W, (y + 0.5f) / H);
+                if (dot(dir, sunDir) < cosCone) continue;
+                const float* p = &S.rgb[((size_t)y * W + x) * 3];
+                float3 c(p[0], p[1], p[2]);
+                if (lum(c) < 0.05f * peak) continue;
+                isSun[(size_t)y * W + x] = 1;
+                sunE += c * (dOmega0 * st);
+                sunAxis += dir * (lum(c) * dOmega0 * st);
+            }
+        }
+        m_envSunValid = lum(sunE) > 0.05f;
+        m_envSunDir = normalize(sunAxis);
+        m_envSunE = sunE;
+    }
+
+    // Irradiance SH (cosine lobe convolution: pi, 2pi/3, pi/4 per band), with and without the sun.
+    double sh[9][3] = {}, shSun[9][3] = {};
+    for (uint32_t y = 0; y < H; ++y) {
+        float st = std::sin((y + 0.5f) / H * kPi);
+        for (uint32_t x = 0; x < W; ++x) {
+            float3 dir = latLongDir((x + 0.5f) / W, (y + 0.5f) / H);
+            const float* p = &S.rgb[((size_t)y * W + x) * 3];
+            float b[9];
+            shBasis(dir, b);
+            double w = dOmega0 * st;
+            bool sunTexel = m_envSunValid && isSun[(size_t)y * W + x];
+            for (int k = 0; k < 9; ++k)
+                for (int c = 0; c < 3; ++c) (sunTexel ? shSun : sh)[k][c] += p[c] * b[k] * w;
+        }
+    }
+    const float band[9] = {kPi, 2 * kPi / 3, 2 * kPi / 3, 2 * kPi / 3, kPi / 4, kPi / 4, kPi / 4, kPi / 4, kPi / 4};
+    for (int k = 0; k < 9; ++k)
+        for (int c = 0; c < 3; ++c) {
+            m_envSH[k][c] = (float)(sh[k][c] * band[k]);
+            m_envSHFull[k][c] = (float)((sh[k][c] + shSun[k][c]) * band[k]);
+        }
+}
+
 void Renderer::buildTLAS(const Scene& scene, bool buildAS) {
     m_draws.clear();
     std::vector<D3D12_RAYTRACING_INSTANCE_DESC> descs;
@@ -566,6 +834,7 @@ void Renderer::buildTLAS(const Scene& scene, bool buildAS) {
         d.InstanceID = (UINT)insts.size();
         d.InstanceMask = mask;
         d.Flags = D3D12_RAYTRACING_INSTANCE_FLAG_TRIANGLE_CULL_DISABLE;
+        if (mask == MASK_GLASS) d.Flags |= D3D12_RAYTRACING_INSTANCE_FLAG_FORCE_NON_OPAQUE;
         d.AccelerationStructure = g.blas.va();
         descs.push_back(d);
         insts.push_back({g.indexOffset, g.vertexOffset, matId, lightId});
@@ -639,6 +908,27 @@ void Renderer::buildTLAS(const Scene& scene, bool buildAS) {
             gl.instance = (uint32_t)inst;
             lights.push_back(gl);
         }
+    }
+    // Emissive objects are lights too: sampled in the cone of their bounding sphere (path tracing), sphere lights in raster.
+    for (size_t i = 0; i < scene.objects.size(); ++i) {
+        int inst = m_objectToInstance[i];
+        if (inst < 0) continue;
+        const Object& o = scene.objects[i];
+        const Material& m = scene.materials[insts[inst].materialId];
+        float3 e = m.emission * m.emissionStrength;
+        if (std::max(e.x, std::max(e.y, e.z)) <= 0.0f || m.transmission > 0.5f) continue;
+        const MeshGpu& g = m_meshes[o.mesh];
+        Affine xf = o.transform();
+        float sc = 0;
+        for (int c = 0; c < 3; ++c) sc = std::max(sc, length(float3(xf.m[0][c], xf.m[1][c], xf.m[2][c])));
+        gpu::GpuLight gl = {};
+        gl.type = LIGHT_OBJECT;
+        gl.corner = xf.point(g.center);
+        gl.area = std::max(g.radius * sc, 1e-4f);
+        gl.radiance = e;
+        gl.instance = (uint32_t)inst;
+        insts[inst].lightId = (uint32_t)lights.size();
+        lights.push_back(gl);
     }
     m_lightCount = (uint32_t)lights.size();
     if (lights.empty()) lights.push_back(gpu::GpuLight{});
@@ -902,6 +1192,11 @@ uint32_t Renderer::sceneSignature(const Scene& s) const {
     mix(&s.env.horizon, sizeof(s.env.horizon));
     mix(&s.env.bottom, sizeof(s.env.bottom));
     mix(&s.env.intensity, sizeof(float));
+    const void* hdri = s.env.hdri.get();
+    mix(&hdri, sizeof(hdri));
+    mix(&s.env.hdriIntensity, sizeof(float));
+    mix(&s.env.hdriRotation, sizeof(float));
+    mix(&s.env.visibleToCamera, sizeof(bool));
     for (const Object& o : s.objects) {
         mix(&o.material, sizeof(o.material));
         mix(&o.mesh, sizeof(o.mesh));
@@ -951,6 +1246,8 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
         createTargets(vp.w, vp.h);
     }
     if (scene.geometryVersion != m_sceneGeometryVersion) setScene(scene);
+    if (scene.env.hdri && scene.env.hdri != m_envImage) uploadEnvironment(scene.env.hdri);
+    const bool envMap = scene.env.hdri && scene.env.hdri == m_envImage && m_envW > 0;
     // A move (object or sun) does not wipe the history: it fades to new samples over rs.resetDelay seconds, so the
     // trail of the old place disappears in that time and the noise of the new place is short. Off: nothing happens.
     if (rs.historyFixes && rs.resetOnMove) {
@@ -995,7 +1292,8 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
     fc.flags = (cam.dof ? FRAME_FLAG_DOF : 0) | (rs.bevel ? FRAME_FLAG_BEVEL : 0) | (rs.denoise ? FRAME_FLAG_DENOISE : 0) |
                (scene.env.visibleToCamera ? FRAME_FLAG_ENV_VISIBLE : 0) | (rs.ddgi && !rs.raster ? FRAME_FLAG_ID_EDGES : 0) |
                ((rs.temporal || rs.ddgi) && !rs.raster && rs.historyFixes ? FRAME_FLAG_CENTRE_VALID : 0u) |
-               (rs.temporal && !rs.raster && rs.historyFixes ? FRAME_FLAG_TEMPORAL : 0u);
+               (rs.temporal && !rs.raster && rs.historyFixes ? FRAME_FLAG_TEMPORAL : 0u) |
+               (envMap ? FRAME_FLAG_ENV_MAP : 0u);
     fc.envTop = scene.env.top;
     fc.envIntensity = scene.env.intensity;
     fc.envHorizon = scene.env.horizon;
@@ -1032,6 +1330,12 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
     fc.prevCamFwd = m_prevCam.fwd;
     fc.prevTanHalfFovY = m_prevCam.tanHalf;
     fc.prevAspect = m_prevCam.aspect;
+    fc.envW = envMap ? m_envW : 0;
+    fc.envH = envMap ? m_envH : 0;
+    fc.envRotation = scene.env.hdriRotation;
+    fc.envMapIntensity = scene.env.hdriIntensity;
+    fc.envPdfScale = m_envPdfScale;
+    fc.envMips = m_envMips;
     memcpy(m_constants.mapped, &fc, sizeof(fc));
 
     ID3D12DescriptorHeap* heaps[] = {m_heap.Get()};
@@ -1063,6 +1367,10 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
     D3D12_GPU_DESCRIPTOR_HANDLE histTable = m_heap->GetGPUDescriptorHandleForHeapStart();
     histTable.ptr += (UINT64)(kGIHeapBase + kGITexCount) * m_descSize;
     m_cmd->SetComputeRootDescriptorTable(12, histTable);   // u10, u11: temporal history
+    D3D12_GPU_DESCRIPTOR_HANDLE envTable = m_heap->GetGPUDescriptorHandleForHeapStart();
+    envTable.ptr += (UINT64)kEnvHeapSlot * m_descSize;
+    m_cmd->SetComputeRootShaderResourceView(13, m_envDist.va());
+    m_cmd->SetComputeRootDescriptorTable(14, envTable);
 
     bool traced = false;
     m_cmd->EndQuery(m_queryHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 0);

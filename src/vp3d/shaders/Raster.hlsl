@@ -16,7 +16,10 @@ struct RasterConstants {
     float3 ambient; float shadowTexel;
     float3 keyPos; float lightScale;
     float3 sunDir; float sunOn;          // direction towards the sun, 1 when the sun is the key light
-    float3 sunRadiance; float pad;
+    float3 sunRadiance; float sunFromEnv;   // sunFromEnv: the key is the sun of the HDRI (its highlight is in the reflections)
+    float4 shIrr[9];                     // HDRI irradiance (cosine-convolved SH, without the sun), image space
+    float envMapOn; float envRotation; float envMapIntensity; float envMips;
+    float envVisible; float pad1; float pad2; float pad3;
 };
 ConstantBuffer<RasterConstants> R : register(b0);
 
@@ -37,6 +40,7 @@ StructuredBuffer<GpuLight> gLights : register(t2);
 SamplerComparisonState gShadowCmp : register(s0);
 Texture2D<float4> gTextures[MAX_TEXTURES] : register(t0, space1);
 SamplerState gLinearWrap : register(s1);
+Texture2D<float4> gEnvTex : register(t3);   // HDRI (lat-long, with mips)
 
 static const float PI = 3.14159265;
 #define DRAW_GHOST 1u
@@ -89,16 +93,52 @@ BgOut VSBackground(uint id : SV_VertexID) {
     return o;
 }
 
-float3 Environment(float3 d) {
+float3 Gradient(float3 d) {
     float y = d.y;
     float3 c = y > 0 ? lerp(R.envHorizon, R.envTop, pow(saturate(y), 0.6))
                      : lerp(R.envHorizon, R.envBottom, pow(saturate(-y), 0.4));
     return c * R.envIntensity;
 }
 
+// World direction to the image space of the HDRI (turned by -envRotation around +Y), same mapping as the path tracer.
+float3 ToEnvSpace(float3 d) {
+    float c = cos(R.envRotation), s = sin(R.envRotation);
+    return float3(d.x * c + d.z * s, d.y, d.z * c - d.x * s);
+}
+
+float3 EnvMap(float3 d, float lod) {
+    float3 e = ToEnvSpace(d);
+    float2 uv = float2(frac(atan2(e.x, -e.z) * (0.5 / PI) + 0.5), clamp(acos(clamp(e.y, -1.0, 1.0)) / PI, 0.0005, 0.9995));
+    return gEnvTex.SampleLevel(gLinearWrap, uv, lod).rgb * R.envMapIntensity;
+}
+
+// Diffuse irradiance of the HDRI from its SH projection (order 2).
+float3 EnvIrradiance(float3 n) {
+    float3 e = ToEnvSpace(n);
+    float x = e.x, y = e.y, z = e.z;
+    float3 c = R.shIrr[0].rgb * 0.282095
+             + R.shIrr[1].rgb * (0.488603 * y) + R.shIrr[2].rgb * (0.488603 * z) + R.shIrr[3].rgb * (0.488603 * x)
+             + R.shIrr[4].rgb * (1.092548 * x * y) + R.shIrr[5].rgb * (1.092548 * y * z)
+             + R.shIrr[6].rgb * (0.315392 * (3.0 * z * z - 1.0)) + R.shIrr[7].rgb * (1.092548 * x * z)
+             + R.shIrr[8].rgb * (0.546274 * (x * x - y * y));
+    return max(c, 0.0) * R.envMapIntensity;
+}
+
+float3 Environment(float3 d) { return R.envMapOn > 0 ? EnvMap(d, 0) : Gradient(d); }
+
 float4 PSBackground(BgOut i) : SV_Target {
     float3 d = normalize(R.camFwd + R.camRight * (i.ndc.x * R.aspect * R.tanHalfFovY) + R.camUp * (i.ndc.y * R.tanHalfFovY));
-    return float4(Environment(d), 1);
+    return float4(R.envMapOn > 0 && R.envVisible > 0 ? EnvMap(d, 0) : Gradient(d), 1);
+}
+
+// Split-sum environment BRDF, analytic fit (Karis, mobile).
+float3 EnvBRDFApprox(float3 f0, float rough, float NoV) {
+    const float4 c0 = float4(-1, -0.0275, -0.572, 0.022);
+    const float4 c1 = float4(1, 0.0425, 1.04, -0.04);
+    float4 r = rough * c0 + c1;
+    float a004 = min(r.x * r.x, exp2(-9.28 * NoV)) * r.x + r.y;
+    float2 AB = float2(-1.04, 1.04) * a004 + r.zw;
+    return f0 * AB.x + AB.y;
 }
 
 // ---------------------------------------------------------------- shading
@@ -177,6 +217,21 @@ float4 Shade(VSOut i, bool ghost) {
     float3 color = 0;
     for (uint li = 0; li < R.lightCount; ++li) {
         GpuLight l = gLights[li];
+        if (l.type == LIGHT_OBJECT) {   // emissive object: a sphere light (no shadow)
+            float3 Lv = l.corner - i.wpos;
+            float d2 = dot(Lv, Lv);
+            float3 L = Lv * rsqrt(d2);
+            float NoL = saturate(dot(N, L));
+            if (NoL <= 0) continue;
+            float r2 = l.area * l.area;
+            float3 E = l.radiance * PI * r2 / max(d2, r2);
+            float3 H = normalize(V + L);
+            float aL = saturate(a + l.area / (2.0 * sqrt(d2)));
+            float3 F = Fresnel(f0, saturate(dot(V, H)));
+            float3 spec = D_GGX(saturate(dot(N, H)), aL) * V_Smith(NoV, NoL, aL) * F * (a * a) / max(aL * aL, 1e-4);
+            color += (diffuseCol / PI * (1 - F) + spec) * E * NoL;
+            continue;
+        }
         float3 c = l.corner + (l.edgeU + l.edgeV) * 0.5;
         float3 Ln = normalize(cross(l.edgeU, l.edgeV));
         float3 Lv = c - i.wpos;
@@ -208,17 +263,26 @@ float4 Shade(VSOut i, bool ghost) {
             float3 H = normalize(V + L);
             float NoH = saturate(dot(N, H));
             float3 F = Fresnel(f0, saturate(dot(V, H)));
-            float3 spec = D_GGX(NoH, a) * V_Smith(NoV, NoL, a) * F;
+            float3 spec = R.sunFromEnv > 0 ? 0 : D_GGX(NoH, a) * V_Smith(NoV, NoL, a) * F;
             float3 diff = diffuseCol / PI * (1 - F);
             color += (diff + spec) * R.sunRadiance * R.lightScale * NoL * Shadow(i.wpos, N);
         }
     }
     // Hemisphere ambient + reflection of the environment, darkened in cavities facing down.
-    float3 sky = Environment(N) + R.ambient * (0.65 + 0.35 * N.y);
-    float3 refl = Environment(reflect(-V, N)) + R.ambient;
-    float3 Fa = Fresnel(f0, NoV) * (1 - rough * 0.7);
     float cavity = lerp(0.55, 1.0, saturate(i.wpos.y * 0.6 + 0.5 + N.y * 0.3));
-    color += (diffuseCol * sky + Fa * refl) * cavity;
+    if (R.envMapOn > 0) {
+        // HDRI: SH irradiance (diffuse) and the blurred mips of the image along the reflection (glossy).
+        float3 Rd = reflect(-V, N);
+        float3 refl = EnvMap(Rd, sqrt(rough) * max(R.envMips - 2.0, 0.0));
+        float3 Fe = EnvBRDFApprox(f0, rough, NoV);
+        float3 kd = diffuseCol * (1 - Fe);
+        color += (kd / PI * EnvIrradiance(N) + Fe * refl) * cavity;
+    } else {
+        float3 sky = Environment(N) + R.ambient * (0.65 + 0.35 * N.y);
+        float3 refl = Environment(reflect(-V, N)) + R.ambient;
+        float3 Fa = Fresnel(f0, NoV) * (1 - rough * 0.7);
+        color += (diffuseCol * sky + Fa * refl) * cavity;
+    }
     color += emission;
     float alpha = 1;
     if (trans > 0.5) alpha = 0.55 + 0.4 * Fresnel(0.04, NoV).x;

@@ -8,6 +8,8 @@ StructuredBuffer<uint> gIndices : register(t2);
 StructuredBuffer<GpuInstance> gInst : register(t3);
 StructuredBuffer<GpuMaterial> gMats : register(t4);
 StructuredBuffer<GpuLight> gLights : register(t5);
+StructuredBuffer<float> gEnvDist : register(t6);   // HDRI importance sampling tables (see EnvSample)
+Texture2D<float4> gEnvTex : register(t7);          // HDRI, lat-long, linear, with mips
 
 // 0 accum (rgb sum, w = samples) | 1 albedo (rgb, w = instance id + 1) | 2 normal (xyz) + depth (w)
 // 3,4 denoise ping-pong (demodulated radiance) | 5 output LDR

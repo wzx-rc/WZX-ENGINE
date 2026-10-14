@@ -24,7 +24,10 @@ struct RasterConstants {
     float3 ambient; float shadowTexel;
     float3 keyPos; float lightScale;
     float3 sunDir; float sunOn;
-    float3 sunRadiance; float pad;
+    float3 sunRadiance; float sunFromEnv;
+    float shIrr[9][4];
+    float envMapOn; float envRotation; float envMapIntensity; float envMips;
+    float envVisible; float pad1, pad2, pad3;
 };
 
 struct DrawConstants {
@@ -71,7 +74,12 @@ bool Renderer::createRasterPipelines(std::string* error) {
     texRange.BaseShaderRegister = 0;
     texRange.RegisterSpace = 1;
 
-    D3D12_ROOT_PARAMETER p[6] = {};
+    D3D12_DESCRIPTOR_RANGE envRange = {};
+    envRange.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+    envRange.NumDescriptors = 1;
+    envRange.BaseShaderRegister = 3;
+
+    D3D12_ROOT_PARAMETER p[7] = {};
     p[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
     p[0].Descriptor.ShaderRegister = 0;
     p[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
@@ -89,6 +97,10 @@ bool Renderer::createRasterPipelines(std::string* error) {
     p[5].DescriptorTable.NumDescriptorRanges = 1;
     p[5].DescriptorTable.pDescriptorRanges = &texRange;
     p[5].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+    p[6].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;   // t3 HDRI
+    p[6].DescriptorTable.NumDescriptorRanges = 1;
+    p[6].DescriptorTable.pDescriptorRanges = &envRange;
+    p[6].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
 
     D3D12_STATIC_SAMPLER_DESC ss = {};
     ss.Filter = D3D12_FILTER_COMPARISON_MIN_MAG_LINEAR_MIP_POINT;
@@ -108,7 +120,7 @@ bool Renderer::createRasterPipelines(std::string* error) {
     ts.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
 
     D3D12_ROOT_SIGNATURE_DESC rsd = {};
-    rsd.NumParameters = 6;
+    rsd.NumParameters = 7;
     rsd.pParameters = p;
     rsd.NumStaticSamplers = 2;
     rsd.pStaticSamplers = samplers;
@@ -259,7 +271,7 @@ bool Renderer::createRasterPipelines(std::string* error) {
     sh.ptr += (SIZE_T)kTexCount * m_descSize;
     m_device->CreateShaderResourceView(m_shadowMap.Get(), &srv, sh);
 
-    m_rasterCB = createBuffer(512, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ);
+    m_rasterCB = createBuffer(1024, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ);
     return true;
 }
 
@@ -326,8 +338,17 @@ void Renderer::recordRaster(const Scene& scene, const RenderSettings& rs, const 
     float3 c = m_sceneCenter;
     float R = m_sceneRadius * 1.05f;
     bool sun = scene.sun.enabled && scene.sun.intensity > 0;
-    if (sun) {
-        keyCenter = c + normalize(scene.sun.direction) * (R * 3.0f);
+    // HDRI: without a scene sun, the sun of the image is the key light (shadow map); the rest of the image is
+    // the SH ambient. Its highlight already is in the blurred reflections, so this key has no specular term.
+    const bool envMap = scene.env.hdri && scene.env.hdri == m_envImage && m_envW > 0;
+    const bool envSun = envMap && !sun && m_envSunValid;
+    float3 envSunDir = m_envSunDir;
+    {
+        float cr = std::cos(scene.env.hdriRotation), sr = std::sin(scene.env.hdriRotation);   // image space to world
+        envSunDir = float3(m_envSunDir.x * cr - m_envSunDir.z * sr, m_envSunDir.y, m_envSunDir.z * cr + m_envSunDir.x * sr);
+    }
+    if (sun || envSun) {
+        keyCenter = c + (envSun ? envSunDir : normalize(scene.sun.direction)) * (R * 3.0f);
     } else {
         for (const AreaLight& l : scene.lights) {
             if (!l.enabled) continue;
@@ -361,9 +382,17 @@ void Renderer::recordRaster(const Scene& scene, const RenderSettings& rs, const 
     rc.shadowTexel = 1.0f / kShadowSize;
     rc.keyPos = keyCenter;
     rc.lightScale = rs.lightScale;
-    rc.sunDir = normalize(scene.sun.direction);
-    rc.sunOn = sun ? 1.0f : 0.0f;
-    rc.sunRadiance = scene.sun.color * scene.sun.intensity;
+    rc.sunDir = envSun ? envSunDir : normalize(scene.sun.direction);
+    rc.sunOn = (sun || envSun) ? 1.0f : 0.0f;
+    rc.sunRadiance = envSun ? m_envSunE * scene.env.hdriIntensity : scene.sun.color * scene.sun.intensity;
+    rc.sunFromEnv = envSun ? 1.0f : 0.0f;
+    for (int k = 0; k < 9; ++k)
+        for (int ch = 0; ch < 3; ++ch) rc.shIrr[k][ch] = envSun ? m_envSH[k][ch] : m_envSHFull[k][ch];
+    rc.envMapOn = envMap ? 1.0f : 0.0f;
+    rc.envRotation = scene.env.hdriRotation;
+    rc.envMapIntensity = scene.env.hdriIntensity;
+    rc.envMips = m_envMips;
+    rc.envVisible = scene.env.visibleToCamera ? 1.0f : 0.0f;
     memcpy(m_rasterCB.mapped, &rc, sizeof(rc));
 
     m_cmd->SetGraphicsRootSignature(m_rasterRoot.Get());
@@ -374,6 +403,9 @@ void Renderer::recordRaster(const Scene& scene, const RenderSettings& rs, const 
     shadowSrv.ptr += (UINT64)kTexCount * m_descSize;
     m_cmd->SetGraphicsRootDescriptorTable(4, shadowSrv);
     m_cmd->SetGraphicsRootDescriptorTable(5, textureTable());
+    D3D12_GPU_DESCRIPTOR_HANDLE envSrv = m_heap->GetGPUDescriptorHandleForHeapStart();
+    envSrv.ptr += (UINT64)kEnvHeapSlot * m_descSize;
+    m_cmd->SetGraphicsRootDescriptorTable(6, envSrv);
 
     D3D12_VERTEX_BUFFER_VIEW vbv = {m_vb.va(), (UINT)m_vb.size, sizeof(gpu::GpuVertex)};
     D3D12_INDEX_BUFFER_VIEW ibv = {m_ib.va(), (UINT)m_ib.size, DXGI_FORMAT_R32_UINT};
@@ -408,7 +440,7 @@ void Renderer::recordRaster(const Scene& scene, const RenderSettings& rs, const 
     m_cmd->RSSetViewports(1, &svp);
     m_cmd->RSSetScissorRects(1, &ssc);
     m_cmd->SetPipelineState(m_psoShadow.Get());
-    if (key >= 0 || sun)
+    if (key >= 0 || sun || envSun)
         for (const Draw& d : m_draws)
             if (!(d.flags & 7u) && !isTransparent(d)) drawOne(d);
     transition(m_shadowMap.Get(), D3D12_RESOURCE_STATE_DEPTH_WRITE, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);

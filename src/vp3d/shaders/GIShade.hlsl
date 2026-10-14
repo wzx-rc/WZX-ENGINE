@@ -9,7 +9,7 @@
 // Radiance leaving a secondary hit (reflection ray), diffuse only.
 float3 ShadeSecondary(Hit h, float3 V, inout uint rng) {
     GpuInstance gi = gInst[h.inst];
-    if (gi.lightId != NO_LIGHT) return 0;   // handled by the caller (MIS with the light sampling)
+    if (IsRectLight(gi)) return 0;   // handled by the caller (MIS with the light sampling)
     Surf s = MakeSurf(gMats[gi.materialId], h);
     float3 a = DiffuseAlbedo(s);
     float3 c = h.front ? s.emission : 0;
@@ -27,7 +27,7 @@ float3 ShadePixel(float3 o, float3 d, inout uint rng, inout Guides g, float3 ul,
     GpuInstance gi = gInst[h.inst];
     g.depth = h.t;
     g.id = h.inst + 1;
-    if (gi.lightId != NO_LIGHT) {
+    if (IsRectLight(gi)) {
         g.albedo = 1; g.normal = h.N; g.geom = h.Ng;
         return h.front ? gLights[gi.lightId].radiance * F.lightScale : 0;
     }
@@ -55,16 +55,18 @@ float3 ShadePixel(float3 o, float3 d, inout uint rng, inout Guides g, float3 ul,
     if (showDirect) {
         float3 L, Le;
         float dist, lpdf;
-        if (SampleLightU(h.P, ul, L, dist, Le, lpdf) && dot(L, h.Ng) > 0) {
+        uint li;
+        if (SampleLightU(h.P, ul, L, dist, Le, lpdf, li) && dot(L, h.Ng) > 0) {
             float NoL = dot(N, L);
-            if (NoL > 0 && !Occluded(OffsetRay(h.P, h.Ng), L, dist * 0.999)) {
+            float3 T = NoL > 0 ? LightVisibility(li, OffsetRay(h.P, h.Ng), L, dist) : 0;
+            if (any(T > 0)) {
                 float3 H = normalize(V + L);
                 float NoH = saturate(dot(N, H)), VoH = saturate(dot(V, H));
                 float D = D_GGX(NoH, a);
                 float3 Fr = SchlickF(F0, VoH);
                 float3 spec = D * G2_Smith(NoL, max(NoV, 1e-4), a) * Fr / (4.0 * max(NoV, 1e-4));
                 float pdfSpec = D * G1_Smith(max(NoV, 1e-4), a) / (4.0 * max(NoV, 1e-4));
-                c += (kd * (1.0 - Fr) / PI * NoL + spec * PowerHeuristic(lpdf, pdfSpec)) * Le / lpdf;
+                c += (kd * (1.0 - Fr) / PI * NoL + spec * PowerHeuristic(lpdf, pdfSpec)) * Le * T / lpdf;
             }
         }
     }
@@ -91,9 +93,9 @@ float3 ShadePixel(float3 o, float3 d, inout uint rng, inout Guides g, float3 ul,
                     if (showIndirect) c += w * Environment(L);
                 } else {
                     GpuInstance ri = gInst[r.inst];
-                    if (ri.lightId != NO_LIGHT) {
+                    if (IsRectLight(ri)) {
                         if (showDirect && r.front)
-                            c += w * gLights[ri.lightId].radiance * F.lightScale * PowerHeuristic(pdfSpec, LightPdf(ri.lightId, L, r.t));
+                            c += w * gLights[ri.lightId].radiance * F.lightScale * PowerHeuristic(pdfSpec, LightPdf(ri.lightId, o2, L, r.t));
                     } else if (showIndirect) {
                         c += w * ShadeSecondary(r, -L, rng);
                     }

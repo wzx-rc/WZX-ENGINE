@@ -112,6 +112,7 @@ private:
         uint32_t indexOffset, vertexOffset, indexCount, vertexCount;
         Buffer blas;
         float3 bmin, bmax;
+        float3 center; float radius = 0;   // bounding sphere (emissive objects: light sampling cone)
     };
     struct Draw {
         int mesh;
@@ -131,6 +132,7 @@ private:
     void recordRaster(const Scene& scene, const RenderSettings& rs, const ViewRect& vp);
     void createTargets(uint32_t w, uint32_t h);
     void uploadTextures(const Scene& scene);
+    void uploadEnvironment(const EnvImagePtr& img);   // HDRI texture, sampling tables, SH and sun (when the image changes)
     D3D12_GPU_DESCRIPTOR_HANDLE textureTable() const;
     void setupProbeGrid(const RenderSettings& rs);
     void recordDDGI(const RenderSettings& rs, UINT gx, UINT gy);
@@ -174,6 +176,8 @@ private:
     static constexpr uint32_t kMaxTextures = 16;
     // DDGI and history UAVs sit after the texture table (heap offset kTexCount + 1 + kMaxTextures)
     static constexpr uint32_t kGIHeapBase = kTexCount + 1 + kMaxTextures;
+    // HDRI SRV after the DDGI and history UAVs
+    static constexpr uint32_t kEnvHeapSlot = kGIHeapBase + 4 + 2;
     std::vector<ComPtr<ID3D12Resource>> m_materialTex;
     ComPtr<ID3D12Resource> m_tex[kTexCount];
     uint32_t m_rtW = 0, m_rtH = 0;
@@ -220,6 +224,17 @@ private:
     struct PrevCamera { float3 pos, right, up, fwd; float tanHalf = 1.0f, aspect = 1.0f; } m_prevCam;
     bool m_historyValid = false;
     uint32_t m_sceneSignature = 0;
+
+    // HDRI environment (Scene::env.hdri), uploaded when the image changes
+    EnvImagePtr m_envImage;
+    ComPtr<ID3D12Resource> m_envTex;
+    Buffer m_envDist;                 // importance sampling tables (see EnvSample in PathTrace.hlsl)
+    uint32_t m_envW = 0, m_envH = 0;  // size of the tables
+    float m_envPdfScale = 0, m_envMips = 1;
+    float m_envSH[9][3] = {};         // irradiance SH without the sun (raster)
+    float m_envSHFull[9][3] = {};     // irradiance SH with the sun
+    float3 m_envSunDir{0, 1, 0}, m_envSunE{0, 0, 0};   // sun of the HDRI (image space), its irradiance
+    bool m_envSunValid = false;
 
     // Raster viewport
     static constexpr uint32_t kShadowSize = 2048, kMsaa = 4;

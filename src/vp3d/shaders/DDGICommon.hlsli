@@ -112,11 +112,13 @@ float3 SampleIrradiance(float3 P, float3 N, float3 V) {
 float3 DirectIrradiance(float3 P, float3 N, float3 Ng, inout uint rng) {
     float3 L, Le;
     float dist, lpdf;
-    if (!SampleLight(P, rng, L, dist, Le, lpdf)) return 0;
+    uint li;
+    if (!SampleLight(P, rng, L, dist, Le, lpdf, li)) return 0;
     float c = dot(N, L);
     if (c <= 0 || dot(L, Ng) <= 0) return 0;
-    if (Occluded(OffsetRay(P, Ng), L, dist * 0.999)) return 0;
-    return Le * c / lpdf;
+    float3 T = LightVisibility(li, OffsetRay(P, Ng), L, dist);
+    if (all(T <= 0)) return 0;
+    return Le * T * c / lpdf;
 }
 
 // Albedo used for the diffuse transport in the probes (metals and SSS approximated as diffuse).

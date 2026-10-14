@@ -1,6 +1,7 @@
 // vp3d - scene description consumed by the renderer.
 #pragma once
 #include "MeshGen.h"
+#include "EnvImage.h"
 #include <string>
 #include <vector>
 
@@ -102,6 +103,10 @@ struct Environment {
     float intensity = 1.0f;
     bool visibleToCamera = true;
     float3 ambient{0.06f, 0.06f, 0.065f};  // extra fill used by the raster viewport (no GI there)
+    // HDRI (lat-long image): replaces the gradient for lighting, reflections and the background when set.
+    EnvImagePtr hdri;
+    float hdriIntensity = 1.0f;
+    float hdriRotation = 0.0f;             // radians around +Y
 };
 
 struct Camera {
