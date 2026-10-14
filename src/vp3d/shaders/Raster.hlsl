@@ -38,7 +38,12 @@ StructuredBuffer<GpuMaterial> gMats : register(t0);
 Texture2D<float> gShadow : register(t1);
 StructuredBuffer<GpuLight> gLights : register(t2);
 SamplerComparisonState gShadowCmp : register(s0);
+#ifdef VP3D_ATTRIB_SEMANTICS
+// Lit (Diligent): FXC (shader model 5) has no register spaces, t0..t3 would alias the buffers above. t4..t19 are free.
+Texture2D<float4> gTextures[MAX_TEXTURES] : register(t4);
+#else
 Texture2D<float4> gTextures[MAX_TEXTURES] : register(t0, space1);
+#endif
 SamplerState gLinearWrap : register(s1);
 Texture2D<float4> gEnvTex : register(t3);   // HDRI (lat-long, with mips)
 

@@ -2,11 +2,14 @@
 # Runs on a GitHub macOS runner and produces an unsigned .ipa artifact.
 # Signing happens on the PC with Sideloadly (free Apple ID) or, later, with an Apple Developer account for TestFlight.
 # Rendering: the Lit renderer (src/lit) on Diligent Engine, Vulkan translated to Metal by MoltenVK.
-# Milestone 1: the player shows the built-in LookDev scene; loading an exported game comes next.
+# Test build: the game of the editor (Studio scene, graph game/main.graph.json, houses of assets/HOUSE, HUD).
 name: iOS build
 
 on:
   workflow_dispatch:
+  push:
+    branches: [claude/project-thread-bzoypd]
+    paths: [player/**, src/vp3d/**, src/lit/**, src/game/**, src/app/Content.*, game/**, assets/HOUSE/**, third_party/imgui/**, .github/workflows/ios-build.yml]
 
 env:
   MOLTENVK_VERSION: v1.4.1
@@ -41,6 +44,8 @@ jobs:
         run: |
           APP=$(find build/ios -path "*Release-iphoneos/WZXPlayer.app" -maxdepth 3 -type d | head -1)
           test -n "$APP" || { echo "No .app built"; find build/ios -name "*.app"; exit 1; }
+          # the game must be inside the app: graph, house model, shaders
+          test -f "$APP/game/main.graph.json" && test -d "$APP/assets/HOUSE" && test -d "$APP/shaders" || { ls -R "$APP"; exit 1; }
           mkdir -p build/Payload
           cp -R "$APP" build/Payload/
           (cd build && zip -qr WZXPlayer-unsigned.ipa Payload)
