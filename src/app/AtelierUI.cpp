@@ -6,12 +6,14 @@
 #include "AtelierIcons.h"
 #include "Icons.h"
 #include "atelier/atelier_style.h"
+#include "atelier/ambre_fx.h"
 #include "atelier/material_ui.h"
 #include <cctype>
 
 namespace app {
 
 using atl::Icon;
+namespace afx = atelier::fx;
 
 namespace {
 
@@ -65,6 +67,16 @@ void Glyph(Icon icon, float x, float y, float size, ImU32 color) {
     float k = P().iconScale, o = size * s * (k - 1) / 2;
     atl::DrawIcon(dl, icon, ImVec2(x - o, y - o), size * s * k, color);
 }
+// Ambre: icon with the soft halo of the pack (amber-glow filter): faint copies around it, then the icon
+void GlowGlyph(Icon icon, float x, float y, float size, ImU32 color, ImU32 glow, float alpha) {
+    for (const ImVec2& o : afx::kGlowOffsets) Glyph(icon, x + o.x * 1.3f * s, y + o.y * 1.3f * s, size, afx::Alpha(glow, alpha));
+    Glyph(icon, x, y, size, color);
+}
+// text in the semibold font when the theme provides one
+void TextBold(float x, float y, const std::string& text, ImU32 color, float size = 12) {
+    dl->AddText(P().fontBold ? P().fontBold : font, size * s * ts(), ImVec2(x, y), color, text.c_str());
+}
+float g_labelRight = 0;   // Ambre: right end of the line drawn after a section label
 void Tip(const char* t) { if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort)) ImGui::SetTooltip("%s", t); }
 bool Hit(const char* id, R r, bool enabled = true) {
     ImGui::SetCursorScreenPos(r.min());
@@ -77,15 +89,78 @@ bool Hit(const char* id, R r, bool enabled = true) {
 bool Button(const char* id, R r, const char* label, Icon icon, bool active = false, bool iconOnly = false, bool enabled = true) {
     bool q = Hit(id, r, enabled);
     bool hover = enabled && ImGui::IsItemHovered();
+    const float ix = r.x + (iconOnly ? (r.w / s - 13) / 2 : 8) * s, iy = r.y + (r.h - 13 * s) / 2;
+    if (P().ambre) {
+        // gradient face, light top edge; active: amber border, inner ring and halo, glowing icon
+        afx::Face f = !enabled ? afx::Face::Disabled : active ? afx::Face::Active : hover ? afx::Face::Hover : afx::Face::Normal;
+        ImU32 c = afx::Button(dl, r.min(), r.max(), f, s, 4);
+        if (active) GlowGlyph(icon, ix, iy, 13, c, afx::col::accent, 0.08f);
+        else GlowGlyph(icon, ix, iy, 13, c, c, enabled ? 0.025f : 0.0f);
+        if (!iconOnly && label && *label) {
+            dl->PushClipRect(r.min(), ImVec2(r.x + r.w - 4 * s, r.y + r.h), true);
+            Text(r.x + 28 * s, r.y + (r.h - 12 * s * ts()) / 2, label, active ? afx::col::accentHi : c);
+            dl->PopClipRect();
+        }
+        return q;
+    }
     Box(r, active ? P().select : (hover ? P().hover : P().raised), 3, true);
     ImU32 c = !enabled ? Fade(P().muted, 120) : (active ? P().accent : P().text);
-    Glyph(icon, r.x + (iconOnly ? (r.w / s - 13) / 2 : 8) * s, r.y + (r.h - 13 * s) / 2, 13, c);
+    Glyph(icon, ix, iy, 13, c);
     if (!iconOnly && label && *label) {
         dl->PushClipRect(r.min(), ImVec2(r.x + r.w - 4 * s, r.y + r.h), true);
         Text(r.x + 28 * s, r.y + (r.h - 12 * s * ts()) / 2, label, enabled ? P().text : Fade(P().muted, 160));
         dl->PopClipRect();
     }
     return q;
+}
+// main action of a view (Build): solid amber button with dark text in the Ambre theme, a normal button otherwise
+bool PrimaryButton(const char* id, R r, const char* label, Icon icon, bool enabled = true) {
+    if (!P().ambre || !enabled) return Button(id, r, label, icon, false, false, enabled);
+    bool q = Hit(id, r, enabled);
+    bool hover = ImGui::IsItemHovered(), held = ImGui::IsItemActive();
+    ImU32 c = afx::Button(dl, r.min(), r.max(), afx::Face::Primary, s, 4);
+    if (hover) dl->AddRectFilled(r.min(), r.max(), held ? IM_COL32(60, 30, 0, 40) : IM_COL32(255, 255, 255, 28), 4 * s);
+    Glyph(icon, r.x + 9 * s, r.y + (r.h - 13 * s) / 2, 13, c);
+    TextBold(r.x + 28 * s, r.y + (r.h - 12 * s * ts()) / 2, label, c);
+    return q;
+}
+// tab of a tab row: underlined amber tab in the Ambre theme (tab-assembly.svg), a button otherwise
+bool TabButton(const char* id, R r, const char* label, Icon icon, bool active) {
+    if (!P().ambre) return Button(id, r, label, icon, active);
+    bool q = Hit(id, r);
+    bool hover = ImGui::IsItemHovered();
+    ImU32 c = active ? afx::col::accent : (hover ? P().text : P().muted);
+    float tw = TextSize(label, 12).x, total = 13 * s * P().iconScale + 6 * s + tw;
+    float x = r.x + std::max(4 * s, (r.w - total) / 2);
+    dl->PushClipRect(r.min(), r.max(), true);
+    if (active) GlowGlyph(icon, x, r.y + (r.h - 13 * s) / 2 - 1 * s, 13, c, afx::col::accent, 0.07f);
+    else Glyph(icon, x, r.y + (r.h - 13 * s) / 2 - 1 * s, 13, c);
+    float tx = x + 13 * s * P().iconScale + 6 * s, ty = r.y + (r.h - 12 * s * ts()) / 2 - 1 * s;
+    if (active) TextBold(tx, ty, label, c);
+    else Text(tx, ty, label, c);
+    dl->PopClipRect();
+    afx::TabLine(dl, r.min(), r.max(), active, hover, s);
+    return q;
+}
+// checkbox; the Ambre theme redraws its box (amber border and tick when on)
+bool Check(const char* id, bool* v) {
+    bool c = ImGui::Checkbox(id, v);
+    if (P().ambre) {
+        ImVec2 a = ImGui::GetItemRectMin();
+        float sz = ImGui::GetFrameHeight();
+        afx::Checkbox(ImGui::GetWindowDrawList(), a, ImVec2(a.x + sz, a.y + sz), *v, ImGui::IsItemHovered(), s);
+    }
+    return c;
+}
+// selected row of a list / tree
+void SelectedRow(R r) {
+    if (P().ambre) afx::SelectedRow(dl, r.min(), r.max(), s);
+    else Box(r, P().select, 3);
+}
+// selected card / thumbnail
+void SelectedFrame(R r) {
+    if (P().ambre) afx::SelectedFrame(dl, r.min(), r.max(), s, 4);
+    else dl->AddRect(r.min(), r.max(), P().accent, 4 * s, 0, 1.4f * s);
 }
 // button with a value and a drop arrow (combos)
 bool DropButton(const char* id, R r, const char* label, Icon icon, bool enabled = true) {
@@ -119,12 +194,25 @@ bool Search(const char* id, R r, char* value, size_t length, const char* hint) {
 }
 // panel frame with the former Atelier graph title row: icon, title, small tag on the right
 void Panel(R r, Icon icon, const char* title, const char* tag, ImU32 iconColor) {
+    if (P().ambre) {   // surface gradient with a title band (structure-header.svg)
+        afx::Panel(dl, r.min(), r.max(), s, 34 * s);
+        GlowGlyph(icon, r.x + 12 * s, r.y + 11 * s, 13, iconColor, iconColor, iconColor == P().accent ? 0.06f : 0.0f);
+        Text(r.x + 33 * s, r.y + 10 * s, title, P().text, 13);
+        if (tag && *tag) Text(r.x + r.w - 12 * s - TextSize(tag, 8).x, r.y + 14 * s, tag, P().muted, 8);
+        return;
+    }
     Box(r, P().panel, 4, true);
     Glyph(icon, r.x + 12 * s, r.y + 12 * s, 13, iconColor);
     Text(r.x + 33 * s, r.y + 12 * s, title, P().text, 12);
     if (tag && *tag) Text(r.x + r.w - 12 * s - TextSize(tag, 8).x, r.y + 14 * s, tag, P().muted, 8);
 }
-void Label(float x, float y, const char* t) { Text(x, y, t, P().muted, 9); }   // section label ("NODE PROPERTIES")
+// section label ("NODE PROPERTIES"); Ambre: lighter label followed by a separator line up to g_labelRight
+void Label(float x, float y, const char* t) {
+    if (!P().ambre) { Text(x, y, t, P().muted, 9); return; }
+    TextBold(x, y, t, P().text, 9);
+    float e = x + TextSize(t, 9).x + 10 * s;
+    if (g_labelRight > e) dl->AddLine(ImVec2(e, y + 6 * s), ImVec2(g_labelRight, y + 6 * s), P().border);
+}
 void Splitter(const char* id, R r, float& value, float low, float high, bool vertical, bool reverse = false) {
     Hit(id, r);
     if (ImGui::IsItemHovered() || ImGui::IsItemActive()) {
@@ -138,6 +226,39 @@ void Splitter(const char* id, R r, float& value, float low, float high, bool ver
 }
 // label above a full width slider (material / graph inspector pattern); returns true while edited
 bool SliderRow(const char* id, const char* label, float x, float& y, float w, float* v, float lo, float hi, const char* fmt, bool& activated) {
+    if (P().ambre) {
+        // slider of the pack (slider-roughness.svg): label and numeric field on one row, thin amber track and flat
+        // silver handle below; the right 24 px stay free (reset / info icon slot)
+        Text(x, y, label, P().text, 11);
+        const float vw = 70 * s, vh = 22 * s, vx = x + w - vw - 24 * s;
+        ImGui::SetCursorScreenPos(ImVec2(vx, y - 3 * s));
+        ImGui::SetNextItemWidth(vw);
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(6 * s, std::max(0.0f, (vh - ImGui::GetFontSize()) / 2)));
+        std::string vid = std::string(id) + "_value";
+        bool c = ImGui::DragFloat(vid.c_str(), v, (hi - lo) / 400.0f, lo, hi, fmt, ImGuiSliderFlags_AlwaysClamp);
+        activated |= ImGui::IsItemActivated();
+        bool focus = ImGui::IsItemActive();
+        Tip("Drag to edit · double-click to type a value");
+        ImGui::PopStyleVar();
+        y += 25 * s;
+        // invisible ImGui slider for the interaction, track and handle drawn over it
+        const ImVec4 clear(0, 0, 0, 0);
+        for (ImGuiCol k : {ImGuiCol_FrameBg, ImGuiCol_FrameBgHovered, ImGuiCol_FrameBgActive, ImGuiCol_SliderGrab, ImGuiCol_SliderGrabActive})
+            ImGui::PushStyleColor(k, clear);
+        ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0, std::max(0.0f, (16 * s - ImGui::GetFontSize()) / 2)));
+        ImGui::SetCursorScreenPos(ImVec2(x, y));
+        ImGui::SetNextItemWidth(w);
+        c |= ImGui::SliderFloat(id, v, lo, hi, "", ImGuiSliderFlags_NoInput);
+        activated |= ImGui::IsItemActivated();
+        focus |= ImGui::IsItemActive();
+        ImVec2 a = ImGui::GetItemRectMin(), b = ImGui::GetItemRectMax();
+        ImGui::PopStyleVar(2);
+        ImGui::PopStyleColor(5);
+        afx::SliderTrack(dl, a.x, b.x, (a.y + b.y) / 2, hi > lo ? (*v - lo) / (hi - lo) : 0.0f, true, focus, s);
+        y += 25 * s;
+        return c;
+    }
     Text(x, y, label, P().muted, 11);
     y += 19 * s;
     ImGui::SetCursorScreenPos(ImVec2(x, y));
@@ -159,13 +280,25 @@ bool AxisFields(const char* id, float x, float y, float width, float* values, fl
         ImGui::PushID(i);
         ImGui::SetCursorScreenPos(ImVec2(fx, y));
         ImGui::SetNextItemWidth(w);
-        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(16 * s, 5 * s));
+        const bool amb = P().ambre;
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2((amb ? 24 : 16) * s, 5 * s));
+        if (amb) ImGui::PushStyleColor(ImGuiCol_Border, ImGui::ColorConvertU32ToFloat4(afx::col::fieldBorder));
         changed |= ImGui::DragFloat("##axis", &values[i], speed, 0, 0, fmt, ImGuiSliderFlags_NoRoundToFormat);
         activated |= ImGui::IsItemActivated();
+        const bool focus = ImGui::IsItemActive();
+        if (amb) ImGui::PopStyleColor();
         ImGui::PopStyleVar();
         float h = ImGui::GetItemRectSize().y;
-        dl->AddLine(ImVec2(fx + 1.5f * s, y + 4 * s), ImVec2(fx + 1.5f * s, y + h - 4 * s), colors[i], 2 * s);
-        Text(fx + 6 * s, y + (h - 9 * s * ts()) / 2, axes[i], colors[i], 9);
+        if (amb) {   // tinted X / Y / Z tag on the left of the field (transform-position-x.svg), amber border while edited
+            ImVec2 a(fx, y), b(fx + w, y + h);
+            afx::AxisTag(dl, a, b, i, s);
+            if (focus) dl->AddRect(a, b, afx::col::accent, 3 * s);
+            ImU32 ac = afx::AxisColor(i);
+            Text(fx + 12 * s - TextSize(axes[i], 10).x / 2, y + (h - 10 * s * ts()) / 2, axes[i], ac, 10);
+        } else {
+            dl->AddLine(ImVec2(fx + 1.5f * s, y + 4 * s), ImVec2(fx + 1.5f * s, y + h - 4 * s), colors[i], 2 * s);
+            Text(fx + 6 * s, y + (h - 9 * s * ts()) / 2, axes[i], colors[i], 9);
+        }
         Tip("Drag to edit · Ctrl+click to type a value");
         ImGui::PopID();
     }
@@ -207,7 +340,7 @@ std::vector<Asset> assetList() {
 // Feeds the Atelier modules (graph, material studio, inspector, scene) with the current theme settings:
 // dark mode: the Atelier reference colours with the main colour tint (Blue Slate gives the exact values),
 // light mode: derived from the light palette.
-static void syncAtelierStyle() {
+static void syncAtelierStyle(ImFont* bold) {
     atelier::Palette& a = atelier::Style();
     const atelier::Palette ref;
     const ThemePalette& p = th::P();
@@ -217,6 +350,24 @@ static void syncAtelierStyle() {
     a.layoutScale = th::layoutSize();
     a.textScale = th::textSize() / a.layoutScale;
     a.iconScale = th::iconSize() / a.layoutScale;
+    a.fontBold = bold;
+    a.ambre = th::ambre();
+    if (a.ambre) {
+        // Ambre: colours of the pack; the graph keeps its Atelier node style on graphite surfaces
+        using namespace atelier::fx::col;
+        a.light = false;
+        a.accent = accent; a.select = selection; a.strong = accent;
+        a.bg = canvas; a.panel = panel; a.raised = raised; a.hover = rgb(0x2D3036); a.bar = topBar; a.border = border;
+        a.text = text; a.muted = secondary; a.mutedLight = rgb(0xB0B4BB);
+        a.canvas = rgb(0x121417); a.node = rgb(0x202328); a.nodeOff = rgb(0x1A1C20);
+        a.gridDot = rgb(0x3A3F46, 150); a.gridLine = rgb(0x2A2E33, 95);
+        a.overlay = rgb(0x1D2024, 225); a.minimap = rgb(0x181A1E, 240); a.headerBar = rgb(0x1D2024); a.popupHeader = rgb(0x25282B);
+        a.track = border; a.frameHover = rgb(0x4A5058); a.checkerA = rgb(0x3A3E44); a.checkerB = rgb(0x6E737A);
+        a.toast = rgb(0x2A2117, 245); a.knob = thumb; a.pinExec = rgb(0xE0E1E4);
+        a.menuX = 168; a.menuW = 46; a.headerShift = 65;   // room for the WZX ENGINE brand
+        return;
+    }
+    a.menuX = 53; a.menuW = 53; a.headerShift = 0;
     a.light = th::settings().light;
     a.accent = u(a.light ? th::accentTextV() : p.accent);
     a.select = u(p.select);
@@ -244,7 +395,7 @@ static void syncAtelierStyle() {
 // --------------------------------------------------------------------------- frame
 
 void App::drawAtelier() {
-    syncAtelierStyle();
+    syncAtelierStyle(m_gui.fontBold);
     if (m_workspace == 2) {
         int target = atelier::material::Draw();
         if (target) m_workspace = target == 1 ? 0 : 1;
@@ -304,14 +455,20 @@ void App::drawAtelier() {
 
 void App::atlTopBar(float x0, float y0, float width) {
     Box({x0, y0, width, 37 * s}, P().bar, 0);
-    Glyph(Icon::Cube, x0 + 15 * s, y0 + 10 * s, 17, P().accent);
-    dl->AddLine(ImVec2(x0 + 43 * s, y0 + 7 * s), ImVec2(x0 + 43 * s, y0 + 30 * s), P().border);
+    if (P().ambre) {   // topbar.svg: gold cube and WZX ENGINE wordmark, bottom border
+        dl->AddLine(ImVec2(x0, y0 + 37 * s - 0.5f), ImVec2(x0 + width, y0 + 37 * s - 0.5f), P().border);
+        afx::Brand(dl, font, P().fontBold, ImVec2(x0 + 13 * s, y0 + 6.5f * s), s);
+    } else {
+        Glyph(Icon::Cube, x0 + 15 * s, y0 + 10 * s, 17, P().accent);
+    }
+    const float sep = P().menuX - 10;
+    dl->AddLine(ImVec2(x0 + sep * s, y0 + 7 * s), ImVec2(x0 + sep * s, y0 + 30 * s), P().border);
     const char* menus[] = {"Project", "Edit", "View", "Tools", "Help"};
-    float x = x0 + 53 * s;
+    float x = x0 + P().menuX * s;
     auto save = [&] { if (!m_themeTestOnly) th::saveSettings(m_exeDir + L"\\wzx_settings.ini"); };
     for (int mi = 0; mi < 5; ++mi) {
         std::string id = "atlmenu" + std::to_string(mi);
-        R r = {x, y0 + 6 * s, 53 * s, 24 * s};
+        R r = {x, y0 + 6 * s, P().menuW * s, 24 * s};
         if (Hit(id.c_str(), r)) ImGui::OpenPopup(id.c_str());
         if (ImGui::IsItemHovered()) Box(r, P().raised);
         Center(r, menus[mi], P().text, 11);
@@ -350,7 +507,8 @@ void App::atlTopBar(float x0, float y0, float width) {
                 ImGui::MenuItem("Transform Gizmo", nullptr, &m_showGizmo);
                 if (ImGui::MenuItem("Restore Panel Layout")) { m_atl.leftW = 222; m_atl.rightW = 284; m_atl.bottomH = 190; }
                 ImGui::Separator();
-                if (ImGui::MenuItem("Light Mode", nullptr, th::settings().light)) { th::settings().light = !th::settings().light; th::apply(m_dpi); save(); }
+                if (ImGui::MenuItem("Light Mode", nullptr, th::settings().light && !th::ambre(), !th::ambre())) { th::settings().light = !th::settings().light; th::apply(m_dpi); save(); }
+                if (ImGui::MenuItem("Ambre Theme", nullptr, th::ambre())) { th::settings().theme = th::ambre() ? "Atelier" : "Ambre"; th::apply(m_dpi); save(); }
                 if (ImGui::MenuItem("Appearance Settings…")) m_showSettings = true;
             }
             if (mi == 3) {
@@ -370,17 +528,17 @@ void App::atlTopBar(float x0, float y0, float width) {
             }
             ImGui::EndPopup();
         }
-        x += 53 * s;
+        x += P().menuW * s;
     }
     // workspaces, same positions as the Graph Editor and Material Studio headers
-    float ty = y0 + 7 * s;
+    float ty = y0 + 7 * s, wx = x0 + P().headerShift * s;
     // the active tab follows the workspace shown (the Graph tab was never highlighted before)
-    if (Button("workspaceScene", {x0 + 339 * s, ty, 79 * s, 24 * s}, "Scene", Icon::Scene, m_workspace == 0)) m_workspace = 0;
-    if (Button("workspaceGraph", {x0 + 422 * s, ty, 96 * s, 24 * s}, "Graph", Icon::Blueprint, m_workspace == 1)) m_workspace = 1;
-    if (Button("workspaceMaterials", {x0 + 522 * s, ty, 117 * s, 24 * s}, "Materials", Icon::Material, m_workspace == 2)) m_workspace = 2;
+    if (Button("workspaceScene", {wx + 339 * s, ty, 79 * s, 24 * s}, "Scene", Icon::Scene, m_workspace == 0)) m_workspace = 0;
+    if (Button("workspaceGraph", {wx + 422 * s, ty, 96 * s, 24 * s}, "Graph", Icon::Blueprint, m_workspace == 1)) m_workspace = 1;
+    if (Button("workspaceMaterials", {wx + 522 * s, ty, 117 * s, 24 * s}, "Materials", Icon::Material, m_workspace == 2)) m_workspace = 2;
     // centre: build window and test player
-    float cx = x0 + std::max(655 * s, width / 2 - 89 * s);
-    if (Button("buildScene", {cx, y0 + 6 * s, 103 * s, 25 * s}, "Build", Icon::Check, false, false, m_game != nullptr)) m_game->openBuildWindow();
+    float cx = x0 + std::max((655 + P().headerShift) * s, width / 2 - 89 * s);
+    if (PrimaryButton("buildScene", {cx, y0 + 6 * s, 103 * s, 25 * s}, "Build", Icon::Check, m_game != nullptr)) m_game->openBuildWindow();
     Tip("Build the game for a platform: Windows now, iOS coming soon (F7)");
     const bool playing = m_game && m_game->playing();
     if (Button("playScene", {cx + 109 * s, y0 + 6 * s, 71 * s, 25 * s}, playing ? "Stop" : "Play", Icon::Play, playing, false, m_game != nullptr))
@@ -406,6 +564,7 @@ void App::atlHierarchy(float x, float y, float w, float h) {
     R r = {x, y, w, h};
     Panel(r, Icon::Scene, "Scene", "LEVEL", P().accent);
     float px = r.x + 10 * s, py = r.y + 44 * s, pw = r.w - 20 * s;
+    g_labelRight = px + pw;
     Label(px, py, "SCENES");
     py += 21 * s;
     const char* scenes[] = {"Cornell Box", "Studio", "LookDev"};
@@ -465,7 +624,7 @@ void App::atlHierarchy(float x, float y, float w, float h) {
         R rr = {px, yy, pw, rowH - 2 * s};
         ImGui::PushID(id);
         bool q = Hit("node", {rr.x, rr.y, rr.w - 48 * s, rr.h});
-        if (selected) Box(rr, P().select, 3);
+        if (selected) SelectedRow(rr);
         else if (ImGui::IsItemHovered()) Box(rr, P().raised, 3);
         Glyph(icon, px + 8 * s, yy + 7 * s, 13, dimmed ? P().muted : iconColor);
         dl->PushClipRect(ImVec2(px, yy), ImVec2(px + pw - 50 * s, yy + rowH), true);
@@ -554,7 +713,11 @@ void App::atlHierarchy(float x, float y, float w, float h) {
 void App::atlViewport(float x, float y, float w, float h) {
     // header
     R hr = {x, y, w, 35 * s};
-    Box(hr, P().panel, 3, true);
+    if (P().ambre) {   // header strip of the pack (header gradient, border, light edge)
+        afx::Gradient(dl, hr.min(), hr.max(), afx::col::headerTop, afx::col::headerBottom, 4 * s);
+        dl->AddRect(hr.min(), hr.max(), P().border, 4 * s);
+        afx::TopEdge(dl, hr.min(), hr.max(), s, IM_COL32(181, 186, 192, 255), 0.10f);
+    } else Box(hr, P().panel, 3, true);
     Glyph(Icon::Scene, hr.x + 12 * s, hr.y + 11 * s, 13, P().accent);
     std::string name = m_scene.name.empty() ? "Scene" : m_scene.name;
     Text(hr.x + 34 * s, hr.y + 11 * s, Fit(name, 140 * s, 12), P().text, 12);
@@ -666,7 +829,8 @@ void App::atlViewport(float x, float y, float w, float h) {
     dl->PopClipRect();
     // footer (former Atelier graph Footer): state of the tools and of the renderer
     R fr = {x, r.y + r.h + 3 * s, w, 24 * s};
-    Box(fr, P().bg, 0);
+    if (P().ambre) { Box(fr, afx::col::footer, 0); dl->AddLine(ImVec2(fr.x, fr.y + 0.5f), ImVec2(fr.x + fr.w, fr.y + 0.5f), P().border); }
+    else Box(fr, P().bg, 0);
     float fx = fr.x + 9 * s;
     const char* toolNames[] = {"Select", "Move", "Rotate", "Scale"};
     const ImU32 toolCols[] = {P().text, IM_COL32(92, 192, 213, 255), IM_COL32(219, 166, 100, 255), IM_COL32(178, 146, 223, 255)};
@@ -689,7 +853,8 @@ void App::atlViewport(float x, float y, float w, float h) {
 void App::atlContent(float x, float y, float w, float h) {
     AtelierState& A = m_atl;
     R r = {x, y, w, h};
-    Box(r, P().panel, 4, true);
+    if (P().ambre) afx::Panel(dl, r.min(), r.max(), s, 33 * s);   // the tab row sits in the title band
+    else Box(r, P().panel, 4, true);
     const char* names[] = {"Content Browser", "Materials", "Camera Views", "Output Log"};
     Icon icons[] = {Icon::Cube, Icon::Material, Icon::Camera, Icon::List};
     const float widths[] = {140, 100, 122, 108};
@@ -698,7 +863,7 @@ void App::atlContent(float x, float y, float w, float h) {
     for (int i = 0; i < 4; ++i) {
         char id[24];
         snprintf(id, sizeof(id), "contentTab%d", i);
-        if (Button(id, {tx, r.y + 4 * s, widths[i] * s, 25 * s}, names[i], icons[i], A.contentTab == i)) A.contentTab = i;
+        if (TabButton(id, {tx, r.y + 4 * s, widths[i] * s, (P().ambre ? 29 : 25) * s}, names[i], icons[i], A.contentTab == i)) A.contentTab = i;
         tx += (widths[i] + 5) * s;
     }
     std::vector<Asset> assets = assetList();
@@ -741,7 +906,7 @@ void App::atlContent(float x, float y, float w, float h) {
             snprintf(id, sizeof(id), "folder%d", f);
             R fr = {ft.x, fy, ft.w, 26 * s};
             bool q = Hit(id, fr);
-            if (A.folder == f) Box(fr, P().select, 3);
+            if (A.folder == f) SelectedRow(fr);
             else if (ImGui::IsItemHovered()) Box(fr, P().raised, 3);
             if (q) A.folder = f;
             Glyph(folderIcons[f], fr.x + 8 * s, fy + 7 * s, 12, A.folder == f ? P().accent : P().muted);
@@ -778,7 +943,7 @@ void App::atlContent(float x, float y, float w, float h) {
             }
             R tile = A.listMode ? R{gx, gy, 34 * s, 34 * s} : R{gx, gy, thumb, thumb};
             Box(tile, P().bg, 4, true);
-            if (m_contentAsset == (int)i) dl->AddRect(tile.min(), tile.max(), P().accent, 4 * s, 0, 1.4f * s);
+            if (m_contentAsset == (int)i) SelectedFrame(tile);
             else if (hovered) dl->AddRect(tile.min(), tile.max(), P().muted, 4 * s);
             drawAssetThumb(dl, a.kind, a.index, ImVec2(tile.x + 5 * s, tile.y + 5 * s), ImVec2(tile.x + tile.w - 5 * s, tile.y + tile.h - 5 * s), m_dpi);
             if (A.listMode) {
@@ -851,7 +1016,7 @@ void App::atlContent(float x, float y, float w, float h) {
             bool q = Hit(id, card);
             bool hv = ImGui::IsItemHovered();
             Box(card, P().bg, 4, true);
-            if ((int)i == cur) dl->AddRect(card.min(), card.max(), P().accent, 4 * s, 0, 1.4f * s);
+            if ((int)i == cur) SelectedFrame(card);
             else if (hv) dl->AddRect(card.min(), card.max(), P().muted, 4 * s);
             float th = chei - 46 * s;
             drawAssetThumb(dl, 1, (int)i, ImVec2(mx + (cwid - th) / 2, my + 8 * s), ImVec2(mx + (cwid + th) / 2, my + 8 * s + th), m_dpi);
@@ -944,10 +1109,12 @@ void App::atlInspector(float x, float y, float w, float h) {
     for (int i = 0; i < 4; ++i) {
         char id[24];
         snprintf(id, sizeof(id), "inspectorTab%d", i);
-        if (Button(id, {tx, r.y + 40 * s, tw, 25 * s}, tabs[i], is[i], A.inspectorTab == i)) A.inspectorTab = i;
+        if (TabButton(id, {tx, r.y + 40 * s, tw, (P().ambre ? 29 : 25) * s}, tabs[i], is[i], A.inspectorTab == i)) A.inspectorTab = i;
         tx += tw + 5 * s;
     }
+    if (P().ambre) dl->AddLine(ImVec2(r.x + 13 * s, r.y + 69 * s), ImVec2(r.x + r.w - 13 * s, r.y + 69 * s), P().border);
     float by = r.y + 76 * s;
+    g_labelRight = r.x + r.w - 21 * s;   // inner width of the inspector body (scrollbar room excluded)
     ImGui::SetCursorScreenPos(ImVec2(r.x + 13 * s, by));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
     ImGui::BeginChild("atlInspectorBody", ImVec2(r.w - 26 * s, r.y + r.h - by - 9 * s), ImGuiChildFlags_None, ImGuiWindowFlags_NoBackground);
@@ -1094,15 +1261,15 @@ void App::atlInspectorActor(float x, float y, float w, float) {
         y += 24 * s;
         bool vis = o->visible;
         ImGui::SetCursorScreenPos(ImVec2(x, y));
-        if (ImGui::Checkbox("Visible", &vis)) { pushUndo(); o->visible = vis; markDirty(); }
+        if (Check("Visible", &vis)) { pushUndo(); o->visible = vis; markDirty(); }
         y += 32 * s;
         bool selb = o->selectable;
         ImGui::SetCursorScreenPos(ImVec2(x, y));
-        if (ImGui::Checkbox("Selectable", &selb)) o->selectable = selb;
+        if (Check("Selectable", &selb)) o->selectable = selb;
         y += 32 * s;
         bool bevel = mat.bevelRadius > 0;
         ImGui::SetCursorScreenPos(ImVec2(x, y));
-        if (ImGui::Checkbox("Rounded edges", &bevel)) { pushUndo(); mat.bevelRadius = bevel ? 0.05f : 0.0f; markDirty(); }
+        if (Check("Rounded edges", &bevel)) { pushUndo(); mat.bevelRadius = bevel ? 0.05f : 0.0f; markDirty(); }
         y += 38 * s;
     }
     if (act) pushUndo();
@@ -1126,7 +1293,7 @@ void App::atlInspectorLighting(float x, float y, float w, float) {
         Text(x + 43 * s, y + 33 * s, sun.enabled ? "Directional · on" : "Directional · off", sun.enabled ? IM_COL32(212, 188, 109, 255) : P().muted, 10);
         bool en = sun.enabled;
         ImGui::SetCursorScreenPos(ImVec2(x + w - 32 * s, y + 16 * s));
-        if (ImGui::Checkbox("##sunen", &en)) { sun.enabled = en; ch = true; }
+        if (Check("##sunen", &en)) { sun.enabled = en; ch = true; }
         y += 69 * s;
         Label(x, y, "SUN PROPERTIES");
         y += 24 * s;
@@ -1161,7 +1328,7 @@ void App::atlInspectorLighting(float x, float y, float w, float) {
         Text(x + 43 * s, y + 33 * s, l.enabled ? "Area light · on" : "Area light · off", l.enabled ? IM_COL32(212, 188, 109, 255) : P().muted, 10);
         bool en = l.enabled;
         ImGui::SetCursorScreenPos(ImVec2(x + w - 32 * s, y + 16 * s));
-        if (ImGui::Checkbox("##en", &en)) { l.enabled = en; ch = true; }
+        if (Check("##en", &en)) { l.enabled = en; ch = true; }
         y += 69 * s;
         Label(x, y, "LIGHT PROPERTIES");
         y += 24 * s;
@@ -1215,7 +1382,7 @@ void App::atlInspectorRender(float x, float y, float w, float) {
     auto check = [&](const char* id, const char* label, bool& v, const char* help) {
         ImGui::SetCursorScreenPos(ImVec2(x, y));
         bool b = v;
-        if (ImGui::Checkbox(id, &b)) { v = b; ch = true; }
+        if (Check(id, &b)) { v = b; ch = true; }
         Text(x + 26 * s, y + 3 * s, label, P().text, 11);
         info((std::string(id) + "_i").c_str(), x + w - 18 * s, y + 0 * s, help);
         y += 26 * s;
