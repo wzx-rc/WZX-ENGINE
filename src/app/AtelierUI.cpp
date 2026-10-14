@@ -519,7 +519,11 @@ void App::atlHierarchy(float x, float y, float w, float h) {
     // category colours of the graph node families
     if (heading("hObjects", "Objects", Family(IM_COL32(92, 192, 213, 255)), A.folderOpen[2], (int)objs.size())) for (int i : objs) objectRow(i);
     yy += 6 * s;
-    if (heading("hLights", "Lights", Family(IM_COL32(212, 188, 109, 255)), A.folderOpen[3], (int)m_scene.lights.size()))
+    if (heading("hLights", "Lights", Family(IM_COL32(212, 188, 109, 255)), A.folderOpen[3], (int)m_scene.lights.size() + 1)) {
+        // the directional light of the scene (the sun): edited in the Lighting tab
+        bool sunOn = m_scene.sun.enabled;
+        if (row("sunLight", Icon::Sun, IM_COL32(242, 201, 76, 255), "Directional Light", false, !m_scene.sun.enabled, &sunOn, nullptr)) A.inspectorTab = 1;
+        if (sunOn != m_scene.sun.enabled) { m_scene.sun.enabled = sunOn; markDirty(); }
         for (size_t i = 0; i < m_scene.lights.size(); ++i) {
             AreaLight& l = m_scene.lights[i];
             if (!matches(l.name, A.sceneSearch)) continue;
@@ -529,6 +533,7 @@ void App::atlHierarchy(float x, float y, float w, float h) {
             if (row(id, Icon::Light, IM_COL32(242, 201, 76, 255), l.name, false, !l.enabled, &on, nullptr)) A.inspectorTab = 1;
             if (on != l.enabled) { l.enabled = on; markDirty(); }
         }
+    }
     yy += 6 * s;
     if (heading("hEnv", "Environment", Family(IM_COL32(134, 189, 144, 255)), A.folderOpen[1], (int)env.size())) for (int i : env) objectRow(i);
     ImGui::SetCursorScreenPos(ImVec2(px, yy + 4 * s));
@@ -923,13 +928,13 @@ void App::atlContent(float x, float y, float w, float h) {
 void App::atlInspector(float x, float y, float w, float h) {
     AtelierState& A = m_atl;
     R r = {x, y, w, h};
-    A.inspectorTab = std::clamp(A.inspectorTab, 0, 2);
-    const char* tags[] = {"ACTOR", "LIGHTING", "WORLD"};
+    A.inspectorTab = std::clamp(A.inspectorTab, 0, 3);
+    const char* tags[] = {"ACTOR", "LIGHTING", "RENDER", "WORLD"};
     Panel(r, Icon::Info, "Inspector", tags[A.inspectorTab], P().text);
-    const char* tabs[] = {"Actor", "Lighting", "World"};
-    Icon is[] = {Icon::Cube, Icon::Sun, Icon::World};
-    float tw = (r.w - 26 * s - 10 * s) / 3, tx = r.x + 13 * s;
-    for (int i = 0; i < 3; ++i) {
+    const char* tabs[] = {"Actor", "Light", "Render", "World"};
+    Icon is[] = {Icon::Cube, Icon::Sun, Icon::Camera, Icon::World};
+    float tw = (r.w - 26 * s - 15 * s) / 4, tx = r.x + 13 * s;
+    for (int i = 0; i < 4; ++i) {
         char id[24];
         snprintf(id, sizeof(id), "inspectorTab%d", i);
         if (Button(id, {tx, r.y + 40 * s, tw, 25 * s}, tabs[i], is[i], A.inspectorTab == i)) A.inspectorTab = i;
@@ -946,6 +951,7 @@ void App::atlInspector(float x, float y, float w, float h) {
     float bw = r.w - 26 * s - 8 * s;   // room for the scrollbar
     if (A.inspectorTab == 0) atlInspectorActor(c.x, c.y, bw, 0);
     else if (A.inspectorTab == 1) atlInspectorLighting(c.x, c.y, bw, 0);
+    else if (A.inspectorTab == 2) atlInspectorRender(c.x, c.y, bw, 0);
     else atlInspectorWorld(c.x, c.y, bw, 0);
     ImGui::EndChild();
     dl = ImGui::GetWindowDrawList();
@@ -1104,6 +1110,41 @@ void App::atlInspectorActor(float x, float y, float w, float) {
 
 void App::atlInspectorLighting(float x, float y, float w, float) {
     bool ch = false, act = false;
+    {   // the directional light of the scene (the sun): sharp shadows, one light
+        SunLight& sun = m_scene.sun;
+        ImGui::PushID("sun");
+        Box({x, y, w, 56 * s}, Fade(IM_COL32(242, 201, 76, 255), 30), 4, true);
+        Glyph(Icon::Sun, x + 10 * s, y + 15 * s, 22, sun.enabled ? IM_COL32(242, 201, 76, 255) : P().muted);
+        Text(x + 43 * s, y + 11 * s, "Directional Light", P().text, 14);
+        Text(x + 43 * s, y + 33 * s, sun.enabled ? "Directional · on" : "Directional · off", sun.enabled ? IM_COL32(212, 188, 109, 255) : P().muted, 10);
+        bool en = sun.enabled;
+        ImGui::SetCursorScreenPos(ImVec2(x + w - 32 * s, y + 16 * s));
+        if (ImGui::Checkbox("##sunen", &en)) { sun.enabled = en; ch = true; }
+        y += 69 * s;
+        Label(x, y, "SUN PROPERTIES");
+        y += 24 * s;
+        float el = degrees(std::asin(std::clamp(sun.direction.y, -1.0f, 1.0f)));
+        float az = degrees(std::atan2(sun.direction.x, sun.direction.z));
+        bool moved = false;
+        moved |= SliderRow("##sunaz", "Azimuth", x, y, w, &az, -180, 180, "%.0f deg", act);
+        moved |= SliderRow("##sunel", "Elevation", x, y, w, &el, 5, 85, "%.0f deg", act);
+        if (moved) {
+            const float ea = radians(el), aa = radians(az), ce = std::cos(ea);
+            sun.direction = float3(std::sin(aa) * ce, std::sin(ea), std::cos(aa) * ce);
+            ch = true;
+        }
+        ch |= SliderRow("##sunint", "Intensity", x, y, w, &sun.intensity, 0, 12, "%.2f", act);
+        Text(x, y, "Colour", P().muted, 11);
+        y += 19 * s;
+        float sc3[3] = {sun.color.x, sun.color.y, sun.color.z};
+        ImGui::SetCursorScreenPos(ImVec2(x, y));
+        ImGui::SetNextItemWidth(w);
+        if (ImGui::ColorEdit3("##suncol", sc3)) { sun.color = float3(sc3[0], sc3[1], sc3[2]); ch = true; }
+        y += 41 * s;
+        dl->AddLine(ImVec2(x, y), ImVec2(x + w, y), P().border);
+        y += 18 * s;
+        ImGui::PopID();
+    }
     for (size_t i = 0; i < m_scene.lights.size(); ++i) {
         AreaLight& l = m_scene.lights[i];
         ImGui::PushID((int)i);
@@ -1143,6 +1184,88 @@ void App::atlInspectorLighting(float x, float y, float w, float) {
     if (ch) markDirty();
     ImGui::SetCursorScreenPos(ImVec2(x, y));
     ImGui::Dummy(ImVec2(1, 1));
+}
+
+// Options of the render engine in use. Each mode has its own: the viewport mode (raster) has none of the path
+// tracing ones, and the temporal, progressive and GI engines have theirs.
+void App::atlInspectorRender(float x, float y, float w, float) {
+    bool ch = false, act = false;
+    static const char* names[] = {"Real time (raster)", "Interactive path tracing", "Temporal path tracing", "Progressive path tracing", "GI probes (DDGI)"};
+    const int mode = renderMode();
+    Text(x, y, names[mode], P().text, 14);
+    y += 25 * s;
+    Text(x, y, "Options of this engine only", P().muted, 11);
+    y += 35 * s;
+    auto check = [&](const char* id, const char* label, bool& v) {
+        ImGui::SetCursorScreenPos(ImVec2(x, y));
+        bool b = v;
+        if (ImGui::Checkbox(id, &b)) { v = b; ch = true; }
+        Text(x + 26 * s, y + 3 * s, label, P().text, 11);
+        y += 26 * s;
+    };
+    auto sliderF = [&](const char* id, const char* label, float& v, float lo, float hi, const char* fmt) {
+        ch |= SliderRow(id, label, x, y, w, &v, lo, hi, fmt, act);
+    };
+    auto sliderI = [&](const char* id, const char* label, int& v, float lo, float hi, const char* fmt) {
+        float f = (float)v;
+        if (SliderRow(id, label, x, y, w, &f, lo, hi, fmt, act)) { v = (int)std::round(f); ch = true; }
+    };
+    if (mode == 0) {
+        Text(x, y, "The rasterized viewport has no path tracing options.", P().muted, 11);
+        y += 19 * s;
+        Text(x, y, "Its light: the sun and the area lights, its shadows: the shadow map.", P().muted, 11);
+        y += 25 * s;
+    } else if (mode == 1 || mode == 2) {
+        Label(x, y, "HISTORY");
+        y += 24 * s;
+        sliderI("##tcap", "History length", m_rs.temporalCap, 16, 1024, "%.0f frames");
+        if (mode == 1) check("##fix", "Stable history: drop on moves, stable edges", m_rs.historyFixes);
+        else {
+            Text(x, y, "Previous behaviour, for comparison: no reset on moves", P().muted, 11);
+            y += 19 * s;
+        }
+        y += 8 * s;
+        Label(x, y, "DENOISER");
+        y += 24 * s;
+        check("##dn", "Denoiser", m_rs.denoise);
+        sliderF("##dns", "Strength", m_rs.denoiseStrength, 0, 4, "%.2f");
+        y += 8 * s;
+        Label(x, y, "LIGHT");
+        y += 24 * s;
+        sliderI("##bnc", "Bounces", m_rs.maxBounces, 1, 16, "%.0f");
+        sliderF("##fl", "Firefly clamp", m_rs.fireflyClamp, 1, 200, "%.0f");
+    } else if (mode == 3) {
+        Label(x, y, "SAMPLES");
+        y += 24 * s;
+        sliderI("##msp", "Max samples", m_rs.maxSamples, 16, 16384, "%.0f");
+        y += 8 * s;
+        Label(x, y, "LIGHT");
+        y += 24 * s;
+        sliderI("##bnc", "Bounces", m_rs.maxBounces, 1, 16, "%.0f");
+        sliderF("##fl", "Firefly clamp", m_rs.fireflyClamp, 1, 200, "%.0f");
+        Text(x, y, "No denoiser: the image converges to the clean result.", P().muted, 11);
+        y += 25 * s;
+    } else {
+        Label(x, y, "PROBES");
+        y += 24 * s;
+        sliderI("##pb", "Probe budget", m_rs.ddgiProbeBudget, 256, 8192, "%.0f");
+        sliderF("##hy", "Hysteresis", m_rs.ddgiHysteresis, 0.80f, 0.999f, "%.3f");
+        ImGui::SetCursorScreenPos(ImVec2(x, y));
+        static const char* views[] = {"Full", "Indirect only", "Direct only"};
+        int view = m_rs.ddgiView;
+        if (Combo("##gview", R{x, y, w, 28 * s}, view, views, 3, Icon::Sun)) { m_rs.ddgiView = view; ch = true; }
+        y += 36 * s;
+        check("##sp", "Show probes", m_rs.ddgiShowProbes);
+        y += 8 * s;
+        Label(x, y, "HISTORY");
+        y += 24 * s;
+        sliderI("##tcap", "History length", m_rs.temporalCap, 16, 1024, "%.0f frames");
+        y += 8 * s;
+        Label(x, y, "DENOISER");
+        y += 24 * s;
+        check("##dn", "Denoiser", m_rs.denoise);
+    }
+    if (ch) markDirty();
 }
 
 void App::atlInspectorWorld(float x, float y, float w, float) {

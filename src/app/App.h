@@ -191,6 +191,7 @@ private:
     void atlInspector(float x, float y, float w, float h);
     void atlInspectorActor(float x, float y, float w, float h);
     void atlInspectorLighting(float x, float y, float w, float h);
+    void atlInspectorRender(float x, float y, float w, float h);
     void atlInspectorWorld(float x, float y, float w, float h);
     struct AtelierState {
         float leftW = 222, rightW = 284, bottomH = 190;   // reference pixels of the Graph Editor (scaled by s)
