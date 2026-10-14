@@ -34,9 +34,13 @@ struct uint4 { uint x, y, z, w; };
 #define FRAME_FLAG_FLAT_SHADING 32u   // faceted polygons: geometric normals instead of interpolated ones
 #define FRAME_FLAG_NO_JITTER 64u      // anti-aliasing off: no sub-pixel jitter
 #define FRAME_FLAG_CENTRE_VALID 128u  // stable edges: the pixel-centre surface validates the history
-#define FRAME_FLAG_TEMPORAL  256u     // interactive path tracing: the denoiser strength follows the history, not the frame count
+#define FRAME_FLAG_ENV_MAP   512u     // HDRI environment (gEnvTex + gEnvDist) instead of the gradient
 
 #define NO_LIGHT 0xFFFFFFFFu
+
+// Light types (GpuLight::type)
+#define LIGHT_RECT   0u   // area light quad: corner, edgeU, edgeV, area
+#define LIGHT_OBJECT 1u   // emissive object: corner = centre and area = radius of its bounding sphere, radiance = emission
 
 struct GpuVertex {
     float3 pos;
@@ -62,7 +66,7 @@ struct GpuMaterial {
 struct GpuLight {
     float3 corner; float area;
     float3 edgeU;  uint instance;
-    float3 edgeV;  uint pad0;
+    float3 edgeV;  uint type;     // LIGHT_RECT or LIGHT_OBJECT
     float3 radiance; float pad1;
 };
 
@@ -92,6 +96,9 @@ struct FrameConstants {
     float3 prevCamFwd;   float historyCap;      // history length in frames (exponential average window)
     uint pad3; uint pad4; uint pad5; uint pad6;
     float denoiseEdgeLuma; float pad7; float pad8; float pad9;   // edge sensitivity of the denoiser (lower = keeps shadows)
+    // HDRI: lat-long texture (gEnvTex) and its importance sampling tables (gEnvDist, see EnvSample in PathTrace.hlsl)
+    uint envW; uint envH; float envRotation; float envMapIntensity;   // table size, rotation (radians), intensity
+    float envPdfScale; float envMips; float filterGlossy; float indirectClamp;   // W*H / sum of the table, mip count of gEnvTex; see TracePath
 };
 
 // DDGI probe volume (real-time GI test). Atlases: irradiance 8x8 octahedral texels per probe, distance

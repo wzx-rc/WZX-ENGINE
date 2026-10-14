@@ -317,19 +317,138 @@ float PowerHeuristic(float a, float b) {
 // ---------------------------------------------------------------------------
 // Lights & environment
 
-float3 Environment(float3 d) {
+// Gradient sky of the scene (no HDRI, or the background when the HDRI is hidden from the camera).
+float3 Gradient(float3 d) {
     float y = d.y;
     float3 c = y > 0 ? lerp(F.envHorizon, F.envTop, pow(saturate(y), 0.6))
                      : lerp(F.envHorizon, F.envBottom, pow(saturate(-y), 0.4));
     return c * F.envIntensity;
 }
 
-bool SampleLight(float3 P, inout uint rng, out float3 L, out float dist, out float3 Le, out float pdf) {
-    L = 0; dist = 0; Le = 0; pdf = 0;
-    if (F.lightCount == 0) return false;
-    uint li = min((uint)(Rnd(rng) * F.lightCount), F.lightCount - 1);
+bool EnvEnabled() { return (F.flags & FRAME_FLAG_ENV_MAP) != 0 && F.envW > 0; }
+
+// Lat-long mapping of the HDRI: -Z is the centre of the image, +Y the top row, envRotation turns it around +Y.
+float2 EnvDirToUV(float3 d) {
+    float u = atan2(d.x, -d.z) * (0.5 / PI) + 0.5 - F.envRotation * (0.5 / PI);
+    return float2(frac(u), acos(clamp(d.y, -1.0, 1.0)) / PI);
+}
+
+float3 EnvUVToDir(float2 uv) {
+    float phi = (uv.x - 0.5) * 2.0 * PI + F.envRotation;
+    float th = uv.y * PI;
+    float s = sin(th);
+    return float3(s * sin(phi), cos(th), -s * cos(phi));
+}
+
+float3 EnvMap(float3 d, float lod) {
+    float2 uv = EnvDirToUV(d);
+    uv.y = clamp(uv.y, 0.0005, 0.9995);   // the sampler wraps: keep the poles off the opposite row
+    return gEnvTex.SampleLevel(gLinearWrap, uv, lod).rgb * F.envMapIntensity;
+}
+
+float3 Environment(float3 d) { return EnvEnabled() ? EnvMap(d, 0) : Gradient(d); }
+
+// HDRI seen by a glossy ray without next-event estimation (GI probes): a mip blurred by the roughness, so that the
+// sun does not make fireflies. Approximate: the reflections of rough surfaces are a little too soft.
+float3 EnvironmentRough(float3 d, float rough) {
+    return EnvEnabled() ? EnvMap(d, sqrt(saturate(rough)) * max(F.envMips - 3.0, 0.0)) : Gradient(d);
+}
+
+// What the camera sees where no object is hit (the HDRI can be hidden from the camera and still light the scene).
+float3 Background(float3 d) {
+    if (EnvEnabled() && !(F.flags & FRAME_FLAG_ENV_VISIBLE)) return Gradient(d);
+    return Environment(d);
+}
+
+// Importance sampling of the HDRI. gEnvDist holds, for a W x H table of luminance * sin(theta):
+// the table [W*H], then one CDF per row [H * (W+1)], then the CDF of the rows [H+1].
+uint SearchCdf(uint base, uint n, float u) {
+    uint lo = 0, hi = n;
+    while (hi - lo > 1) {
+        uint mid = (lo + hi) >> 1;
+        if (gEnvDist[base + mid] <= u) lo = mid;
+        else hi = mid;
+    }
+    return lo;
+}
+
+float EnvPdfUV(uint col, uint row, float sinTheta) {
+    if (sinTheta <= 1e-6) return 0;
+    return gEnvDist[row * F.envW + col] * F.envPdfScale / (2.0 * PI * PI * sinTheta);
+}
+
+// Direction towards the bright parts of the HDRI and its solid-angle pdf.
+float3 EnvSample(float2 u, out float pdf) {
+    uint W = F.envW, H = F.envH;
+    uint marg = W * H + H * (W + 1);
+    uint row = SearchCdf(marg, H, u.y);
+    float r0 = gEnvDist[marg + row], r1 = gEnvDist[marg + row + 1];
+    float dv = saturate((u.y - r0) / max(r1 - r0, 1e-12));
+    uint cdf = W * H + row * (W + 1);
+    uint col = SearchCdf(cdf, W, u.x);
+    float c0 = gEnvDist[cdf + col], c1 = gEnvDist[cdf + col + 1];
+    float du = saturate((u.x - c0) / max(c1 - c0, 1e-12));
+    float2 uv = float2((col + du) / W, (row + dv) / H);
+    pdf = EnvPdfUV(col, row, sin(uv.y * PI));
+    return EnvUVToDir(uv);
+}
+
+float EnvPdf(float3 d) {
+    float2 uv = EnvDirToUV(d);
+    uint col = min((uint)(uv.x * F.envW), F.envW - 1), row = min((uint)(uv.y * F.envH), F.envH - 1);
+    return EnvPdfUV(col, row, sqrt(saturate(1.0 - d.y * d.y)));
+}
+
+// Light seen through glass along a shadow ray: 0 when an opaque object blocks it, otherwise the product of the
+// Fresnel transmission (and tint) of each glass surface crossed. A glass ball then casts a light shadow with a
+// dark rim (grazing angles reflect), instead of no shadow at all. Glass instances are non-opaque in the TLAS.
+float3 ShadowTransmittance(float3 o, float3 d, float tmax) {
+    RayQuery<RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH> q;
+    RayDesc r;
+    r.Origin = o; r.Direction = d; r.TMin = 0.0; r.TMax = tmax;
+    q.TraceRayInline(gScene, RAY_FLAG_NONE, MASK_OPAQUE | MASK_GLASS, r);
+    float3 T = 1;
+    while (q.Proceed()) {
+        if (q.CandidateType() != CANDIDATE_NON_OPAQUE_TRIANGLE) continue;
+        uint inst = q.CandidateInstanceID();
+        GpuMaterial m = gMats[gInst[inst].materialId];
+        float3 ng;
+        float3 n = WorldNormal(inst, q.CandidatePrimitiveIndex(), q.CandidateTriangleBarycentrics(),
+                               q.CandidateWorldToObject3x4(), ng);
+        bool entering = dot(n, d) < 0;
+        T *= 1.0 - FresnelDielectric(abs(dot(n, d)), entering ? 1.0 / m.ior : m.ior);
+        if (entering) T *= m.baseColor;
+        if (max(T.x, max(T.y, T.z)) < 1e-3) q.Abort();
+    }
+    if (q.CommittedStatus() == COMMITTED_TRIANGLE_HIT || max(T.x, max(T.y, T.z)) < 1e-3) return 0;
+    return T;
+}
+
+// Sampling of light li from P with the random numbers u (x picks nothing here). Rect lights: a point on the quad.
+// Emissive objects: a direction in the cone of their bounding sphere (the shadow ray must then reach the object).
+bool SampleOneLight(uint li, float3 P, float2 u, out float3 L, out float dist, out float3 Le, out float pdf) {
     GpuLight l = gLights[li];
-    float2 u = Rnd2(rng);
+    L = 0; dist = 0; Le = 0; pdf = 0;
+    if (l.type == LIGHT_OBJECT) {
+        float3 w = l.corner - P;
+        float d2 = dot(w, w), r2 = l.area * l.area;
+        if (d2 <= r2 * 1.0001) return false;
+        float dc = sqrt(d2);
+        w /= dc;
+        float sin2 = r2 / d2;
+        float cosMax = sqrt(max(0.0, 1.0 - sin2));
+        float oneMinus = sin2 / (1.0 + cosMax);   // 1 - cosMax without cancellation for small, far objects
+        float cosT = 1.0 - u.x * oneMinus;
+        float sinT = sqrt(max(0.0, 1.0 - cosT * cosT));
+        float phi = 2.0 * PI * u.y;
+        float3 t, b;
+        Basis(w, t, b);
+        L = normalize(t * (sinT * cos(phi)) + b * (sinT * sin(phi)) + w * cosT);
+        dist = dc + l.area;
+        pdf = 1.0 / (2.0 * PI * oneMinus) / F.lightCount;
+        Le = l.radiance;
+        return true;
+    }
     float3 X = l.corner + l.edgeU * u.x + l.edgeV * u.y;
     float3 d = X - P;
     dist = length(d);
@@ -340,53 +459,89 @@ bool SampleLight(float3 P, inout uint rng, out float3 L, out float dist, out flo
     pdf = dist * dist / (cosL * l.area) / F.lightCount;
     Le = l.radiance * F.lightScale;
     return true;
+}
+
+bool SampleLight(float3 P, inout uint rng, out float3 L, out float dist, out float3 Le, out float pdf, out uint li) {
+    L = 0; dist = 0; Le = 0; pdf = 0; li = 0;
+    if (F.lightCount == 0) return false;
+    li = min((uint)(Rnd(rng) * F.lightCount), F.lightCount - 1);
+    return SampleOneLight(li, P, Rnd2(rng), L, dist, Le, pdf);
 }
 
 // Same as SampleLight, with the random numbers given by the caller (stratified over frames).
-bool SampleLightU(float3 P, float3 us, out float3 L, out float dist, out float3 Le, out float pdf) {
-    L = 0; dist = 0; Le = 0; pdf = 0;
+bool SampleLightU(float3 P, float3 us, out float3 L, out float dist, out float3 Le, out float pdf, out uint li) {
+    L = 0; dist = 0; Le = 0; pdf = 0; li = 0;
     if (F.lightCount == 0) return false;
-    uint li = min((uint)(us.x * F.lightCount), F.lightCount - 1);
-    GpuLight l = gLights[li];
-    float2 u = us.yz;
-    float3 X = l.corner + l.edgeU * u.x + l.edgeV * u.y;
-    float3 d = X - P;
-    dist = length(d);
-    L = d / dist;
-    float3 Nl = normalize(cross(l.edgeU, l.edgeV));
-    float cosL = dot(-L, Nl);
-    if (cosL <= 1e-4) return false;
-    pdf = dist * dist / (cosL * l.area) / F.lightCount;
-    Le = l.radiance * F.lightScale;
-    return true;
+    li = min((uint)(us.x * F.lightCount), F.lightCount - 1);
+    return SampleOneLight(li, P, us.yz, L, dist, Le, pdf);
 }
 
-float LightPdf(uint lightId, float3 dir, float t) {
+// Instance of an area light quad (an emissive object is shaded as a surface, its light id only serves the sampling).
+bool IsRectLight(GpuInstance gi) { return gi.lightId != NO_LIGHT && gLights[gi.lightId].type == LIGHT_RECT; }
+
+// Pdf with which SampleLight picks the direction dir from o towards light lightId, hit at distance t.
+float LightPdf(uint lightId, float3 o, float3 dir, float t) {
     GpuLight l = gLights[lightId];
+    if (l.type == LIGHT_OBJECT) {
+        float3 w = l.corner - o;
+        float d2 = dot(w, w), r2 = l.area * l.area;
+        if (d2 <= r2 * 1.0001) return 0;
+        float sin2 = r2 / d2;
+        float oneMinus = sin2 / (1.0 + sqrt(max(0.0, 1.0 - sin2)));
+        return 1.0 / (2.0 * PI * oneMinus) / F.lightCount;
+    }
     float3 Nl = normalize(cross(l.edgeU, l.edgeV));
     float cosL = abs(dot(dir, Nl));
     return t * t / (max(cosL, 1e-4) * l.area) / F.lightCount;
 }
 
-// Next-event estimation from a surface point (returns MIS-weighted radiance).
-float3 DirectLight(Surf s, Hit h, float3 V, bool lambertOnly, inout uint rng) {
-    float3 L, Le;
-    float dist, lpdf;
-    if (!SampleLight(h.P, rng, L, dist, Le, lpdf)) return 0;
-    if (dot(L, h.Ng) <= 0) return 0;
-    float bpdf;
-    float3 f;
-    if (lambertOnly) {
-        float c = dot(h.N, L);
-        if (c <= 0) return 0;
-        f = c / PI;
-        bpdf = c / PI;
-    } else {
-        f = EvalBSDF(s, h.N, V, L, bpdf);
+// Shadow test of a light sample from o: the light gets through glass (tinted), an emissive object must be the
+// first opaque surface hit. Returns the transmittance (0 = blocked).
+float3 LightVisibility(uint li, float3 o, float3 L, float dist) {
+    GpuLight l = gLights[li];
+    if (l.type == LIGHT_OBJECT) {
+        Hit e;
+        if (!TraceClosest(o, L, dist, MASK_OPAQUE, e) || e.inst != l.instance || !e.front) return 0;
+        return ShadowTransmittance(o, L, e.t * 0.999);
     }
-    if (all(f <= 0)) return 0;
-    if (Occluded(OffsetRay(h.P, h.Ng), L, dist * 0.999)) return 0;
-    return f * Le / lpdf * PowerHeuristic(lpdf, bpdf);
+    return ShadowTransmittance(o, L, dist * 0.999);
+}
+
+// Next-event estimation from a surface point (returns MIS-weighted radiance): one light sample, plus one HDRI
+// sample when the environment is an image (each strategy weighted against the BSDF sampling).
+float3 DirectLight(Surf s, Hit h, float3 V, bool lambertOnly, inout uint rng) {
+    float3 sum = 0;
+    float3 o = OffsetRay(h.P, h.Ng);
+    for (uint k = 0; k < 2; ++k) {
+        float3 L, Le;
+        float dist, lpdf;
+        uint li = 0;
+        if (k == 0) {
+            if (!SampleLight(h.P, rng, L, dist, Le, lpdf, li)) continue;
+        } else {
+            if (!EnvEnabled()) break;
+            L = EnvSample(Rnd2(rng), lpdf);
+            if (lpdf <= 0) continue;
+            dist = 1e30;
+            Le = EnvMap(L, 0);
+        }
+        if (dot(L, h.Ng) <= 0) continue;
+        float bpdf;
+        float3 f;
+        if (lambertOnly) {
+            float c = dot(h.N, L);
+            if (c <= 0) continue;
+            f = c / PI;
+            bpdf = c / PI;
+        } else {
+            f = EvalBSDF(s, h.N, V, L, bpdf);
+        }
+        if (all(f <= 0)) continue;
+        float3 T = k == 0 ? LightVisibility(li, o, L, dist) : ShadowTransmittance(o, L, 1e30);
+        if (all(T <= 0)) continue;
+        sum += f * Le * T / lpdf * PowerHeuristic(lpdf, bpdf);
+    }
+    return sum;
 }
 
 // ---------------------------------------------------------------------------
@@ -443,34 +598,66 @@ struct Guides {
     float3 geom;     // geometric normal of the primary hit (stable under bevel jitter; used by reprojection)
 };
 
+// Indirect clamp: after a rough bounce, one light contribution is capped to F.indirectClamp (biased: removes the
+// sparkles of rare bright paths, such as the sun reflected by the chrome ball onto the floor). 0 = off.
+float3 Indirect(float3 c, bool roughSeen) {
+    if (!roughSeen || F.indirectClamp <= 0) return c;
+    float l = Luminance(c);
+    return l > F.indirectClamp ? c * (F.indirectClamp / l) : c;
+}
+
 float3 TracePath(float3 o, float3 d, inout uint rng, inout Guides g) {
     float3 radiance = 0, thr = 1;
     bool specPrev = true;
     float prevPdf = 0;
+    // Light that reaches a surface through glass is already counted by its next-event estimation (shadow rays
+    // cross glass, see ShadowTransmittance): a path that crossed glass after such a surface does not add it again.
+    bool neeDone = false, viaGlass = false;
+    bool roughSeen = false;   // a rough (diffuse-like) bounce happened: see filterGlossy below
     uint mask = 0xFF & ~MASK_LIGHT_HIDDEN;
     for (uint bounce = 0; bounce <= F.maxBounces; ++bounce) {
         Hit h;
         if (!TraceClosest(o, d, 1e30, mask, h)) {
-            float3 env = Environment(d);
-            radiance += thr * env;
+            float3 env = bounce == 0 ? Background(d) : Environment(d);
+            float w = 1.0;
+            if (EnvEnabled() && bounce > 0) {   // the HDRI is also sampled by next-event estimation: MIS
+                if (viaGlass && neeDone) w = 0.0;
+                else if (!specPrev) w = PowerHeuristic(prevPdf, EnvPdf(d));
+            }
+            radiance += Indirect(thr * env * w, roughSeen);
             if (bounce == 0) { g.albedo = 1; g.normal = -d; g.geom = -d; g.depth = 1e6; g.id = 0; }
             break;
         }
         GpuInstance gi = gInst[h.inst];
         GpuMaterial gm = gMats[gi.materialId];
+        bool objectLight = gi.lightId != NO_LIGHT && gLights[gi.lightId].type == LIGHT_OBJECT;
 
-        if (gi.lightId != NO_LIGHT) {
-            if (h.front) {
+        if (gi.lightId != NO_LIGHT && !objectLight) {
+            if (h.front && !(viaGlass && neeDone)) {
                 float3 Le = gLights[gi.lightId].radiance * F.lightScale;
-                float w = specPrev ? 1.0 : PowerHeuristic(prevPdf, LightPdf(gi.lightId, d, h.t));
-                radiance += thr * Le * w;
+                float w = specPrev ? 1.0 : PowerHeuristic(prevPdf, LightPdf(gi.lightId, o, d, h.t));
+                radiance += Indirect(thr * Le * w, roughSeen);
             }
             if (bounce == 0) { g.albedo = 1; g.normal = h.N; g.geom = h.Ng; g.depth = h.t; g.id = h.inst + 1; }
             break;
         }
 
         Surf s = MakeSurf(gm, h);
-        if (h.front) radiance += thr * s.emission;
+        // Filter glossy: after a rough bounce, mirror-like surfaces are blurred to at least F.filterGlossy. The
+        // caustics they would cast (sun seen in the chrome ball from the floor) are spread instead of fireflies.
+        if (roughSeen && F.filterGlossy > 0) {
+            s.rough = max(s.rough, F.filterGlossy);
+            s.coatRough = max(s.coatRough, F.filterGlossy);
+        }
+        if (h.front) {
+            // emissive objects are lights too (next-event estimation): MIS weight of the BSDF sampling
+            float w = 1.0;
+            if (objectLight && bounce > 0) {
+                if (viaGlass && neeDone) w = 0.0;
+                else if (!specPrev) w = PowerHeuristic(prevPdf, LightPdf(gi.lightId, o, d, h.t));
+            }
+            radiance += Indirect(thr * s.emission * w, roughSeen);
+        }
 
         if ((F.flags & FRAME_FLAG_BEVEL) && s.bevel > 0 && h.front) {
             uint ns = bounce == 0 ? (uint)F.bevelSamples : 1u;
@@ -511,12 +698,16 @@ float3 TracePath(float3 o, float3 d, inout uint rng, inout Guides g) {
             }
             d = normalize(L);
             specPrev = true;
+            viaGlass = true;
             mask = 0xFF;
             continue;
         }
 
         // --- Next-event estimation
-        radiance += thr * DirectLight(s, h, V, false, rng);
+        radiance += Indirect(thr * DirectLight(s, h, V, false, rng), roughSeen);
+        neeDone = true;
+        viaGlass = false;
+        if (s.rough > 0.3 || DiffuseWeight(s) > 0.5) roughSeen = true;
 
         // --- Sample the BSDF
         float NoV = dot(h.N, V);
@@ -529,7 +720,7 @@ float3 TracePath(float3 o, float3 d, inout uint rng, inout Guides g) {
             thr *= DiffuseWeight(s) * (1.0 - Fv) / (1.0 - pSpec);
             if (!RandomWalk(h, s, thr, rng)) break;
             Surf exitSurf = s;
-            radiance += thr * DirectLight(exitSurf, h, h.N, true, rng);
+            radiance += Indirect(thr * DirectLight(exitSurf, h, h.N, true, rng), true);   // the random walk is a rough bounce
             L = CosineHemisphere(h.N, Rnd2(rng));
             prevPdf = max(dot(h.N, L), 1e-4) / PI;
         } else {

@@ -70,6 +70,11 @@ void drawAssetThumb(ImDrawList* dl, int kind, int index, ImVec2 p0, ImVec2 p1, f
         if (index == SCENE_CORNELL) {
             dl->AddRectFilled(ImVec2(c.x - s * 1.3f, c.y - s), ImVec2(c.x - s * 0.9f, c.y + s), IM_COL32(180, 30, 25, 255));
             dl->AddRectFilled(ImVec2(c.x + s * 0.9f, c.y - s), ImVec2(c.x + s * 1.3f, c.y + s), IM_COL32(40, 140, 30, 255));
+        } else if (index == SCENE_LOOKDEV) {   // five reference spheres on a grey floor
+            dl->AddRectFilled(ImVec2(c.x - s * 1.3f, c.y + s * 0.15f), ImVec2(c.x + s * 1.3f, c.y + s), IM_COL32(70, 72, 76, 255), 3 * d);
+            const ImU32 cols[5] = {IM_COL32(150, 150, 150, 255), IM_COL32(215, 220, 228, 255), IM_COL32(150, 200, 230, 170),
+                                   IM_COL32(255, 200, 110, 255), IM_COL32(236, 214, 170, 255)};
+            for (int k = 0; k < 5; ++k) dl->AddCircleFilled(ImVec2(c.x + (k - 2) * s * 0.5f, c.y), s * 0.22f, cols[k]);
         } else {
             for (int k = -2; k <= 2; ++k) dl->AddLine(ImVec2(c.x + k * s * 0.5f, c.y - s), ImVec2(c.x + k * s * 0.5f, c.y + s), IM_COL32(90, 96, 108, 255));
             for (int k = -1; k <= 1; ++k) dl->AddLine(ImVec2(c.x - s * 1.3f, c.y + k * s * 0.5f), ImVec2(c.x + s * 1.3f, c.y + k * s * 0.5f), IM_COL32(90, 96, 108, 255));

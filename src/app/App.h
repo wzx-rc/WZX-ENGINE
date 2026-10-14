@@ -15,7 +15,7 @@
 namespace app {
 
 enum Tool { TOOL_SELECT, TOOL_MOVE, TOOL_ROTATE, TOOL_SCALE };
-enum SceneId { SCENE_CORNELL = 0, SCENE_STUDIO = 1 };
+enum SceneId { SCENE_CORNELL = 0, SCENE_STUDIO = 1, SCENE_LOOKDEV = 2 };
 
 // Move / rotate manipulator drag on the selected object.
 struct GizmoDrag {
@@ -66,8 +66,8 @@ struct Options {
     int quality = 1;
     bool raster = true;         // light raster viewport by default, P toggles path tracing
     std::wstring openPath;      // scene file to open at startup
+    std::wstring hdri;          // HDRI to load at startup (file, or "sky" for the procedural sky)
     // DDGI probe GI (real-time mode)
-    bool temporal = true;       // temporal path tracing; --temporal 0 = progressive reference
     bool ddgi = false;          // start in the real-time probe GI mode
     int probes = 2048;          // target probe count over the scene bounds
     int ddgiView = 0;           // 0 full, 1 indirect only, 2 direct only
@@ -76,6 +76,7 @@ struct Options {
     int light = -1;             // test: 1 light mode, 0 dark mode
     bool openSettings = false;  // test: open the settings window at startup
     int workspace = 0;          // Atelier workspace at startup: 0 scene, 1 graph, 2 material
+    int inspectorTab = -1;      // test: inspector tab at startup (0 actor, 1 light, 2 render, 3 world)
     ImVec4 mainColor = ImVec4(-1, -1, -1, 1);   // test: main colour for this run (--main-color r,g,b)
     ImVec4 sizes = ImVec4(-1, -1, -1, 0);       // test: text, icon and layout size for this run (--sizes t,i,l)
 };
@@ -108,8 +109,8 @@ private:
     void markDirty();
     void cameraChanged();
     void applyQuality();
-    // Render modes of the viewport: 0 real time (raster), 1 temporal path tracing (denoised),
-    // 2 progressive path tracing (reference, not denoised), 3 real-time GI probes (DDGI)
+    // Render modes of the viewport: 0 real time (raster), 1 progressive path tracing (denoiser optional),
+    // 2 real-time GI probes (DDGI)
     void setRenderMode(int mode);
     int renderMode() const;
     void handleShortcuts();
@@ -142,7 +143,15 @@ private:
     bool saveSceneFile(const std::wstring& path);
     bool loadSceneFile(const std::wstring& path);
     void runPendingAction();
-    int m_pendingAction = 0;   // 1 save dialog, 2 open dialog
+    int m_pendingAction = 0;   // 1 save dialog, 2 open dialog, 3 HDRI file dialog
+
+    // HDRI environment (App.cpp): files of 01 - INBOX and assets/hdri, loaded once and kept in a cache
+    bool setHdri(const std::wstring& path);   // empty = gradient sky, L"sky" = procedural sky
+    std::vector<std::wstring> hdriFiles() const;
+    std::wstring defaultHdri() const;          // first HDRI of 01 - INBOX, else of assets/hdri, else the procedural sky
+    std::map<std::wstring, EnvImagePtr> m_hdriCache;
+    std::wstring m_hdriPath;                  // HDRI of the scene (empty = none)
+    std::wstring m_lastHdri;                  // last HDRI chosen, reused when the LookDev scene is loaded again
 
     // output (App.cpp)
     void generateThumbnails();

@@ -31,17 +31,17 @@ struct RenderSettings {
     float bevelScale = 1.0f;
     int bevelSamples = 4;
     float fireflyClamp = 25.0f;
+    float filterGlossy = 0.0f;     // minimum roughness of glossy surfaces seen after a rough bounce (0 = exact; >0 removes caustic fireflies)
+    float indirectClamp = 0.0f;    // caps each light contribution after a rough bounce (0 = off; temporal: fewer sparkles)
     float sssScale = 1.0f;
     float lightScale = 1.0f;
     float vignette = 0.12f;
     bool raster = false;
     int tonemapper = 0;           // 0 ACES (Hill fit), 1 AgX, 2 AgX Punchy, 3 Standard (clip)          // light raster viewport instead of path tracing
-    // Temporal path tracing: one path per pixel per frame, blended into the history of the previous frames.
-    // Off = progressive accumulation (reference, reset on every change).
-    bool temporal = false;
     // Stable history (interactive, GI): the history is dropped when an object moves, edges are validated on the
     // pixel centre, the denoiser strength is bounded. Off = the previous behaviour (marks behind moved objects).
     bool historyFixes = true;
+    bool rasterEnvSun = true;      // raster: the sun of the HDRI is a shadowed directional light (else all the image is ambient)
     // Drop the history when an object moves (and light changes). Off = keep it: less noise, but marks behind moved objects.
     bool resetOnMove = true;
     float resetDelay = 2.0f;   // seconds: the history fades to new samples over this time after a move
@@ -112,6 +112,7 @@ private:
         uint32_t indexOffset, vertexOffset, indexCount, vertexCount;
         Buffer blas;
         float3 bmin, bmax;
+        float3 center; float radius = 0;   // bounding sphere (emissive objects: light sampling cone)
     };
     struct Draw {
         int mesh;
@@ -131,6 +132,7 @@ private:
     void recordRaster(const Scene& scene, const RenderSettings& rs, const ViewRect& vp);
     void createTargets(uint32_t w, uint32_t h);
     void uploadTextures(const Scene& scene);
+    void uploadEnvironment(const EnvImagePtr& img);   // HDRI texture, sampling tables, SH and sun (when the image changes)
     D3D12_GPU_DESCRIPTOR_HANDLE textureTable() const;
     void setupProbeGrid(const RenderSettings& rs);
     void recordDDGI(const RenderSettings& rs, UINT gx, UINT gy);
@@ -164,7 +166,6 @@ private:
     ComPtr<ID3D12RootSignature> m_rootSig;
     ComPtr<ID3D12PipelineState> m_psoTrace, m_psoDenoise, m_psoTonemap;
     ComPtr<ID3D12PipelineState> m_psoGIUpdate, m_psoGIBlend, m_psoGIShade;
-    ComPtr<ID3D12PipelineState> m_psoTraceTemporal;
     ComPtr<ID3D12DescriptorHeap> m_heap;
     uint32_t m_descSize = 0;
 
@@ -174,6 +175,8 @@ private:
     static constexpr uint32_t kMaxTextures = 16;
     // DDGI and history UAVs sit after the texture table (heap offset kTexCount + 1 + kMaxTextures)
     static constexpr uint32_t kGIHeapBase = kTexCount + 1 + kMaxTextures;
+    // HDRI SRV after the DDGI and history UAVs
+    static constexpr uint32_t kEnvHeapSlot = kGIHeapBase + 4 + 2;
     std::vector<ComPtr<ID3D12Resource>> m_materialTex;
     ComPtr<ID3D12Resource> m_tex[kTexCount];
     uint32_t m_rtW = 0, m_rtH = 0;
@@ -220,6 +223,17 @@ private:
     struct PrevCamera { float3 pos, right, up, fwd; float tanHalf = 1.0f, aspect = 1.0f; } m_prevCam;
     bool m_historyValid = false;
     uint32_t m_sceneSignature = 0;
+
+    // HDRI environment (Scene::env.hdri), uploaded when the image changes
+    EnvImagePtr m_envImage;
+    ComPtr<ID3D12Resource> m_envTex;
+    Buffer m_envDist;                 // importance sampling tables (see EnvSample in PathTrace.hlsl)
+    uint32_t m_envW = 0, m_envH = 0;  // size of the tables
+    float m_envPdfScale = 0, m_envMips = 1;
+    float m_envSH[9][3] = {};         // irradiance SH without the sun (raster)
+    float m_envSHFull[9][3] = {};     // irradiance SH with the sun
+    float3 m_envSunDir{0, 1, 0}, m_envSunE{0, 0, 0};   // sun of the HDRI (image space), its irradiance
+    bool m_envSunValid = false;
 
     // Raster viewport
     static constexpr uint32_t kShadowSize = 2048, kMsaa = 4;

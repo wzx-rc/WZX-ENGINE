@@ -61,6 +61,8 @@ int addPart(Scene& s, const std::string& partId, int colorId, int preset, float3
 void buildCornellBox(Scene& s);
 // Ground grid + soft studio lights, no objects.
 void buildStudioScene(Scene& s);
+// Neutral floor and five reference spheres (clay, chrome, glass, emissive, candle wax) lit by an HDRI.
+void buildLookDevScene(Scene& s);
 
 struct ViewPreset {
     std::wstring name;

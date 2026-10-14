@@ -22,7 +22,7 @@ void main(uint3 id : SV_DispatchThreadID) {
         Surf s = MakeSurf(gMats[gi.materialId], h);
         float3 albedo = DiffuseAlbedo(s);
         float3 rad = s.emission;
-        rad += albedo / PI * DirectIrradiance(h.P, h.N, h.Ng, rng);
+        rad += albedo / PI * (DirectIrradiance(h.P, h.N, h.Ng, rng) + EnvDirectIrradiance(h.P, h.N, h.Ng, rng));
         if (G.frame > 0) rad += albedo * SampleIrradiance(h.P, h.N, -d);
         result = float4(rad, h.t);
     }

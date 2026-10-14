@@ -15,22 +15,33 @@ Prérequis : Visual Studio 2022 Build Tools (C++), Windows SDK 10.0.22621+, GPU 
 `build.bat` compile tous les `.cpp` de `src\vp3d` et `src\app` et lie tous les `.obj` de `build\obj` :
 après la suppression d'un fichier source, supprimer aussi son `.obj` dans `build\obj`.
 
-Options : `--scene cornell|studio`, `--open scene.v3d.json`, `--view N`, `--select N`, `--tool 1|2`,
+Options : `--scene cornell|studio|lookdev`, `--hdri fichier.hdr|sky`, `--open scene.v3d.json`, `--view N`, `--select N`, `--tool 1|2`,
 `--quality 0|1`, `--raster 0|1`, `--shot fichier.png --spp N` (capture fenêtre puis quitte), `--shot-viewport fichier.png`.
 
 ## Scènes
 
 - **Cornell Box** (F1, par défaut) : scène de test du path tracing (shader balls, matériaux).
 - **Studio** (F2) : sol quadrillé et lumières douces, sans objets.
+- **LookDev** (F3) : sol gris neutre et cinq sphères de référence (argile grise, chrome miroir, verre, émissive qui éclaire vraiment, cire de bougie en SSS), éclairées par un HDRI.
 - Ctrl+S / Ctrl+O : enregistrer / ouvrir une scène au format `.v3d.json` (`vp3d-scene` v1, listes `objects` et `village`).
+
+## HDRI
+
+Onglet **Render** de l'Inspector, section « HDRI environment » (commune aux quatre modes) : choix du fichier, intensité, rotation, visible ou non par la caméra.
+Formats : `.hdr` (RGBE), `.exr` (scanline, sans compression, RLE, ZIP, ZIPS ou PIZ, half ou float), et jpg/png convertis en linéaire (sans vraie dynamique). Au-delà de 4096 de large, l'image est réduite.
+La liste propose les `.hdr`/`.exr` de `01 - INBOX` puis les images de `assets/hdri` (HDRI de test Poly Haven, CC0, hors du suivi git) ; « Load… » ouvre n'importe quel fichier. Le chemin est enregistré dans la scène.
+
+- Path tracing (Progressive) : échantillonnage d'importance de l'image (MIS), le soleil de l'HDRI donne des ombres nettes ; les objets émissifs sont aussi échantillonnés comme des lumières ; les ombres traversent le verre (teinte, bord sombre).
+- Progressive : « Filter glossy » et « Indirect clamp » (à 0 par défaut, donc exact) enlèvent les étincelles (caustiques) au prix d'un léger biais.
+- Real time : ambiance diffuse en harmoniques sphériques, reflets dans les mips flous de l'image, le soleil de l'HDRI devient la lumière principale avec la shadow map.
+- GI probes : l'HDRI éclaire les sondes, reflets et verre approximatifs.
 
 ## Modes de rendu
 
-Quatre modes, choisis dans le menu de rendu en haut du viewport ; leurs réglages sont dans l'onglet **Render** de l'Inspector (icône i sur chaque option).
+Trois modes, choisis dans le menu de rendu en haut du viewport ; leurs réglages sont dans l'onglet **Render** de l'Inspector (icône i sur chaque option).
 
 - **Real time (raster)** par défaut : PBR direct, shadow map PCF, MSAA 4x, ~1 ms GPU.
-- **Temporal path tracing** (touche P depuis le raster) : path tracing avec historique d'image (fondu réglable après un déplacement) et débruiteur à-trous réglable. Remplace les anciens modes Interactive et Temporal.
-- **Progressive path tracing** : le rendu progressif complet, sans débruiteur, qui sert de référence.
+- **Progressive path tracing** (touche P depuis le raster) : rendu progressif exact, avec débruiteur optionnel (option « Denoiser » de l'onglet Render, désactivée par défaut).
 - **GI probes (DDGI)** (touche L) : grille de sondes d'éclairage indirect mise à jour à chaque image, avec historique d'image. Expérimental ; rapport : `docs/RAPPORT_DDGI.md`. Options : `--ddgi 1`, `--probes N`, `--ddgi-view 0|1|2`, `--hysteresis x`.
 
 ## Transformations de vue
@@ -51,6 +62,7 @@ ACES (fit de Hill, RRT+ODT), AgX, AgX Punchy, Standard. Espace de travail : lin�
   - `Renderer` : device DX12, BLAS/TLAS, accumulation, débruitage, tonemap
   - `Scene`, `MeshGen` : description de scène, meshes procéduraux (box, sphère, lathe, shader ball)
   - `AssetImport` : import OBJ (positions, UV, normales) et images (WIC : jpg, png, bmp) ; textures de base (`Material::baseColorTex`) échantillonnées en raster et en traçage
+  - `EnvImage` : lecture et conversion des HDRI (.hdr, .exr avec décodeurs ZIP et PIZ intégrés, jpg/png), ciel procédural de test
   - `shaders/` : `PathTrace.hlsl`, `Denoise.hlsl`, `Tonemap.hlsl`, `Raster.hlsl`, GI sondes (`DDGIUpdate.hlsl`, `DDGIBlend.hlsl`, `GIShade.hlsl`, `DDGICommon.hlsli`, `Temporal.hlsli`)
 - `src/app/` : éditeur (espaces de travail Atelier dessinés avec Dear ImGui)
   - `App` : fenêtre, boucle, édition (annuler, sélection, ajout…) · `ImGuiLayer` : backends Win32 + DX12, polices, textures · `Theme` : couleurs et réglages

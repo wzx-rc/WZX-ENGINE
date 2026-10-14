@@ -9,11 +9,11 @@
 // Radiance leaving a secondary hit (reflection ray), diffuse only.
 float3 ShadeSecondary(Hit h, float3 V, inout uint rng) {
     GpuInstance gi = gInst[h.inst];
-    if (gi.lightId != NO_LIGHT) return 0;   // handled by the caller (MIS with the light sampling)
+    if (IsRectLight(gi)) return 0;   // handled by the caller (MIS with the light sampling)
     Surf s = MakeSurf(gMats[gi.materialId], h);
     float3 a = DiffuseAlbedo(s);
     float3 c = h.front ? s.emission : 0;
-    c += a / PI * DirectIrradiance(h.P, h.N, h.Ng, rng);
+    c += a / PI * (DirectIrradiance(h.P, h.N, h.Ng, rng) + EnvDirectIrradiance(h.P, h.N, h.Ng, rng));
     c += a * SampleIrradiance(h.P, h.N, V);
     return c;
 }
@@ -27,7 +27,7 @@ float3 ShadePixel(float3 o, float3 d, inout uint rng, inout Guides g, float3 ul,
     GpuInstance gi = gInst[h.inst];
     g.depth = h.t;
     g.id = h.inst + 1;
-    if (gi.lightId != NO_LIGHT) {
+    if (IsRectLight(gi)) {
         g.albedo = 1; g.normal = h.N; g.geom = h.Ng;
         return h.front ? gLights[gi.lightId].radiance * F.lightScale : 0;
     }
@@ -55,22 +55,65 @@ float3 ShadePixel(float3 o, float3 d, inout uint rng, inout Guides g, float3 ul,
     if (showDirect) {
         float3 L, Le;
         float dist, lpdf;
-        if (SampleLightU(h.P, ul, L, dist, Le, lpdf) && dot(L, h.Ng) > 0) {
+        uint li;
+        if (SampleLightU(h.P, ul, L, dist, Le, lpdf, li) && dot(L, h.Ng) > 0) {
             float NoL = dot(N, L);
-            if (NoL > 0 && !Occluded(OffsetRay(h.P, h.Ng), L, dist * 0.999)) {
+            float3 T = NoL > 0 ? LightVisibility(li, OffsetRay(h.P, h.Ng), L, dist) : 0;
+            if (any(T > 0)) {
                 float3 H = normalize(V + L);
                 float NoH = saturate(dot(N, H)), VoH = saturate(dot(V, H));
                 float D = D_GGX(NoH, a);
                 float3 Fr = SchlickF(F0, VoH);
                 float3 spec = D * G2_Smith(NoL, max(NoV, 1e-4), a) * Fr / (4.0 * max(NoV, 1e-4));
                 float pdfSpec = D * G1_Smith(max(NoV, 1e-4), a) / (4.0 * max(NoV, 1e-4));
-                c += (kd * (1.0 - Fr) / PI * NoL + spec * PowerHeuristic(lpdf, pdfSpec)) * Le / lpdf;
+                c += (kd * (1.0 - Fr) / PI * NoL + spec * PowerHeuristic(lpdf, pdfSpec)) * Le * T / lpdf;
             }
+        }
+    }
+
+    // HDRI direct light (diffuse only: its glossy part comes from the reflection ray, see below)
+    if (showDirect && EnvEnabled()) {
+        float elpdf;
+        float3 EL = EnvSample(ur, elpdf);
+        if (elpdf > 0 && dot(EL, h.Ng) > 0 && dot(N, EL) > 0) {
+            float3 T = ShadowTransmittance(OffsetRay(h.P, h.Ng), EL, 1e30);
+            c += kd * (1.0 - F0) / PI * dot(N, EL) * EnvMap(EL, 0) * T / elpdf;
         }
     }
 
     // Diffuse GI from the probes.
     if (showIndirect) c += kd * (1.0 - F0) * SampleIrradiance(h.P, N, V);
+
+    // Glass: the mirror reflection and a refracted ray through the object (smooth dielectric, a few interfaces).
+    if (s.trans > 0.5 && showIndirect) {
+        float Fr0 = FresnelDielectric(max(NoV, 1e-4), 1.0 / s.ior);
+        float3 Rd = reflect(-V, N);
+        Hit rh;
+        if (!TraceClosest(OffsetRay(h.P, h.Ng), Rd, 1e30, 0xFF, rh)) c += Fr0 * EnvironmentRough(Rd, s.rough);
+        else if (!IsRectLight(gInst[rh.inst])) c += Fr0 * ShadeSecondary(rh, -Rd, rng);
+        float3 thr = (1.0 - Fr0) * s.base;
+        float3 o3 = OffsetRay(h.P, -h.Ng);
+        float3 d3 = refract(-V, N, 1.0 / s.ior);
+        for (uint k = 0; k < 6 && dot(d3, d3) > 1e-6 && max(thr.x, max(thr.y, thr.z)) > 1e-3; ++k) {
+            Hit e;
+            if (!TraceClosest(o3, d3, 1e30, 0xFF, e)) { c += thr * EnvironmentRough(d3, 0.0); break; }
+            GpuInstance ei = gInst[e.inst];
+            if (IsRectLight(ei)) { if (e.front) c += thr * gLights[ei.lightId].radiance * F.lightScale; break; }
+            GpuMaterial em = gMats[ei.materialId];
+            if (em.transmission > 0.5) {
+                float eta = e.front ? 1.0 / em.ior : em.ior;
+                float3 t = refract(d3, e.N, eta);
+                if (dot(t, t) < 1e-6) { d3 = reflect(d3, e.N); o3 = OffsetRay(e.P, e.Ng); continue; }   // total internal reflection
+                thr *= 1.0 - FresnelDielectric(saturate(dot(-d3, e.N)), eta);
+                if (e.front) thr *= em.baseColor;
+                o3 = OffsetRay(e.P, -e.Ng);
+                d3 = normalize(t);
+                continue;
+            }
+            c += thr * ShadeSecondary(e, -d3, rng);
+            break;
+        }
+    }
 
     // Glossy reflections (VNDF sampling), each hit shaded with direct light + probe GI. Glossy surfaces take several
     // rays: a bright reflection of the light is hit in only some frames, so a single ray flickers.
@@ -88,12 +131,12 @@ float3 ShadePixel(float3 o, float3 d, inout uint rng, inout Guides g, float3 ul,
                 Hit r;
                 float3 o2 = OffsetRay(h.P, h.Ng);
                 if (!TraceClosest(o2, L, 1e30, 0xFF, r)) {
-                    if (showIndirect) c += w * Environment(L);
+                    if (showIndirect) c += w * EnvironmentRough(L, s.rough);
                 } else {
                     GpuInstance ri = gInst[r.inst];
-                    if (ri.lightId != NO_LIGHT) {
+                    if (IsRectLight(ri)) {
                         if (showDirect && r.front)
-                            c += w * gLights[ri.lightId].radiance * F.lightScale * PowerHeuristic(pdfSpec, LightPdf(ri.lightId, L, r.t));
+                            c += w * gLights[ri.lightId].radiance * F.lightScale * PowerHeuristic(pdfSpec, LightPdf(ri.lightId, o2, L, r.t));
                     } else if (showIndirect) {
                         c += w * ShadeSecondary(r, -L, rng);
                     }
@@ -149,7 +192,7 @@ void main(uint3 id : SV_DispatchThreadID) {
     }
 
     // Temporal accumulation with reprojection (Temporal.hlsli). The guides are the current frame's.
-    // Stable edges (flag): the pixel-centre surface validates the history, see PathTraceTemporal.hlsl.
+    // Stable edges (flag): the pixel-centre surface validates the history, see PathTrace.hlsl (main).
     if (F.flags & FRAME_FLAG_CENTRE_VALID) {
         float3 dirc = CurPixelDir(float2(id.xy));
         Hit hc;

@@ -196,6 +196,7 @@ std::vector<Asset> assetList() {
     for (size_t i = 0; i < presetNames().size(); ++i) a.push_back({1, (int)i, "M_" + toUtf8(presetNames()[i]), "Material", "Materials"});
     a.push_back({2, SCENE_CORNELL, "Cornell Box", "Scene", "Scenes"});
     a.push_back({2, SCENE_STUDIO, "Studio", "Scene", "Scenes"});
+    a.push_back({2, SCENE_LOOKDEV, "LookDev", "Scene", "Scenes"});
     return a;
 }
 
@@ -321,6 +322,7 @@ void App::atlTopBar(float x0, float y0, float width) {
                 ImGui::Separator();
                 if (ImGui::MenuItem("Cornell Box Scene", "F1", m_sceneId == SCENE_CORNELL)) m_pendingScene = SCENE_CORNELL;
                 if (ImGui::MenuItem("Studio Scene", "F2", m_sceneId == SCENE_STUDIO)) m_pendingScene = SCENE_STUDIO;
+                if (ImGui::MenuItem("LookDev Scene", "F3", m_sceneId == SCENE_LOOKDEV)) m_pendingScene = SCENE_LOOKDEV;
                 ImGui::Separator();
                 ImGui::BeginDisabled();
                 ImGui::MenuItem("Build for PC (DX12)");
@@ -406,8 +408,8 @@ void App::atlHierarchy(float x, float y, float w, float h) {
     float px = r.x + 10 * s, py = r.y + 44 * s, pw = r.w - 20 * s;
     Label(px, py, "SCENES");
     py += 21 * s;
-    const char* scenes[] = {"Cornell Box", "Studio"};
-    for (int i = 0; i < 2; ++i) {
+    const char* scenes[] = {"Cornell Box", "Studio", "LookDev"};
+    for (int i = 0; i < 3; ++i) {
         char id[16];
         snprintf(id, sizeof(id), "scene%d", i);
         if (Button(id, {px, py, pw, 26 * s}, scenes[i], i == 0 ? Icon::Cube : Icon::Sun, m_sceneId == i) && m_sceneId != i) m_pendingScene = i;
@@ -563,10 +565,10 @@ void App::atlViewport(float x, float y, float w, float h) {
     // tools (right to left): shading, view | stats, grid, frame | snapping, axes, scale, rotate, move
     float bx = hr.x + hr.w - 8 * s, by = hr.y + 6 * s;
     auto right = [&](float bw) { bx -= bw; float r0 = bx; bx -= 6 * s; return r0; };
-    static const char* modes[] = {"Lit", "Temporal", "Progressive", "GI"};
+    static const char* modes[] = {"Lit", "Progressive", "GI"};
     int mode = renderMode();
-    if (Combo("atlShading", {right(118 * s), by, 118 * s, 24 * s}, mode, modes, 4, Icon::Sun)) setRenderMode(mode);
-    Tip("Lit: real-time raster · Temporal: path tracing with stable history, denoised · Progressive: reference path tracing, no denoiser · GI: real-time probes (DDGI)");
+    if (Combo("atlShading", {right(118 * s), by, 118 * s, 24 * s}, mode, modes, 3, Icon::Sun)) setRenderMode(mode);
+    Tip("Lit: real-time raster · Progressive: path tracing, exact, denoiser optional · GI: real-time probes (DDGI)");
     if (Combo("atlView", {right(118 * s), by, 118 * s, 24 * s}, m_viewMode, views, 6, Icon::Camera)) setViewAxis(m_viewMode);
     bx -= 6 * s;
     if (Button("atlStats", {right(28 * s), by, 28 * s, 24 * s}, "", Icon::Monitor, m_showStats, true)) m_showStats = !m_showStats;
@@ -678,7 +680,7 @@ void App::atlViewport(float x, float y, float w, float h) {
     Text(fx + 13 * s, fr.y + 6 * s, m_magnet ? "Snapping" : "Free", P().muted, 9);
     std::string info = std::to_string(objs) + " objects  /  " + triText + " triangles";
     Text(fr.x + fr.w - 290 * s, fr.y + 6 * s, info, P().muted, 9);
-    static const char* modeNames[] = {"●  Real time", "●  Temporal PT", "●  Progressive PT", "●  GI probes"};
+    static const char* modeNames[] = {"●  Real time", "●  Progressive PT", "●  GI probes"};
     Text(fr.x + fr.w - 116 * s, fr.y + 6 * s, modeNames[renderMode()], m_rs.raster ? kGreen : P().accent, 9);
 }
 
@@ -1192,10 +1194,10 @@ void App::atlInspectorLighting(float x, float y, float w, float) {
 }
 
 // Options of the render engine in use. Each mode has its own: the viewport mode (raster) has none of the path
-// tracing ones, and the temporal, progressive and GI engines have theirs. Each option has an info icon.
+// tracing ones, and the progressive and GI engines have theirs. Each option has an info icon.
 void App::atlInspectorRender(float x, float y, float w, float) {
     bool ch = false, act = false;
-    static const char* names[] = {"Real time (raster)", "Temporal path tracing", "Progressive path tracing", "GI probes (DDGI)"};
+    static const char* names[] = {"Real time (raster)", "Progressive path tracing", "GI probes (DDGI)"};
     const int mode = renderMode();
     Text(x, y, names[mode], P().text, 14);
     y += 25 * s;
@@ -1236,35 +1238,77 @@ void App::atlInspectorRender(float x, float y, float w, float) {
         sliderF("##dedge", "Edge sensitivity", m_rs.denoiseEdgeLuma, 0.05f, 4, "%.2f", "Lower = the filter stops at light and shadow edges, so shadows stay sharp. Higher = smoother, softer shadows.");
         y += 8 * s;
     };
+    // HDRI: shared by every engine (each one uses it its own way, see the text under the options)
+    {
+        Label(x, y, "HDRI ENVIRONMENT · ALL ENGINES");
+        y += 24 * s;
+        std::vector<std::wstring> files = hdriFiles();
+        std::vector<std::string> names = {"None (gradient sky)", "Procedural sky"};
+        int cur = m_hdriPath.empty() ? 0 : (m_hdriPath == L"sky" ? 1 : -1);
+        for (size_t i = 0; i < files.size(); ++i) {
+            std::wstring f = files[i];
+            std::wstring n = f.substr(f.find_last_of(L"\\/") + 1);
+            names.push_back(toUtf8(n) + (f.find(L"01 - INBOX") != std::wstring::npos ? "  (inbox)" : ""));
+            if (_wcsicmp(f.c_str(), m_hdriPath.c_str()) == 0) cur = (int)i + 2;
+        }
+        if (cur < 0) {   // loaded from another folder (Load...)
+            std::wstring n = m_hdriPath.substr(m_hdriPath.find_last_of(L"\\/") + 1);
+            names.push_back(toUtf8(n));
+            files.push_back(m_hdriPath);
+            cur = (int)names.size() - 1;
+        }
+        std::vector<const char*> opts;
+        for (auto& n : names) opts.push_back(n.c_str());
+        int sel = cur;
+        const float bw = 64 * s;
+        if (Combo("##hdri", R{x, y, w - bw - 6 * s - 22 * s, 28 * s}, sel, opts.data(), (int)opts.size(), Icon::Sun) && sel != cur)
+            setHdri(sel == 0 ? std::wstring() : (sel == 1 ? std::wstring(L"sky") : files[sel - 2]));
+        if (Button("##hdriLoad", R{x + w - bw - 22 * s, y, bw, 28 * s}, "Load…", Icon::FolderOpen)) m_pendingAction = 3;
+        info("##hdri_i", x + w - 18 * s, y + 5 * s,
+             "Image that surrounds the scene: it lights it, shows in reflections and in the background.\n"
+             "Files: .hdr and .exr (half/float, uncompressed, RLE, ZIP or PIZ) are read as they are; jpg/png are\n"
+             "converted to linear but have no real dynamic range (no sun). Images wider than 4096 are reduced.\n"
+             "The list shows the .hdr/.exr of 01 - INBOX and the images of assets/hdri.");
+        y += 36 * s;
+        if (m_scene.env.hdri) {
+            const EnvImage& e = *m_scene.env.hdri;
+            char b[160];
+            snprintf(b, sizeof(b), "%u x %u%s", e.sourceWidth, e.sourceHeight, e.sourceWidth != e.width ? " (reduced to 4096)" : "");
+            Text(x, y, b, P().muted, 10);
+            y += 20 * s;
+            sliderF("##hdrInt", "HDRI intensity", m_scene.env.hdriIntensity, 0, 4, "%.2f", "Multiplies the light of the image (light, reflections and background).");
+            float deg = std::fmod(degrees(m_scene.env.hdriRotation) + 720.0f, 360.0f);
+            info("##hdrRot_i", x + w - 18 * s, y, "Turns the image around the vertical axis: moves the sun and the reflections.");
+            if (SliderRow("##hdrRot", "HDRI rotation", x, y, w, &deg, 0, 360, "%.0f deg", act)) {
+                m_scene.env.hdriRotation = radians(deg);
+                ch = true;
+            }
+            check("##hdrVis", "Visible to the camera", m_scene.env.visibleToCamera, "Off: the background shows the gradient sky, the image still lights the scene and shows in reflections.");
+        }
+        y += 8 * s;
+    }
     if (mode == 0) {
-        Text(x, y, "The rasterized viewport has no path tracing options.", P().muted, 11);
+        Label(x, y, "HDRI (APPROXIMATE)");
+        y += 24 * s;
+        check("##envsun", "Sun of the HDRI casts shadows", m_rs.rasterEnvSun, "The brightest spot of the image (the sun) becomes a directional light with the shadow map; the rest of the image lights the scene as a soft ambient (SH). Off: all the image is ambient, no shadows. Ignored when the scene has its own sun.");
+        Text(x, y, "Ambient from the HDRI, glossy reflections from its blurred mips.", P().muted, 11);
         y += 19 * s;
-        Text(x, y, "Its light: the sun and the area lights, its shadows: the shadow map.", P().muted, 11);
+        Text(x, y, "Emissive objects light as sphere lights (no shadow).", P().muted, 11);
         y += 25 * s;
     } else if (mode == 1) {
-        Label(x, y, "HISTORY");
+        Label(x, y, "SAMPLES");
         y += 24 * s;
-        sliderI("##tcap", "History length", m_rs.temporalCap, 16, 1024, "%.0f frames", "How many frames the image is averaged over. Longer = less noise and less flicker, slower to react to light changes.");
-        check("##fix", "Stable history: stable edges", m_rs.historyFixes, "Edges are validated on the pixel centre: no flicker on silhouettes.");
-        check("##rom", "Reset history when objects move", m_rs.resetOnMove, "When an object moves, its old light and shadows stay in the history. This clears them.");
-        sliderF("##rd", "Fade after a move", m_rs.resetDelay, 0.2f, 2.0f, "%.1f s", "How long the old history fades out after a move. 0.2 s = fast, noisier; 2 s = smooth, slower.");
+        sliderI("##msp", "Max samples", m_rs.maxSamples, 16, 16384, "%.0f", "Samples per pixel of the progressive image before it stops. More = cleaner, slower.");
         y += 8 * s;
         denoiser();
         Label(x, y, "LIGHT");
         y += 24 * s;
         sliderI("##bnc", "Bounces", m_rs.maxBounces, 1, 16, "%.0f", "Light bounces per path. More = more indirect light, slower.");
         sliderF("##fl", "Firefly clamp", m_rs.fireflyClamp, 1, 200, "%.0f", "Caps very bright single samples to prevent sparkles.");
-    } else if (mode == 2) {
-        Label(x, y, "SAMPLES");
-        y += 24 * s;
-        sliderI("##msp", "Max samples", m_rs.maxSamples, 16, 16384, "%.0f", "Samples per pixel of the progressive image before it stops. More = cleaner, slower.");
-        y += 8 * s;
-        Label(x, y, "LIGHT");
-        y += 24 * s;
-        sliderI("##bnc", "Bounces", m_rs.maxBounces, 1, 16, "%.0f", "Light bounces per path. More = more indirect light, slower.");
-        sliderF("##fl", "Firefly clamp", m_rs.fireflyClamp, 1, 200, "%.0f", "Caps very bright single samples to prevent sparkles.");
-        Text(x, y, "No denoiser: the image converges to the clean result.", P().muted, 11);
-        y += 25 * s;
+        sliderF("##fg", "Filter glossy (caustics)", m_rs.filterGlossy, 0, 1, "%.2f", "After a rough bounce, mirrors and glass are seen at least this rough. 0 = exact, with the caustics of the chrome and glass balls (sparkles until the image converges). 0.3 to 0.5 = smooth and fast, the caustics are spread (approximate).");
+        sliderF("##ic", "Indirect clamp", m_rs.indirectClamp, 0, 20, m_rs.indirectClamp > 0 ? "%.1f" : "off", "Caps each light contribution after a rough bounce or through subsurface scattering. Removes the sparkles of rare bright paths; lower = cleaner but the indirect light gets a little darker. 0 = off (exact).");
+        Text(x, y, "HDRI and emissive objects are sampled as lights (MIS).", P().muted, 11);
+        y += 22 * s;
     } else {
         Label(x, y, "PROBES");
         y += 24 * s;
@@ -1292,7 +1336,7 @@ void App::atlInspectorRender(float x, float y, float w, float) {
 void App::atlInspectorWorld(float x, float y, float w, float) {
     Text(x, y, m_scene.name.empty() ? "Scene" : m_scene.name, P().text, 15);
     y += 25 * s;
-    Text(x, y, m_sceneId == SCENE_CORNELL ? "Test scene · Cornell Box" : "Test scene · Studio", P().muted, 11);
+    Text(x, y, m_sceneId == SCENE_CORNELL ? "Test scene · Cornell Box" : (m_sceneId == SCENE_LOOKDEV ? "Test scene · LookDev" : "Test scene · Studio"), P().muted, 11);
     y += 41 * s;
     Label(x, y, "SCENE PROPERTIES");
     y += 24 * s;
@@ -1306,9 +1350,9 @@ void App::atlInspectorWorld(float x, float y, float w, float) {
     y += 35 * s;
     Text(x, y, "Rendering", P().muted, 11);
     y += 19 * s;
-    static const char* modes[] = {"Real time", "Temporal", "Progressive (no denoiser)", "GI probes (DDGI)"};
+    static const char* modes[] = {"Real time", "Progressive", "GI probes (DDGI)"};
     int mode = renderMode();
-    if (Combo("worldRender", {x, y, w, 27 * s}, mode, modes, 4, Icon::Sun)) setRenderMode(mode);
+    if (Combo("worldRender", {x, y, w, 27 * s}, mode, modes, 3, Icon::Sun)) setRenderMode(mode);
     y += 43 * s;
     Label(x, y, "SCENE SUMMARY");
     y += 25 * s;

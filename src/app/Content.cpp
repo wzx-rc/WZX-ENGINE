@@ -368,6 +368,80 @@ void buildStudioScene(Scene& s) {
     c.sensorScale = s.unitsPerMeter;
 }
 
+
+// Look development: a neutral floor and five spheres with reference materials, lit by the HDRI (set by the app).
+void buildLookDevScene(Scene& s) {
+    s = Scene();
+    s.name = "LookDev";
+    s.unitsPerMeter = 100.0f;
+    s.gridScale = 1.0f;
+    s.env.top = float3(0.030f, 0.032f, 0.038f);
+    s.env.horizon = float3(0.055f, 0.057f, 0.062f);
+    s.env.bottom = float3(0.02f, 0.02f, 0.022f);
+    s.env.intensity = 1.0f;
+    s.env.ambient = float3(0.0f);
+
+    {
+        Material g;
+        g.name = "LookDev Floor";
+        g.baseColor = float3(0.18f, 0.18f, 0.18f);   // 18% grey
+        applyPreset(g, PRESET_MATTE, 1.0f);
+        g.roughness = 0.75f;
+        Object o;
+        o.name = "Floor";
+        o.part = "GROUND";
+        o.mesh = s.addMesh("ground", makePlane(400.0f));
+        o.material = s.addMaterial(g);
+        o.selectable = false;
+        s.addObject(o);
+    }
+    auto sphere = [&](const char* name, float x, float3 color, int preset) -> Material& {
+        int idx = addPart(s, "SPHERE", 1, preset, float3(x, 3.0f, 0.0f), 0.0f);
+        Object& o = s.objects[idx];
+        o.name = name;
+        Material& m = s.materials[o.material];
+        m.name = name;
+        m.baseColor = color;
+        m.colorId = -1;
+        applyPreset(m, preset, 1.0f);
+        return m;
+    };
+    {
+        Material& m = sphere("Clay Ball Grey", -16.0f, float3(0.30f, 0.30f, 0.30f), PRESET_MATTE);
+        m.roughness = 0.9f;
+        m.specular = 0.3f;
+    }
+    {
+        Material& m = sphere("Chrome Ball", -8.0f, float3(0.96f, 0.96f, 0.97f), PRESET_CHROME);
+        m.roughness = 0.02f;   // mirror
+    }
+    {
+        Material& m = sphere("Glass Ball", 0.0f, float3(0.98f, 0.99f, 0.99f), PRESET_TRANSPARENT);
+        m.roughness = 0.0f;
+        m.ior = 1.5f;
+    }
+    {
+        Material& m = sphere("Emissive Ball", 8.0f, float3(1.0f, 0.78f, 0.48f), PRESET_EMISSIVE);
+        m.emissionStrength = 8.0f;   // a real light: it lights the floor and its neighbours
+    }
+    {
+        Material& m = sphere("Candle Wax Ball (SSS)", 16.0f, float3(0.93f, 0.80f, 0.56f), PRESET_WAX);
+        m.subsurface = 1.0f;
+        m.sssRadius = float3(2.0f, 1.0f, 0.45f);   // deep, warm translucency of candle wax
+        m.roughness = 0.4f;
+    }
+
+    Camera& c = s.camera;
+    c.target = {0.0f, 3.5f, 0.0f};
+    c.yaw = radians(0.0f);
+    c.pitch = radians(10.0f);
+    c.distance = 58.0f;
+    c.fovY = radians(32.0f);
+    c.dof = false;
+    c.focusDistance = 58.0f;
+    c.sensorScale = s.unitsPerMeter;
+}
+
 std::vector<ViewPreset> defaultViews(const Scene& s, bool cornell) {
     std::vector<ViewPreset> v;
     Camera base = s.camera;
@@ -380,6 +454,14 @@ std::vector<ViewPreset> defaultViews(const Scene& s, bool cornell) {
         v.push_back({L"High Angle", c});
         c = base; c.target = {-4, 4, 16}; c.yaw = radians(-20); c.pitch = radians(12); c.distance = 26; c.fStop = 2.8f; c.focusDistance = 26;
         v.push_back({L"Floor (DOF)", c});
+    } else if (s.name == "LookDev") {
+        Camera c = base;
+        c.target = {4, 3.2f, 0}; c.distance = 30; c.pitch = radians(6); c.focusDistance = 30;
+        v.push_back({L"Glass & Emissive", c});
+        c = base; c.target = {-12, 3.2f, 0}; c.distance = 26; c.pitch = radians(8); c.yaw = radians(-15); c.focusDistance = 26;
+        v.push_back({L"Clay & Chrome", c});
+        c = base; c.pitch = radians(35); c.distance = 64; c.focusDistance = 64;
+        v.push_back({L"High Angle", c});
     } else {
         Camera c = base;
         c.yaw = radians(90); c.pitch = radians(8); c.distance = 26; c.focusDistance = 26;
