@@ -25,6 +25,8 @@ struct RenderSettings {
     float exposure = 1.0f;
     bool denoise = true;
     float denoiseStrength = 1.0f;
+    int denoisePasses = 3;          // a-trous passes (steps 1, 2, 4, ...): more = smoother, blurrier
+    float denoiseEdgeLuma = 0.5f;   // luminance edge sensitivity: lower = the filter stops at shadow edges
     bool bevel = true;
     float bevelScale = 1.0f;
     int bevelSamples = 4;

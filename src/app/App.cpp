@@ -198,7 +198,7 @@ void App::setRenderMode(int mode) {
     m_rs.temporal = mode == 1 || mode == 2;
     m_rs.historyFixes = mode != 2;
     m_rs.ddgi = mode == 4;
-    m_rs.denoise = mode != 3;   // the progressive reference is the clean image: no denoiser
+    m_rs.denoise = mode != 3 && mode != 4;   // progressive: clean reference; GI: off by default (it blurs shadows)
     m_quality = mode == 3 ? 1 : 0;
     applyQuality();
     markDirty();

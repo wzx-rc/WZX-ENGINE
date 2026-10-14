@@ -30,7 +30,7 @@ void main(uint3 id : SV_DispatchThreadID) {
     float objId = gTex[SLOT_ALBEDO][p].w;
 
     const float kernel[3] = {3.0 / 8.0, 1.0 / 4.0, 1.0 / 16.0};
-    float sigmaL = F.denoiseStrength * 4.0 / sqrt(spp);
+    float sigmaL = F.denoiseStrength * F.denoiseEdgeLuma / sqrt(spp);
     float step = (float)P.stepSize;
 
     float3 sum = 0;

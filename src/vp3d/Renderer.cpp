@@ -1013,6 +1013,7 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
     fc.sssScale = rs.sssScale;
     fc.gridScale = scene.gridScale;
     fc.denoiseStrength = rs.denoiseStrength;
+    fc.denoiseEdgeLuma = rs.denoiseEdgeLuma;
     fc.lightScale = rs.lightScale;
     fc.vignette = rs.vignette;
     fc.bevelSamples = (float)std::max(1, rs.bevelSamples);
@@ -1083,13 +1084,13 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
         traced = true;
     }
 
-    // Edge-aware a-trous denoiser (5 iterations), only when new samples arrived.
+    // Edge-aware a-trous denoiser (rs.denoisePasses passes), only when new samples arrived.
     uint32_t& denoisedSlot = m_denoisedSlot;
     if (rs.denoise) {
         if (traced || denoisedSlot == 0xFFFFFFFF) {
             m_cmd->SetPipelineState(m_psoDenoise.Get());
             uint32_t src = TEX_ACCUM, dst = TEX_DENOISE_A;
-            for (uint32_t pass = 0; pass < 5; ++pass) {
+            for (uint32_t pass = 0; pass < (uint32_t)std::max(1, rs.denoisePasses); ++pass) {
                 uint32_t c[4] = {src, dst, 1u << pass, pass == 0 ? 1u : 0u};
                 m_cmd->SetComputeRoot32BitConstants(1, 4, c, 0);
                 m_cmd->Dispatch(gx, gy, 1);

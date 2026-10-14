@@ -1192,7 +1192,7 @@ void App::atlInspectorLighting(float x, float y, float w, float) {
 }
 
 // Options of the render engine in use. Each mode has its own: the viewport mode (raster) has none of the path
-// tracing ones, and the temporal, progressive and GI engines have theirs.
+// tracing ones, and the temporal, progressive and GI engines have theirs. Each option has an info icon.
 void App::atlInspectorRender(float x, float y, float w, float) {
     bool ch = false, act = false;
     static const char* names[] = {"Real time (raster)", "Interactive path tracing", "Temporal path tracing", "Progressive path tracing", "GI probes (DDGI)"};
@@ -1201,19 +1201,40 @@ void App::atlInspectorRender(float x, float y, float w, float) {
     y += 25 * s;
     Text(x, y, "Options of this engine only", P().muted, 11);
     y += 35 * s;
-    auto check = [&](const char* id, const char* label, bool& v) {
+    // info icon: a small "i" at (ix, iy); the explanation shows on hover
+    auto info = [&](const char* id, float ix, float iy, const char* text) {
+        ImGui::SetCursorScreenPos(ImVec2(ix, iy));
+        ImGui::InvisibleButton(id, ImVec2(14 * s, 14 * s));
+        const bool hov = ImGui::IsItemHovered();
+        dl->AddCircle(ImVec2(ix + 7 * s, iy + 7 * s), 6 * s, hov ? P().accent : P().muted, 0, 1.2f);
+        Text(ix + 5 * s, iy + 1 * s, "i", hov ? P().accent : P().muted, 9);
+        if (hov) ImGui::SetTooltip("%s", text);
+    };
+    auto check = [&](const char* id, const char* label, bool& v, const char* help) {
         ImGui::SetCursorScreenPos(ImVec2(x, y));
         bool b = v;
         if (ImGui::Checkbox(id, &b)) { v = b; ch = true; }
         Text(x + 26 * s, y + 3 * s, label, P().text, 11);
+        info((std::string(id) + "_i").c_str(), x + w - 16 * s, y + 4 * s, help);
         y += 26 * s;
     };
-    auto sliderF = [&](const char* id, const char* label, float& v, float lo, float hi, const char* fmt) {
+    auto sliderF = [&](const char* id, const char* label, float& v, float lo, float hi, const char* fmt, const char* help) {
+        info((std::string(id) + "_i").c_str(), x + w - 16 * s, y + 1 * s, help);
         ch |= SliderRow(id, label, x, y, w, &v, lo, hi, fmt, act);
     };
-    auto sliderI = [&](const char* id, const char* label, int& v, float lo, float hi, const char* fmt) {
+    auto sliderI = [&](const char* id, const char* label, int& v, float lo, float hi, const char* fmt, const char* help) {
+        info((std::string(id) + "_i").c_str(), x + w - 16 * s, y + 1 * s, help);
         float f = (float)v;
         if (SliderRow(id, label, x, y, w, &f, lo, hi, fmt, act)) { v = (int)std::round(f); ch = true; }
+    };
+    auto denoiser = [&]() {
+        Label(x, y, "DENOISER");
+        y += 24 * s;
+        check("##dn", "Denoiser", m_rs.denoise, "Smooths the noise with an edge-aware filter. Off keeps the image as rendered.");
+        sliderF("##dns", "Strength", m_rs.denoiseStrength, 0, 2, "%.2f", "Overall strength of the denoiser. 0 does nothing; above 1 starts to blur fine detail.");
+        sliderI("##dpass", "Passes", m_rs.denoisePasses, 1, 5, "%.0f", "Number of filter passes (steps 1, 2, 4, ...). More = smoother but blurrier, and more GPU time.");
+        sliderF("##dedge", "Edge sensitivity", m_rs.denoiseEdgeLuma, 0.05f, 4, "%.2f", "Lower = the filter stops at light and shadow edges, so shadows stay sharp. Higher = smoother, softer shadows.");
+        y += 8 * s;
     };
     if (mode == 0) {
         Text(x, y, "The rasterized viewport has no path tracing options.", P().muted, 11);
@@ -1223,59 +1244,52 @@ void App::atlInspectorRender(float x, float y, float w, float) {
     } else if (mode == 1 || mode == 2) {
         Label(x, y, "HISTORY");
         y += 24 * s;
-        sliderI("##tcap", "History length", m_rs.temporalCap, 16, 1024, "%.0f frames");
+        sliderI("##tcap", "History length", m_rs.temporalCap, 16, 1024, "%.0f frames", "How many frames the image is averaged over. Longer = less noise and less flicker, slower to react to light changes.");
         if (mode == 1) {
-            check("##fix", "Stable history: stable edges", m_rs.historyFixes);
-            check("##rom", "Reset history when objects move", m_rs.resetOnMove);
-            sliderF("##rd", "Fade after a move", m_rs.resetDelay, 0.2f, 2.0f, "%.1f s");
-        }
-        else {
+            check("##fix", "Stable history: stable edges", m_rs.historyFixes, "Edges are validated on the pixel centre: no flicker on silhouettes.");
+            check("##rom", "Reset history when objects move", m_rs.resetOnMove, "When an object moves, its old light and shadows stay in the history. This clears them.");
+            sliderF("##rd", "Fade after a move", m_rs.resetDelay, 0.2f, 2.0f, "%.1f s", "How long the old history fades out after a move. 0.2 s = fast, noisier; 2 s = smooth, slower.");
+        } else {
             Text(x, y, "Previous behaviour, for comparison: no reset on moves", P().muted, 11);
             y += 19 * s;
         }
         y += 8 * s;
-        Label(x, y, "DENOISER");
-        y += 24 * s;
-        check("##dn", "Denoiser", m_rs.denoise);
-        sliderF("##dns", "Strength", m_rs.denoiseStrength, 0, 4, "%.2f");
-        y += 8 * s;
+        denoiser();
         Label(x, y, "LIGHT");
         y += 24 * s;
-        sliderI("##bnc", "Bounces", m_rs.maxBounces, 1, 16, "%.0f");
-        sliderF("##fl", "Firefly clamp", m_rs.fireflyClamp, 1, 200, "%.0f");
+        sliderI("##bnc", "Bounces", m_rs.maxBounces, 1, 16, "%.0f", "Light bounces per path. More = more indirect light, slower.");
+        sliderF("##fl", "Firefly clamp", m_rs.fireflyClamp, 1, 200, "%.0f", "Caps very bright single samples to prevent sparkles.");
     } else if (mode == 3) {
         Label(x, y, "SAMPLES");
         y += 24 * s;
-        sliderI("##msp", "Max samples", m_rs.maxSamples, 16, 16384, "%.0f");
+        sliderI("##msp", "Max samples", m_rs.maxSamples, 16, 16384, "%.0f", "Samples per pixel of the progressive image before it stops. More = cleaner, slower.");
         y += 8 * s;
         Label(x, y, "LIGHT");
         y += 24 * s;
-        sliderI("##bnc", "Bounces", m_rs.maxBounces, 1, 16, "%.0f");
-        sliderF("##fl", "Firefly clamp", m_rs.fireflyClamp, 1, 200, "%.0f");
+        sliderI("##bnc", "Bounces", m_rs.maxBounces, 1, 16, "%.0f", "Light bounces per path. More = more indirect light, slower.");
+        sliderF("##fl", "Firefly clamp", m_rs.fireflyClamp, 1, 200, "%.0f", "Caps very bright single samples to prevent sparkles.");
         Text(x, y, "No denoiser: the image converges to the clean result.", P().muted, 11);
         y += 25 * s;
     } else {
         Label(x, y, "PROBES");
         y += 24 * s;
-        sliderI("##pb", "Probe budget", m_rs.ddgiProbeBudget, 256, 8192, "%.0f");
-        sliderF("##hy", "Hysteresis", m_rs.ddgiHysteresis, 0.80f, 0.999f, "%.3f");
+        sliderI("##pb", "Probe budget", m_rs.ddgiProbeBudget, 256, 8192, "%.0f", "Number of irradiance probes over the scene. More = finer indirect light, more GPU cost.");
+        sliderF("##hy", "Hysteresis", m_rs.ddgiHysteresis, 0.80f, 0.999f, "%.3f", "How much each probe keeps its previous value per frame. Higher = steadier, slower to react.");
         ImGui::SetCursorScreenPos(ImVec2(x, y));
         static const char* views[] = {"Full", "Indirect only", "Direct only"};
         int view = m_rs.ddgiView;
-        if (Combo("##gview", R{x, y, w, 28 * s}, view, views, 3, Icon::Sun)) { m_rs.ddgiView = view; ch = true; }
+        if (Combo("##gview", R{x, y, w - 22 * s, 28 * s}, view, views, 3, Icon::Sun)) { m_rs.ddgiView = view; ch = true; }
+        info("##gview_i", x + w - 16 * s, y + 6 * s, "Full image, only the indirect light, or only the direct light (debug).");
         y += 36 * s;
-        check("##sp", "Show probes", m_rs.ddgiShowProbes);
-        check("##rom", "Reset history when objects move", m_rs.resetOnMove);
-        sliderF("##rd", "Fade after a move", m_rs.resetDelay, 0.2f, 2.0f, "%.1f s");
-
+        check("##sp", "Show probes", m_rs.ddgiShowProbes, "Draws the probes as small spheres to check their placement.");
+        check("##rom", "Reset history when objects move", m_rs.resetOnMove, "When an object moves, its old light stays in the history. This clears it.");
+        sliderF("##rd", "Fade after a move", m_rs.resetDelay, 0.2f, 2.0f, "%.1f s", "How long the old history fades out after a move.");
         y += 8 * s;
         Label(x, y, "HISTORY");
         y += 24 * s;
-        sliderI("##tcap", "History length", m_rs.temporalCap, 16, 1024, "%.0f frames");
+        sliderI("##tcap", "History length", m_rs.temporalCap, 16, 1024, "%.0f frames", "How many frames the image is averaged over. Longer = steadier.");
         y += 8 * s;
-        Label(x, y, "DENOISER");
-        y += 24 * s;
-        check("##dn", "Denoiser", m_rs.denoise);
+        denoiser();
     }
     if (ch) markDirty();
 }

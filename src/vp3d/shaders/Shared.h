@@ -91,6 +91,7 @@ struct FrameConstants {
     float3 prevCamUp;    uint historyValid;     // 1 = history textures hold the previous frame
     float3 prevCamFwd;   float historyCap;      // history length in frames (exponential average window)
     uint pad3; uint pad4; uint pad5; uint pad6;
+    float denoiseEdgeLuma; float pad7; float pad8; float pad9;   // edge sensitivity of the denoiser (lower = keeps shadows)
 };
 
 // DDGI probe volume (real-time GI test). Atlases: irradiance 8x8 octahedral texels per probe, distance
