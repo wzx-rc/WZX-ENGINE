@@ -13,7 +13,7 @@ float3 ShadeSecondary(Hit h, float3 V, inout uint rng) {
     Surf s = MakeSurf(gMats[gi.materialId], h);
     float3 a = DiffuseAlbedo(s);
     float3 c = h.front ? s.emission : 0;
-    c += a / PI * DirectIrradiance(h.P, h.N, h.Ng, rng);
+    c += a / PI * (DirectIrradiance(h.P, h.N, h.Ng, rng) + EnvDirectIrradiance(h.P, h.N, h.Ng, rng));
     c += a * SampleIrradiance(h.P, h.N, V);
     return c;
 }
@@ -68,6 +68,16 @@ float3 ShadePixel(float3 o, float3 d, inout uint rng, inout Guides g, float3 ul,
                 float pdfSpec = D * G1_Smith(max(NoV, 1e-4), a) / (4.0 * max(NoV, 1e-4));
                 c += (kd * (1.0 - Fr) / PI * NoL + spec * PowerHeuristic(lpdf, pdfSpec)) * Le * T / lpdf;
             }
+        }
+    }
+
+    // HDRI direct light (diffuse only: its glossy part comes from the reflection ray, see below)
+    if (showDirect && EnvEnabled()) {
+        float elpdf;
+        float3 EL = EnvSample(ur, elpdf);
+        if (elpdf > 0 && dot(EL, h.Ng) > 0 && dot(N, EL) > 0) {
+            float3 T = ShadowTransmittance(OffsetRay(h.P, h.Ng), EL, 1e30);
+            c += kd * (1.0 - F0) / PI * dot(N, EL) * EnvMap(EL, 0) * T / elpdf;
         }
     }
 
