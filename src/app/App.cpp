@@ -418,7 +418,8 @@ void App::frame() {
     if (!m_opt.shotPath.empty() && ((int)m_renderer.sampleCount() >= m_opt.shotSpp || !m_viewportRendered) && ++m_frameCounter > 6) {
         std::vector<uint8_t> img;
         uint32_t w, h;
-        if (m_renderer.readBackBuffer(img, w, h)) savePng(m_opt.shotPath, img, w, h);
+        bool ok = m_opt.shotViewport ? m_renderer.readViewport(img, w, h) : m_renderer.readBackBuffer(img, w, h);
+        if (ok) savePng(m_opt.shotPath, img, w, h);
         m_running = false;
     }
     m_renderer.present(true);
@@ -804,6 +805,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         else if (a == L"--open") opt.openPath = next();
         else if (a.size() > 5 && a.find(L".json") != std::wstring::npos) opt.openPath = a;
         else if (a == L"--shot") opt.shotPath = next();
+        else if (a == L"--shot-viewport") { opt.shotPath = next(); opt.shotViewport = true; }
         else if (a == L"--spp") opt.shotSpp = _wtoi(next().c_str());
         else if (a == L"--view") opt.view = _wtoi(next().c_str());
         else if (a == L"--select") opt.select = _wtoi(next().c_str());

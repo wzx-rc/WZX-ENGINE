@@ -58,6 +58,7 @@ struct LogLine {
 struct Options {
     int scene = SCENE_CORNELL;
     std::wstring shotPath;      // auto screenshot then exit
+    bool shotViewport = false;  // the auto screenshot is the 3D viewport only (--shot-viewport)
     int shotSpp = 256;
     int view = -1;
     int select = -1;
