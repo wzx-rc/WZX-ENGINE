@@ -46,6 +46,7 @@ public:
     bool rtsCameraOn() const { return m_rtsCam; }   // the viewport must not orbit the camera meanwhile
     // The village (RTS houses): the editor's village mode, and the "village" section of the scene file
     bool placementMode() const { return m_placeMode; }
+    bool playing() const { return m_playing; }
     void addHoverOutline(std::vector<int>& objects) const;   // the house under the cursor is outlined (its halo)
     void togglePlacement();                  // village mode of the editor (not during Play)
     void resetVillage();                     // a new scene: no houses

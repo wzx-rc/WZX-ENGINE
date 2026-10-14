@@ -98,7 +98,7 @@ void App::viewportInput(bool hovered) {
     m_lastY = my;
     bool inView = hovered;
     bool alt = io.KeyAlt, shift = io.KeyShift;
-    const bool placing = m_game && m_game->placementMode();   // the left button places houses: no selection, no gizmo
+    const bool placing = m_game && (m_game->placementMode() || m_game->playing());   // the left button places houses or plays: no selection, no gizmo, no marquee
 
     if (inView && io.MouseWheel != 0) {
         cam.distance *= std::pow(0.88f, io.MouseWheel * m_camSpeed);
