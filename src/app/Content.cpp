@@ -356,21 +356,11 @@ void buildStudioScene(Scene& s) {
         s.addObject(o);
     }
 
-    // Key: a directional sun (sharp shadows, as in a sunny day); rim and top fill are soft area lights (hidden from camera).
+    // Key: a directional sun (sharp shadows, as in a sunny day); the top fill is a soft area light (hidden from camera).
     s.sun.enabled = true;
     s.sun.direction = normalize(float3(-28.0f, 34.0f, 30.0f));   // towards the sun
     s.sun.color = float3(1.0f, 0.95f, 0.88f);
     s.sun.intensity = 4.0f;
-    AreaLight rim;
-    rim.name = "Rim Light";
-    rim.position = {26, 22, -30};
-    rim.target = {0, 3, 0};
-    rim.width = 18;
-    rim.height = 12;
-    rim.color = float3(0.75f, 0.85f, 1.0f);
-    rim.intensity = 18.0f;
-    rim.visibleToCamera = false;
-    s.lights.push_back(rim);
     AreaLight top;
     top.name = "Top Fill";
     top.position = {4, 45, 4};
