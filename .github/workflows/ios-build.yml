@@ -28,18 +28,19 @@ jobs:
         run: |
           cmake -S player -B build/ios -G Xcode \
             -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 \
+            -DCMAKE_XCODE_GENERATE_SCHEME=ON -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED=NO \
             -DMOLTENVK_LIBRARY="$MOLTENVK_LIBRARY"
 
+      # xcodebuild -target (no scheme needed); signing is disabled, Sideloadly signs on the PC.
       - name: Build unsigned .app
         run: |
-          xcodebuild -project build/ios/WZXPlayer.xcodeproj -scheme WZXPlayer -configuration Release \
-            -sdk iphoneos -destination 'generic/platform=iOS' \
-            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
-            -derivedDataPath build/dd build
+          cmake --build build/ios --config Release --target WZXPlayer -- \
+            -sdk iphoneos CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=""
 
       - name: Package .ipa
         run: |
-          APP=$(find build/dd/Build/Products/Release-iphoneos -maxdepth 1 -name "*.app" | head -1)
+          APP=$(find build/ios -path "*Release-iphoneos/WZXPlayer.app" -maxdepth 3 -type d | head -1)
+          test -n "$APP" || { echo "No .app built"; find build/ios -name "*.app"; exit 1; }
           mkdir -p build/Payload
           cp -R "$APP" build/Payload/
           (cd build && zip -qr WZXPlayer-unsigned.ipa Payload)
