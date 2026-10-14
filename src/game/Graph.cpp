@@ -5,6 +5,7 @@
 #include <functional>
 #include <set>
 #include <fstream>
+#include "vp3d/FilePath.h"
 #include <sstream>
 
 namespace game {
@@ -307,14 +308,14 @@ bool Graph::fromJson(const std::string& text, std::string* err) {
 }
 
 bool Graph::save(const std::wstring& path) const {
-    std::ofstream f(path, std::ios::binary);
+    std::ofstream f(vp3d::nativePath(path), std::ios::binary);
     if (!f) return false;
     f << toJson();
     return (bool)f;
 }
 
 bool Graph::load(const std::wstring& path, std::string* err) {
-    std::ifstream f(path, std::ios::binary);
+    std::ifstream f(vp3d::nativePath(path), std::ios::binary);
     if (!f) { if (err) *err = "fichier introuvable"; return false; }
     std::stringstream ss;
     ss << f.rdbuf();
