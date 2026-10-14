@@ -1,8 +1,11 @@
 #include "ambre_fx.h"
+#include "atelier_style.h"
 #include <algorithm>
 #include <cmath>
 
 namespace atelier::fx {
+
+bool Coral() { return Style().skin == 2; }
 
 const ImVec2 kGlowOffsets[8] = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}, {0.7f, 0.7f}, {-0.7f, 0.7f}, {0.7f, -0.7f}, {-0.7f, -0.7f}};
 
@@ -62,6 +65,31 @@ void TopEdge(ImDrawList* dl, ImVec2 a, ImVec2 b, float s, ImU32 color, float alp
 }
 
 ImU32 Button(ImDrawList* dl, ImVec2 a, ImVec2 b, Face face, float s, float rounding) {
+    if (Coral()) {   // button-secondary / button-build / icon-button-move.svg: 7 px radius, no glow, no light edge
+        const float r = 7 * s;
+        switch (face) {
+        case Face::Active:
+            dl->AddRectFilled(a, b, coral::selection, 6 * s);
+            dl->AddRect(a, b, coral::selectionBorder, 6 * s);
+            return coral::accent;
+        case Face::Primary:
+            Gradient(dl, a, b, coral::primaryTop, coral::primaryBottom, r);
+            dl->AddRect(a, b, coral::primaryBorder, r);
+            return coral::primaryText;
+        case Face::Hover:
+            Gradient(dl, a, b, coral::hoverTop, coral::hoverBottom, r);
+            dl->AddRect(a, b, coral::borderStrong, r);
+            return coral::text;
+        case Face::Disabled:
+            dl->AddRectFilled(a, b, Alpha(coral::buttonBottom, 0.6f), r);
+            dl->AddRect(a, b, coral::border, r);
+            return coral::dim;
+        default:
+            Gradient(dl, a, b, coral::buttonTop, coral::buttonBottom, r);
+            dl->AddRect(a, b, coral::border, r);
+            return coral::text;
+        }
+    }
     const float r = rounding * s;
     switch (face) {
     case Face::Active:
@@ -97,6 +125,11 @@ ImU32 Button(ImDrawList* dl, ImVec2 a, ImVec2 b, Face face, float s, float round
 }
 
 void Panel(ImDrawList* dl, ImVec2 a, ImVec2 b, float s, float headerH, float rounding) {
+    if (Coral()) {   // matte card, 8 px radius, no border; the title zone ends with a thin separator
+        dl->AddRectFilled(a, b, coral::panel, 8 * s);
+        if (headerH > 0) dl->AddLine(ImVec2(a.x, a.y + headerH), ImVec2(b.x, a.y + headerH), coral::border);
+        return;
+    }
     const float r = rounding * s;
     Gradient(dl, a, b, col::surfaceTop, col::surfaceBottom, r);
     if (headerH > 0) {
@@ -109,12 +142,22 @@ void Panel(ImDrawList* dl, ImVec2 a, ImVec2 b, float s, float headerH, float rou
 }
 
 void SelectedRow(ImDrawList* dl, ImVec2 a, ImVec2 b, float s) {
+    if (Coral()) {   // hierarchy-selected.svg
+        dl->AddRectFilled(a, b, coral::selection, 5 * s);
+        dl->AddRect(a, b, coral::selectionBorder, 5 * s);
+        return;
+    }
     GradientH(dl, a, b, col::selectedLeft, col::selectedRight, 0);
     dl->AddRectFilled(a, ImVec2(a.x + 2 * s, b.y), col::accent);
 }
 
 void TabLine(ImDrawList* dl, ImVec2 a, ImVec2 b, bool active, bool hovered, float s) {
     ImVec2 la(a.x, b.y - 2 * s), lb(b.x, b.y);
+    if (Coral()) {   // coral underline, no glow
+        if (active) dl->AddRectFilled(la, lb, coral::accent, 1 * s);
+        else if (hovered) dl->AddRectFilled(ImVec2(a.x, b.y - 1 * s), lb, coral::borderStrong);
+        return;
+    }
     if (active) {
         Glow(dl, la, lb, col::accent, 1 * s, 3 * s, 0.11f);
         dl->AddRectFilled(la, lb, col::accent);
@@ -124,18 +167,28 @@ void TabLine(ImDrawList* dl, ImVec2 a, ImVec2 b, bool active, bool hovered, floa
 }
 
 void SelectedFrame(ImDrawList* dl, ImVec2 a, ImVec2 b, float s, float rounding) {
+    if (Coral()) { dl->AddRect(a, b, coral::accent, 6 * s, 0, 1.2f * s); return; }
     Glow(dl, a, b, col::accent, rounding * s, 5 * s, 0.16f);
     dl->AddRect(a, b, col::accent, rounding * s, 0, 1.5f * s);
 }
 
 void Field(ImDrawList* dl, ImVec2 a, ImVec2 b, float s, bool focus, float rounding) {
+    if (Coral()) {
+        dl->AddRectFilled(a, b, coral::input, 5 * s);
+        dl->AddRect(a, b, focus ? coral::selectionBorder : coral::border, 5 * s);
+        return;
+    }
     dl->AddRectFilled(a, b, col::input, rounding * s);
     dl->AddRect(a, b, focus ? col::accent : col::fieldBorder, rounding * s);
 }
 
-ImU32 AxisColor(int axis) { return axis == 0 ? col::axisX : axis == 1 ? col::axisY : col::axisZ; }
+ImU32 AxisColor(int axis) {
+    if (Coral()) return axis == 0 ? coral::axisX : axis == 1 ? coral::axisY : coral::axisZ;
+    return axis == 0 ? col::axisX : axis == 1 ? col::axisY : col::axisZ;
+}
 
 void AxisTag(ImDrawList* dl, ImVec2 a, ImVec2 b, int axis, float s) {
+    if (Coral()) return;   // vector-position.svg: only the coloured letter
     dl->AddRectFilled(ImVec2(a.x + 1 * s, a.y + 1 * s), ImVec2(a.x + 22 * s, b.y - 1 * s), Alpha(AxisColor(axis), 0.18f), 2 * s);
 }
 
@@ -150,6 +203,16 @@ void SliderTrack(ImDrawList* dl, float x0, float x1, float y, float t, bool enab
 }
 
 void Checkbox(ImDrawList* dl, ImVec2 a, ImVec2 b, bool on, bool hovered, float s) {
+    if (Coral()) {   // checkbox-checked.svg: filled coral box, dark tick; unchecked: dark box, grey border
+        float r = 3 * s, w = b.x - a.x, h = b.y - a.y;
+        dl->AddRectFilled(a, b, on ? coral::accent : coral::input, r);
+        if (!on) dl->AddRect(a, b, hovered ? col::rgb(0x59616A) : coral::borderStrong, r);
+        else {
+            ImVec2 pts[3] = {{a.x + w * 0.24f, a.y + h * 0.52f}, {a.x + w * 0.42f, a.y + h * 0.70f}, {a.x + w * 0.77f, a.y + h * 0.31f}};
+            dl->AddPolyline(pts, 3, coral::shell, 0, std::max(1.3f, w * 0.10f));
+        }
+        return;
+    }
     float r = 2 * s;
     dl->AddRectFilled(a, b, col::checkBg, r);
     dl->AddRect(a, b, on ? col::accent : (hovered ? col::rgb(0x7A838E) : col::checkOff), r, 0, 1.4f * s);
@@ -199,7 +262,54 @@ float SpacedText(ImDrawList* dl, ImFont* font, float size, ImVec2 p, ImU32 color
     return x - spacing;
 }
 
+void Shadow(ImDrawList* dl, ImVec2 a, ImVec2 b, float rounding, float s) {
+    const int steps = 6;
+    for (int i = 0; i < steps; ++i) {
+        float d = (i + 0.5f) * s, k = 1.0f - (float)i / steps;
+        dl->AddRect(ImVec2(a.x - d, a.y - d + 4 * s), ImVec2(b.x + d, b.y + d + 4 * s), IM_COL32(0, 0, 0, (int)(64 * k * k)), rounding + d, 0, 1.35f * s);
+    }
+    dl->AddRectFilled(ImVec2(a.x, a.y + 4 * s), ImVec2(b.x, b.y + 4 * s), IM_COL32(0, 0, 0, 50), rounding);
+}
+
+void FloatBar(ImDrawList* dl, ImVec2 a, ImVec2 b, float s) {
+    Shadow(dl, a, b, 8 * s, s);
+    dl->AddRectFilled(a, b, coral::panel, 8 * s);
+}
+
+void SliderField(ImDrawList* dl, ImFont* font, float textSize, ImVec2 a, ImVec2 b, float t, const char* label, const char* value, bool focus, float s) {
+    t = std::clamp(t, 0.0f, 1.0f);
+    const float r = 5 * s;
+    dl->AddRectFilled(a, b, coral::input, r);
+    // fill up to the handle, clipped by the rounded field
+    float x = a.x + 1 + (b.x - a.x - 2) * t;
+    if (x > a.x + 1.5f) dl->AddRectFilled(ImVec2(a.x + 1, a.y + 1), ImVec2(x, b.y - 1), coral::fill, r - 1, x > b.x - r ? ImDrawFlags_RoundCornersAll : ImDrawFlags_RoundCornersLeft);
+    dl->AddRect(a, b, focus ? coral::selectionBorder : coral::border, r);
+    float hx = std::clamp(x, a.x + 3.5f * s, b.x - 3.5f * s), cy = (a.y + b.y) / 2;
+    dl->AddRectFilled(ImVec2(hx - 2.5f * s, cy - 8 * s), ImVec2(hx + 2.5f * s, cy + 8 * s), coral::thumb, 1 * s);
+    float ty = cy - textSize / 2;
+    dl->AddText(font, textSize, ImVec2(a.x + 12 * s, ty), coral::text, label);
+    float vw = font->CalcTextSizeA(textSize, 1e9f, 0, value).x;
+    dl->AddText(font, textSize, ImVec2(b.x - 12 * s - vw, ty), coral::text, value);
+}
+
 float Brand(ImDrawList* dl, ImFont* font, ImFont* bold, ImVec2 p, float s) {
+    if (Coral()) {   // rounded dark tile with the coral cube, "WZX Engine" and a small spaced subtitle
+        const float k = 26 * s / 34.0f;
+        ImVec2 o(p.x, p.y - 1 * s);
+        dl->AddRectFilled(o, ImVec2(o.x + 34 * k, o.y + 34 * k), col::rgb(0x202328), 9 * k);
+        auto P = [&](float x, float y) { return ImVec2(o.x + x * k, o.y + y * k); };
+        ImVec2 top[4] = {P(17, 5), P(27, 11), P(17, 17), P(7, 11)};
+        ImVec2 left[4] = {P(7, 11), P(17, 17), P(17, 29), P(7, 23)};
+        ImVec2 right[4] = {P(27, 11), P(17, 17), P(17, 29), P(27, 23)};
+        dl->AddConvexPolyFilled(top, 4, col::rgb(0xE8B49B));
+        dl->AddConvexPolyFilled(left, 4, col::rgb(0xCE846A));
+        dl->AddConvexPolyFilled(right, 4, col::rgb(0xA85F47));
+        float x = o.x + 34 * k + 10 * s;
+        dl->AddText(bold ? bold : font, 14 * s, ImVec2(x, o.y + 1 * s), coral::text, "WZX Engine");
+        float e1 = x + (bold ? bold : font)->CalcTextSizeA(14 * s, 1e9f, 0, "WZX Engine").x;
+        float e2 = SpacedText(dl, font, 8.5f * s, ImVec2(x, o.y + 17 * s), coral::dim, "EDITOR", 1.2f * s);
+        return std::max(e1, e2);
+    }
     const float mark = 24 * s;
     Glow(dl, ImVec2(p.x + 6 * s, p.y + 6 * s), ImVec2(p.x + mark - 6 * s, p.y + mark - 6 * s), col::accent, 6 * s, 6 * s, 0.05f);
     BrandMark(dl, p, mark);

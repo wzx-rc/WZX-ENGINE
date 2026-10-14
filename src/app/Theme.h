@@ -35,7 +35,7 @@ struct ThemeDef {
 };
 
 struct UiSettings {
-    std::string theme = "Atelier";        // "Atelier" (Blue 01, main / accent colours) or "Ambre" (graphite + amber, fixed colours)
+    std::string theme = "Atelier";        // "Atelier" (Blue 01, main / accent colours), "Ambre" or "Corail" (fixed colours)
     bool light = false;
     bool customAccent = false;
     ImVec4 accent = ImVec4(0.400f, 0.729f, 0.816f, 1.0f);   // used when customAccent
@@ -56,7 +56,10 @@ namespace th {
 void loadThemes(const std::wstring& folder);          // built-in "Default" + the .theme files of the folder
 const std::vector<ThemeDef>& themes();
 UiSettings& settings();
-inline bool ambre() { return settings().theme == "Ambre"; }   // Ambre theme: always dark, own colours and drawing effects
+inline bool ambre() { return settings().theme == "Ambre"; }     // Ambre: graphite + amber
+inline bool corail() { return settings().theme == "Corail"; }   // Anthracite-Corail: anthracite + coral
+inline int skin() { return ambre() ? 1 : corail() ? 2 : 0; }    // drawn theme (atelier::Palette::skin)
+inline bool styled() { return skin() != 0; }                    // drawn themes: always dark, own colours and drawing effects
 // effective sizes: each size setting times Global UI
 inline float textSize();
 inline float iconSize();
@@ -93,7 +96,7 @@ inline ImVec4 selectV() { return P().select; }
 // accent readable as text / icon colour (lighter on dark themes, darker in light mode)
 inline ImVec4 accentTextV() {
     const ImVec4& a = P().accent;
-    if (settings().light && !ambre()) return ImVec4(a.x * 0.75f, a.y * 0.75f, a.z * 0.75f, 1);
+    if (settings().light && !styled()) return ImVec4(a.x * 0.75f, a.y * 0.75f, a.z * 0.75f, 1);
     return ImVec4(a.x + (1 - a.x) * 0.35f, a.y + (1 - a.y) * 0.35f, a.z + (1 - a.z) * 0.35f, 1);
 }
 inline float textSize() { return std::clamp(settings().textScale * settings().globalScale, 0.6f, 1.9f); }

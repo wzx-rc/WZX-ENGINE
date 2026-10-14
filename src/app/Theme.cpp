@@ -138,6 +138,42 @@ static ImGuiStyle ambreStyle() {
     return s;
 }
 
+// Anthracite-Corail theme: matte charcoal cards, coral selection, rust primary action
+// (theme.json of 01 - INBOX/UI/Anthracite-Corail_UI_Components).
+static ThemePalette corailPalette() {
+    ThemePalette p;
+    p.bg0 = hexv(0x111315);     // shell
+    p.bg1 = hexv(0x181A1C);     // panel
+    p.bg2 = hexv(0x282C32);     // raised
+    p.field = hexv(0x191B1E);   // input
+    p.hover = hexv(0x23262A);
+    p.border = hexv(0x2B2F34);
+    p.text = hexv(0xDDDFE2);
+    p.dim = hexv(0x92979F);
+    p.faint = hexv(0x626A74);
+    p.accent = hexv(0xD8977C);
+    p.select = hexv(0x302622);
+    p.bar = hexv(0x111315);
+    p.strong = hexv(0xB94F2F);
+    return p;
+}
+// Rounded cards (8 px), 5 px fields, flat 5 x 16 slider grab.
+static ImGuiStyle corailStyle() {
+    ImGuiStyle s = editorStyle();
+    s.WindowRounding = 8;
+    s.ChildRounding = 8;
+    s.FrameRounding = 5;
+    s.PopupRounding = 8;
+    s.GrabRounding = 1;
+    s.ScrollbarRounding = 4;
+    s.TabRounding = 5;
+    s.GrabMinSize = 5;
+    s.FramePadding = ImVec2(10, 6);
+    s.WindowBorderSize = 0;
+    s.PopupBorderSize = 1;
+    return s;
+}
+
 // Full ImGui colour table from a palette (used by the built-in theme and the light mode).
 static void colorsFromPalette(const ThemePalette& p, bool light, ImVec4* c) {
     c[ImGuiCol_Text] = p.text;
@@ -427,6 +463,35 @@ void apply(float dpi) {
         c[ImGuiCol_ScrollbarGrabHovered] = hexv(0x464C53);
         c[ImGuiCol_ScrollbarGrabActive] = hexv(0x8B6028);
         c[ImGuiCol_TextSelectedBg] = alpha(g_pal.accent, 0.30f);
+    } else if (corail()) {
+        g_tintMul = ImVec4(1, 1, 1, 1);
+        g_bright = 1.0f;
+        g_pal = corailPalette();
+        st = corailStyle();
+        colorsFromPalette(g_pal, false, st.Colors);
+        ImVec4* c = st.Colors;
+        c[ImGuiCol_WindowBg] = g_pal.bg1;
+        c[ImGuiCol_PopupBg] = alpha(hexv(0x1D1F22), 0.99f);
+        c[ImGuiCol_Border] = hexv(0x2B2F34);
+        c[ImGuiCol_FrameBgHovered] = hexv(0x1E2024);
+        c[ImGuiCol_FrameBgActive] = hexv(0x221F1E);
+        c[ImGuiCol_Button] = hexv(0x2B3038);
+        c[ImGuiCol_ButtonHovered] = hexv(0x323842);
+        c[ImGuiCol_ButtonActive] = g_pal.select;
+        c[ImGuiCol_Header] = g_pal.select;
+        c[ImGuiCol_HeaderHovered] = hexv(0x23262A);
+        c[ImGuiCol_HeaderActive] = g_pal.select;
+        c[ImGuiCol_CheckMark] = hexv(0x111315);             // dark tick on the coral box (drawn by the editor)
+        c[ImGuiCol_SliderGrab] = hexv(0xBEC3C9);            // matte handle
+        c[ImGuiCol_SliderGrabActive] = hexv(0xE4E7EA);
+        c[ImGuiCol_Tab] = hexv(0x181A1C);
+        c[ImGuiCol_TabHovered] = hexv(0x23262A);
+        c[ImGuiCol_TabSelected] = hexv(0x1D1F22);
+        c[ImGuiCol_TitleBg] = c[ImGuiCol_TitleBgActive] = c[ImGuiCol_TitleBgCollapsed] = c[ImGuiCol_MenuBarBg] = g_pal.bg0;
+        c[ImGuiCol_ScrollbarGrab] = hexv(0x393D42);
+        c[ImGuiCol_ScrollbarGrabHovered] = hexv(0x4A4F56);
+        c[ImGuiCol_ScrollbarGrabActive] = hexv(0x6E4B3E);
+        c[ImGuiCol_TextSelectedBg] = alpha(g_pal.accent, 0.30f);
     } else if (g_settings.light) {
         // light surfaces carry a softer tint
         ImVec4 r = mix(ImVec4(1, 1, 1, 1), ref, 0.12f), w = mix(ImVec4(1, 1, 1, 1), want, 0.12f);   // 0.12: blue tint of the light palette
@@ -467,7 +532,7 @@ void loadSettings(const std::wstring& file) {
         std::string k = trim(line.substr(0, eq)), v = trim(line.substr(eq + 1));
         float c[4];
         if (k == "theme" && v == "Default") g_settings.mainColor = ImVec4(0.5f, 0.5f, 0.5f, 1);   // settings of an older version
-        else if (k == "uiTheme") g_settings.theme = v == "Ambre" ? "Ambre" : "Atelier";
+        else if (k == "uiTheme") g_settings.theme = v == "Ambre" || v == "Corail" ? v : "Atelier";
         else if (k == "light") g_settings.light = v == "1";
         else if (k == "customAccent") g_settings.customAccent = v == "1";
         else if (k == "accent") { if (parseVec(v, c, 4)) g_settings.accent = ImVec4(c[0], c[1], c[2], 1); }

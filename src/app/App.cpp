@@ -945,7 +945,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         else if (a == L"--quality") opt.quality = _wtoi(next().c_str());
         else if (a == L"--light") opt.light = _wtoi(next().c_str());
         else if (a == L"--settings") opt.openSettings = true;
-        else if (a == L"--theme") opt.theme = _wcsicmp(next().c_str(), L"ambre") == 0 ? "Ambre" : "Atelier";
+        else if (a == L"--theme") { std::wstring t = next(); opt.theme = _wcsicmp(t.c_str(), L"ambre") == 0 ? "Ambre" : _wcsicmp(t.c_str(), L"corail") == 0 ? "Corail" : "Atelier"; }
         else if (a == L"--sizes") swscanf_s(next().c_str(), L"%f,%f,%f", &opt.sizes.x, &opt.sizes.y, &opt.sizes.z);
         else if (a == L"--main-color") swscanf_s(next().c_str(), L"%f,%f,%f", &opt.mainColor.x, &opt.mainColor.y, &opt.mainColor.z);
         else if (a == L"--workspace") { std::wstring w = next(); opt.workspace = w == L"graph" ? 1 : (w == L"material" ? 2 : 0); }

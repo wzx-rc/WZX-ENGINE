@@ -181,19 +181,21 @@ void App::drawSettingsWindow() {
                 ImGui::EndDisabled();
                 ImGui::EndCombo();
             }
-            // theme: Atelier (Blue 01, tinted by the main / accent colours below) or Ambre (graphite + amber, fixed)
+            // theme: Atelier (Blue 01, tinted by the main / accent colours below), Ambre or Anthracite-Corail (fixed colours)
             propLabel("Theme", labelW);
             ImGui::SetNextItemWidth(-1);
-            const char* themeNames[] = {"Atelier (Blue 01)", "Ambre (graphite + amber)"};
-            const bool amb = th::ambre();
-            if (ImGui::BeginCombo("##uitheme", themeNames[amb ? 1 : 0])) {
-                if (ImGui::Selectable(themeNames[0], !amb)) { s.theme = "Atelier"; changed = true; }
-                if (ImGui::Selectable(themeNames[1], amb)) { s.theme = "Ambre"; changed = true; }
+            const char* themeNames[] = {"Atelier (Blue 01)", "Ambre (graphite + amber)", "Anthracite-Corail (charcoal + coral)"};
+            const char* themeIds[] = {"Atelier", "Ambre", "Corail"};
+            const int skin = th::skin();
+            if (ImGui::BeginCombo("##uitheme", themeNames[skin])) {
+                for (int i = 0; i < 3; ++i)
+                    if (ImGui::Selectable(themeNames[i], skin == i)) { s.theme = themeIds[i]; changed = true; }
                 ImGui::EndCombo();
             }
+            const bool amb = skin != 0;
             if (amb) {
                 indent();
-                ImGui::TextColored(th::dimV(), "Fixed colours: dark mode, amber accent.");
+                ImGui::TextColored(th::dimV(), skin == 1 ? "Fixed colours: dark mode, amber accent." : "Fixed colours: dark mode, coral accent.");
             }
             // the colour settings below only apply to the Atelier theme
             ImGui::BeginDisabled(amb);
