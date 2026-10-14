@@ -158,6 +158,13 @@ static ThemePalette corailPalette() {
     return p;
 }
 // Rounded cards (8 px), 5 px fields, flat 5 x 16 slider grab.
+// Selection shades of the Corail theme for another selection colour: same proportions as the pack shade (packHex)
+// between the #181A1C panel and the #D8977C coral, applied between panel and accent.
+static ImVec4 corailShade(const ImVec4& accent, const ImVec4& panel, unsigned packHex) {
+    const ImVec4 pa = hexv(0xD8977C), pp = hexv(0x181A1C), ps = hexv(packHex);
+    float k = ((ps.x - pp.x) / (pa.x - pp.x) + (ps.y - pp.y) / (pa.y - pp.y) + (ps.z - pp.z) / (pa.z - pp.z)) / 3;
+    return mix(panel, accent, k);
+}
 static ImGuiStyle corailStyle() {
     ImGuiStyle s = editorStyle();
     s.WindowRounding = 8;
@@ -469,6 +476,8 @@ void apply(float dpi) {
         g_tintMul = direction(cm);
         g_bright = g_settings.lockBrightness ? 1.0f : std::clamp((cm.x + cm.y + cm.z) / 3 / 0.5f, 0.35f, 3.0f);
         g_pal = corailPalette();
+        g_pal.accent = g_settings.corailAccent;   // selection colour of the settings and its selection fill
+        g_pal.select = corailShade(g_settings.corailAccent, g_pal.bg1, 0x302622);
         st = corailStyle();
         colorsFromPalette(g_pal, false, st.Colors);
         ImVec4* c = st.Colors;
@@ -492,7 +501,7 @@ void apply(float dpi) {
         c[ImGuiCol_TitleBg] = c[ImGuiCol_TitleBgActive] = c[ImGuiCol_TitleBgCollapsed] = c[ImGuiCol_MenuBarBg] = g_pal.bg0;
         c[ImGuiCol_ScrollbarGrab] = hexv(0x393D42);
         c[ImGuiCol_ScrollbarGrabHovered] = hexv(0x4A4F56);
-        c[ImGuiCol_ScrollbarGrabActive] = hexv(0x6E4B3E);
+        c[ImGuiCol_ScrollbarGrabActive] = corailShade(g_settings.corailAccent, hexv(0x181A1C), 0x6E4B3E);
         c[ImGuiCol_TextSelectedBg] = alpha(g_pal.accent, 0.30f);
         for (int i = 0; i < ImGuiCol_COUNT; ++i) c[i] = tint(c[i]);   // accents keep their hue
         tintPalette(g_pal);
@@ -542,6 +551,7 @@ void loadSettings(const std::wstring& file) {
         else if (k == "accent") { if (parseVec(v, c, 4)) g_settings.accent = ImVec4(c[0], c[1], c[2], 1); }
         else if (k == "mainColor") { if (parseVec(v, c, 4)) g_settings.mainColor = ImVec4(c[0], c[1], c[2], 1); }
         else if (k == "corailMainColor") { if (parseVec(v, c, 4)) g_settings.corailMain = ImVec4(c[0], c[1], c[2], 1); }
+        else if (k == "corailAccent") { if (parseVec(v, c, 4)) g_settings.corailAccent = ImVec4(c[0], c[1], c[2], 1); }
         else if (k == "textScale") g_settings.textScale = std::clamp((float)atof(v.c_str()), 0.8f, 1.4f);
         else if (k == "iconScale") g_settings.iconScale = std::clamp((float)atof(v.c_str()), 0.8f, 1.4f);
         else if (k == "layoutScale") g_settings.layoutScale = std::clamp((float)atof(v.c_str()), 0.85f, 1.2f);
@@ -558,12 +568,13 @@ void saveSettings(const std::wstring& file) {
     std::ofstream f(file, std::ios::binary);
     if (!f) return;
     const UiSettings& s = g_settings;
-    char a[64], m[64], sc[64], cm[64];
+    char a[64], m[64], sc[64], cm[64], ca[64];
     snprintf(a, sizeof(a), "%.3f %.3f %.3f 1", s.accent.x, s.accent.y, s.accent.z);
     snprintf(m, sizeof(m), "%.3f %.3f %.3f 1", s.mainColor.x, s.mainColor.y, s.mainColor.z);
     snprintf(sc, sizeof(sc), "%.3f %.3f %.3f 1", s.graphSelectColor.x, s.graphSelectColor.y, s.graphSelectColor.z);
     snprintf(cm, sizeof(cm), "%.3f %.3f %.3f 1", s.corailMain.x, s.corailMain.y, s.corailMain.z);
-    f << "uiTheme=" << s.theme << "\nlight=" << (s.light ? 1 : 0) << "\nmainColor=" << m << "\ncorailMainColor=" << cm << "\ncustomAccent=" << (s.customAccent ? 1 : 0) << "\naccent=" << a
+    snprintf(ca, sizeof(ca), "%.3f %.3f %.3f 1", s.corailAccent.x, s.corailAccent.y, s.corailAccent.z);
+    f << "uiTheme=" << s.theme << "\nlight=" << (s.light ? 1 : 0) << "\nmainColor=" << m << "\ncorailMainColor=" << cm << "\ncorailAccent=" << ca << "\ncustomAccent=" << (s.customAccent ? 1 : 0) << "\naccent=" << a
       << "\ntextScale=" << s.textScale << "\niconScale=" << s.iconScale << "\nlayoutScale=" << s.layoutScale << "\nglobalScale=" << s.globalScale
       << "\nlockBrightness=" << (s.lockBrightness ? 1 : 0) << "\nlanguage=" << s.language
       << "\ngraphOutline=" << (s.graphOutline ? 1 : 0) << "\ngraphOutlineWeight=" << s.graphOutlineWeight

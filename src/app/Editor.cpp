@@ -195,7 +195,7 @@ void App::drawSettingsWindow() {
             const bool amb = skin != 0;
             if (amb) {
                 indent();
-                ImGui::TextColored(th::dimV(), skin == 1 ? "Fixed colours: dark mode, amber accent." : "Dark mode, coral accent; the main colour tints its surfaces.");
+                ImGui::TextColored(th::dimV(), skin == 1 ? "Fixed colours: dark mode, amber accent." : "Dark mode; main and selection colours of its own.");
             }
             // mode and accent only apply to the Atelier theme; the main colour to Atelier and Anthracite-Corail (its own value)
             ImGui::BeginDisabled(amb);
@@ -225,21 +225,35 @@ void App::drawSettingsWindow() {
             if (ImGui::Checkbox("Lock brightness", &s.lockBrightness)) changed = true;
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("On: only the hue of the main colour counts (constant contrast).\nOff: its brightness also lightens or darkens the panels (test).");
             ImGui::EndDisabled();
-            ImGui::BeginDisabled(amb);
-            // accent colour: selection, active buttons, highlights
+            ImGui::BeginDisabled(skin == 1);
+            // accent colour: selection, active buttons, highlights (Anthracite-Corail: its own selection colour)
             ImGui::Spacing();
-            propLabel("Accent Color", labelW);
+            propLabel(skin == 2 ? "Selection Color" : "Accent Color", labelW);
             static const Preset accents[] = {{"Cyan", ImVec4(0.400f, 0.729f, 0.816f, 1)},   {"Blue", ImVec4(0.235f, 0.502f, 0.980f, 1)},
                                              {"Violet", ImVec4(0.560f, 0.420f, 0.960f, 1)}, {"Green", ImVec4(0.270f, 0.700f, 0.420f, 1)},
                                              {"Yellow", ImVec4(0.960f, 0.770f, 0.200f, 1)}, {"Orange", ImVec4(0.960f, 0.550f, 0.200f, 1)},
                                              {"Pink", ImVec4(0.910f, 0.360f, 0.620f, 1)},   {"Red", ImVec4(0.900f, 0.290f, 0.290f, 1)}};
-            ImVec4 curAccent = s.customAccent ? s.accent : accents[0].c;
-            int a = presetRow("accent", accents, 8, curAccent);
-            if (a >= 0) { s.accent = accents[a].c; s.customAccent = a != 0; changed = true; }
-            indent();
-            ImGui::SetNextItemWidth(-1);
-            float c3[3] = {curAccent.x, curAccent.y, curAccent.z};
-            if (ImGui::ColorEdit3("##accent", c3, ImGuiColorEditFlags_DisplayHex)) { s.accent = ImVec4(c3[0], c3[1], c3[2], 1); s.customAccent = true; changed = true; }
+            static const Preset corailAccents[] = {{"Coral", ImVec4(0.847f, 0.592f, 0.486f, 1)}, {"Amber", ImVec4(0.925f, 0.643f, 0.239f, 1)},
+                                                   {"Orange", ImVec4(0.960f, 0.550f, 0.200f, 1)}, {"Red", ImVec4(0.900f, 0.290f, 0.290f, 1)},
+                                                   {"Pink", ImVec4(0.910f, 0.360f, 0.620f, 1)},   {"Violet", ImVec4(0.560f, 0.420f, 0.960f, 1)},
+                                                   {"Cyan", ImVec4(0.400f, 0.729f, 0.816f, 1)},   {"Green", ImVec4(0.270f, 0.700f, 0.420f, 1)}};
+            if (skin == 2) {
+                int a = presetRow("corailAccent", corailAccents, 8, s.corailAccent);
+                if (a >= 0) { s.corailAccent = corailAccents[a].c; changed = true; }
+                indent();
+                ImGui::SetNextItemWidth(-1);
+                float c3[3] = {s.corailAccent.x, s.corailAccent.y, s.corailAccent.z};
+                if (ImGui::ColorEdit3("##corailAccent", c3, ImGuiColorEditFlags_DisplayHex)) { s.corailAccent = ImVec4(c3[0], c3[1], c3[2], 1); changed = true; }
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Selected rows, active tools, tabs and checkboxes");
+            } else {
+                ImVec4 curAccent = s.customAccent ? s.accent : accents[0].c;
+                int a = presetRow("accent", accents, 8, curAccent);
+                if (a >= 0) { s.accent = accents[a].c; s.customAccent = a != 0; changed = true; }
+                indent();
+                ImGui::SetNextItemWidth(-1);
+                float c3[3] = {curAccent.x, curAccent.y, curAccent.z};
+                if (ImGui::ColorEdit3("##accent", c3, ImGuiColorEditFlags_DisplayHex)) { s.accent = ImVec4(c3[0], c3[1], c3[2], 1); s.customAccent = true; changed = true; }
+            }
             ImGui::EndDisabled();
             // sizes
             ImGui::Spacing();

@@ -240,35 +240,34 @@ void Splitter(const char* id, R r, float& value, float low, float high, bool ver
 // label above a full width slider (material / graph inspector pattern); returns true while edited
 bool SliderRow(const char* id, const char* label, float x, float& y, float w, float* v, float lo, float hi, const char* fmt, bool& activated) {
     if (P().skin == 2) {
-        // Corail slider (slider-rugosite.svg, bar at a third of its height): label and value on top, a thin bar with
-        // the fill and the matte handle below. ImGui's slider over the bar gives the interaction (drag, Ctrl+click to
-        // type); its own drawing is hidden except while a value is typed. The right 24 px stay free (info icon slot).
+        // Corail slider (slider-rugosite.svg): one field with the fill, the matte handle, the label on the left and
+        // the value on the right. ImGui's slider gives the interaction (drag, Ctrl+click to type); its own drawing
+        // is hidden except while a value is typed. The right 24 px stay free (info icon slot).
         const ImGuiID gid = ImGui::GetID(id);
         const bool typing = ImGui::TempInputIsActive(gid);
-        const float fw = w - 24 * s, ih = 18 * s, iy = y + 16 * s;
-        if (typing) afx::Field(dl, ImVec2(x, iy), ImVec2(x + fw, iy + ih), s, true);
+        const float fw = w - 24 * s, fh = 32 * s;
+        if (typing) afx::Field(dl, ImVec2(x, y), ImVec2(x + fw, y + fh), s, true);
         const ImVec4 clear(0, 0, 0, 0);
         for (ImGuiCol k : {ImGuiCol_FrameBg, ImGuiCol_FrameBgHovered, ImGuiCol_FrameBgActive, ImGuiCol_SliderGrab, ImGuiCol_SliderGrabActive})
             ImGui::PushStyleColor(k, clear);
         ImGui::PushStyleColor(ImGuiCol_Text, typing ? ImGui::GetStyleColorVec4(ImGuiCol_Text) : clear);
         ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0.0f);
-        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(8 * s, std::max(0.0f, (ih - ImGui::GetFontSize()) / 2)));
-        ImGui::SetCursorScreenPos(ImVec2(x, iy));
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(12 * s, std::max(0.0f, (fh - ImGui::GetFontSize()) / 2)));
+        ImGui::SetCursorScreenPos(ImVec2(x, y));
         ImGui::SetNextItemWidth(fw);
         bool c = ImGui::SliderFloat(id, v, lo, hi, fmt);
         activated |= ImGui::IsItemActivated();
         const bool focus = ImGui::IsItemActive() || ImGui::IsItemHovered();
+        ImVec2 a = ImGui::GetItemRectMin(), b = ImGui::GetItemRectMax();
         ImGui::PopStyleVar(2);
         ImGui::PopStyleColor(6);
         Tip("Drag to edit · Ctrl+click to type a value");
         if (!typing) {
             char value[64];
             snprintf(value, sizeof(value), fmt, *v);
-            afx::SliderField(dl, font, 11 * s * ts(), ImVec2(x, y), ImVec2(x + fw, iy + ih), hi > lo ? (*v - lo) / (hi - lo) : 0.0f, label, value, focus, s);
-        } else {
-            Text(x + 1 * s, y, label, P().text, 11);
+            afx::SliderField(dl, font, 11 * s * ts(), a, b, hi > lo ? (*v - lo) / (hi - lo) : 0.0f, label, value, focus, s);
         }
-        y += 42 * s;
+        y += 40 * s;
         return c;
     }
     if (P().skin) {
@@ -419,6 +418,7 @@ static void syncAtelierStyle(ImFont* bold) {
         // the main colour of the settings (Corail value) tints the neutral colours, the coral accents keep their hue
         auto tint32 = [](ImU32 c) { return ImGui::ColorConvertFloat4ToU32(th::tint(ImGui::ColorConvertU32ToFloat4(c))); };
         atelier::fx::TintCoral(tint32);
+        atelier::fx::SetCoralAccent(ImGui::ColorConvertFloat4ToU32(th::settings().corailAccent));   // selection colour of the settings
         auto rgb = [&](unsigned h, int al = 255) { return tint32(atelier::fx::col::rgb(h, al)); };
         a.light = false;
         a.accent = accent; a.select = selection; a.strong = rgb(0xB94F2F);
@@ -1460,11 +1460,11 @@ void App::atlInspectorRender(float x, float y, float w, float) {
         y += 26 * s;
     };
     auto sliderF = [&](const char* id, const char* label, float& v, float lo, float hi, const char* fmt, const char* help) {
-        info((std::string(id) + "_i").c_str(), x + w - 18 * s, y + (P().skin == 2 ? 16 : 0) * s, help);
+        info((std::string(id) + "_i").c_str(), x + w - 18 * s, y + (P().skin == 2 ? 7 : 0) * s, help);
         ch |= SliderRow(id, label, x, y, w, &v, lo, hi, fmt, act);
     };
     auto sliderI = [&](const char* id, const char* label, int& v, float lo, float hi, const char* fmt, const char* help) {
-        info((std::string(id) + "_i").c_str(), x + w - 18 * s, y + (P().skin == 2 ? 16 : 0) * s, help);
+        info((std::string(id) + "_i").c_str(), x + w - 18 * s, y + (P().skin == 2 ? 7 : 0) * s, help);
         float f = (float)v;
         if (SliderRow(id, label, x, y, w, &f, lo, hi, fmt, act)) { v = (int)std::round(f); ch = true; }
     };

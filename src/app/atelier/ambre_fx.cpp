@@ -20,6 +20,22 @@ void TintCoral(ImU32 (*tint)(ImU32)) {
     saved = true;
 }
 
+void SetCoralAccent(ImU32 a) {
+    // selection fill and border keep the proportions of the pack (#302622 / #6E4B3E for the coral #D8977C over the
+    // #181A1C panel), applied to the chosen colour over the current panel
+    const ImVec4 pa = ImGui::ColorConvertU32ToFloat4(col::rgb(0xD8977C)), pp = ImGui::ColorConvertU32ToFloat4(col::rgb(0x181A1C));
+    const ImVec4 ps = ImGui::ColorConvertU32ToFloat4(col::rgb(0x302622)), pb = ImGui::ColorConvertU32ToFloat4(col::rgb(0x6E4B3E));
+    const ImVec4 c = ImGui::ColorConvertU32ToFloat4(a), p = ImGui::ColorConvertU32ToFloat4(coral::panel);
+    auto mixc = [&](const ImVec4& ref) {
+        float k[3] = {(ref.x - pp.x) / (pa.x - pp.x), (ref.y - pp.y) / (pa.y - pp.y), (ref.z - pp.z) / (pa.z - pp.z)};
+        float kk = (k[0] + k[1] + k[2]) / 3;   // one ratio for the three channels: the hue of the chosen colour
+        return ImGui::ColorConvertFloat4ToU32(ImVec4(p.x + (c.x - p.x) * kk, p.y + (c.y - p.y) * kk, p.z + (c.z - p.z) * kk, 1));
+    };
+    coral::accent = a;
+    coral::selection = mixc(ps);
+    coral::selectionBorder = mixc(pb);
+}
+
 const ImVec2 kGlowOffsets[8] = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}, {0.7f, 0.7f}, {-0.7f, 0.7f}, {0.7f, -0.7f}, {-0.7f, -0.7f}};
 
 ImU32 Alpha(ImU32 c, float a) {
@@ -290,20 +306,19 @@ void FloatBar(ImDrawList* dl, ImVec2 a, ImVec2 b, float s) {
 }
 
 void SliderField(ImDrawList* dl, ImFont* font, float textSize, ImVec2 a, ImVec2 b, float t, const char* label, const char* value, bool focus, float s) {
-    // row a..b: label (left) and value (right) on the text line, then the bar: the field of the pack at a third of
-    // its height (11 px instead of 32), its fill and the matte 5 x 16 handle across it
     t = std::clamp(t, 0.0f, 1.0f);
-    const float bh = 11 * s, r = 3.5f * s, cy = (a.y + 16 * s + b.y) / 2;
-    ImVec2 ba(a.x, cy - bh / 2), bb(b.x, cy + bh / 2);
-    dl->AddRectFilled(ba, bb, coral::input, r);
-    float x = ba.x + 1 + (bb.x - ba.x - 2) * t;
-    if (x > ba.x + 1.5f) dl->AddRectFilled(ImVec2(ba.x + 1, ba.y + 1), ImVec2(x, bb.y - 1), coral::fill, r - 1, x > bb.x - r ? ImDrawFlags_RoundCornersAll : ImDrawFlags_RoundCornersLeft);
-    dl->AddRect(ba, bb, focus ? coral::selectionBorder : coral::border, r);
-    float hx = std::clamp(x, ba.x + 3.5f * s, bb.x - 3.5f * s);
+    const float r = 5 * s;
+    dl->AddRectFilled(a, b, coral::input, r);
+    // fill up to the handle, clipped by the rounded field
+    float x = a.x + 1 + (b.x - a.x - 2) * t;
+    if (x > a.x + 1.5f) dl->AddRectFilled(ImVec2(a.x + 1, a.y + 1), ImVec2(x, b.y - 1), coral::fill, r - 1, x > b.x - r ? ImDrawFlags_RoundCornersAll : ImDrawFlags_RoundCornersLeft);
+    dl->AddRect(a, b, focus ? coral::selectionBorder : coral::border, r);
+    float hx = std::clamp(x, a.x + 3.5f * s, b.x - 3.5f * s), cy = (a.y + b.y) / 2;
     dl->AddRectFilled(ImVec2(hx - 2.5f * s, cy - 8 * s), ImVec2(hx + 2.5f * s, cy + 8 * s), coral::thumb, 1 * s);
-    dl->AddText(font, textSize, ImVec2(a.x + 1 * s, a.y), coral::text, label);
+    float ty = cy - textSize / 2;
+    dl->AddText(font, textSize, ImVec2(a.x + 12 * s, ty), coral::text, label);
     float vw = font->CalcTextSizeA(textSize, 1e9f, 0, value).x;
-    dl->AddText(font, textSize, ImVec2(b.x - 1 * s - vw, a.y), coral::text, value);
+    dl->AddText(font, textSize, ImVec2(b.x - 12 * s - vw, ty), coral::text, value);
 }
 
 float Brand(ImDrawList* dl, ImFont* font, ImFont* bold, ImVec2 p, float s) {

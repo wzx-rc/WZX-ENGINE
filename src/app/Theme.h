@@ -41,6 +41,7 @@ struct UiSettings {
     ImVec4 accent = ImVec4(0.400f, 0.729f, 0.816f, 1.0f);   // used when customAccent
     ImVec4 mainColor = ImVec4(0.415f, 0.506f, 0.578f, 1.0f); // tint of the surfaces (Blue Slate = the Blue 01 theme)
     ImVec4 corailMain = ImVec4(0.5f, 0.5f, 0.5f, 1.0f);      // Anthracite-Corail: tint of its surfaces (Graphite = the pack colours)
+    ImVec4 corailAccent = ImVec4(0.847f, 0.592f, 0.486f, 1.0f); // Anthracite-Corail: selection colour (#D8977C coral of the pack)
     float textScale = 1.0f;
     float iconScale = 1.0f;
     float layoutScale = 1.0f;             // spacing of the Atelier layouts: < 1 compact, > 1 spacious
