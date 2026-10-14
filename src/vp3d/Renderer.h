@@ -55,6 +55,9 @@ struct RenderSettings {
     // DDGI rays from a raster capture of each probe (cube faces lit by the raster pass) instead of ray tracing.
     bool ddgiRaster = false;
     int ddgiCaptureProbes = 32;   // probes captured per frame (the whole grid is refreshed in total / this frames)
+    // Diagnostic: the viewport is lit by the raster pass reading the probes (as ddgiRaster) while the probes themselves
+    // keep their ray traced rays. Separates the capture error from the visibility error.
+    bool ddgiRasterView = false;
 };
 
 struct ViewRect { int x = 0, y = 0, w = 1, h = 1; };
@@ -94,6 +97,8 @@ public:
 
     // Reads back the last tonemapped viewport image (RGBA8).
     bool readViewport(std::vector<uint8_t>& rgba, uint32_t& w, uint32_t& h);
+    // Debug: reads back the probe cube captures of the last frame (raster DDGI), radiance rgb + distance, as floats.
+    bool readCapture(std::vector<float>& rgba, uint32_t& w, uint32_t& h);
 
     ID3D12Device5* device() const { return m_device.Get(); }
     ID3D12CommandQueue* queue() const { return m_queue.Get(); }
@@ -133,14 +138,17 @@ private:
     bool createRasterPipelines(std::string* error);
     void createRasterTargets(uint32_t w, uint32_t h);
     // probeCapture: shadow map, then the cube captures of the next probes (m_capSlots) instead of the viewport.
-    void recordRaster(const Scene& scene, const RenderSettings& rs, const ViewRect& vp, bool probeCapture = false);
+    // probes: DDGI without ray tracing, the main pass reads the probe atlases (SRVs t4..t6) instead of the ambient.
+    // shadow: draw the shadow map first (false when the capture pass of the same frame already drew it).
+    void recordRaster(const Scene& scene, const RenderSettings& rs, const ViewRect& vp, bool probeCapture = false,
+                      bool probes = false, bool shadow = true);
     void ensureCapture(uint32_t slots);
     void createTargets(uint32_t w, uint32_t h);
     void uploadTextures(const Scene& scene);
     void uploadEnvironment(const EnvImagePtr& img);   // HDRI texture, sampling tables, SH and sun (when the image changes)
     D3D12_GPU_DESCRIPTOR_HANDLE textureTable() const;
     void setupProbeGrid(const RenderSettings& rs);
-    void recordDDGI(const RenderSettings& rs, UINT gx, UINT gy);
+    void recordDDGI(const RenderSettings& rs, UINT gx, UINT gy, bool shade = true);   // shade: GIShade (ray traced visibility)
     void copyHistory();
     uint32_t sceneSignature(const Scene& scene) const;
     uint32_t transformSignature(const Scene& scene) const;
@@ -184,6 +192,8 @@ private:
     static constexpr uint32_t kEnvHeapSlot = kGIHeapBase + 4 + 2;
     // UAVs of the probe cube captures (raster DDGI: radiance, albedo, normal), after the HDRI SRV
     static constexpr uint32_t kCapHeapSlot = kEnvHeapSlot + 1;
+    // SRVs of the probe atlases (irradiance, distance, state) read by the raster pass, after the capture UAVs
+    static constexpr uint32_t kProbeSrvSlot = kCapHeapSlot + 3;
     static constexpr uint32_t kProbeFace = 16;   // texels per cube face of a probe capture
     std::vector<ComPtr<ID3D12Resource>> m_materialTex;
     ComPtr<ID3D12Resource> m_tex[kTexCount];

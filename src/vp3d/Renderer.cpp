@@ -131,7 +131,7 @@ bool Renderer::init(HWND hwnd, uint32_t width, uint32_t height, const std::wstri
 
     D3D12_DESCRIPTOR_HEAP_DESC hd = {};
     hd.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-    hd.NumDescriptors = kCapHeapSlot + 3;  // + shadow map SRV + material textures + DDGI UAVs + history UAVs + HDRI SRV + capture UAVs
+    hd.NumDescriptors = kProbeSrvSlot + 3;  // + shadow map SRV + material textures + DDGI UAVs + history UAVs + HDRI SRV + capture UAVs + probe SRVs
     hd.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
     m_device->CreateDescriptorHeap(&hd, IID_PPV_ARGS(&m_heap));
     m_descSize = m_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
@@ -145,6 +145,12 @@ bool Renderer::init(HWND hwnd, uint32_t width, uint32_t height, const std::wstri
         D3D12_CPU_DESCRIPTOR_HANDLE h = m_heap->GetCPUDescriptorHandleForHeapStart();
         h.ptr += (SIZE_T)kEnvHeapSlot * m_descSize;
         m_device->CreateShaderResourceView(nullptr, &sv, h);
+        // no probe grid yet: null views in the probe SRV slots of the raster pass
+        for (uint32_t k = 0; k < 3; ++k) {
+            D3D12_CPU_DESCRIPTOR_HANDLE ph = m_heap->GetCPUDescriptorHandleForHeapStart();
+            ph.ptr += (SIZE_T)(kProbeSrvSlot + k) * m_descSize;
+            m_device->CreateShaderResourceView(nullptr, &sv, ph);
+        }
         m_envDist = createBuffer(256, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ);
         memset(m_envDist.mapped, 0, 256);
     }
@@ -1082,11 +1088,23 @@ void Renderer::setupProbeGrid(const RenderSettings& rs) {
         hnd.ptr += (SIZE_T)(kGIHeapBase + i) * m_descSize;
         m_device->CreateUnorderedAccessView(m_giTex[i].Get(), nullptr, &u, hnd);
     }
+    // Read-only views of the irradiance, distance and state atlases for the raster pass (DDGI without ray tracing).
+    const int srvOf[3] = {0, 1, 3};
+    for (int k = 0; k < 3; ++k) {
+        D3D12_SHADER_RESOURCE_VIEW_DESC sv = {};
+        sv.Format = td[srvOf[k]].fmt;
+        sv.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+        sv.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+        sv.Texture2D.MipLevels = 1;
+        D3D12_CPU_DESCRIPTOR_HANDLE hnd = cpu;
+        hnd.ptr += (SIZE_T)(kProbeSrvSlot + k) * m_descSize;
+        m_device->CreateShaderResourceView(m_giTex[srvOf[k]].Get(), &sv, hnd);
+    }
 }
 
 // Probe update (trace + blend) then the per-pixel shading into the accumulation texture.
 // Expects the compute root signature and the scene SRVs to be bound.
-void Renderer::recordDDGI(const RenderSettings& rs, UINT gx, UINT gy) {
+void Renderer::recordDDGI(const RenderSettings& rs, UINT gx, UINT gy, bool shade) {
     setupProbeGrid(rs);
     uint32_t total = giProbeCount();
 
@@ -1137,9 +1155,11 @@ void Renderer::recordDDGI(const RenderSettings& rs, UINT gx, UINT gy) {
     m_cmd->Dispatch(total, 1, 1);
     uavBarrier();
     m_cmd->EndQuery(m_queryHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 3);
-    m_cmd->SetPipelineState(m_psoGIShade.Get());
-    m_cmd->Dispatch(gx, gy, 1);
-    uavBarrier();
+    if (shade) {   // ray traced visibility; without it the raster pass reads the probes (recordRaster, probes = true)
+        m_cmd->SetPipelineState(m_psoGIShade.Get());
+        m_cmd->Dispatch(gx, gy, 1);
+        uavBarrier();
+    }
     m_giTimed = true;
     // The batch just captured is the one the next frame starts after.
     if (rs.ddgiRaster) {
@@ -1308,11 +1328,13 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
         m_sceneSignature = sig;
         m_historyValid = false;
     }
-    const bool useHistory = rs.ddgi && !rs.raster;
+    // DDGI without ray tracing: probes captured in raster, read by the raster main pass (no TLAS, no history).
+    const bool giRaster = rs.ddgi && (rs.ddgiRaster || rs.ddgiRasterView) && !rs.raster;
+    const bool useHistory = rs.ddgi && !rs.raster && !giRaster;
 
     beginCommands();
     m_giTimed = false;
-    buildTLAS(scene, !rs.raster);
+    buildTLAS(scene, !rs.raster && !(giRaster && rs.ddgiRaster));
 
     const Camera& cam = scene.camera;
     float3 right, up, fwd;
@@ -1397,6 +1419,48 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
         uint32_t rc[4] = {TEX_DENOISE_A, 1u, (uint32_t)rs.tonemapper, 0};
         m_cmd->SetComputeRoot32BitConstants(1, 4, rc, 0);
         m_cmd->Dispatch(gx, gy, 1);
+    } else if (giRaster) {
+        // Probe captures (raster), probe rays + blend (compute), then the viewport lit by the raster pass reading the
+        // probes, and the tonemapper. Nothing here needs ray tracing.
+        m_cmd->EndQuery(m_queryHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 0);
+        setupProbeGrid(rs);
+        if (rs.ddgiRaster) {
+            ensureCapture(std::min(giProbeCount(), (uint32_t)std::max(1, rs.ddgiCaptureProbes)));
+            recordRaster(scene, rs, vp, true);   // shadow map + cube captures of the next probes
+        }
+        m_cmd->SetComputeRootSignature(m_rootSig.Get());
+        m_cmd->SetComputeRootConstantBufferView(0, m_constants.va());
+        // Raster probes have no acceleration structure: the slot gets a valid buffer, unused.
+        m_cmd->SetComputeRootShaderResourceView(2, rs.ddgiRaster ? m_instances.va() : m_tlas.va());
+        m_cmd->SetComputeRootShaderResourceView(3, m_vb.va());
+        m_cmd->SetComputeRootShaderResourceView(4, m_ib.va());
+        m_cmd->SetComputeRootShaderResourceView(5, m_instances.va());
+        m_cmd->SetComputeRootShaderResourceView(6, m_materials.va());
+        m_cmd->SetComputeRootShaderResourceView(7, m_lights.va());
+        m_cmd->SetComputeRootDescriptorTable(8, m_heap->GetGPUDescriptorHandleForHeapStart());
+        m_cmd->SetComputeRootDescriptorTable(9, textureTable());
+        D3D12_GPU_DESCRIPTOR_HANDLE histTable = m_heap->GetGPUDescriptorHandleForHeapStart();
+        histTable.ptr += (UINT64)(kGIHeapBase + kGITexCount) * m_descSize;
+        m_cmd->SetComputeRootDescriptorTable(12, histTable);
+        D3D12_GPU_DESCRIPTOR_HANDLE envTable = m_heap->GetGPUDescriptorHandleForHeapStart();
+        envTable.ptr += (UINT64)kEnvHeapSlot * m_descSize;
+        m_cmd->SetComputeRootShaderResourceView(13, m_envDist.va());
+        m_cmd->SetComputeRootDescriptorTable(14, envTable);
+        recordDDGI(rs, gx, gy, false);
+        // The raster pass reads the irradiance, distance and state atlases (SRVs t4..t6).
+        ID3D12Resource* atlases[3] = {m_giTex[0].Get(), m_giTex[1].Get(), m_giTex[3].Get()};
+        for (ID3D12Resource* r : atlases) transition(r, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+        recordRaster(scene, rs, vp, false, true, !rs.ddgiRaster);   // the capture pass already drew the shadow map
+        for (ID3D12Resource* r : atlases) transition(r, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+        m_denoisedSlot = 0xFFFFFFFF;
+        ++m_sampleIndex;
+        m_cmd->SetComputeRootSignature(m_rootSig.Get());
+        m_cmd->SetComputeRootConstantBufferView(0, m_constants.va());
+        m_cmd->SetComputeRootDescriptorTable(8, m_heap->GetGPUDescriptorHandleForHeapStart());
+        m_cmd->SetPipelineState(m_psoTonemap.Get());
+        uint32_t rc[4] = {TEX_DENOISE_A, 1u, (uint32_t)rs.tonemapper, 0};
+        m_cmd->SetComputeRoot32BitConstants(1, 4, rc, 0);
+        m_cmd->Dispatch(gx, gy, 1);
     } else {
     m_cmd->SetComputeRootSignature(m_rootSig.Get());
     m_cmd->SetComputeRootConstantBufferView(0, m_constants.va());
@@ -1418,13 +1482,7 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
 
     bool traced = false;
     m_cmd->EndQuery(m_queryHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 0);
-    if (rs.ddgi) {
-        if (rs.ddgiRaster) {
-            // Raster rays: the cube captures of the next probes, rendered before the probe pass reads them.
-            setupProbeGrid(rs);
-            ensureCapture(std::min(giProbeCount(), (uint32_t)std::max(1, rs.ddgiCaptureProbes)));
-            recordRaster(scene, rs, vp, true);
-        }
+    if (rs.ddgi) {   // ray traced probes and visibility (the raster probes take the giRaster branch above)
         recordDDGI(rs, gx, gy);   // never converges: probes and image history keep updating
         ++m_sampleIndex;
         traced = true;
@@ -1592,3 +1650,51 @@ bool Renderer::readViewport(std::vector<uint8_t>& rgba, uint32_t& w, uint32_t& h
 
 } // namespace vp3d
 
+
+namespace vp3d {
+
+static float halfToFloat(uint16_t h) {
+    uint32_t s = (h >> 15) & 1, e = (h >> 10) & 0x1F, m = h & 0x3FF, f;
+    if (e == 0) f = (s << 31) | 0;                                  // zero / denormal -> 0
+    else if (e == 31) f = (s << 31) | 0x7F800000 | (m << 13);      // inf / nan
+    else f = (s << 31) | ((e + 112) << 23) | (m << 13);
+    float out;
+    memcpy(&out, &f, 4);
+    return out;
+}
+
+bool Renderer::readCapture(std::vector<float>& rgba, uint32_t& w, uint32_t& h) {
+    if (!m_capTex) return false;
+    waitIdle();
+    D3D12_RESOURCE_DESC d = m_capTex->GetDesc();
+    w = (uint32_t)d.Width;
+    h = d.Height;
+    D3D12_PLACED_SUBRESOURCE_FOOTPRINT fp = {};
+    UINT64 total = 0;
+    m_device->GetCopyableFootprints(&d, 0, 1, 0, &fp, nullptr, nullptr, &total);
+    Buffer rb = createBuffer(total, D3D12_HEAP_TYPE_READBACK, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST);
+    beginCommands();
+    transition(m_capTex.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_COPY_SOURCE);
+    D3D12_TEXTURE_COPY_LOCATION dl = {}, sl = {};
+    dl.pResource = rb.res.Get();
+    dl.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
+    dl.PlacedFootprint = fp;
+    sl.pResource = m_capTex.Get();
+    sl.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+    m_cmd->CopyTextureRegion(&dl, 0, 0, 0, &sl, nullptr);
+    transition(m_capTex.Get(), D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+    executeAndWait();
+    void* p = nullptr;
+    D3D12_RANGE r = {0, (SIZE_T)total};
+    if (FAILED(rb.res->Map(0, &r, &p))) return false;
+    rgba.resize((size_t)w * h * 4);
+    for (uint32_t y = 0; y < h; ++y) {
+        const uint16_t* row = (const uint16_t*)((const uint8_t*)p + fp.Offset + (size_t)y * fp.Footprint.RowPitch);
+        for (uint32_t x = 0; x < w * 4; ++x) rgba[(size_t)y * w * 4 + x] = halfToFloat(row[x]);
+    }
+    D3D12_RANGE wr = {0, 0};
+    rb.res->Unmap(0, &wr);
+    return true;
+}
+
+} // namespace vp3d

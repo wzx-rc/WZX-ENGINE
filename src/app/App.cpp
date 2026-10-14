@@ -107,6 +107,8 @@ bool App::init(HINSTANCE inst, const Options& opt) {
     m_vpPx.h = (int)(540 * m_dpi);
     m_rs.ddgi = opt.ddgi;
     m_rs.ddgiRaster = opt.ddgiRaster;
+    m_rs.ddgiRasterView = opt.ddgiRasterView;
+    m_rs.ddgiShowProbes = opt.showProbes;
     m_rs.ddgiCaptureProbes = opt.ddgiCapture;
     m_rs.ddgiProbeBudget = opt.probes;
     m_rs.ddgiView = opt.ddgiView;
@@ -422,6 +424,24 @@ void App::frame() {
         uint32_t w, h;
         bool ok = m_opt.shotViewport ? m_renderer.readViewport(img, w, h) : m_renderer.readBackBuffer(img, w, h);
         if (ok) savePng(m_opt.shotPath, img, w, h);
+        if (const char* dump = getenv("VP3D_DUMP_CAPTURE")) {   // debug: the probe cube captures of the last frame
+            std::vector<float> cap;
+            uint32_t cw, ch;
+            if (m_renderer.readCapture(cap, cw, ch)) {
+                std::vector<uint8_t> rgb(cap.size()), dist(cap.size());
+                for (size_t i = 0; i < cap.size(); i += 4) {
+                    for (int c = 0; c < 3; ++c) rgb[i + c] = (uint8_t)(255.0f * std::pow(std::min(std::max(cap[i + c], 0.0f), 1.0f), 1.0f / 2.2f));
+                    float dd = cap[i + 3];
+                    uint8_t v = dd < 0 ? 0 : (uint8_t)std::min(255.0f, dd * 2.0f);
+                    dist[i] = dist[i + 1] = dist[i + 2] = dd > 1e26f ? 255 : v;
+                    if (dd < 0) dist[i] = 128;
+                }
+                std::string base(dump);
+                std::wstring wb(base.begin(), base.end());
+                savePng(wb + L"_rgb.png", rgb, cw, ch);
+                savePng(wb + L"_dist.png", dist, cw, ch);
+            }
+        }
         m_running = false;
     }
     m_renderer.present(true);
@@ -821,6 +841,8 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         else if (a == L"--ddgi") opt.ddgi = _wtoi(next().c_str()) != 0;
         else if (a == L"--probes") opt.probes = _wtoi(next().c_str());
         else if (a == L"--ddgi-raster") opt.ddgiRaster = _wtoi(next().c_str()) != 0;
+        else if (a == L"--ddgi-raster-view") opt.ddgiRasterView = _wtoi(next().c_str()) != 0;
+        else if (a == L"--show-probes") opt.showProbes = _wtoi(next().c_str()) != 0;
         else if (a == L"--ddgi-capture") opt.ddgiCapture = _wtoi(next().c_str());
         else if (a == L"--ddgi-view") opt.ddgiView = _wtoi(next().c_str());
         else if (a == L"--temporal-cap") opt.temporalCap = _wtoi(next().c_str());

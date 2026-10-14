@@ -19,7 +19,7 @@ struct RasterConstants {
     float3 sunRadiance; float sunFromEnv;   // sunFromEnv: the key is the sun of the HDRI (its highlight is in the reflections)
     float4 shIrr[9];                     // HDRI irradiance (cosine-convolved SH, without the sun), image space
     float envMapOn; float envRotation; float envMapIntensity; float envMips;
-    float envVisible; uint sunLight; float pad2; float pad3;   // sunLight: index of the path tracer's sun quad (skipped here)
+    float envVisible; uint sunLight; float giMode; float pad3;   // sunLight: index of the path tracer's sun quad (skipped here); giMode: DDGI probes (see Shade)
 };
 ConstantBuffer<RasterConstants> R : register(b0);
 
@@ -48,6 +48,19 @@ SamplerState gLinearWrap : register(s1);
 Texture2D<float4> gEnvTex : register(t3);   // HDRI (lat-long, with mips)
 
 static const float PI = 3.14159265;
+
+// DDGI without ray tracing (VP3D_DDGI_PROBES, R.giMode > 0): the diffuse ambient of Shade is read from the probe volume
+// (DDGIProbe.hlsli, same code as the compute passes) instead of the hemisphere / HDRI terms. Lit (Diligent, FXC) has no
+// register spaces: t4..t19 hold the material textures there, so the atlases move to t20..t22.
+#ifdef VP3D_DDGI_PROBES
+#define DDGI_PROBES_READONLY
+#ifdef VP3D_ATTRIB_SEMANTICS
+#define DDGI_PROBE_REG_IRR t20
+#define DDGI_PROBE_REG_DIST t21
+#define DDGI_PROBE_REG_STATE t22
+#endif
+#include "DDGIProbe.hlsli"
+#endif
 #define DRAW_GHOST 1u
 #define DRAW_LIGHT 2u
 
@@ -158,6 +171,13 @@ float3 EnvBRDFApprox(float3 f0, float rough, float NoV) {
     return f0 * AB.x + AB.y;
 }
 
+// DDGI probe capture (PSProbe, VSProbe): view-projection of the cube face and the probe position (root constants b3).
+struct ProbeFaceConstants {
+    row_major float4x4 viewProj;
+    float3 origin; float pad;
+};
+ConstantBuffer<ProbeFaceConstants> PF : register(b3);
+
 // ---------------------------------------------------------------- shading
 
 float D_GGX(float NoH, float a) {
@@ -211,10 +231,12 @@ float3 GridColor(float3 base, float3 wpos, inout float3 emission) {
     return base;
 }
 
-float4 Shade(VSOut i, bool ghost, float shadowBias) {
+// capture: the probe capture (PSProbe). In DDGI mode its ambient is left out: the bounce is added from the probes
+// by the ray pass (DDGIRaster.hlsl), so the camera view and the probes see the same light, once.
+float4 Shade(VSOut i, bool ghost, float shadowBias, bool capture) {
     GpuMaterial m = gMats[D.materialId];
     float3 N = normalize(i.nrm);
-    float3 V = normalize(R.camPos - i.wpos);
+    float3 V = normalize((capture ? PF.origin : R.camPos) - i.wpos);   // the probe is the viewer of its capture
     if (dot(N, V) < 0) N = -N;
     float3 base = m.baseColor;
     float3 emission = m.emission;
@@ -290,6 +312,19 @@ float4 Shade(VSOut i, bool ghost, float shadowBias) {
     }
     // Hemisphere ambient + reflection of the environment, darkened in cavities facing down.
     float cavity = lerp(0.55, 1.0, saturate(i.wpos.y * 0.6 + 0.5 + N.y * 0.3));
+#ifdef VP3D_DDGI_PROBES
+    if (R.giMode > 0) {
+        // Diffuse GI from the probes (view 1: indirect only, 2: direct only, as GIShade.hlsl). The glossy part reads
+        // the probes around the reflected direction: a blurred reflection of the room, no sky leaking indoors.
+        if (G.view == 1 && !capture) color = 0;
+        if (!capture && G.view != 2) {
+            float3 Fe = EnvBRDFApprox(f0, rough, NoV);
+            float3 kd = diffuseCol * (1 - Fe);
+            color += kd * SampleIrradiance(i.wpos, N, V);
+            color += Fe * SampleIrradiance(i.wpos, reflect(-V, N), V);
+        }
+    } else
+#endif
     if (R.envMapOn > 0) {
         // HDRI: SH irradiance (diffuse) and the blurred mips of the image along the reflection (glossy).
         float3 Rd = reflect(-V, N);
@@ -314,18 +349,37 @@ float4 Shade(VSOut i, bool ghost, float shadowBias) {
     return float4(color, alpha);
 }
 
-float4 PSMain(VSOut i) : SV_Target { return Shade(i, false, 0.0015); }
-float4 PSGhost(VSOut i) : SV_Target { return Shade(i, true, 0.0015); }
+float4 PSMain(VSOut i) : SV_Target {
+#ifdef VP3D_DDGI_PROBES
+    // Debug (G.flags bit 1): the probes drawn as small spheres shaded with their irradiance (red = disabled), as GIShade.
+    if (R.giMode > 0 && (G.flags & 1u)) {
+        float3 dir = normalize(i.wpos - R.camPos);
+        float best = length(i.wpos - R.camPos);
+        float r = min(G.spacing.x, min(G.spacing.y, G.spacing.z)) * 0.1;
+        uint hitProbe = 0xFFFFFFFFu;
+        for (uint p = 0; p < G.counts.w; ++p) {
+            float3 oc = R.camPos - ProbePos(ProbeCoord(p));
+            float b = dot(oc, dir), c = dot(oc, oc) - r * r;
+            float disc = b * b - c;
+            if (disc <= 0) continue;
+            float t = -b - sqrt(disc);
+            if (t > 0 && t < best) { best = t; hitProbe = p; }
+        }
+        if (hitProbe != 0xFFFFFFFFu) {
+            float3 n = normalize(R.camPos + dir * best - ProbePos(ProbeCoord(hitProbe)));
+            float3 c = gProbe[int2(hitProbe, 0)].x > 0.5 ? SampleTile(gIrr, hitProbe, DDGI_IRR_N, n).rgb : float3(0.6, 0.02, 0.02);
+            return float4(c, 1);
+        }
+    }
+#endif
+    return Shade(i, false, 0.0015, false);
+}
+float4 PSGhost(VSOut i) : SV_Target { return Shade(i, true, 0.0015, false); }
 float4 PSId(VSOut i) : SV_Target { return float4(0, 0, 0, (float)D.id); }
 
 // ---------------------------------------------------------------- DDGI probe capture
 // One 90-degree cube face per draw: the view-projection of the face and the probe position (32-bit root constants b3).
 // The face is lit like the main pass; alpha = distance to the probe (negative for back faces, as the ray tracer).
-struct ProbeFaceConstants {
-    row_major float4x4 viewProj;
-    float3 origin; float pad;
-};
-ConstantBuffer<ProbeFaceConstants> PF : register(b3);
 
 VSOut VSProbe(VSIn i) {
     VSOut o;
@@ -356,7 +410,7 @@ ProbeOut PSProbe(VSOut i, bool front : SV_IsFrontFace) {
     float3 base = m.baseColor;
     if (m.baseColorTex != NO_TEXTURE) base *= gTextures[NonUniformResourceIndex(m.baseColorTex)].Sample(gLinearWrap, i.uv).rgb;
     // Shadow bias of the probes: the main pass bias (0.0015) leaves acne on surfaces grazed by the key light.
-    o.radiance = float4(Shade(i, false, 0.01).rgb, d);
+    o.radiance = float4(Shade(i, false, 0.01, true).rgb, d);
     o.albedo = float4(base * (1.0 - m.transmission) * (1.0 - 0.6 * m.metallic), 1);
     o.normal = float4(normalize(i.nrm), 1);
     return o;

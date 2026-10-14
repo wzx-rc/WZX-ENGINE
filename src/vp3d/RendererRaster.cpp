@@ -27,7 +27,7 @@ struct RasterConstants {
     float3 sunRadiance; float sunFromEnv;
     float shIrr[9][4];
     float envMapOn; float envRotation; float envMapIntensity; float envMips;
-    float envVisible; uint32_t sunLight; float pad2, pad3;
+    float envVisible; uint32_t sunLight; float giMode, pad3;   // giMode: DDGI probes read by Shade (Raster.hlsl)
 };
 
 struct DrawConstants {
@@ -83,7 +83,12 @@ bool Renderer::createRasterPipelines(std::string* error) {
     envRange.NumDescriptors = 1;
     envRange.BaseShaderRegister = 3;
 
-    D3D12_ROOT_PARAMETER p[8] = {};
+    D3D12_DESCRIPTOR_RANGE probeRange = {};   // t4..t6 probe atlases (DDGI without ray tracing)
+    probeRange.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+    probeRange.NumDescriptors = 3;
+    probeRange.BaseShaderRegister = 4;
+
+    D3D12_ROOT_PARAMETER p[10] = {};
     p[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
     p[0].Descriptor.ShaderRegister = 0;
     p[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
@@ -108,6 +113,13 @@ bool Renderer::createRasterPipelines(std::string* error) {
     p[7].ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;   // b3 probe face (DDGI capture), vertex + pixel
     p[7].Constants.ShaderRegister = 3;
     p[7].Constants.Num32BitValues = 20;
+    p[8].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;   // t4..t6 probe atlases, pixel
+    p[8].DescriptorTable.NumDescriptorRanges = 1;
+    p[8].DescriptorTable.pDescriptorRanges = &probeRange;
+    p[8].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+    p[9].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;   // b2 DDGI constants, pixel
+    p[9].Descriptor.ShaderRegister = 2;
+    p[9].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
 
     D3D12_STATIC_SAMPLER_DESC ss = {};
     ss.Filter = D3D12_FILTER_COMPARISON_MIN_MAG_LINEAR_MIP_POINT;
@@ -127,7 +139,7 @@ bool Renderer::createRasterPipelines(std::string* error) {
     ts.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
 
     D3D12_ROOT_SIGNATURE_DESC rsd = {};
-    rsd.NumParameters = 8;
+    rsd.NumParameters = 10;
     rsd.pParameters = p;
     rsd.NumStaticSamplers = 2;
     rsd.pStaticSamplers = samplers;
@@ -374,7 +386,8 @@ void Renderer::createRasterTargets(uint32_t w, uint32_t h) {
     m_device->CreateDepthStencilView(m_idDepth.Get(), nullptr, dsv);
 }
 
-void Renderer::recordRaster(const Scene& scene, const RenderSettings& rs, const ViewRect& vp, bool probeCapture) {
+void Renderer::recordRaster(const Scene& scene, const RenderSettings& rs, const ViewRect& vp, bool probeCapture, bool probes,
+                            bool shadow) {
     const Camera& cam = scene.camera;
     float3 r, u, f;
     cam.basis(r, u, f);
@@ -393,7 +406,7 @@ void Renderer::recordRaster(const Scene& scene, const RenderSettings& rs, const 
     int key = -1;
     float best = 0;
     int li = 0;
-    float3 keyCenter(0, 50, 0);
+    float3 keyCenter(0, 50, 0), keyDir(0, -1, 0);   // keyDir: axis of the key area light (its normal)
     float3 c = m_sceneCenter;
     float R = m_sceneRadius * 1.05f;
     bool sun = scene.sun.enabled && scene.sun.intensity > 0;
@@ -412,16 +425,21 @@ void Renderer::recordRaster(const Scene& scene, const RenderSettings& rs, const 
         for (const AreaLight& l : scene.lights) {
             if (!l.enabled) continue;
             float pw = (l.color.x + l.color.y + l.color.z) * l.intensity * l.width * l.height;
-            if (pw > best) { best = pw; key = li; keyCenter = l.position; }
+            if (pw > best) { best = pw; key = li; keyCenter = l.position; keyDir = normalize(l.target - l.position); }
             ++li;
         }
     }
-    float3 lz = normalize(c - keyCenter);
+    // An area light looks along its own normal: aimed at the scene centre it would look sideways when the bounds are
+    // off-centre (a floor running towards the camera) and the walls would cut the shadow map diagonally.
+    float3 lz = key >= 0 ? keyDir : normalize(c - keyCenter);
     float3 ref = std::fabs(lz.y) > 0.99f ? float3(1, 0, 0) : float3(0, 1, 0);
     float3 lx = normalize(cross(ref, lz)), ly = cross(lz, lx);
     setRows(rc.lightViewProj, 0, lx / R, -dot(lx, c) / R);
     setRows(rc.lightViewProj, 1, ly / R, -dot(ly, c) / R);
-    setRows(rc.lightViewProj, 2, lz / (2 * R), (-dot(lz, c) + R) / (2 * R));
+    // Depth from the light itself to the far side of the scene: what lies behind a local light (the ceiling above a
+    // ceiling lamp) is clipped instead of shadowing the whole scene. The sun sits at 3 R, so its range is 4 R.
+    const float zRange = dot(lz, c - keyCenter) + R;
+    setRows(rc.lightViewProj, 2, lz / zRange, -dot(lz, keyCenter) / zRange);
     setRows(rc.lightViewProj, 3, float3(0, 0, 0), 1);
 
     rc.camPos = eye;
@@ -453,6 +471,7 @@ void Renderer::recordRaster(const Scene& scene, const RenderSettings& rs, const 
     rc.envMips = m_envMips;
     rc.envVisible = scene.env.visibleToCamera ? 1.0f : 0.0f;
     rc.sunLight = m_sunLight;
+    rc.giMode = (probes || probeCapture) ? 1.0f : 0.0f;   // probes read by the main pass; the capture drops its ambient
     memcpy(m_rasterCB.mapped, &rc, sizeof(rc));
 
     m_cmd->SetGraphicsRootSignature(m_rasterRoot.Get());
@@ -466,6 +485,10 @@ void Renderer::recordRaster(const Scene& scene, const RenderSettings& rs, const 
     D3D12_GPU_DESCRIPTOR_HANDLE envSrv = m_heap->GetGPUDescriptorHandleForHeapStart();
     envSrv.ptr += (UINT64)kEnvHeapSlot * m_descSize;
     m_cmd->SetGraphicsRootDescriptorTable(6, envSrv);
+    D3D12_GPU_DESCRIPTOR_HANDLE probeSrv = m_heap->GetGPUDescriptorHandleForHeapStart();
+    probeSrv.ptr += (UINT64)kProbeSrvSlot * m_descSize;
+    m_cmd->SetGraphicsRootDescriptorTable(8, probeSrv);   // null views until a probe grid exists; read only when giMode > 0
+    m_cmd->SetGraphicsRootConstantBufferView(9, m_giConstants.va());
 
     D3D12_VERTEX_BUFFER_VIEW vbv = {m_vb.va(), (UINT)m_vb.size, sizeof(gpu::GpuVertex)};
     D3D12_INDEX_BUFFER_VIEW ibv = {m_ib.va(), (UINT)m_ib.size, DXGI_FORMAT_R32_UINT};
@@ -489,8 +512,9 @@ void Renderer::recordRaster(const Scene& scene, const RenderSettings& rs, const 
     };
 
     // 1) shadow map
-    transition(m_shadowMap.Get(), D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_DEPTH_WRITE);
     D3D12_CPU_DESCRIPTOR_HANDLE dsvBase = m_dsvHeap->GetCPUDescriptorHandleForHeapStart();
+    if (shadow) {
+    transition(m_shadowMap.Get(), D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_DEPTH_WRITE);
     D3D12_CPU_DESCRIPTOR_HANDLE shadowDsv = dsvBase;
     shadowDsv.ptr += 2 * (SIZE_T)m_dsvSize;
     m_cmd->OMSetRenderTargets(0, nullptr, FALSE, &shadowDsv);
@@ -504,6 +528,7 @@ void Renderer::recordRaster(const Scene& scene, const RenderSettings& rs, const 
         for (const Draw& d : m_draws)
             if (!(d.flags & 7u) && !isTransparent(d)) drawOne(d);
     transition(m_shadowMap.Get(), D3D12_RESOURCE_STATE_DEPTH_WRITE, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+    }
 
     // Probe capture (DDGI raster): the six cube faces of each probe of the batch, lit like the main pass, in one
     // target: kProbeFace texels per face, faces side by side, one row of faces per probe slot. Alpha = distance.
@@ -598,3 +623,4 @@ void Renderer::recordRaster(const Scene& scene, const RenderSettings& rs, const 
 }
 
 } // namespace vp3d
+

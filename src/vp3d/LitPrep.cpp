@@ -371,7 +371,7 @@ void computeFrame(const Scene& scene, const SceneData& data, const Environment* 
     int key = -1;
     float best = 0;
     int li = 0;
-    float3 keyCenter(0, 50, 0);
+    float3 keyCenter(0, 50, 0), keyDir(0, -1, 0);   // keyDir: axis of the key area light (its normal)
     float3 c = data.center;
     float R = data.radius * 1.05f;
     bool sun = scene.sun.enabled && scene.sun.intensity > 0;
@@ -390,16 +390,21 @@ void computeFrame(const Scene& scene, const SceneData& data, const Environment* 
         for (const AreaLight& l : scene.lights) {
             if (!l.enabled) continue;
             float pw = (l.color.x + l.color.y + l.color.z) * l.intensity * l.width * l.height;
-            if (pw > best) { best = pw; key = li; keyCenter = l.position; }
+            if (pw > best) { best = pw; key = li; keyCenter = l.position; keyDir = normalize(l.target - l.position); }
             ++li;
         }
     }
-    float3 lz = normalize(c - keyCenter);
+    // An area light looks along its own normal: aimed at the scene centre it would look sideways when the bounds are
+    // off-centre (a floor running towards the camera) and the walls would cut the shadow map diagonally.
+    float3 lz = key >= 0 ? keyDir : normalize(c - keyCenter);
     float3 ref = std::fabs(lz.y) > 0.99f ? float3(1, 0, 0) : float3(0, 1, 0);
     float3 lx = normalize(cross(ref, lz)), ly = cross(lz, lx);
     setRows(rc.lightViewProj, 0, lx / R, -dot(lx, c) / R);
     setRows(rc.lightViewProj, 1, ly / R, -dot(ly, c) / R);
-    setRows(rc.lightViewProj, 2, lz / (2 * R), (-dot(lz, c) + R) / (2 * R));
+    // Depth from the light itself to the far side of the scene: what lies behind a local light (the ceiling above a
+    // ceiling lamp) is clipped instead of shadowing the whole scene. The sun sits at 3 R, so its range is 4 R.
+    const float zRange = dot(lz, c - keyCenter) + R;
+    setRows(rc.lightViewProj, 2, lz / zRange, -dot(lz, keyCenter) / zRange);
     setRows(rc.lightViewProj, 3, float3(0, 0, 0), 1);
 
     rc.camPos = eye;

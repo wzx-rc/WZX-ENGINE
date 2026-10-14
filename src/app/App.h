@@ -71,6 +71,8 @@ struct Options {
     // DDGI probe GI (real-time mode)
     bool ddgi = false;          // start in the real-time probe GI mode
     bool ddgiRaster = false;    // probe rays from raster cube captures (no ray tracing for the probes)
+    bool ddgiRasterView = false;   // diagnostic: raster viewport reading ray traced probes (--ddgi-raster-view 1)
+    bool showProbes = false;       // draw the probes as spheres shaded with their irradiance (--show-probes 1)
     int ddgiCapture = 32;       // probes captured per frame (raster)
     int probes = 2048;          // target probe count over the scene bounds
     int ddgiView = 0;           // 0 full, 1 indirect only, 2 direct only

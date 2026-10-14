@@ -25,12 +25,15 @@ float3 TexelDir(int2 t, int n) {
 void main(uint3 gid : SV_GroupID, uint3 tid3 : SV_GroupThreadID) {
     uint p = gid.x;
     uint tid = tid3.x;
-    // Raster capture: a probe never captured has no rays yet; it stays inactive (its tiles are not read).
+    // Raster capture: a probe never captured has no rays yet; it stays inactive (its tiles are not read). Only the
+    // probes captured this frame are blended: the rays of the others were taken with another rotation of the ray set
+    // (G.rot is per frame), blending them again would smear their radiance over all directions.
     const bool rasterCapture = (G.flags & 2u) != 0u;
     if (rasterCapture && p >= G.captureSeen) {
         if (tid == 0) gProbe[int2(p, 0)] = float4(0, 0, 0, 1);
         return;
     }
+    if (rasterCapture && (p + G.counts.w - G.captureBase) % G.counts.w >= G.captureSlots) return;
     // First capture of this probe: no history yet (its tiles hold no valid data).
     const bool fresh = rasterCapture && G.captureSeen < G.counts.w && p + G.captureSlots >= G.captureSeen;
     if (tid == 0) sBackfaces = 0;
@@ -41,7 +44,11 @@ void main(uint3 gid : SV_GroupID, uint3 tid3 : SV_GroupThreadID) {
     if (r.w < 0) InterlockedAdd(sBackfaces, 1u);
     GroupMemoryBarrierWithGroupSync();
 
-    float h = (G.frame == 0 || fresh) ? 0.0 : G.hysteresis;
+    // A raster probe is refreshed once per cycle of total / captureSlots frames: its hysteresis covers that many frames
+    // of the ray traced one (per frame), floored so a capture (128 rays) does not replace the tile outright.
+    float h = G.hysteresis;
+    if (rasterCapture) h = max(pow(G.hysteresis, ceil((float)G.counts.w / max(G.captureSlots, 1u))), 0.5);
+    if (G.frame == 0 || fresh) h = 0.0;
     const uint irrTile = DDGI_IRR_N + 2, distTile = DDGI_DIST_N + 2;
     const uint irrCount = irrTile * irrTile, total = irrCount + distTile * distTile;
     for (uint t = tid; t < total; t += DDGI_RAYS) {
