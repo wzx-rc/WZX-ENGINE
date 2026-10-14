@@ -324,9 +324,7 @@ void App::atlTopBar(float x0, float y0, float width) {
                 if (ImGui::MenuItem("Studio Scene", "F2", m_sceneId == SCENE_STUDIO)) m_pendingScene = SCENE_STUDIO;
                 if (ImGui::MenuItem("LookDev Scene", "F3", m_sceneId == SCENE_LOOKDEV)) m_pendingScene = SCENE_LOOKDEV;
                 ImGui::Separator();
-                ImGui::BeginDisabled();
-                ImGui::MenuItem("Build for PC (DX12)");
-                ImGui::EndDisabled();
+                if (ImGui::MenuItem("Build…", "F7") && m_game) m_game->openBuildWindow();
                 ImGui::Separator();
                 if (ImGui::MenuItem("Viewport Capture", "F12")) saveScreenshot(false);
                 if (ImGui::MenuItem("Settings…")) m_showSettings = true;
@@ -380,12 +378,14 @@ void App::atlTopBar(float x0, float y0, float width) {
     if (Button("workspaceScene", {x0 + 339 * s, ty, 79 * s, 24 * s}, "Scene", Icon::Scene, m_workspace == 0)) m_workspace = 0;
     if (Button("workspaceGraph", {x0 + 422 * s, ty, 96 * s, 24 * s}, "Graph", Icon::Blueprint, m_workspace == 1)) m_workspace = 1;
     if (Button("workspaceMaterials", {x0 + 522 * s, ty, 117 * s, 24 * s}, "Materials", Icon::Material, m_workspace == 2)) m_workspace = 2;
-    // centre: test player (next step of the engine)
+    // centre: build window and test player
     float cx = x0 + std::max(655 * s, width / 2 - 89 * s);
-    Button("buildScene", {cx, y0 + 6 * s, 103 * s, 25 * s}, "Build", Icon::Check, false, false, false);
-    Tip("Build targets: coming in a next step");
-    Button("playScene", {cx + 109 * s, y0 + 6 * s, 71 * s, 25 * s}, "Play", Icon::Play, false, false, false);
-    Tip("Test player: coming in a next step");
+    if (Button("buildScene", {cx, y0 + 6 * s, 103 * s, 25 * s}, "Build", Icon::Check, false, false, m_game != nullptr)) m_game->openBuildWindow();
+    Tip("Build the game for a platform: Windows now, iOS coming soon (F7)");
+    const bool playing = m_game && m_game->playing();
+    if (Button("playScene", {cx + 109 * s, y0 + 6 * s, 71 * s, 25 * s}, playing ? "Stop" : "Play", Icon::Play, playing, false, m_game != nullptr))
+        m_game->requestPlay();
+    Tip("Test the game in the editor (F5)");
     Button("stepScene", {cx + 186 * s, y0 + 6 * s, 27 * s, 25 * s}, "", Icon::Step, false, true, false);
     Tip("Test player: coming in a next step");
     // right

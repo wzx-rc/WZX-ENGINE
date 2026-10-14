@@ -479,7 +479,7 @@ bool GameHost::beginFrame() {
 
             }
             if (ImGui::IsKeyPressed(ImGuiKey_F5, false)) m_playing ? stop() : play();
-            if (ImGui::IsKeyPressed(ImGuiKey_F7, false)) m_pendingToolbar = 3;
+            if (ImGui::IsKeyPressed(ImGuiKey_F7, false)) openBuildWindow();
         } else {
             if (ImGui::IsKeyPressed(ImGuiKey_Escape, false)) PostMessageW(m_app.m_hwnd, WM_CLOSE, 0, 0);
             if (m_playerPathTracing && ImGui::IsKeyPressed(ImGuiKey_P, false)) m_app.setRenderMode(m_app.m_rs.raster ? 1 : 0);
@@ -489,13 +489,18 @@ bool GameHost::beginFrame() {
     switch (m_pendingToolbar) {
     case 1: m_playing ? stop() : play(); break;
     case 2: setGraphOpen(true); break;
-    case 3: {
+    case 3:   // Build window: Build / Build and Run with the profile shown
+    case 4: {
         std::wstring out;
         std::string err;
-        if (build("", false, out, err)) {
+        saveProfiles(m_profiles);
+        m_buildFailed = !buildProfile(m_profiles[m_profileIdx], m_pendingToolbar == 4, out, err);
+        if (!m_buildFailed) {
+            m_buildResult = toUtf8(out);
             toast(L"Build finished: " + out);
-            m_editor.addMessage(3, "Build finished: " + toUtf8(out));
+            m_editor.addMessage(3, "Build finished: " + m_buildResult);
         } else {
+            m_buildResult = err;
             toast(L"Build failed: " + fromUtf8(err));
             m_editor.addMessage(2, "Build failed: " + err);
         }
@@ -593,7 +598,7 @@ void GameHost::drawGraphWorkspace() {
         break;
     }
     case NodeEditor::Close: setGraphOpen(false); break;
-    case NodeEditor::Build: m_pendingToolbar = 3; break;
+    case NodeEditor::Build: openBuildWindow(); break;
     default: break;
     }
 }
@@ -651,6 +656,7 @@ void GameHost::draw() {
         if (placeActive()) drawRtsHud();
         drawToolbar();
     }
+    if (m_showBuild) drawBuildWindow();
     drawToasts();
 }
 
@@ -665,7 +671,7 @@ void GameHost::drawToolbar() {
     if (ImGui::Begin("##gamebar", nullptr, flags)) {
         if (ImGui::Button(m_playing ? "Stop  F5" : "Play  F5")) m_pendingToolbar = 1;
         ImGui::SameLine();
-        if (ImGui::Button("Build  F7")) m_pendingToolbar = 3;
+        if (ImGui::Button("Build  F7")) openBuildWindow();
     }
     ImGui::End();
 }
@@ -707,19 +713,19 @@ void GameHost::afterDraw() {
 
 // --------------------------------------------------------------------------- builds
 
+static const char* kDefaultProfiles =
+    "{\n  \"profiles\": [\n"
+    "    {\"name\": \"windows-release\", \"title\": \"WZX Game\", \"width\": 1600, \"height\": 900, \"fullscreen\": false, "
+    "\"pathTracing\": false, \"showFps\": false, \"commandApi\": false, \"zip\": true},\n"
+    "    {\"name\": \"windows-debug\", \"title\": \"WZX Game (debug)\", \"width\": 1600, \"height\": 900, \"fullscreen\": false, "
+    "\"pathTracing\": true, \"showFps\": true, \"commandApi\": true, \"zip\": false},\n"
+    "    {\"name\": \"windows-fullscreen\", \"title\": \"WZX Game\", \"width\": 1920, \"height\": 1080, \"fullscreen\": true, "
+    "\"pathTracing\": false, \"showFps\": false, \"commandApi\": false, \"zip\": true}\n"
+    "  ]\n}\n";
+
 std::vector<BuildProfile> GameHost::loadProfiles() {
     fs::path file = fs::path(m_gameDir) / "build_profiles.json";
-    if (!fs::exists(file)) {
-        std::ofstream f(file, std::ios::binary);
-        f << "{\n  \"profiles\": [\n"
-             "    {\"name\": \"windows-release\", \"title\": \"WZX Game\", \"width\": 1600, \"height\": 900, \"fullscreen\": false, "
-             "\"pathTracing\": false, \"showFps\": false, \"commandApi\": false},\n"
-             "    {\"name\": \"windows-debug\", \"title\": \"WZX Game (debug)\", \"width\": 1600, \"height\": 900, \"fullscreen\": false, "
-             "\"pathTracing\": true, \"showFps\": true, \"commandApi\": true},\n"
-             "    {\"name\": \"windows-fullscreen\", \"title\": \"WZX Game\", \"width\": 1920, \"height\": 1080, \"fullscreen\": true, "
-             "\"pathTracing\": false, \"showFps\": false, \"commandApi\": false}\n"
-             "  ]\n}\n";
-    }
+    if (!fs::exists(file)) std::ofstream(file, std::ios::binary) << kDefaultProfiles;
     std::vector<BuildProfile> out;
     Json j;
     if (Json::parse(readFile(file), j))
@@ -733,15 +739,28 @@ std::vector<BuildProfile> GameHost::loadProfiles() {
             b.pathTracing = p["pathTracing"].b;
             b.showFps = p["showFps"].b;
             b.commandApi = p["commandApi"].b;
+            if (p["zip"].type == Json::Bool) b.zip = p["zip"].b;
             out.push_back(b);
         }
     if (out.empty()) out.push_back(BuildProfile());
     return out;
 }
 
+bool GameHost::saveProfiles(const std::vector<BuildProfile>& profiles) {
+    std::ofstream f(fs::path(m_gameDir) / "build_profiles.json", std::ios::binary);
+    auto tf = [](bool v) { return v ? "true" : "false"; };
+    f << "{\n  \"profiles\": [\n";
+    for (size_t i = 0; i < profiles.size(); ++i) {
+        const BuildProfile& b = profiles[i];
+        f << "    {\"name\": " << jstr(b.name) << ", \"title\": " << jstr(b.title) << ", \"width\": " << b.width << ", \"height\": " << b.height
+          << ", \"fullscreen\": " << tf(b.fullscreen) << ", \"pathTracing\": " << tf(b.pathTracing) << ", \"showFps\": " << tf(b.showFps)
+          << ", \"commandApi\": " << tf(b.commandApi) << ", \"zip\": " << tf(b.zip) << "}" << (i + 1 < profiles.size() ? ",\n" : "\n");
+    }
+    f << "  ]\n}\n";
+    return (bool)f;
+}
+
 bool GameHost::build(const std::string& profileName, bool run, std::wstring& outDir, std::string& err) {
-    if (m_player) { err = "pas de build depuis un jeu exporté"; return false; }
-    if (m_playing) stop();
     std::vector<BuildProfile> profiles = loadProfiles();
     const BuildProfile* bp = &profiles[0];
     if (!profileName.empty()) {
@@ -749,19 +768,32 @@ bool GameHost::build(const std::string& profileName, bool run, std::wstring& out
         for (const BuildProfile& p : profiles) if (p.name == profileName) bp = &p;
         if (!bp) { err = "profil inconnu : " + profileName; return false; }
     }
-    std::string exeName;
-    for (char c : bp->title) exeName.push_back(strchr("\\/:*?\"<>|", c) ? '_' : c);
-    if (exeName.empty()) exeName = "Game";
-    exeName += ".exe";
+    return buildProfile(*bp, run, outDir, err);
+}
 
-    fs::path out = fs::path(m_projectDir) / "builds" / fromUtf8(bp->name);
+// Windows build: builds\<profile>\<Game>\ holds the game (exe, shaders, assets, scene, graph, game.json)
+// and builds\<profile>\<Game>.zip the same folder, ready to send. The exe links the C++ runtime
+// statically (build.bat /MT): nothing to install on the other PC, apart from a DirectX 12 ray tracing GPU.
+bool GameHost::buildProfile(const BuildProfile& bp, bool run, std::wstring& outDir, std::string& err) {
+    if (m_player) { err = "pas de build depuis un jeu exporté"; return false; }
+    if (m_playing) stop();
+    std::string base;
+    for (char c : bp.title) base.push_back(strchr("\\/:*?\"<>|", c) ? '_' : c);
+    while (!base.empty() && (base.back() == ' ' || base.back() == '.')) base.pop_back();
+    if (base.empty()) base = "Game";
+    std::wstring exeName = fromUtf8(base) + L".exe";
+
+    fs::path root = fs::path(m_projectDir) / "builds" / fromUtf8(bp.name);
+    fs::path out = root / fromUtf8(base);
     fs::path exeDir(m_app.m_exeDir);
     std::error_code ec;
+    fs::remove_all(out, ec);   // no file of an older build left behind
+    if (ec) { err = "nettoyage du dossier impossible (le jeu exporté est-il ouvert ?) : " + ec.message(); return false; }
     fs::create_directories(out, ec);
     if (ec) { err = "création du dossier impossible : " + ec.message(); return false; }
     wchar_t self[MAX_PATH];
     GetModuleFileNameW(nullptr, self, MAX_PATH);
-    fs::copy_file(self, out / fromUtf8(exeName), fs::copy_options::overwrite_existing, ec);
+    fs::copy_file(self, out / exeName, fs::copy_options::overwrite_existing, ec);
     if (ec) { err = "copie de l'exécutable impossible (le jeu exporté est-il ouvert ?) : " + ec.message(); return false; }
     fs::copy(exeDir / "shaders", out / "shaders", fs::copy_options::recursive | fs::copy_options::overwrite_existing, ec);
     if (ec) { err = "copie des shaders impossible : " + ec.message(); return false; }
@@ -780,17 +812,141 @@ bool GameHost::build(const std::string& profileName, bool run, std::wstring& out
     strftime(date, sizeof date, "%Y-%m-%d %H:%M:%S", &lt);
     {
         std::ofstream f(out / "game.json", std::ios::binary);
-        f << "{\n  \"format\": \"wzx-game\",\n  \"profile\": " << jstr(bp->name) << ",\n  \"title\": " << jstr(bp->title)
-          << ",\n  \"built\": " << jstr(date) << ",\n  \"width\": " << bp->width << ",\n  \"height\": " << bp->height
-          << ",\n  \"fullscreen\": " << (bp->fullscreen ? "true" : "false") << ",\n  \"pathTracing\": " << (bp->pathTracing ? "true" : "false")
-          << ",\n  \"showFps\": " << (bp->showFps ? "true" : "false") << ",\n  \"commandApi\": " << (bp->commandApi ? "true" : "false")
+        f << "{\n  \"format\": \"wzx-game\",\n  \"platform\": \"windows\",\n  \"profile\": " << jstr(bp.name) << ",\n  \"title\": " << jstr(bp.title)
+          << ",\n  \"built\": " << jstr(date) << ",\n  \"width\": " << bp.width << ",\n  \"height\": " << bp.height
+          << ",\n  \"fullscreen\": " << (bp.fullscreen ? "true" : "false") << ",\n  \"pathTracing\": " << (bp.pathTracing ? "true" : "false")
+          << ",\n  \"showFps\": " << (bp.showFps ? "true" : "false") << ",\n  \"commandApi\": " << (bp.commandApi ? "true" : "false")
           << ",\n  \"scene\": \"scene.v3d.json\",\n  \"graph\": \"graph.json\"\n}\n";
         if (!f) { err = "écriture de game.json impossible"; return false; }
     }
     outDir = out.wstring();
-    m_lastBuild = toUtf8(outDir);
-    if (run) ShellExecuteW(nullptr, L"open", (out / fromUtf8(exeName)).c_str(), nullptr, out.c_str(), SW_SHOWNORMAL);
+    if (bp.zip) {
+        // tar.exe of Windows 10/11 writes zip archives (-a picks the format from the extension)
+        fs::path zip = root / (fromUtf8(base) + L".zip");
+        fs::remove(zip, ec);
+        wchar_t sys[MAX_PATH];
+        GetSystemDirectoryW(sys, MAX_PATH);
+        std::wstring cmd = L"\"" + std::wstring(sys) + L"\\tar.exe\" -a -c -f \"" + zip.wstring() + L"\" \"" + fromUtf8(base) + L"\"";
+        STARTUPINFOW si = {sizeof(si)};
+        PROCESS_INFORMATION pi = {};
+        DWORD code = 1;
+        if (CreateProcessW(nullptr, cmd.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr, root.c_str(), &si, &pi)) {
+            WaitForSingleObject(pi.hProcess, 60000);
+            GetExitCodeProcess(pi.hProcess, &code);
+            CloseHandle(pi.hProcess);
+            CloseHandle(pi.hThread);
+        }
+        if (code != 0 || !fs::exists(zip)) { err = "le jeu est prêt dans " + toUtf8(outDir) + " mais le .zip n'a pas pu être créé"; return false; }
+        outDir = zip.wstring();
+    }
+    m_lastBuild = toUtf8(out.wstring());
+    if (run) ShellExecuteW(nullptr, L"open", (out / exeName).c_str(), nullptr, out.c_str(), SW_SHOWNORMAL);
     return true;
+}
+
+void GameHost::openBuildWindow() {
+    if (m_player) return;
+    m_profiles = loadProfiles();
+    if (m_profileIdx >= (int)m_profiles.size()) m_profileIdx = 0;
+    m_showBuild = true;
+}
+
+// Build window: target platform, profile and its options, then Build / Build and Run.
+void GameHost::drawBuildWindow() {
+    if (m_profiles.empty()) m_profiles = loadProfiles();
+    if (m_profileIdx >= (int)m_profiles.size()) m_profileIdx = 0;
+    float d = m_app.m_dpi;
+    ImGui::SetNextWindowSize(ImVec2(470 * d, 0), ImGuiCond_Appearing);
+    ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+    if (!ImGui::Begin("Build###buildwin", &m_showBuild, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoDocking)) {
+        ImGui::End();
+        return;
+    }
+    auto help = [](const char* text) {
+        ImGui::SameLine();
+        ImGui::TextDisabled("(i)");
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", text);
+    };
+    const float labelW = 130 * d;
+    auto label = [&](const char* text) {
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted(text);
+        ImGui::SameLine(labelW);
+    };
+
+    ImGui::SeparatorText("Platform");
+    int platform = 0;   // Windows only for now
+    ImGui::RadioButton("Windows (PC, DirectX 12)", &platform, 0);
+    ImGui::BeginDisabled();
+    ImGui::RadioButton("iOS (iPhone + iPad)  -  coming soon", &platform, 1);
+    ImGui::EndDisabled();
+    help("iOS needs a Mac with Xcode, an Apple developer account and a Metal version of the renderer.\n"
+         "One build runs on both iPhone and iPad: the game adapts to the screen of the device, there is no fixed resolution.");
+
+    ImGui::SeparatorText("Profile");
+    label("Profile");
+    ImGui::SetNextItemWidth(-1);
+    if (ImGui::BeginCombo("##profile", m_profiles[m_profileIdx].name.c_str())) {
+        for (int i = 0; i < (int)m_profiles.size(); ++i)
+            if (ImGui::Selectable(m_profiles[i].name.c_str(), i == m_profileIdx)) m_profileIdx = i;
+        ImGui::EndCombo();
+    }
+    BuildProfile& p = m_profiles[m_profileIdx];
+    char title[128];
+    snprintf(title, sizeof title, "%s", p.title.c_str());
+    label("Game name");
+    ImGui::SetNextItemWidth(-1);
+    if (ImGui::InputText("##title", title, sizeof title)) p.title = title;
+
+    ImGui::SeparatorText("Window");
+    ImGui::Checkbox("Fullscreen", &p.fullscreen);
+    help("Fullscreen on the main monitor, at its own resolution.");
+    ImGui::BeginDisabled(p.fullscreen);
+    label("Window size");
+    int size[2] = {p.width, p.height};
+    ImGui::SetNextItemWidth(160 * d);
+    if (ImGui::InputInt2("##size", size)) {
+        p.width = std::max(320, size[0]);
+        p.height = std::max(240, size[1]);
+    }
+    ImGui::EndDisabled();
+
+    ImGui::SeparatorText("Rendering");
+    ImGui::Checkbox("Allow path tracing (P key)", &p.pathTracing);
+    help("The player can switch between real time and path tracing with P. The game starts in real time.");
+
+    ImGui::SeparatorText("Debug tools");
+    ImGui::Checkbox("Show FPS", &p.showFps);
+    ImGui::Checkbox("Command API", &p.commandApi);
+    help("Keeps the local command API (http://127.0.0.1:7878) in the game, so Claude can drive and test it.\nLeave it off for a game you send.");
+
+    ImGui::SeparatorText("Package");
+    ImGui::Checkbox("Create a .zip to send", &p.zip);
+    help("The game folder packed into a single .zip file: the other person unzips it and double-clicks the .exe.\n"
+         "Nothing to install, but the PC needs a DirectX 12 GPU with ray tracing (GeForce RTX, Radeon RX 6000 or newer).");
+
+    ImGui::Spacing();
+    std::string where = "builds\\" + p.name + "\\" + (p.title.empty() ? std::string("Game") : p.title) + (p.zip ? ".zip" : "\\");
+    ImGui::TextDisabled("Output: %s", where.c_str());
+    ImGui::Spacing();
+    if (ImGui::Button("Build", ImVec2(110 * d, 0))) m_pendingToolbar = 3;
+    ImGui::SameLine();
+    if (ImGui::Button("Build and Run", ImVec2(130 * d, 0))) m_pendingToolbar = 4;
+    ImGui::SameLine();
+    if (ImGui::Button("Open folder", ImVec2(-1, 0))) {
+        fs::path dir = fs::path(m_projectDir) / "builds" / fromUtf8(p.name);
+        std::error_code ec;
+        fs::create_directories(dir, ec);
+        ShellExecuteW(nullptr, L"open", dir.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+    }
+    if (!m_buildResult.empty()) {
+        ImGui::Spacing();
+        ImGui::PushTextWrapPos(0);
+        if (m_buildFailed) ImGui::TextColored(ImVec4(0.95f, 0.45f, 0.4f, 1), "Build failed: %s", m_buildResult.c_str());
+        else ImGui::TextColored(ImVec4(0.3f, 0.75f, 0.4f, 1), "Build finished: %s", m_buildResult.c_str());
+        ImGui::PopTextWrapPos();
+    }
+    ImGui::End();
 }
 
 // --------------------------------------------------------------------------- command API

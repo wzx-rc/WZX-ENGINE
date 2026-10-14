@@ -24,6 +24,7 @@ struct BuildProfile {
     bool pathTracing = false;    // allow the P key (path tracing) in the built game
     bool showFps = false;
     bool commandApi = false;     // keep the local command API in the built game
+    bool zip = true;             // also pack the game folder into a .zip to send
 };
 
 class GameHost : public game::World {
@@ -47,6 +48,8 @@ public:
     // The village (RTS houses): the editor's village mode, and the "village" section of the scene file
     bool placementMode() const { return m_placeMode; }
     bool playing() const { return m_playing; }
+    void requestPlay() { m_pendingToolbar = 1; }   // the Play button of the top bar
+    void openBuildWindow();                        // the Build button of the top bar, F7
     void addHoverOutline(std::vector<int>& objects) const;   // the house under the cursor is outlined (its halo)
     void togglePlacement();                  // village mode of the editor (not during Play)
     void resetVillage();                     // a new scene: no houses
@@ -86,7 +89,10 @@ private:
     bool loadGraph(std::string* err = nullptr);
     void defaultGraph();
     std::vector<BuildProfile> loadProfiles();
+    bool saveProfiles(const std::vector<BuildProfile>& profiles);
     bool build(const std::string& profile, bool run, std::wstring& outDir, std::string& err);
+    bool buildProfile(const BuildProfile& bp, bool run, std::wstring& outDir, std::string& err);
+    void drawBuildWindow();
     void handleRequests();
     std::string command(const Json& j, int& status);
     std::string sceneJson() const;
@@ -162,6 +168,12 @@ private:
     struct Toast { std::wstring text; uint64_t t; };
     std::vector<Toast> m_toasts;
     std::string m_lastBuild;
+    // Build window (top bar Build, F7)
+    bool m_showBuild = false;
+    std::vector<BuildProfile> m_profiles;
+    int m_profileIdx = 0;
+    std::string m_buildResult;
+    bool m_buildFailed = false;
     std::shared_ptr<game::CommandRequest> m_shotReq;
     bool m_shotWindow = false;
 };

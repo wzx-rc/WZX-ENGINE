@@ -1,7 +1,7 @@
 {
   "profiles": [
-    {"name": "windows-release", "title": "WZX Game", "width": 1600, "height": 900, "fullscreen": false, "pathTracing": false, "showFps": false, "commandApi": false},
-    {"name": "windows-debug", "title": "WZX Game (debug)", "width": 1600, "height": 900, "fullscreen": false, "pathTracing": true, "showFps": true, "commandApi": true},
-    {"name": "windows-fullscreen", "title": "WZX Game", "width": 1920, "height": 1080, "fullscreen": true, "pathTracing": false, "showFps": false, "commandApi": false}
+    {"name": "windows-release", "title": "WZX Game", "width": 1600, "height": 900, "fullscreen": false, "pathTracing": false, "showFps": false, "commandApi": false, "zip": true},
+    {"name": "windows-debug", "title": "WZX Game (debug)", "width": 1600, "height": 900, "fullscreen": false, "pathTracing": true, "showFps": true, "commandApi": true, "zip": false},
+    {"name": "windows-fullscreen", "title": "WZX Game", "width": 1920, "height": 1080, "fullscreen": true, "pathTracing": false, "showFps": false, "commandApi": false, "zip": true}
   ]
 }

@@ -1,5 +1,6 @@
 @echo off
 rem Builds the vp3d module (static lib), its shaders and the Viewport3D demo app.
+rem The C++ runtime is linked statically (/MT): an exported game needs no Visual C++ redistributable.
 rem Usage: build.bat [debug]
 setlocal
 cd /d "%~dp0"
@@ -15,8 +16,8 @@ if not exist "%VSDIR%\VC\Auxiliary\Build\vcvars64.bat" (
 call "%VSDIR%\VC\Auxiliary\Build\vcvars64.bat" >nul 2>nul
 :havevc
 
-set "CFG=/O2 /DNDEBUG /MD"
-if /i "%1"=="debug" set "CFG=/Od /Zi /MDd /D_DEBUG"
+set "CFG=/O2 /DNDEBUG /MT"
+if /i "%1"=="debug" set "CFG=/Od /Zi /MTd /D_DEBUG"
 
 set "OUT=build\bin"
 if defined VP3D_OUT set "OUT=%VP3D_OUT%"
@@ -49,9 +50,9 @@ lib /nologo /OUT:build\lib\vp3d.lib build\obj\vp3d\*.obj || exit /b 1
 
 echo [3/5] Dear ImGui (third_party\imgui, built once)
 if not exist build\obj\imgui mkdir build\obj\imgui
-if not exist build\lib\imgui.lib (
+if not exist build\lib\imgui_mt.lib (
     cl %CFLAGS% /c third_party\imgui\imgui*.cpp third_party\imgui\backends\imgui_impl_win32.cpp third_party\imgui\backends\imgui_impl_dx12.cpp /Fo:build\obj\imgui\ || exit /b 1
-    lib /nologo /OUT:build\lib\imgui.lib build\obj\imgui\*.obj || exit /b 1
+    lib /nologo /OUT:build\lib\imgui_mt.lib build\obj\imgui\*.obj || exit /b 1
 )
 
 echo [4/5] Game layer (node graph, Play, builds)
@@ -62,6 +63,6 @@ cl %CFLAGS% /c src\game\*.cpp /Fo:build\obj\game\ || exit /b 1
 echo [5/5] WZX Engine editor
 cl %CFLAGS% /Isrc\app\atelier /c src\app\*.cpp src\app\atelier\*.cpp /Fo:build\obj\app\ || exit /b 1
 rc /nologo /fo build\obj\app\wzx.res src\app\res\wzx.rc || exit /b 1
-link /nologo /OUT:%OUT%\Viewport3D.exe build\obj\app\*.obj build\obj\app\wzx.res build\obj\game\*.obj build\lib\vp3d.lib build\lib\imgui.lib ws2_32.lib d3d12.lib dxgi.lib d3dcompiler.lib windowscodecs.lib user32.lib gdi32.lib ole32.lib shell32.lib shcore.lib comdlg32.lib dwmapi.lib /SUBSYSTEM:WINDOWS || exit /b 1
+link /nologo /OUT:%OUT%\Viewport3D.exe build\obj\app\*.obj build\obj\app\wzx.res build\obj\game\*.obj build\lib\vp3d.lib build\lib\imgui_mt.lib ws2_32.lib d3d12.lib dxgi.lib d3dcompiler.lib windowscodecs.lib user32.lib gdi32.lib ole32.lib shell32.lib shcore.lib comdlg32.lib dwmapi.lib /SUBSYSTEM:WINDOWS || exit /b 1
 
 echo Build OK: %OUT%\Viewport3D.exe
