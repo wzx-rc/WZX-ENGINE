@@ -46,6 +46,14 @@ struct Object {
     // Small world-space tilt (radians around X and Z) applied around a local pivot (animation).
     float tiltX = 0.0f, tiltZ = 0.0f;
     float3 tiltPivot{0, 0, 0};
+    // Scene Manager (editor outliner). position / rot / scale stay world values: the parent link is editor data
+    // (the editor moves the children with their parent), so the renderers and the players ignore these fields.
+    uint32_t id = 0;               // stable id, unique in the scene (0 = not assigned yet, the editor assigns it)
+    uint32_t parent = 0;           // id of the parent object or group (0 = root)
+    uint32_t collection = 0;       // id of its collection (root items only, 0 = none)
+    int order = 0;                 // rank among its siblings in the Scene Manager
+    bool group = false;            // group node: a transform only (mesh -1, part "GROUP"), never drawn or picked
+    bool collapsed = false;        // Scene Manager: children folded
 
     Affine transform() const {
         Affine m = useRot ? Affine::trsQuat(position, rot, scale) : Affine::trs(position, yaw, scale);
@@ -77,6 +85,10 @@ struct AreaLight {
     float intensity = 10.0f;
     bool visibleToCamera = true;
     bool enabled = true;
+    // Scene Manager (see Object)
+    uint32_t id = 0, parent = 0, collection = 0;
+    int order = 0;
+    bool selectable = true;
 
     void basis(float3& U, float3& V, float3& N) const;
 };
@@ -94,6 +106,20 @@ struct SunLight {
     float3 direction{0.4f, 0.8f, 0.3f};   // towards the sun
     float3 color{1.0f, 0.93f, 0.82f};
     float intensity = 3.2f;               // irradiance on a surface facing the sun
+    // Scene Manager (see Object; the sun has no parent)
+    uint32_t id = 0, collection = 0;
+    int order = 0;
+    bool selectable = true;
+};
+
+// Scene Manager collection: a root folder of the list holding objects, groups and lights. Not part of the 3D
+// scene (no transform, no parenting): its members are the root items whose collection is its id.
+struct Collection {
+    uint32_t id = 0;
+    std::string name = "Collection";
+    int color = 0;                        // index of the editor's preset palette
+    bool collapsed = false;
+    int order = 0;                        // rank among the root items of the Scene Manager
 };
 
 struct Environment {
@@ -134,6 +160,7 @@ struct Scene {
     std::vector<Object> objects;
     std::vector<AreaLight> lights;
     std::vector<Texture> textures;   // material textures, see Material::baseColorTex
+    std::vector<Collection> collections;   // Scene Manager folders (editor only)
     SunLight sun;                // distant sun: the RTS play turns it on (off by default)
     Environment env;
     Camera camera;               // default camera

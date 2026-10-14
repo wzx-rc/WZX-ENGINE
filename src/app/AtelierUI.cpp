@@ -629,10 +629,22 @@ void App::atlTopBar(float x0, float y0, float width) {
 
 // --------------------------------------------------------------------------- left panel (former Atelier graph Palette)
 
+// preset colours of the Scene Manager collections (Collection::color)
+static const ImU32 kCollectionColors[] = {
+    IM_COL32(128, 140, 160, 255), IM_COL32(229, 96, 96, 255), IM_COL32(232, 152, 72, 255), IM_COL32(222, 196, 82, 255),
+    IM_COL32(112, 190, 112, 255), IM_COL32(82, 190, 180, 255), IM_COL32(92, 152, 235, 255), IM_COL32(162, 122, 230, 255),
+    IM_COL32(225, 112, 182, 255), IM_COL32(160, 160, 160, 255)};
+static const char* kCollectionColorNames[] = {"Slate", "Red", "Orange", "Yellow", "Green", "Teal", "Blue", "Violet", "Pink", "Grey"};
+static const int kCollectionColorCount = 10;
+
+// Scene Manager: scene camera first, then the collections and the root items in their order, the children below
+// their parent. Click / Ctrl+click / Shift+click select, double-click or F2 renames, drag & drop reorders (between
+// two rows) or parents (on a row), right-click gives the actions of the row (or New Collection on the empty area).
 void App::atlHierarchy(float x, float y, float w, float h) {
     AtelierState& A = m_atl;
+    outlinerIds();
     R r = {x, y, w, h};
-    Panel(r, Icon::Scene, "Scene", "LEVEL", P().accent);
+    Panel(r, Icon::Scene, "Scene Manager", "LEVEL", P().accent);
     float px = r.x + 10 * s, py = r.y + 44 * s, pw = r.w - 20 * s;
     g_labelRight = px + pw;
     Label(px, py, "SCENES");
@@ -647,20 +659,28 @@ void App::atlHierarchy(float x, float y, float w, float h) {
     py += 14 * s;
     dl->AddLine(ImVec2(px, py), ImVec2(px + pw, py), P().border);
     py += 16 * s;
-    size_t count = m_scene.objects.size() + m_scene.lights.size();
-    Text(px, py, "HIERARCHY", P().text, 11);
+    size_t count = m_scene.lights.size() + 1;
+    for (const Object& o : m_scene.objects) count += !o.ghost && !(o.part == "House" && o.grab == -2);
+    Text(px, py, "OUTLINER", P().text, 11);
     std::string cnt = std::to_string(count) + " items";
     Text(px + pw - TextSize(cnt, 9).x, py + 2 * s, cnt, P().muted, 9);
     py += 24 * s;
     Search("##atlSceneSearch", {px, py, pw, 28 * s}, A.sceneSearch, sizeof(A.sceneSearch), "Search scene...");
     py += 36 * s;
-    if (Button("addObject", {px, py, pw, 23 * s}, "Add Object", Icon::Plus)) ImGui::OpenPopup("atlNewActor");
+    const float halfW = (pw - 6 * s) / 2;
+    if (Button("addObject", {px, py, halfW, 23 * s}, "Add Object", Icon::Plus)) ImGui::OpenPopup("atlNewActor");
     Tip("Add a primitive to the scene (or drag one from the Content Browser)");
     if (ImGui::BeginPopup("atlNewActor")) {
         for (const PartDef& p : parts())
             if (ImGui::MenuItem(toUtf8(p.name).c_str())) addPartFromLibrary(p);
         ImGui::EndPopup();
     }
+    if (Button("addCollection", {px + halfW + 6 * s, py, halfW, 23 * s}, "Collection", Icon::Folder)) {
+        pushUndo();
+        uint32_t c = addCollection("Collection", (int)(m_scene.collections.size() % kCollectionColorCount));
+        startRename(c);
+    }
+    Tip("New collection: a folder of the Scene Manager (no effect on the scene)");
     py += 33 * s;
 
     ImGui::SetCursorScreenPos(ImVec2(px, py));
@@ -670,110 +690,286 @@ void App::atlHierarchy(float x, float y, float w, float h) {
     ImGui::PopStyleVar();
     dl = ImGui::GetWindowDrawList();
     float yy = ImGui::GetCursorScreenPos().y;
-    const float rowH = 27 * s;
-    bool filtering = A.sceneSearch[0] != 0;
+    const float rowH = 27 * s, colH = 34 * s, indentW = 14 * s;
+    const bool ctrl = ImGui::GetIO().KeyCtrl, shift = ImGui::GetIO().KeyShift;
 
-    // category heading of former Atelier graph (coloured, 10 px) with a fold arrow
-    auto heading = [&](const char* id, const char* name, ImU32 color, bool& open, int n) {
-        R hr = {px, yy, pw, 21 * s};
-        if (Hit(id, hr)) open = !open;
-        Glyph(open || filtering ? Icon::ChevronDown : Icon::ChevronRight, px + 3 * s, yy + 5 * s, 9, color);
-        Text(px + 17 * s, yy + 2 * s, name, color, 10);
-        std::string c = std::to_string(n);
-        Text(px + pw - 8 * s - TextSize(c, 9).x, yy + 3 * s, c, P().muted, 9);
-        // drop an asset on a heading: add it to the scene
+    std::vector<OutlinerRow> rows;
+    outlinerRows(rows, A.sceneSearch);
+    struct PendingMove { int mode = -1; uint32_t target = 0; } move;
+    static uint32_t ctxId = 0;   // node of the context menu
+    bool openCtx = false, openEmpty = false;
+
+    // drop indicator of a row: line before / after, frame when dropped into the row
+    auto dropZone = [&](R rr, float indent, NodeRef n, bool open, uint32_t id) {
+        if (!ImGui::BeginDragDropTarget()) return;
+        const ImGuiPayload* pl = ImGui::AcceptDragDropPayload("WZX_NODE", ImGuiDragDropFlags_AcceptBeforeDelivery | ImGuiDragDropFlags_AcceptNoDrawDefaultRect);
+        if (pl) {
+            float t = (ImGui::GetMousePos().y - rr.y) / rr.h;
+            int mode;
+            if (n.kind == NODE_LIGHT || n.kind == NODE_SUN) mode = t < 0.5f ? 0 : 1;
+            else if (n.kind == NODE_COLLECTION) mode = t < 0.25f ? 0 : (t > 0.75f && !open ? 1 : 2);
+            else mode = t < 0.25f ? 0 : (t > 0.75f ? 1 : 2);
+            const ImU32 c = P().accent;
+            if (mode == 2) dl->AddRect(rr.min(), rr.max(), c, 3 * s, 0, 1.6f * s);
+            else {
+                float ly = mode == 0 ? rr.y : rr.y + rr.h;
+                dl->AddLine(ImVec2(rr.x + indent, ly), ImVec2(rr.x + rr.w, ly), c, 2 * s);
+                dl->AddCircleFilled(ImVec2(rr.x + indent, ly), 3 * s, c);
+            }
+            if (pl->IsDelivery()) move = {mode, id};
+        }
+        ImGui::EndDragDropTarget();
+    };
+
+    // fixed first row: the scene camera (not ordered, not a drop target except "before the first item")
+    {
+        R rr = {px, yy, pw, rowH - 2 * s};
+        ImGui::PushID("sceneCamera");
+        bool q = Hit("node", rr);
+        bool hv = ImGui::IsItemHovered();
+        if (hv) Box(rr, P().raised, 3);
+        if (!rows.empty()) {
+            if (ImGui::BeginDragDropTarget()) {
+                if (const ImGuiPayload* pl = ImGui::AcceptDragDropPayload("WZX_NODE", ImGuiDragDropFlags_AcceptBeforeDelivery | ImGuiDragDropFlags_AcceptNoDrawDefaultRect)) {
+                    dl->AddLine(ImVec2(rr.x, rr.y + rr.h), ImVec2(rr.x + rr.w, rr.y + rr.h), P().accent, 2 * s);
+                    if (pl->IsDelivery()) move = {0, rows.front().id};
+                }
+                ImGui::EndDragDropTarget();
+            }
+        }
+        Glyph(Icon::Camera, px + 8 * s, yy + 7 * s, 13, P().accent);
+        Text(px + 31 * s, yy + 7 * s, "Scene Camera", P().text, 11);
+        Tip("The scene camera: always first (its settings: Render tab)");
+        if (q) { select(-1); A.inspectorTab = 2; }
+        ImGui::PopID();
+        yy += rowH;
+    }
+
+    for (size_t ri = 0; ri < rows.size(); ++ri) {
+        const OutlinerRow& row = rows[ri];
+        const NodeRef n = row.node;
+        const bool isCol = n.kind == NODE_COLLECTION;
+        const float hh = isCol ? colH : rowH;
+        const float ind = row.depth * indentW;
+        R rr = {px, yy, pw, hh - 2 * s};
+        const bool sel = nodeSelected(n);
+        const bool vis = nodeVisible(n), locked = nodeLocked(n);
+        char id[32];
+        snprintf(id, sizeof(id), "node%u", row.id);
+        ImGui::PushID(id);
+        bool q = Hit("node", {rr.x, rr.y, rr.w - 48 * s, rr.h});
+        const bool hv = ImGui::IsItemHovered();
+        const bool dbl = hv && ImGui::IsMouseDoubleClicked(0);
+        if (hv && ImGui::IsMouseReleased(1)) { ctxId = row.id; openCtx = true; }
+        // drag the selection (or this row alone when it is not selected)
+        if (ImGui::BeginDragDropSource()) {
+            if (ImGui::GetDragDropPayload() == nullptr || !ImGui::GetDragDropPayload()->IsDataType("WZX_NODE")) {
+                m_outDrag.clear();
+                if (sel) m_outDrag = selectedNodeIds();
+                else m_outDrag.push_back(row.id);
+            }
+            int one = 1;
+            ImGui::SetDragDropPayload("WZX_NODE", &one, sizeof(one));
+            if (m_outDrag.size() == 1) ImGui::TextUnformatted(nodeName(findNode(m_outDrag[0])).c_str());
+            else ImGui::Text("%d items", (int)m_outDrag.size());
+            ImGui::EndDragDropSource();
+        }
+        dropZone(rr, ind + 6 * s, n, row.open, row.id);
+
+        // background
+        if (isCol) {
+            const Collection& c = m_scene.collections[n.index];
+            ImU32 cc = kCollectionColors[std::clamp(c.color, 0, kCollectionColorCount - 1)];
+            Box(rr, Fade(cc, sel ? 70 : (hv ? 46 : 30)), 4);
+            dl->AddRectFilled(rr.min(), ImVec2(rr.x + 3.5f * s, rr.y + rr.h), cc, 4 * s, ImDrawFlags_RoundCornersLeft);
+            if (sel) dl->AddRect(rr.min(), rr.max(), Fade(cc, 200), 4 * s, 0, 1.2f * s);
+        } else if (sel) SelectedRow(rr);
+        else if (hv) Box(rr, P().raised, 3);
+
+        // fold arrow
+        const float ax = px + ind + 2 * s, ty = yy + (hh - 2 * s - 13 * s) / 2;
+        if (row.hasChildren || isCol)
+            Glyph(row.open ? Icon::ChevronDown : Icon::ChevronRight, ax, yy + (hh - 2 * s - 9 * s) / 2, 9, isCol ? kCollectionColors[std::clamp(m_scene.collections[n.index].color, 0, kCollectionColorCount - 1)] : P().muted);
+        const float ix = ax + 13 * s;
+        Icon icon = Icon::Cube;
+        ImU32 icol = P().text;
+        std::string sub;
+        if (isCol) {
+            const Collection& c = m_scene.collections[n.index];
+            icon = row.open ? Icon::FolderOpen : Icon::Folder;
+            icol = kCollectionColors[std::clamp(c.color, 0, kCollectionColorCount - 1)];
+            sub = std::to_string(nodeChildren(0, c.id, false).size());
+        } else if (n.kind == NODE_OBJECT) {
+            const Object& o = m_scene.objects[n.index];
+            if (o.group) { icon = Icon::Folder; icol = IM_COL32(150, 170, 200, 255); }
+            else if (o.material >= 0 && o.material < (int)m_scene.materials.size()) icol = srgbU32(m_scene.materials[o.material].baseColor);
+        } else if (n.kind == NODE_LIGHT) { icon = Icon::Light; icol = IM_COL32(242, 201, 76, 255); }
+        else if (n.kind == NODE_SUN) { icon = Icon::Sun; icol = IM_COL32(242, 201, 76, 255); }
+        const bool dim = !vis;
+        Glyph(icon, ix, ty, 13, dim ? P().muted : icol);
+        const float nx = ix + 22 * s;
+        if (m_renameId == row.id) {
+            // inline rename: Enter validates, Esc cancels, a click elsewhere validates
+            ImGui::SetCursorScreenPos(ImVec2(nx - 4 * s, yy + (hh - 2 * s - ImGui::GetFrameHeight()) / 2));
+            ImGui::SetNextItemWidth(std::max(40 * s, px + pw - 52 * s - nx));
+            if (m_renameFocus) { ImGui::SetKeyboardFocusHere(); m_renameFocus = false; }
+            bool enter = ImGui::InputText("##rename", m_renameBuf, sizeof(m_renameBuf), ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_AutoSelectAll);
+            bool done = enter || ImGui::IsItemDeactivated();
+            if (done) {
+                const bool cancel = !enter && ImGui::IsKeyPressed(ImGuiKey_Escape, false);
+                if (!cancel && m_renameBuf[0] && nodeName(n) != m_renameBuf) { pushUndo(); setNodeName(n, m_renameBuf); status(L"Renamed: " + fromUtf8(m_renameBuf)); }
+                m_renameId = 0;
+            }
+        } else {
+            dl->PushClipRect(ImVec2(px, yy), ImVec2(px + pw - 52 * s - (sub.empty() ? 0 : 18 * s), yy + hh), true);
+            if (isCol) TextBold(nx, yy + (hh - 2 * s - 12 * s * ts()) / 2, nodeName(n), dim ? P().muted : P().text, 12);
+            else Text(nx, yy + (hh - 2 * s - 11 * s * ts()) / 2, nodeName(n), dim ? P().muted : P().text, 11);
+            dl->PopClipRect();
+            if (!sub.empty()) Text(px + pw - 52 * s - TextSize(sub, 9).x - 4 * s, yy + (hh - 2 * s - 9 * s * ts()) / 2, sub, P().muted, 9);
+        }
+        // eye / lock (a collection or a group: applied to its contents)
+        const float ey = yy + (hh - 2 * s - 11 * s) / 2;
+        if (Hit("eye", {px + pw - 44 * s, yy + 2 * s, 20 * s, hh - 6 * s})) { pushUndo(); setNodeVisible(n, !vis); }
+        Tip(vis ? "Hide" : "Show");
+        Glyph(Icon::Eye, px + pw - 40 * s, ey, 11, vis ? P().muted : Fade(P().muted, 90));
+        if (Hit("lock", {px + pw - 22 * s, yy + 2 * s, 20 * s, hh - 6 * s})) { pushUndo(); setNodeLocked(n, !locked); }
+        Tip(locked ? "Unlock" : "Lock (not selectable)");
+        Glyph(Icon::Lock, px + pw - 18 * s, ey, 11, locked ? P().accent : Fade(P().muted, 90));
+        ImGui::PopID();
+
+        if (dbl && n.kind != NODE_SUN) startRename(row.id);
+        else if (q) {
+            const bool onArrow = ImGui::GetMousePos().x < ix && (row.hasChildren || isCol);
+            if (onArrow || (isCol && ctrl)) {   // fold / unfold (Ctrl+click on a collection)
+                if (isCol) m_scene.collections[n.index].collapsed = row.open;
+                else if (n.kind == NODE_OBJECT) m_scene.objects[n.index].collapsed = row.open;
+            } else if (!isCol && locked) {
+                status(L"Locked: unlock it to select it", 2);
+            } else if (ctrl) {
+                toggleNodeSelected(n);
+                m_outAnchor = row.id;
+            } else if (shift && m_outAnchor) {
+                // range from the anchor to this row (the locked rows and the collections are skipped)
+                int a = -1, b = (int)ri;
+                for (size_t k = 0; k < rows.size(); ++k) if (rows[k].id == m_outAnchor) a = (int)k;
+                if (a < 0) a = b;
+                std::vector<NodeRef> range;
+                for (int k = std::min(a, b); k <= std::max(a, b); ++k)
+                    if (rows[k].node.kind != NODE_COLLECTION && !nodeLocked(rows[k].node)) range.push_back(rows[k].node);
+                if (isCol) range.push_back(n);
+                selectNodes(range, n);
+            } else {
+                selectNodes({n}, n);
+                m_outAnchor = row.id;
+            }
+        }
+        yy += hh;
+    }
+
+    // empty area below the rows: drop = back to the root (end of the list), right-click = new collection
+    {
+        float rest = std::max(ImGui::GetWindowPos().y + ImGui::GetWindowHeight() - yy, 40 * s);
+        R er = {px, yy, pw, rest};
+        Hit("outlinerEmpty", er);
+        bool hv = ImGui::IsItemHovered();
+        if (hv && ImGui::IsMouseReleased(1)) openEmpty = true;
+        if (hv && ImGui::IsMouseClicked(0) && !ctrl && !shift) select(-1);
         if (ImGui::BeginDragDropTarget()) {
+            if (const ImGuiPayload* pl = ImGui::AcceptDragDropPayload("WZX_NODE", ImGuiDragDropFlags_AcceptBeforeDelivery | ImGuiDragDropFlags_AcceptNoDrawDefaultRect)) {
+                dl->AddLine(ImVec2(px, yy + 1 * s), ImVec2(px + pw, yy + 1 * s), P().accent, 2 * s);
+                if (pl->IsDelivery()) move = {3, 0};
+            }
             if (const ImGuiPayload* pl = ImGui::AcceptDragDropPayload("WZX_ASSET")) addPartFromLibrary(parts()[*(const int*)pl->Data]);
             ImGui::EndDragDropTarget();
         }
-        yy += 23 * s;
-        return open || filtering;
-    };
-    // row of the graph node library: icon, name 11 px, eye / lock on the right
-    auto row = [&](const char* id, Icon icon, ImU32 iconColor, const std::string& name, bool selected, bool dimmed, bool* eyeOn, bool* lockOn) -> bool {
-        R rr = {px, yy, pw, rowH - 2 * s};
-        ImGui::PushID(id);
-        bool q = Hit("node", {rr.x, rr.y, rr.w - 48 * s, rr.h});
-        if (selected) SelectedRow(rr);
-        else if (ImGui::IsItemHovered()) Box(rr, P().raised, 3);
-        Glyph(icon, px + 8 * s, yy + 7 * s, 13, dimmed ? P().muted : iconColor);
-        dl->PushClipRect(ImVec2(px, yy), ImVec2(px + pw - 50 * s, yy + rowH), true);
-        Text(px + 31 * s, yy + 7 * s, name, dimmed ? P().muted : P().text, 11);
-        dl->PopClipRect();
-        if (eyeOn) {
-            if (Hit("eye", {px + pw - 44 * s, yy + 2 * s, 20 * s, rowH - 6 * s})) { pushUndo(); *eyeOn = !*eyeOn; markDirty(); }
-            Tip(*eyeOn ? "Hide" : "Show");
-            Glyph(Icon::Eye, px + pw - 40 * s, yy + 8 * s, 11, *eyeOn ? P().muted : Fade(P().muted, 90));
-        }
-        if (lockOn) {
-            if (Hit("lock", {px + pw - 22 * s, yy + 2 * s, 20 * s, rowH - 6 * s})) *lockOn = !*lockOn;
-            Tip(*lockOn ? "Unlock" : "Lock (not selectable)");
-            Glyph(Icon::Lock, px + pw - 18 * s, yy + 8 * s, 11, *lockOn ? P().accent : Fade(P().muted, 90));
-        }
-        ImGui::PopID();
-        yy += rowH;
-        return q;
-    };
-
-    std::vector<int> env, objs;
-    for (size_t i = 0; i < m_scene.objects.size(); ++i) {
-        if (m_scene.objects[i].ghost) continue;
-        (m_scene.objects[i].part == "WALL" || m_scene.objects[i].part == "GROUND" ? env : objs).push_back((int)i);
+        yy += rest;
     }
-    auto objectRow = [&](int i) {
-        Object& o = m_scene.objects[i];
-        if (!matches(o.name, A.sceneSearch) && !matches(o.part, A.sceneSearch)) return;
-        bool sel = i == m_selected || std::find(m_multi.begin(), m_multi.end(), i) != m_multi.end();
-        bool locked = !o.selectable;
-        char id[32];
-        snprintf(id, sizeof(id), "obj%d", i);
-        float rowY = yy;
-        const Material& mt = m_scene.materials[o.material];
-        bool q = row(id, Icon::Cube, srgbU32(mt.baseColor), o.name, sel, !o.visible, &o.visible, &locked);
-        if (locked == o.selectable) { o.selectable = !locked; if (!o.selectable && m_selected == i) select(-1); }
-        ImGui::PushID(id);
-        ImVec2 mp = ImGui::GetMousePos();
-        if (ImGui::IsMouseClicked(1) && ImGui::IsWindowHovered() && mp.y >= rowY && mp.y < rowY + rowH && mp.x >= px && mp.x < px + pw - 50 * s)
-            ImGui::OpenPopup("ctx");
-        if (ImGui::BeginPopup("ctx")) {
-            if (o.selectable) select(i);
-            if (ImGui::MenuItem("Frame", "F")) frameSelection();
-            if (ImGui::MenuItem("Duplicate", "Ctrl+D", false, o.selectable)) duplicateSelected();
-            if (ImGui::MenuItem("Delete", "Del", false, o.selectable)) deleteSelected();
-            ImGui::EndPopup();
-        }
-        ImGui::PopID();
-        if (q) {
-            if (!o.selectable) status(L"Locked object: unlock it to select it", 2);
-            else if (ImGui::GetIO().KeyShift && m_selected >= 0 && m_selected != i) {
-                auto it = std::find(m_multi.begin(), m_multi.end(), i);
-                if (it != m_multi.end()) m_multi.erase(it); else m_multi.push_back(i);
-                markDirty();
-            } else select(i);
-        }
-    };
-    // category colours of the graph node families
-    if (heading("hObjects", "Objects", Family(IM_COL32(92, 192, 213, 255)), A.folderOpen[2], (int)objs.size())) for (int i : objs) objectRow(i);
-    yy += 6 * s;
-    if (heading("hLights", "Lights", Family(IM_COL32(212, 188, 109, 255)), A.folderOpen[3], (int)m_scene.lights.size() + 1)) {
-        // the directional light of the scene (the sun): edited in the Lighting tab
-        bool sunOn = m_scene.sun.enabled;
-        if (row("sunLight", Icon::Sun, IM_COL32(242, 201, 76, 255), "Directional Light", false, !m_scene.sun.enabled, &sunOn, nullptr)) A.inspectorTab = 1;
-        if (sunOn != m_scene.sun.enabled) { m_scene.sun.enabled = sunOn; markDirty(); }
-        for (size_t i = 0; i < m_scene.lights.size(); ++i) {
-            AreaLight& l = m_scene.lights[i];
-            if (!matches(l.name, A.sceneSearch)) continue;
-            char id[32];
-            snprintf(id, sizeof(id), "light%zu", i);
-            bool on = l.enabled;
-            if (row(id, Icon::Light, IM_COL32(242, 201, 76, 255), l.name, false, !l.enabled, &on, nullptr)) A.inspectorTab = 1;
-            if (on != l.enabled) { l.enabled = on; markDirty(); }
-        }
-    }
-    yy += 6 * s;
-    if (heading("hEnv", "Environment", Family(IM_COL32(134, 189, 144, 255)), A.folderOpen[1], (int)env.size())) for (int i : env) objectRow(i);
-    ImGui::SetCursorScreenPos(ImVec2(px, yy + 4 * s));
+    ImGui::SetCursorScreenPos(ImVec2(px, yy));
     ImGui::Dummy(ImVec2(1, 1));
+
+    if (move.mode >= 0 && !m_outDrag.empty()) {
+        moveNodes(m_outDrag, move.mode, move.target);
+        m_outDrag.clear();
+    }
+
+    // context menus
+    if (openCtx) {
+        NodeRef n = findNode(ctxId);
+        if (n.valid() && !nodeSelected(n) && (n.kind == NODE_COLLECTION || !nodeLocked(n))) { selectNodes({n}, n); m_outAnchor = ctxId; }
+        ImGui::OpenPopup("outlinerCtx");
+    }
+    if (openEmpty) ImGui::OpenPopup("outlinerEmptyCtx");
+    if (ImGui::BeginPopup("outlinerCtx")) {
+        NodeRef n = findNode(ctxId);
+        if (!n.valid()) ImGui::CloseCurrentPopup();
+        else if (n.kind == NODE_COLLECTION) {
+            Collection& c = m_scene.collections[n.index];
+            ImGui::TextDisabled("%s", c.name.c_str());
+            if (ImGui::MenuItem("Rename", "F2")) startRename(c.id);
+            if (ImGui::BeginMenu("Colour")) {
+                for (int k = 0; k < kCollectionColorCount; ++k) {
+                    ImVec2 p = ImGui::GetCursorScreenPos();
+                    float sz = ImGui::GetTextLineHeight();
+                    ImGui::GetWindowDrawList()->AddRectFilled(p, ImVec2(p.x + sz, p.y + sz), kCollectionColors[k], 3);
+                    ImGui::SetCursorScreenPos(ImVec2(p.x + sz + 6, p.y));
+                    char lbl[32];
+                    snprintf(lbl, sizeof(lbl), "%s##col%d", kCollectionColorNames[k], k);
+                    if (ImGui::MenuItem(lbl, nullptr, c.color == k)) { pushUndo(); m_scene.collections[n.index].color = k; }
+                }
+                ImGui::EndMenu();
+            }
+            if (ImGui::MenuItem(c.collapsed ? "Expand" : "Collapse", "Ctrl+click")) c.collapsed = !c.collapsed;
+            if (ImGui::MenuItem("Select Contents")) {
+                std::vector<NodeRef> d, pick;
+                nodeDescendants(c.id, d);
+                for (NodeRef k : d) if (!nodeLocked(k) && !(k.kind == NODE_OBJECT && m_scene.objects[k.index].group)) pick.push_back(k);
+                selectNodes(pick, pick.empty() ? NodeRef() : pick.front());
+            }
+            ImGui::Separator();
+            if (ImGui::MenuItem("Delete Collection (keep contents)", "Del")) { m_selected = -1; m_multi.clear(); m_outSel = {c.id}; deleteSelected(); }
+        } else {
+            const bool obj = n.kind == NODE_OBJECT;
+            const bool grp = obj && m_scene.objects[n.index].group;
+            ImGui::TextDisabled("%s", nodeName(n).c_str());
+            if (ImGui::MenuItem("Frame", "F")) frameSelection();
+            if (n.kind != NODE_SUN && ImGui::MenuItem("Rename", "F2")) startRename(ctxId);
+            if (obj && ImGui::MenuItem("Duplicate", "Ctrl+D")) duplicateSelected();
+            if ((obj || n.kind == NODE_LIGHT) && ImGui::MenuItem("Group", "Ctrl+G")) groupSelection();
+            if (grp && ImGui::MenuItem("Ungroup")) ungroup(ctxId);
+            if (nodeParent(n) && ImGui::MenuItem("Unparent")) moveNodes(selectedNodeIds(), 3, 0);
+            if (ImGui::BeginMenu("Move to Collection")) {
+                if (ImGui::MenuItem("None (root)")) moveNodes(selectedNodeIds(), 3, 0);
+                for (const Collection& c : m_scene.collections)
+                    if (ImGui::MenuItem(c.name.c_str())) moveNodes(selectedNodeIds(), 2, c.id);
+                ImGui::Separator();
+                if (ImGui::MenuItem("New Collection")) {
+                    pushUndo();
+                    uint32_t cid = addCollection("Collection", (int)(m_scene.collections.size() % kCollectionColorCount));
+                    size_t depth = m_undo.size();
+                    moveNodes(selectedNodeIds(), 2, cid);
+                    if (m_undo.size() > depth) m_undo.pop_back();
+                    startRename(cid);
+                }
+                ImGui::EndMenu();
+            }
+            ImGui::Separator();
+            if (n.kind != NODE_SUN && ImGui::MenuItem("Delete", "Del")) deleteSelected();
+        }
+        ImGui::EndPopup();
+    }
+    if (ImGui::BeginPopup("outlinerEmptyCtx")) {
+        if (ImGui::MenuItem("New Collection")) {
+            pushUndo();
+            startRename(addCollection("Collection", (int)(m_scene.collections.size() % kCollectionColorCount)));
+        }
+        if (ImGui::MenuItem("Group Selection", "Ctrl+G", false, !selectedNodeIds().empty())) groupSelection();
+        if (ImGui::BeginMenu("Add Object")) {
+            for (const PartDef& p : parts())
+                if (ImGui::MenuItem(toUtf8(p.name).c_str())) addPartFromLibrary(p);
+            ImGui::EndMenu();
+        }
+        ImGui::EndPopup();
+    }
     ImGui::EndChild();
     dl = ImGui::GetWindowDrawList();
 }
@@ -1214,9 +1410,46 @@ void App::atlInspectorActor(float x, float y, float w, float) {
         Box({x, y, w, 98 * s}, P().bg, 4, true);
         Text(x + 12 * s, y + 12 * s, "SELECTION", P().accent, 9);
         Text(x + 12 * s, y + 35 * s, "Click an object in the viewport", P().muted, 10);
-        Text(x + 12 * s, y + 54 * s, "or in the scene hierarchy", P().muted, 10);
+        Text(x + 12 * s, y + 54 * s, "or in the Scene Manager", P().muted, 10);
         Text(x + 12 * s, y + 73 * s, "Shift+click adds to the selection", P().muted, 10);
         ImGui::SetCursorScreenPos(ImVec2(x, y + 110 * s));
+        ImGui::Dummy(ImVec2(1, 1));
+        return;
+    }
+    if (o->group) {   // group node: its transform moves its children
+        bool act = false;
+        Box({x, y, w, 56 * s}, Fade(P().accent, 30), 4, true);
+        Glyph(Icon::Folder, x + 12 * s, y + 15 * s, 24, IM_COL32(150, 170, 200, 255));
+        dl->PushClipRect(ImVec2(x, y), ImVec2(x + w - 8 * s, y + 56 * s), true);
+        Text(x + 48 * s, y + 11 * s, o->name, P().text, 14);
+        std::string type = "Group · " + std::to_string(nodeChildren(o->id, 0, false).size()) + " children";
+        if (!m_multi.empty()) type += "  (+" + std::to_string(m_multi.size()) + ")";
+        Text(x + 48 * s, y + 33 * s, type, P().accent, 10);
+        dl->PopClipRect();
+        y += 69 * s;
+        Label(x, y, "TRANSFORM");
+        y += 24 * s;
+        Text(x, y, "Position", P().muted, 11);
+        y += 19 * s;
+        if (AxisFields("gpos", x, y, w, &o->position.x, 0.1f, "%.3f", act)) markDirty();
+        y += 35 * s;
+        float3 e = eulerYXZ(objRot(*o));
+        Text(x, y, "Rotation", P().muted, 11);
+        y += 19 * s;
+        if (AxisFields("grot", x, y, w, &e.x, 0.5f, "%.1f", act)) { o->rot = quatYXZ(e); o->useRot = true; o->yaw = radians(e.y); markDirty(); }
+        y += 35 * s;
+        Text(x, y, "Scale", P().muted, 11);
+        y += 19 * s;
+        if (AxisFields("gscl", x, y, w, &o->scale.x, 0.01f, "%.2f", act)) { o->scale = maxv(o->scale, float3(0.01f)); markDirty(); }
+        y += 41 * s;
+        if (act) pushUndo();
+        dl->AddLine(ImVec2(x, y), ImVec2(x + w, y), P().border);
+        y += 14 * s;
+        float bw = (w - 6 * s) / 2;
+        const uint32_t gid = o->id;
+        if (Button("ungroup", {x, y, bw, 27 * s}, "Ungroup", Icon::Folder)) { ungroup(gid); return; }
+        if (Button("del", {x + bw + 6 * s, y, bw, 27 * s}, "Delete", Icon::Trash)) { deleteSelected(); return; }
+        ImGui::SetCursorScreenPos(ImVec2(x, y + 40 * s));
         ImGui::Dummy(ImVec2(1, 1));
         return;
     }
@@ -1356,10 +1589,21 @@ void App::atlInspectorActor(float x, float y, float w, float) {
 
 void App::atlInspectorLighting(float x, float y, float w, float) {
     bool ch = false, act = false;
+    // the light selected in the Scene Manager: framed, scrolled into view when it gets selected
+    static uint32_t shown = 0;
+    uint32_t want = 0;
+    for (uint32_t id : m_outSel) { int k = findNode(id).kind; if (k == NODE_LIGHT || k == NODE_SUN) { want = id; break; } }
+    auto lightCard = [&](uint32_t id, float cy) {
+        if (id != want) return;
+        SelectedFrame({x, cy, w, 56 * s});
+        if (shown != want) { ImGui::SetCursorScreenPos(ImVec2(x, cy)); ImGui::SetScrollHereY(0.0f); shown = want; }
+    };
+    if (!want) shown = 0;
     {   // the directional light of the scene (the sun): sharp shadows, one light
         SunLight& sun = m_scene.sun;
         ImGui::PushID("sun");
         Box({x, y, w, 56 * s}, Fade(IM_COL32(242, 201, 76, 255), 30), 4, true);
+        lightCard(sun.id, y);
         Glyph(Icon::Sun, x + 10 * s, y + 15 * s, 22, sun.enabled ? IM_COL32(242, 201, 76, 255) : P().muted);
         Text(x + 43 * s, y + 11 * s, "Directional Light", P().text, 14);
         Text(x + 43 * s, y + 33 * s, sun.enabled ? "Directional · on" : "Directional · off", sun.enabled ? IM_COL32(212, 188, 109, 255) : P().muted, 10);
@@ -1395,6 +1639,7 @@ void App::atlInspectorLighting(float x, float y, float w, float) {
         AreaLight& l = m_scene.lights[i];
         ImGui::PushID((int)i);
         Box({x, y, w, 56 * s}, Fade(IM_COL32(242, 201, 76, 255), 30), 4, true);
+        lightCard(l.id, y);
         Glyph(Icon::Light, x + 10 * s, y + 15 * s, 22, l.enabled ? IM_COL32(242, 201, 76, 255) : P().muted);
         Text(x + 43 * s, y + 11 * s, l.name, P().text, 14);
         Text(x + 43 * s, y + 33 * s, l.enabled ? "Area light · on" : "Area light · off", l.enabled ? IM_COL32(212, 188, 109, 255) : P().muted, 10);
@@ -1427,6 +1672,7 @@ void App::atlInspectorLighting(float x, float y, float w, float) {
     ImGui::SetNextItemWidth(w);
     if (ImGui::SliderFloat("##ev", &ev, -4, 4, "%+.2f EV")) m_rs.exposure = std::pow(2.0f, ev);
     y += 36 * s;
+    if (act) pushUndo();   // light edits are undoable (the undo restores the lights of the Scene Manager)
     if (ch) markDirty();
     ImGui::SetCursorScreenPos(ImVec2(x, y));
     ImGui::Dummy(ImVec2(1, 1));

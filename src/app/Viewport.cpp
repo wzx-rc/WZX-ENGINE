@@ -231,7 +231,7 @@ void App::marqueeInput() {
     std::vector<int> hit;
     for (size_t i = 0; i < m_scene.objects.size(); ++i) {
         const Object& o = m_scene.objects[i];
-        if (!o.visible || !o.selectable || o.ghost || o.part == "GROUND" || o.part == "WALL") continue;
+        if (!o.visible || !o.selectable || o.ghost || o.group || o.part == "GROUND" || o.part == "WALL") continue;
         float3 mn, mxv;
         aabbOf(o, o.position, objRot(o), mn, mxv);
         float2 s;

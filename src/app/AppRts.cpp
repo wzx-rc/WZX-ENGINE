@@ -267,7 +267,11 @@ void GameHost::syncBuildings() {
     for (int i = 0; i < (int)bs.size(); ++i) {
         game::Building& b = bs[i];
         const BuildingType& t = types[b.type];
-        const bool owned = objectAlive(b.object) && s.objects[b.object].part == "House" && s.objects[b.object].grab == b.id;
+        // (a house hidden with the eye of the Scene Manager stays its building's object)
+        bool owned = b.object >= 0 && b.object < (int)s.objects.size() && s.objects[b.object].part == "House" && s.objects[b.object].grab == b.id;
+        if (!owned)   // the object moved in the list (an object before it was deleted): found again by its building id
+            for (size_t k = 0; k < s.objects.size() && !owned; ++k)
+                if (s.objects[k].part == "House" && s.objects[k].grab == b.id) { b.object = (int)k; owned = true; }
         if (!owned) {
             if (!ensureHouseModel()) return;
             Object fresh;
@@ -279,6 +283,7 @@ void GameHost::syncBuildings() {
             fresh.position = b.pos;
             fresh.useRot = true;
             fresh.selectable = false;
+            fresh.collection = m_app.villageCollection();   // Scene Manager: the houses go in the "Village" collection
             b.object = s.addObject(fresh);
             changed = true;
         }
@@ -296,8 +301,9 @@ void GameHost::syncBuildings() {
         o.material = material;
     }
     for (vp3d::Object& o : s.objects)
-        if (o.part == "House" && o.visible && !hasBuilding(o.grab)) {
+        if (o.part == "House" && o.grab != -2 && !hasBuilding(o.grab)) {
             o.visible = false;
+            o.grab = -2;   // building gone: never reused, not listed in the Scene Manager
             changed = true;
         }
     if (changed) m_app.markDirty();

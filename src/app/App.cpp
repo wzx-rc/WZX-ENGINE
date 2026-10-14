@@ -7,6 +7,7 @@
 #include <shellapi.h>
 #include <wincodec.h>
 #include <ctime>
+#include <functional>
 
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
@@ -319,6 +320,9 @@ void App::loadScene(int id) {
     m_hdriPath.clear();   // the new scene has no HDRI (LookDev gets one below)
     m_selected = -1;
     m_multi.clear();
+    m_outSel.clear();
+    m_renameId = 0;
+    m_hierCache.clear();   // new scene: no parent moved
     m_undo.clear();
     if (m_game) m_game->resetVillage();   // the houses belong to the scene they were placed in
     m_redo.clear();
@@ -454,6 +458,7 @@ void App::frame() {
         m_vpPx = {0, 0, std::max(16, (int)ds.x), std::max(16, (int)ds.y)};
         m_viewportVisible = true;
     }
+    outlinerSync();   // Scene Manager: ids, the children follow their parent (before the render)
     m_viewportRendered = false;
     if (m_workspace == 2 && m_matHost.want) {
         m_matHost.want = false;
@@ -463,6 +468,7 @@ void App::frame() {
         if (m_previewActive) leavePreview();
         std::vector<int> outlined = m_multi;
         if (m_game) m_game->addHoverOutline(outlined);   // the house under the cursor: its halo
+        selectionOutline(outlined);        // a selected group outlines its children
         m_renderer.setExtraSelection(outlined);
         m_renderer.renderToTexture(m_scene, m_rs, m_vpPx, m_selected);
         m_gui.viewportTexture();   // refresh the SRV (the texture is recreated when the viewport size changes)
@@ -584,6 +590,7 @@ bool App::project(const float3& p, float2& s) const {
 }
 
 void App::aabbOf(const Object& o, const float3& pos, const float4& rot, float3& mn, float3& mx) {
+    if (o.mesh < 0 || o.mesh >= (int)m_scene.meshes.size()) { mn = mx = pos; return; }   // group node: its pivot
     float3 a, b;
     m_scene.meshes[o.mesh].bounds(a, b);
     mn = float3(1e30f);
@@ -610,6 +617,22 @@ void App::setPivotKeepEye(const float3& p) {
 void App::frameSelection() {
     float3 mn(1e30f), mx(-1e30f);
     auto addObj = [&](const Object& o) {
+        if (o.mesh < 0 || o.mesh >= (int)m_scene.meshes.size()) {   // group node: its children
+            std::vector<NodeRef> d;
+            nodeDescendants(o.id, d);
+            bool any = false;
+            for (NodeRef k : d)
+                if (k.kind == NODE_OBJECT && !m_scene.objects[k.index].group) {
+                    const Object& c = m_scene.objects[k.index];
+                    float3 a, b;
+                    aabbOf(c, c.position, objRot(c), a, b);
+                    mn = minv(mn, a);
+                    mx = maxv(mx, b);
+                    any = true;
+                }
+            if (!any) { mn = minv(mn, o.position - float3(5)); mx = maxv(mx, o.position + float3(5)); }
+            return;
+        }
         float3 a, b;
         m_scene.meshes[o.mesh].bounds(a, b);
         Affine xf = o.transform();
@@ -620,11 +643,25 @@ void App::frameSelection() {
             mx = maxv(mx, p);
         }
     };
-    if (m_selected >= 0)
+    if (m_selected >= 0 || !m_outSel.empty()) {
         for (int i : selectionAll()) addObj(m_scene.objects[i]);
-    else
+        for (uint32_t id : m_outSel) {   // lights: their quad; collections: their members
+            NodeRef n = findNode(id);
+            if (n.kind == NODE_LIGHT) {
+                const AreaLight& l = m_scene.lights[n.index];
+                float r = std::max(l.width, l.height);
+                mn = minv(mn, l.position - float3(r));
+                mx = maxv(mx, l.position + float3(r));
+            } else if (n.kind == NODE_COLLECTION) {
+                std::vector<NodeRef> d;
+                nodeDescendants(id, d);
+                for (NodeRef k : d)
+                    if (k.kind == NODE_OBJECT) addObj(m_scene.objects[k.index]);
+            }
+        }
+    } else
         for (auto& o : m_scene.objects)
-            if (o.visible && o.selectable && o.part != "WALL") addObj(o);
+            if (o.visible && o.selectable && o.part != "WALL" && !o.group) addObj(o);
     if (mn.x > mx.x) return;
     Camera& c = m_scene.camera;
     c.target = (mn + mx) * 0.5f;
@@ -670,10 +707,17 @@ void App::handleShortcuts() {
         if (ImGui::IsKeyPressed(ImGuiKey_Z)) undo();
         if (ImGui::IsKeyPressed(ImGuiKey_Y)) redo();
         if (pressed(ImGuiKey_D) && !placing) duplicateSelected();
+        if (pressed(ImGuiKey_G) && !placing) groupSelection();
         return;
     }
     if (pressed(ImGuiKey_F1)) m_pendingScene = SCENE_CORNELL;
-    if (pressed(ImGuiKey_F2)) m_pendingScene = SCENE_STUDIO;
+    // F2: rename the selection in the Scene Manager (the Studio scene when nothing is selected)
+    if (pressed(ImGuiKey_F2)) {
+        std::vector<uint32_t> sel = selectedNodeIds();
+        uint32_t primary = m_selected >= 0 ? m_scene.objects[m_selected].id : (sel.empty() ? 0 : sel.front());
+        if (primary && findNode(primary).kind != NODE_SUN) startRename(primary);
+        else if (sel.empty()) m_pendingScene = SCENE_STUDIO;
+    }
     if (pressed(ImGuiKey_F3)) m_pendingScene = SCENE_LOOKDEV;
     if (pressed(ImGuiKey_F12)) saveScreenshot(false);
     if (pressed(ImGuiKey_P)) setRenderMode(m_rs.raster ? 2 : 0);            // Lit <-> progressive path tracing
@@ -709,40 +753,63 @@ void App::handleShortcuts() {
 
 // --------------------------------------------------------------------------- editing
 
+static Snapshot takeSnapshot(const Scene& s, int selected) {
+    Snapshot n;
+    n.objects = s.objects;
+    n.materials = s.materials;
+    n.selected = selected;
+    n.lights = s.lights;
+    n.sun = s.sun;
+    n.collections = s.collections;
+    return n;
+}
+
+static void restoreSnapshot(Scene& s, const Snapshot& n) {
+    s.objects = n.objects;
+    s.materials = n.materials;
+    s.lights = n.lights;
+    s.sun = n.sun;
+    s.collections = n.collections;
+}
+
 void App::pushUndo() {
-    m_undo.push_back({m_scene.objects, m_scene.materials, m_selected});
+    m_undo.push_back(takeSnapshot(m_scene, m_selected));
     if (m_undo.size() > 100) m_undo.erase(m_undo.begin());
     m_redo.clear();
 }
 
 void App::undo() {
     if (m_undo.empty()) return;
-    m_redo.push_back({m_scene.objects, m_scene.materials, m_selected});
+    m_redo.push_back(takeSnapshot(m_scene, m_selected));
     Snapshot s = m_undo.back();
     m_undo.pop_back();
-    m_scene.objects = s.objects;
-    m_scene.materials = s.materials;
+    restoreSnapshot(m_scene, s);
     m_selected = s.selected < (int)m_scene.objects.size() ? s.selected : -1;
     m_multi.clear();
+    m_outSel.clear();
+    m_renameId = 0;
     markDirty();
 }
 
 void App::redo() {
     if (m_redo.empty()) return;
-    m_undo.push_back({m_scene.objects, m_scene.materials, m_selected});
+    m_undo.push_back(takeSnapshot(m_scene, m_selected));
     Snapshot s = m_redo.back();
     m_redo.pop_back();
-    m_scene.objects = s.objects;
-    m_scene.materials = s.materials;
+    restoreSnapshot(m_scene, s);
     m_selected = s.selected < (int)m_scene.objects.size() ? s.selected : -1;
     m_multi.clear();
+    m_outSel.clear();
+    m_renameId = 0;
     markDirty();
 }
 
 void App::select(int idx) {
-    if (idx == m_selected && m_multi.empty()) return;
+    if (idx == m_selected && m_multi.empty() && m_outSel.empty()) return;
     m_selected = idx;
     m_multi.clear();
+    m_outSel.clear();
+    if (idx >= 0 && idx < (int)m_scene.objects.size()) m_outAnchor = m_scene.objects[idx].id;
     markDirty();
 }
 
@@ -755,9 +822,9 @@ void App::addPartFromLibrary(const PartDef& p, const float3* at) {
     else if (m_selected >= 0) {
         const Object& s = m_scene.objects[m_selected];
         float3 a, b;
-        m_scene.meshes[s.mesh].bounds(a, b);
+        aabbOf(s, s.position, objRot(s), a, b);
         pos = s.position;
-        pos.y = s.position.y + b.y * s.scale.y;
+        pos.y = b.y;
     }
     if (m_magnet) { pos.x = std::round(pos.x); pos.z = std::round(pos.z); }
     int idx = addPart(m_scene, p.id, p.defaultColor, -1, pos, 0);
@@ -768,33 +835,88 @@ void App::addPartFromLibrary(const PartDef& p, const float3* at) {
     markDirty();
 }
 
+// Duplicates the selected objects with their children (groups and parents copy their whole hierarchy).
 void App::duplicateSelected() {
     if (m_selected < 0) return;
+    outlinerIds();
     pushUndo();
+    std::vector<int> sel = selectionAll();
     std::vector<int> created;
-    for (int i : selectionAll()) {
+    uint32_t next = newNodeId();
+    std::function<int(int, uint32_t, bool)> copy = [&](int i, uint32_t parent, bool top) -> int {
         Object o = m_scene.objects[i];
-        Material m = m_scene.materials[o.material];
-        o.material = m_scene.addMaterial(m);
+        const uint32_t oldId = o.id;
+        if (!o.group && o.material >= 0 && o.material < (int)m_scene.materials.size()) {
+            Material m = m_scene.materials[o.material];
+            o.material = m_scene.addMaterial(m);
+        }
         o.position.x += 8.0f;
-        created.push_back(m_scene.addObject(o));
+        o.id = next++;
+        if (!top) o.parent = parent;
+        if (!o.name.empty()) o.name = uniqueNodeName(o.name);
+        int idx = m_scene.addObject(o);
+        const uint32_t newId = o.id;
+        std::vector<int> kids;
+        for (size_t k = 0; k < m_scene.objects.size(); ++k)
+            if (m_scene.objects[k].parent == oldId && (int)k != idx) kids.push_back((int)k);
+        for (int k : kids) copy(k, newId, false);
+        for (size_t k = 0; k < m_scene.lights.size(); ++k)
+            if (m_scene.lights[k].parent == oldId) {
+                AreaLight l = m_scene.lights[k];
+                l.id = next++;
+                l.parent = newId;
+                l.position.x += 8.0f;
+                l.target.x += 8.0f;
+                m_scene.lights.push_back(l);
+            }
+        return idx;
+    };
+    for (int i : sel) {
+        // a child whose parent is selected too is copied with it
+        bool parentSelected = false;
+        for (int j : sel) if (j != i && isAncestor(m_scene.objects[j].id, m_scene.objects[i].id)) parentSelected = true;
+        if (!parentSelected) created.push_back(copy(i, 0, true));
     }
     m_selected = created[0];
     m_multi.assign(created.begin() + 1, created.end());
+    m_outSel.clear();
     status(L"Selection duplicated");
     markDirty();
 }
 
+// Deletes the selected objects with their children, the selected area lights and collections (the members of a
+// deleted collection go back to the root of the list).
 void App::deleteSelected() {
-    if (m_selected < 0) return;
+    if (m_selected < 0 && m_outSel.empty()) return;
+    outlinerIds();
+    std::vector<NodeRef> doomed;
+    for (uint32_t id : selectedNodeIds()) {
+        NodeRef n = findNode(id);
+        if (n.kind == NODE_SUN) continue;
+        doomed.push_back(n);
+        if (n.kind == NODE_OBJECT) nodeDescendants(id, doomed);
+    }
+    std::vector<int> objs, lights, cols;
+    for (NodeRef n : doomed) {
+        std::vector<int>& v = n.kind == NODE_OBJECT ? objs : n.kind == NODE_LIGHT ? lights : cols;
+        if (n.kind != NODE_SUN && std::find(v.begin(), v.end(), n.index) == v.end()) v.push_back(n.index);
+    }
+    if (objs.empty() && lights.empty() && cols.empty()) return;
     pushUndo();
-    std::vector<int> all = selectionAll();
-    std::sort(all.begin(), all.end(), [](int a, int b) { return a > b; });
-    for (int i : all)
-        if (i >= 0 && i < (int)m_scene.objects.size()) m_scene.objects.erase(m_scene.objects.begin() + i);
+    auto erase = [](auto& vec, std::vector<int> idx) {
+        std::sort(idx.begin(), idx.end(), [](int a, int b) { return a > b; });
+        for (int i : idx)
+            if (i >= 0 && i < (int)vec.size()) vec.erase(vec.begin() + i);
+    };
+    erase(m_scene.objects, objs);
+    erase(m_scene.lights, lights);
+    erase(m_scene.collections, cols);
+    outlinerIds();   // the members of the deleted collections go back to the root
     m_selected = -1;
     m_multi.clear();
-    status(std::to_wstring(all.size()) + L" object(s) deleted");
+    m_outSel.clear();
+    size_t n = objs.size() + lights.size() + cols.size();
+    status(std::to_wstring(n) + L" item(s) deleted");
     markDirty();
 }
 
@@ -825,6 +947,7 @@ void App::setColor(int pi) {
     pushUndo();
     const PaletteColor& c = palette()[pi];
     for (int sel : selectionAll()) {
+        if (m_scene.objects[sel].group) continue;   // a group has no material
         Material& m = m_scene.materials[m_scene.objects[sel].material];
         m.baseColor = c.linear();
         m.colorId = c.id;
@@ -841,7 +964,8 @@ void App::setColor(int pi) {
 void App::setPreset(int preset) {
     if (m_selected < 0) return;
     pushUndo();
-    for (int sel : selectionAll()) applyPreset(m_scene.materials[m_scene.objects[sel].material], preset, 1.0f);
+    for (int sel : selectionAll())
+        if (!m_scene.objects[sel].group) applyPreset(m_scene.materials[m_scene.objects[sel].material], preset, 1.0f);
     markDirty();
 }
 

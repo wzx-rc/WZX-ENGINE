@@ -26,18 +26,47 @@ bool App::saveSceneFile(const std::wstring& path) {
     if (!m_hdriPath.empty())
         js << "  \"environment\": {\"hdri\": \"" << jsonEscape(toUtf8(m_hdriPath)) << "\", \"intensity\": " << m_scene.env.hdriIntensity
            << ", \"rotation\": " << degrees(m_scene.env.hdriRotation) << ", \"visible\": " << (m_scene.env.visibleToCamera ? "true" : "false") << "},\n";
+    // Scene Manager: collections, outliner fields of the sun and the lights (by index), then per object
+    outlinerIds();
+    auto b01 = [](bool v) { return v ? "true" : "false"; };
+    js << "  \"collections\": [";
+    for (size_t i = 0; i < m_scene.collections.size(); ++i) {
+        const Collection& c = m_scene.collections[i];
+        js << (i ? ",\n" : "\n") << "    {\"id\": " << c.id << ", \"name\": \"" << jsonEscape(c.name) << "\", \"color\": " << c.color
+           << ", \"collapsed\": " << b01(c.collapsed) << ", \"order\": " << c.order << "}";
+    }
+    js << "\n  ],\n";
+    const SunLight& sun = m_scene.sun;
+    js << "  \"sun\": {\"id\": " << sun.id << ", \"collection\": " << sun.collection << ", \"order\": " << sun.order
+       << ", \"selectable\": " << b01(sun.selectable) << "},\n";
+    js << "  \"lights\": [";
+    for (size_t i = 0; i < m_scene.lights.size(); ++i) {
+        const AreaLight& l = m_scene.lights[i];
+        js << (i ? ",\n" : "\n") << "    {\"id\": " << l.id << ", \"parent\": " << l.parent << ", \"collection\": " << l.collection
+           << ", \"order\": " << l.order << ", \"selectable\": " << b01(l.selectable) << ", \"enabled\": " << b01(l.enabled)
+           << ", \"name\": \"" << jsonEscape(l.name) << "\", \"pos\": [" << l.position.x << ", " << l.position.y << ", " << l.position.z
+           << "], \"target\": [" << l.target.x << ", " << l.target.y << ", " << l.target.z << "]}";
+    }
+    js << "\n  ],\n";
     js << "  \"objects\": [";
     bool first = true;
     int count = 0;
     for (const Object& o : m_scene.objects) {
-        if (!o.visible || o.ghost || !findPart(o.part)) continue;
-        const Material& m = m_scene.materials[o.material];
+        if (o.ghost || (!o.group && !findPart(o.part))) continue;
         float4 q = objRot(o);
         float yawDeg = degrees(std::atan2(-qRot(q, float3(1, 0, 0)).z, qRot(q, float3(1, 0, 0)).x));
-        js << (first ? "\n" : ",\n") << "    {\"part\": \"" << jsonEscape(o.part) << "\", \"color\": " << m.colorId
-           << ", \"rgb\": [" << linToSrgb(m.baseColor.x) << ", " << linToSrgb(m.baseColor.y) << ", " << linToSrgb(m.baseColor.z) << "]"
-           << ", \"material\": " << m.preset << ", \"pos\": [" << o.position.x << ", " << o.position.y << ", " << o.position.z
-           << "], \"yaw\": " << yawDeg << ", \"rot\": [" << q.x << ", " << q.y << ", " << q.z << ", " << q.w << "], \"name\": \"" << jsonEscape(o.name) << "\"}";
+        js << (first ? "\n" : ",\n") << "    {\"part\": \"" << jsonEscape(o.part) << "\"";
+        if (o.group) js << ", \"group\": true";
+        else {
+            const Material& m = m_scene.materials[o.material];
+            js << ", \"color\": " << m.colorId << ", \"rgb\": [" << linToSrgb(m.baseColor.x) << ", " << linToSrgb(m.baseColor.y) << ", "
+               << linToSrgb(m.baseColor.z) << "]" << ", \"material\": " << m.preset;
+        }
+        js << ", \"pos\": [" << o.position.x << ", " << o.position.y << ", " << o.position.z
+           << "], \"yaw\": " << yawDeg << ", \"rot\": [" << q.x << ", " << q.y << ", " << q.z << ", " << q.w << "], \"scale\": ["
+           << o.scale.x << ", " << o.scale.y << ", " << o.scale.z << "], \"name\": \"" << jsonEscape(o.name) << "\""
+           << ", \"id\": " << o.id << ", \"parent\": " << o.parent << ", \"collection\": " << o.collection << ", \"order\": " << o.order
+           << ", \"visible\": " << b01(o.visible) << ", \"selectable\": " << b01(o.selectable) << ", \"collapsed\": " << b01(o.collapsed) << "}";
         first = false;
         ++count;
     }
@@ -64,14 +93,73 @@ bool App::loadSceneFile(const std::wstring& path) {
     loadScene(SCENE_STUDIO);
     m_undo.clear();
     int count = 0;
+    // Scene Manager (files of an older version have none of these: every field keeps its default)
+    auto flag = [](const Json& v, bool def) { return v.type == Json::Bool ? v.b : def; };
+    auto u32 = [](const Json& v) { return (uint32_t)std::max(0.0, v.num(0)); };
+    for (const Json& c : j["collections"].a) {
+        Collection col;
+        col.id = u32(c["id"]);
+        col.name = c["name"].str("Collection");
+        col.color = (int)c["color"].num(0);
+        col.collapsed = flag(c["collapsed"], false);
+        col.order = (int)c["order"].num(0);
+        if (col.id) m_scene.collections.push_back(col);
+    }
+    if (j["sun"].type == Json::Object) {
+        const Json& sj = j["sun"];
+        m_scene.sun.id = u32(sj["id"]);
+        m_scene.sun.collection = u32(sj["collection"]);
+        m_scene.sun.order = (int)sj["order"].num(0);
+        m_scene.sun.selectable = flag(sj["selectable"], true);
+    }
+    for (size_t i = 0; i < j["lights"].a.size() && i < m_scene.lights.size(); ++i) {
+        const Json& lj = j["lights"][i];
+        AreaLight& l = m_scene.lights[i];
+        l.id = u32(lj["id"]);
+        l.parent = u32(lj["parent"]);
+        l.collection = u32(lj["collection"]);
+        l.order = (int)lj["order"].num(0);
+        l.selectable = flag(lj["selectable"], true);
+        l.enabled = flag(lj["enabled"], l.enabled);
+        if (lj["name"].type == Json::String) l.name = lj["name"].s;
+        if (lj["pos"].type == Json::Array) l.position = float3((float)lj["pos"][0].num(), (float)lj["pos"][1].num(), (float)lj["pos"][2].num());
+        if (lj["target"].type == Json::Array) l.target = float3((float)lj["target"][0].num(), (float)lj["target"][1].num(), (float)lj["target"][2].num());
+    }
+    auto outlinerFields = [&](Object& ob, const Json& b) {
+        ob.id = u32(b["id"]);
+        ob.parent = u32(b["parent"]);
+        ob.collection = u32(b["collection"]);
+        ob.order = (int)b["order"].num(0);
+        ob.visible = flag(b["visible"], true);
+        ob.selectable = flag(b["selectable"], true);
+        ob.collapsed = flag(b["collapsed"], false);
+        if (b["scale"].type == Json::Array && b["scale"].a.size() == 3)
+            ob.scale = maxv(float3((float)b["scale"][0].num(1), (float)b["scale"][1].num(1), (float)b["scale"][2].num(1)), float3(0.01f));
+    };
     for (const Json& b : j["objects"].a) {
         std::string part = b["part"].str();
         int color = (int)b["color"].num(-1);
         float3 pos((float)b["pos"][0].num(), (float)b["pos"][1].num(), (float)b["pos"][2].num());
         float yaw = (float)b["yaw"].num();
         bool hasRot = b["rot"].type == Json::Array && b["rot"].a.size() == 4;
+        if (flag(b["group"], false)) {   // group node: a transform only
+            Object g;
+            g.part = "GROUP";
+            g.group = true;
+            g.mesh = -1;
+            g.material = 0;
+            g.position = pos;
+            g.useRot = true;
+            g.rot = hasRot ? qNormalize(float4((float)b["rot"][0].num(), (float)b["rot"][1].num(), (float)b["rot"][2].num(), (float)b["rot"][3].num(0)))
+                           : qAxisAngle(float3(0, 1, 0), radians(yaw));
+            g.name = b["name"].str("Group");
+            outlinerFields(g, b);
+            m_scene.addObject(g);
+            continue;
+        }
         int idx = addPart(m_scene, part, color >= 0 ? color : 1, -1, pos, yaw);
         if (idx < 0) continue;
+        outlinerFields(m_scene.objects[idx], b);
         {
             Object& ob = m_scene.objects[idx];
             if (hasRot) {

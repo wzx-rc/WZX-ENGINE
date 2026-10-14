@@ -47,6 +47,28 @@ struct Snapshot {
     std::vector<Object> objects;
     std::vector<Material> materials;
     int selected = -1;
+    // Scene Manager state (lights can be parented, renamed, locked; collections)
+    std::vector<AreaLight> lights;
+    SunLight sun;
+    std::vector<Collection> collections;
+};
+
+// Scene Manager node: an object or group, an area light, the sun or a collection.
+enum NodeKind { NODE_NONE = 0, NODE_OBJECT, NODE_LIGHT, NODE_SUN, NODE_COLLECTION };
+struct NodeRef {
+    int kind = NODE_NONE;
+    int index = -1;
+    bool valid() const { return kind != NODE_NONE; }
+};
+// world transform of a node at the last frame (Scene Manager: the children follow their parent)
+struct HierXf { float3 p, t; float4 r; float3 sc; float yaw = 0; bool useRot = false; };
+// visible row of the Scene Manager list
+struct OutlinerRow {
+    NodeRef node;
+    uint32_t id = 0;
+    int depth = 0;
+    bool hasChildren = false;
+    bool open = false;
 };
 
 struct LogLine {
@@ -156,6 +178,47 @@ private:
     void ensureRot(Object& o) { if (!o.useRot) { o.rot = qSnap90(qAxisAngle(float3(0, 1, 0), o.yaw)); o.useRot = true; } }
     void aabbOf(const Object& o, const float3& pos, const float4& rot, float3& mn, float3& mx);
     std::vector<int> selectionAll() const { std::vector<int> v; if (m_selected >= 0) v.push_back(m_selected); for (int i : m_multi) v.push_back(i); return v; }
+
+    // Scene Manager (Outliner.cpp): ids, parent / child links, order, groups, collections, selection of the list.
+    // Transforms stay world values; outlinerSync moves the children of a moved parent (before the render).
+    void outlinerIds();
+    void outlinerSync();
+    uint32_t newNodeId();
+    NodeRef findNode(uint32_t id) const;
+    uint32_t nodeId(NodeRef n) const;
+    uint32_t nodeParent(NodeRef n) const;
+    uint32_t nodeCollection(NodeRef n) const;
+    std::string nodeName(NodeRef n) const;
+    void setNodeName(NodeRef n, const std::string& name);
+    bool nodeVisible(NodeRef n) const;       // containers: one member visible
+    bool nodeLocked(NodeRef n) const;        // containers: every member locked
+    void setNodeVisible(NodeRef n, bool on); // containers: applied to the members (and the descendants)
+    void setNodeLocked(NodeRef n, bool on);
+    std::vector<NodeRef> nodeChildren(uint32_t parent, uint32_t collection, bool withCollections) const;   // sorted siblings
+    void nodeDescendants(uint32_t id, std::vector<NodeRef>& out) const;   // children of an object / group, members of a collection
+    bool isAncestor(uint32_t ancestor, uint32_t id) const;
+    void outlinerRows(std::vector<OutlinerRow>& rows, const char* filter);
+    // drop of the dragged nodes: 0 before target, 1 after target, 2 into target (parent / collection), 3 root end
+    void moveNodes(std::vector<uint32_t> ids, int mode, uint32_t target);
+    void groupSelection();
+    void ungroup(uint32_t groupId);
+    uint32_t addCollection(const std::string& name, int color);
+    uint32_t villageCollection();             // the RTS houses go in the "Village" collection
+    std::string uniqueNodeName(const std::string& base) const;
+    bool nodeSelected(NodeRef n) const;
+    void selectNodes(const std::vector<NodeRef>& nodes, NodeRef primary);   // replaces the selection
+    void toggleNodeSelected(NodeRef n);
+    std::vector<uint32_t> selectedNodeIds() const;
+    void startRename(uint32_t id);
+    void selectionOutline(std::vector<int>& outlined) const;   // groups and parents: their descendants are outlined too
+    std::vector<uint32_t> m_outSel;          // selected lights, sun and collections (objects: m_selected / m_multi)
+    uint32_t m_outAnchor = 0;                // Shift+click range start
+    uint32_t m_renameId = 0;                 // node renamed in the list (0 = none)
+    bool m_renameFocus = false;
+    char m_renameBuf[128] = {};
+    std::vector<uint32_t> m_outDrag;         // nodes dragged in the list
+
+    std::map<uint32_t, HierXf> m_hierCache;  // world transforms of the last frame (children follow their parent)
 
     // scene files (SceneIO.cpp)
     bool saveSceneFile(const std::wstring& path);

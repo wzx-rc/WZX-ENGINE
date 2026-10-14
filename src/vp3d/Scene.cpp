@@ -68,7 +68,7 @@ PickResult pick(const Scene& s, const float3& origin, const float3& dir) {
     PickResult r;
     for (size_t oi = 0; oi < s.objects.size(); ++oi) {
         const Object& ob = s.objects[oi];
-        if (!ob.visible || !ob.selectable || ob.ghost) continue;
+        if (!ob.visible || !ob.selectable || ob.ghost || ob.mesh < 0 || ob.mesh >= (int)s.meshes.size()) continue;
         const MeshData& m = s.meshes[ob.mesh];
         Affine inv = ob.transform().inverse();
         float3 lo = inv.point(origin);
