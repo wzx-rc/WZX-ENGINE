@@ -172,4 +172,57 @@ MeshData makeShaderBall(float R) {
     return m;
 }
 
+// --------------------------------------------------------------------------- parametric primitives
+
+// Grid of nu x nv quads from o along u and v, flat normal n (cross(u, v) points along n).
+static void addGrid(MeshData& m, const float3& o, const float3& u, const float3& v, const float3& n, int nu, int nv) {
+    uint32_t base = (uint32_t)m.vertices.size();
+    for (int j = 0; j <= nv; ++j)
+        for (int i = 0; i <= nu; ++i) {
+            float fu = (float)i / nu, fv = (float)j / nv;
+            m.vertices.push_back({o + u * fu + v * fv, n, float2(fu, fv)});
+        }
+    for (int j = 0; j < nv; ++j)
+        for (int i = 0; i < nu; ++i) {
+            uint32_t a = base + j * (nu + 1) + i, b = a + 1, c = b + nu + 1, d = a + nu + 1;
+            m.addTri(a, b, c);
+            m.addTri(a, c, d);
+        }
+}
+
+MeshData makePrimitive(const PrimitiveParams& p) {
+    const float w = std::max(p.size.x, 1e-3f), h = std::max(p.size.y, 1e-3f), d = std::max(p.size.z, 1e-3f);
+    const float r = std::max(p.radius, 1e-3f);
+    const int cuts = std::clamp(p.subdiv, 1, 64);
+    MeshData m;
+    switch (p.type) {
+    case PRIM_CUBE: {
+        const float ax = -w / 2, bx = w / 2, az = -d / 2, bz = d / 2;
+        addGrid(m, {bx, 0, bz}, {0, 0, -d}, {0, h, 0}, {1, 0, 0}, cuts, cuts);    // +X
+        addGrid(m, {ax, 0, az}, {0, 0, d}, {0, h, 0}, {-1, 0, 0}, cuts, cuts);    // -X
+        addGrid(m, {ax, h, bz}, {w, 0, 0}, {0, 0, -d}, {0, 1, 0}, cuts, cuts);    // +Y
+        addGrid(m, {ax, 0, az}, {w, 0, 0}, {0, 0, d}, {0, -1, 0}, cuts, cuts);    // -Y
+        addGrid(m, {ax, 0, bz}, {w, 0, 0}, {0, h, 0}, {0, 0, 1}, cuts, cuts);     // +Z
+        addGrid(m, {bx, 0, az}, {-w, 0, 0}, {0, h, 0}, {0, 0, -1}, cuts, cuts);   // -Z
+        break;
+    }
+    case PRIM_PLANE:
+        addGrid(m, {-w / 2, 0, d / 2}, {w, 0, 0}, {0, 0, -d}, {0, 1, 0}, cuts, cuts);
+        break;
+    case PRIM_SPHERE:
+        m.append(makeSphere(r, std::clamp(p.segments, 3, 256), std::clamp(p.rings, 2, 128)), Affine::trs(float3(0, r, 0), 0.0f, float3(1, 1, 1)));
+        for (size_t i = 0; i + 2 < m.indices.size(); i += 3) std::swap(m.indices[i + 1], m.indices[i + 2]);   // makeSphere winds clockwise
+        break;
+    case PRIM_CYLINDER: {
+        std::vector<LathePoint> prof;
+        prof.push_back({0, 0});
+        for (int k = 0; k <= cuts; ++k) prof.push_back({r, h * k / cuts});
+        prof.push_back({0, h});
+        m = makeLathe(prof, std::clamp(p.segments, 3, 256), 30.0f);
+        break;
+    }
+    }
+    return m;
+}
+
 } // namespace vp3d

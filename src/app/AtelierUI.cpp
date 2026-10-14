@@ -409,7 +409,7 @@ static void syncAtelierStyle(ImFont* bold) {
         a.overlay = rgb(0x1D2024, 225); a.minimap = rgb(0x181A1E, 240); a.headerBar = rgb(0x1D2024); a.popupHeader = rgb(0x25282B);
         a.track = border; a.frameHover = rgb(0x4A5058); a.checkerA = rgb(0x3A3E44); a.checkerB = rgb(0x6E737A);
         a.toast = rgb(0x2A2117, 245); a.knob = thumb; a.pinExec = rgb(0xE0E1E4);
-        a.menuX = 168; a.menuW = 46; a.headerShift = 65;   // room for the WZX ENGINE brand
+        a.menuX = 168; a.menuW = 46; a.headerShift = 111;   // room for the WZX ENGINE brand
         return;
     }
     if (a.skin == 2) {
@@ -429,10 +429,10 @@ static void syncAtelierStyle(ImFont* bold) {
         a.overlay = rgb(0x181A1C, 230); a.minimap = rgb(0x181A1C, 240); a.headerBar = card; a.popupHeader = rgb(0x24272B);
         a.track = fill; a.frameHover = borderStrong; a.checkerA = rgb(0x3F4248); a.checkerB = rgb(0x2A2E33);
         a.toast = rgb(0x24201E, 245); a.knob = thumb; a.pinExec = rgb(0xE2E4E7);
-        a.menuX = 168; a.menuW = 46; a.headerShift = 65;   // room for the WZX Engine brand
+        a.menuX = 168; a.menuW = 46; a.headerShift = 111;   // room for the WZX Engine brand
         return;
     }
-    a.menuX = 53; a.menuW = 53; a.headerShift = 0;
+    a.menuX = 53; a.menuW = 53; a.headerShift = 53;
     a.light = th::settings().light;
     a.accent = u(a.light ? th::accentTextV() : p.accent);
     a.select = u(p.select);
@@ -528,10 +528,10 @@ void App::atlTopBar(float x0, float y0, float width) {
     }
     const float sep = P().menuX - 10;
     dl->AddLine(ImVec2(x0 + sep * s, y0 + 7 * s), ImVec2(x0 + sep * s, y0 + 30 * s), P().border);
-    const char* menus[] = {"Project", "Edit", "View", "Tools", "Help"};
+    const char* menus[] = {"Project", "Edit", "Create", "View", "Tools", "Help"};
     float x = x0 + P().menuX * s;
     auto save = [&] { if (!m_themeTestOnly) th::saveSettings(m_exeDir + L"\\wzx_settings.ini"); };
-    for (int mi = 0; mi < 5; ++mi) {
+    for (int mi = 0; mi < 6; ++mi) {
         std::string id = "atlmenu" + std::to_string(mi);
         R r = {x, y0 + 6 * s, P().menuW * s, 24 * s};
         if (Hit(id.c_str(), r)) ImGui::OpenPopup(id.c_str());
@@ -566,7 +566,12 @@ void App::atlTopBar(float x0, float y0, float width) {
                     ImGui::EndMenu();
                 }
             }
-            if (mi == 2) {
+            if (mi == 2 && ImGui::BeginMenu("Mesh")) {
+                for (int t : {PRIM_CUBE, PRIM_SPHERE, PRIM_PLANE, PRIM_CYLINDER})
+                    if (ImGui::MenuItem(primitiveName(t))) addPrimitive(t);
+                ImGui::EndMenu();
+            }
+            if (mi == 3) {
                 if (ImGui::MenuItem("Frame Selection", "F")) frameSelection();
                 ImGui::MenuItem("Viewport Statistics", nullptr, &m_showStats);
                 ImGui::MenuItem("Transform Gizmo", nullptr, &m_showGizmo);
@@ -581,7 +586,7 @@ void App::atlTopBar(float x0, float y0, float width) {
                 }
                 if (ImGui::MenuItem("Appearance Settings…")) m_showSettings = true;
             }
-            if (mi == 3) {
+            if (mi == 4) {
                 if (ImGui::MenuItem("Select", "Q", m_tool == TOOL_SELECT)) m_tool = TOOL_SELECT;
                 if (ImGui::MenuItem("Move", "W", m_tool == TOOL_MOVE)) m_tool = TOOL_MOVE;
                 if (ImGui::MenuItem("Rotate", "E", m_tool == TOOL_ROTATE)) m_tool = TOOL_ROTATE;
@@ -592,7 +597,7 @@ void App::atlTopBar(float x0, float y0, float width) {
                 ImGui::SetNextItemWidth(150 * s);
                 ImGui::SliderFloat("Camera speed", &m_camSpeed, 0.1f, 5.0f, "%.1f");
             }
-            if (mi == 4) {
+            if (mi == 5) {
                 if (ImGui::MenuItem("Controls & Shortcuts")) m_showShortcuts = true;
                 if (ImGui::MenuItem("About")) m_showAbout = true;
             }
@@ -1222,13 +1227,15 @@ void App::atlInspectorActor(float x, float y, float w, float) {
     }
     Material& mat = m_scene.materials[o->material];
     const PartDef* pd = findPart(o->part);
+    const PartKind kind = o->prim.type == PRIM_SPHERE ? K_SPHERE : pd ? pd->kind : K_CUBE;
     ImU32 col = srgbU32(mat.baseColor);
     // header card (graph inspector node card)
     Box({x, y, w, 56 * s}, Fade(P().accent, 30), 4, true);
-    drawPrimitiveIcon(dl, pd ? pd->kind : K_CUBE, ImVec2(x + 9 * s, y + 12 * s), ImVec2(x + 39 * s, y + 42 * s), col);
+    drawPrimitiveIcon(dl, kind, ImVec2(x + 9 * s, y + 12 * s), ImVec2(x + 39 * s, y + 42 * s), col);
     dl->PushClipRect(ImVec2(x, y), ImVec2(x + w - 34 * s, y + 56 * s), true);
     Text(x + 48 * s, y + 11 * s, o->name, P().text, 14);
-    std::string type = pd ? "Primitive · " + o->part : (o->part == "WALL" ? "Wall · static mesh" : "Mesh · " + o->part);
+    std::string type = o->prim.type != PRIM_NONE ? std::string("Primitive · ") + primitiveName(o->prim.type)
+                     : pd ? "Primitive · " + o->part : (o->part == "WALL" ? "Wall · static mesh" : "Mesh · " + o->part);
     if (!m_multi.empty()) type += "  (+" + std::to_string(m_multi.size()) + ")";
     Text(x + 48 * s, y + 33 * s, type, P().accent, 10);
     dl->PopClipRect();
@@ -1261,12 +1268,60 @@ void App::atlInspectorActor(float x, float y, float w, float) {
         if (AxisFields("scl", x, y, w, &o->scale.x, 0.01f, "%.2f", act)) { o->scale = maxv(o->scale, float3(0.01f)); markDirty(); }
         y += 41 * s;
     }
+    if (o->prim.type != PRIM_NONE && show("Primitive Mesh Dimensions Size Width Height Depth Radius Segmentation Segments Rings Subdivisions")) {
+        // parameters of a Create > Mesh primitive: the mesh is rebuilt from them
+        PrimitiveParams& pp = o->prim;
+        bool ch = false;
+        auto length = [&](const char* id, const char* label, float& v) {
+            float f = v;
+            if (SliderRow(id, label, x, y, w, &f, 0.05f, 20.0f, "%.2f", act) && f != v) { v = std::max(f, 0.01f); ch = true; }
+        };
+        auto count = [&](const char* id, const char* label, int& v, int lo, int hi) {
+            float f = (float)v;
+            if (SliderRow(id, label, x, y, w, &f, (float)lo, (float)hi, "%.0f", act)) {
+                int n = std::clamp((int)std::lround(f), lo, hi);
+                if (n != v) { v = n; ch = true; }
+            }
+        };
+        Label(x, y, "DIMENSIONS");
+        y += 24 * s;
+        if (pp.type == PRIM_CUBE) {
+            float v[3] = {pp.size.x, pp.size.y, pp.size.z};
+            Text(x, y, "Size", P().muted, 11);
+            y += 19 * s;
+            if (AxisFields("primSize", x, y, w, v, 0.01f, "%.2f", act)) { pp.size = maxv(float3(v[0], v[1], v[2]), float3(0.01f)); ch = true; }
+            y += 41 * s;
+        } else if (pp.type == PRIM_PLANE) {
+            length("##primW", "Width", pp.size.x);
+            length("##primD", "Depth", pp.size.z);
+        } else if (pp.type == PRIM_CYLINDER) {
+            length("##primH", "Height", pp.size.y);
+        }
+        if (pp.type == PRIM_SPHERE || pp.type == PRIM_CYLINDER) {
+            Label(x, y, "ATTRIBUTES");
+            y += 24 * s;
+            length("##primR", "Radius", pp.radius);
+        }
+        Label(x, y, "SEGMENTATION");
+        y += 24 * s;
+        if (pp.type == PRIM_SPHERE) {
+            count("##primSeg", "Segments", pp.segments, 3, 128);
+            count("##primRings", "Rings", pp.rings, 2, 64);
+        } else if (pp.type == PRIM_CYLINDER) {
+            count("##primSeg", "Segments", pp.segments, 3, 128);
+            count("##primCuts", "Height Cuts", pp.subdiv, 1, 32);
+        } else {
+            count("##primCuts", "Subdivisions", pp.subdiv, 1, 32);
+        }
+        if (ch && syncPrimitiveMesh(m_scene, m_selected)) markDirty();
+        y += 4 * s;
+    }
     if (show("Static Mesh")) {
         Label(x, y, "STATIC MESH");
         y += 24 * s;
         R slot = {x, y, w, 44 * s};
         Box(slot, P().bg, 4, true);
-        drawPrimitiveIcon(dl, pd ? pd->kind : K_CUBE, ImVec2(slot.x + 7 * s, slot.y + 6 * s), ImVec2(slot.x + 39 * s, slot.y + 38 * s), IM_COL32(190, 194, 200, 255));
+        drawPrimitiveIcon(dl, kind, ImVec2(slot.x + 7 * s, slot.y + 6 * s), ImVec2(slot.x + 39 * s, slot.y + 38 * s), IM_COL32(190, 194, 200, 255));
         std::string meshName = o->mesh >= 0 && o->mesh < (int)m_scene.meshNames.size() ? m_scene.meshNames[o->mesh] : o->part;
         dl->PushClipRect(slot.min(), slot.max(), true);
         Text(slot.x + 48 * s, slot.y + 8 * s, "SM_" + meshName, P().text, 11);

@@ -724,6 +724,7 @@ void App::undo() {
     m_scene.materials = s.materials;
     m_selected = s.selected < (int)m_scene.objects.size() ? s.selected : -1;
     m_multi.clear();
+    syncPrimitives();
     markDirty();
 }
 
@@ -736,6 +737,7 @@ void App::redo() {
     m_scene.materials = s.materials;
     m_selected = s.selected < (int)m_scene.objects.size() ? s.selected : -1;
     m_multi.clear();
+    syncPrimitives();
     markDirty();
 }
 
@@ -766,6 +768,30 @@ void App::addPartFromLibrary(const PartDef& p, const float3* at) {
     if (m_tool == TOOL_SELECT) m_tool = TOOL_MOVE;
     status(L"Object added: " + std::wstring(p.name));
     markDirty();
+}
+
+void App::addPrimitive(int type) {
+    pushUndo();
+    // On top of the selection, else at the world origin.
+    float3 pos(0, 0, 0);
+    if (m_selected >= 0) {
+        const Object& s = m_scene.objects[m_selected];
+        float3 a, b;
+        m_scene.meshes[s.mesh].bounds(a, b);
+        pos = s.position;
+        pos.y = s.position.y + b.y * s.scale.y;
+    }
+    int idx = app::addPrimitive(m_scene, type, pos);
+    if (idx < 0) return;
+    m_selected = idx;
+    m_multi.clear();
+    if (m_tool == TOOL_SELECT) m_tool = TOOL_MOVE;
+    status(L"Object added: " + fromUtf8(primitiveName(type)));
+    markDirty();
+}
+
+void App::syncPrimitives() {
+    for (size_t i = 0; i < m_scene.objects.size(); ++i) syncPrimitiveMesh(m_scene, (int)i);
 }
 
 void App::duplicateSelected() {

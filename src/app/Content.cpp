@@ -5,6 +5,7 @@
 #include "vp3d/FilePath.h"
 #endif
 #include "vp3d/shaders/Shared.h"
+#include <cstdio>
 
 namespace app {
 
@@ -220,6 +221,63 @@ int addPart(Scene& s, const std::string& partId, int colorId, int preset, float3
     o.position = pos;
     o.yaw = radians(yawDeg);
     return s.addObject(o);
+}
+
+// --------------------------------------------------------------------------- parametric primitives (Create > Mesh)
+
+const char* primitiveName(int type) {
+    switch (type) {
+    case PRIM_CUBE: return "Cube";
+    case PRIM_SPHERE: return "Sphere";
+    case PRIM_PLANE: return "Plane";
+    case PRIM_CYLINDER: return "Cylinder";
+    }
+    return "Mesh";
+}
+
+// Mesh name holding every parameter: an object whose mesh name differs from its key needs a rebuild.
+static std::string primitiveKey(const PrimitiveParams& p) {
+    char b[160];
+    snprintf(b, sizeof(b), "%s %g %g %g r%g s%d r%d d%d", primitiveName(p.type), p.size.x, p.size.y, p.size.z, p.radius,
+             p.segments, p.rings, p.subdiv);
+    return b;
+}
+
+bool syncPrimitiveMesh(Scene& s, int object) {
+    if (object < 0 || object >= (int)s.objects.size()) return false;
+    Object& o = s.objects[object];
+    if (o.prim.type == PRIM_NONE) return false;
+    std::string key = primitiveKey(o.prim);
+    if (o.mesh >= 0 && o.mesh < (int)s.meshNames.size() && s.meshNames[o.mesh] == key) return false;
+    bool shared = o.mesh < 0 || o.mesh >= (int)s.meshes.size() || s.meshNames[o.mesh].rfind(primitiveName(o.prim.type), 0) != 0;
+    for (size_t i = 0; i < s.objects.size() && !shared; ++i)
+        shared = (int)i != object && s.objects[i].mesh == o.mesh;
+    if (shared) {
+        o.mesh = s.addMesh(key, makePrimitive(o.prim));
+    } else {
+        s.meshes[o.mesh] = makePrimitive(o.prim);
+        s.meshNames[o.mesh] = key;
+        ++s.geometryVersion;
+    }
+    return true;
+}
+
+int addPrimitive(Scene& s, int type, float3 pos) {
+    if (type <= PRIM_NONE || type > PRIM_CYLINDER) return -1;
+    Material m;
+    m.name = primitiveName(type);
+    m.baseColor = float3(0.42f, 0.42f, 0.42f);   // neutral grey (sRGB ~170)
+    applyPreset(m, PRESET_MATTE, 1.0f);
+    Object o;
+    o.part = std::string("PRIM_") + primitiveName(type);
+    o.name = primitiveName(type);
+    o.prim.type = type;
+    o.mesh = -1;
+    o.material = s.addMaterial(m);
+    o.position = pos;
+    int idx = s.addObject(o);
+    syncPrimitiveMesh(s, idx);
+    return idx;
 }
 
 // --------------------------------------------------------------------------- scenes
