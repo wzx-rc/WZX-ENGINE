@@ -195,9 +195,9 @@ void App::drawSettingsWindow() {
             const bool amb = skin != 0;
             if (amb) {
                 indent();
-                ImGui::TextColored(th::dimV(), skin == 1 ? "Fixed colours: dark mode, amber accent." : "Fixed colours: dark mode, coral accent.");
+                ImGui::TextColored(th::dimV(), skin == 1 ? "Fixed colours: dark mode, amber accent." : "Dark mode, coral accent; the main colour tints its surfaces.");
             }
-            // the colour settings below only apply to the Atelier theme
+            // mode and accent only apply to the Atelier theme; the main colour to Atelier and Anthracite-Corail (its own value)
             ImGui::BeginDisabled(amb);
             // mode
             propLabel("Mode", labelW);
@@ -205,22 +205,27 @@ void App::drawSettingsWindow() {
             if (ImGui::RadioButton("Dark", &mode, 0)) { s.light = false; changed = true; }
             ImGui::SameLine(0, 18 * d);
             if (ImGui::RadioButton("Light", &mode, 1)) { s.light = true; changed = true; }
+            ImGui::EndDisabled();
             // main colour: tint of the interface surfaces (neutral black to blue-grey...)
+            ImGui::BeginDisabled(skin == 1);
+            ImVec4& mainRef = skin == 2 ? s.corailMain : s.mainColor;
             ImGui::Spacing();
             propLabel("Main Color", labelW);
             static const Preset mains[] = {{"Graphite", ImVec4(0.5f, 0.5f, 0.5f, 1)},       {"Blue Slate", ImVec4(0.415f, 0.506f, 0.578f, 1)},
                                            {"Midnight", ImVec4(0.36f, 0.46f, 0.66f, 1)},    {"Forest", ImVec4(0.42f, 0.55f, 0.46f, 1)},
                                            {"Plum", ImVec4(0.55f, 0.45f, 0.60f, 1)},        {"Umber", ImVec4(0.60f, 0.50f, 0.41f, 1)}};
-            int m = presetRow("main", mains, 6, s.mainColor);
-            if (m >= 0) { s.mainColor = mains[m].c; changed = true; }
+            int m = presetRow("main", mains, 6, mainRef);
+            if (m >= 0) { mainRef = mains[m].c; changed = true; }
             indent();
             ImGui::SetNextItemWidth(-1);
-            float m3[3] = {s.mainColor.x, s.mainColor.y, s.mainColor.z};
-            if (ImGui::ColorEdit3("##maincolor", m3, ImGuiColorEditFlags_DisplayHex)) { s.mainColor = ImVec4(m3[0], m3[1], m3[2], 1); changed = true; }
+            float m3[3] = {mainRef.x, mainRef.y, mainRef.z};
+            if (ImGui::ColorEdit3("##maincolor", m3, ImGuiColorEditFlags_DisplayHex)) { mainRef = ImVec4(m3[0], m3[1], m3[2], 1); changed = true; }
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("Tint of the panels and backgrounds");
             indent();
             if (ImGui::Checkbox("Lock brightness", &s.lockBrightness)) changed = true;
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("On: only the hue of the main colour counts (constant contrast).\nOff: its brightness also lightens or darkens the panels (test).");
+            ImGui::EndDisabled();
+            ImGui::BeginDisabled(amb);
             // accent colour: selection, active buttons, highlights
             ImGui::Spacing();
             propLabel("Accent Color", labelW);
