@@ -45,13 +45,14 @@ constexpr ImU32 axisX = col::rgb(0xBD726B), axisY = col::rgb(0x86A487), axisZ = 
 bool Coral();   // the Corail theme is active (atelier::Style().skin == 2)
 // Recolours the neutral Corail colours from their pack values with tint (main colour of the settings).
 void TintCoral(ImU32 (*tint)(ImU32));
+// Selection colour of the Corail theme (coral by default): accent, selection fill and selection border.
+void SetCoralAccent(ImU32 accent);
 
 // Soft drop shadow under a floating bar (the float-shadow filter: dy 4, blur 6, black 25 %).
 void Shadow(ImDrawList* dl, ImVec2 a, ImVec2 b, float rounding, float s);
 // Corail floating bar: rounded panel with its drop shadow (viewport toolbar, status bar).
 void FloatBar(ImDrawList* dl, ImVec2 a, ImVec2 b, float s);
-// Corail slider row a..b: label (left) and value (right) on top, below them a thin bar (a third of the pack field)
-// with its fill and the matte 5 x 16 handle.
+// Corail slider: one field holding the fill, the 5 x 16 handle, the label (left) and the value (right).
 void SliderField(ImDrawList* dl, ImFont* font, float textSize, ImVec2 a, ImVec2 b, float t, const char* label, const char* value, bool focus, float s);
 
 
