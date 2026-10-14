@@ -86,6 +86,7 @@ struct Options {
     float hysteresis = 0.97f;
     int light = -1;             // test: 1 light mode, 0 dark mode
     bool openSettings = false;  // test: open the settings window at startup
+    std::string theme;          // test: start with this theme ("Atelier" or "Ambre"), not saved
     int workspace = 0;          // Atelier workspace at startup: 0 scene, 1 graph, 2 material
     int inspectorTab = -1;      // test: inspector tab at startup (0 actor, 1 light, 2 render, 3 world)
     ImVec4 mainColor = ImVec4(-1, -1, -1, 1);   // test: main colour for this run (--main-color r,g,b)
