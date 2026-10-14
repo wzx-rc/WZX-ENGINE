@@ -880,7 +880,8 @@ void GameHost::drawBuildWindow() {
     ImGui::BeginDisabled();
     ImGui::RadioButton("iOS (iPhone + iPad)  -  coming soon", &platform, 1);
     ImGui::EndDisabled();
-    help("iOS needs a Mac with Xcode, an Apple developer account and a Metal version of the renderer.\n"
+    help("iOS needs Xcode on a Mac (a Mac in the cloud works: GitHub Actions, Codemagic), an Apple developer account\n"
+         "and a Metal version of the renderer.\n"
          "One build runs on both iPhone and iPad: the game adapts to the screen of the device, there is no fixed resolution.");
 
     ImGui::SeparatorText("Profile");
