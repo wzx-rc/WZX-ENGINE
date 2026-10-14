@@ -1,6 +1,8 @@
 # Test DDGI : grille de sondes d'éclairage global (12/10/2026)
 
-Copie séparée : `WZX ENGINE\_ddgi-test` (dépôt git propre, branche `ddgi-test`). Le dossier principal et `_nodal-editor` n'ont pas été modifiés.
+> État au 14/10/2026 : ce test a été mené dans une copie séparée (`_ddgi-test`, aujourd'hui archivée localement dans `_archive/ddgi-test`). Le mode GI sondes est intégré à `main` (tag `v0.1`) ; l'historique du prototype, le viewer d'étude Cornell (`src\viewer`) et `tools\imgcmp.cpp` sont conservés dans la branche GitHub `archive/ddgi-study`. Les chemins ci-dessous se réfèrent à cette copie.
+
+Copie séparée d'origine : `WZX ENGINE\_ddgi-test` (dépôt git propre, branche `ddgi-test`).
 GPU : NVIDIA GeForce RTX 5060, Release, viewport 1203 × 700, scène Cornell Box (107 k triangles, 1 lumière surfacique).
 
 ## Ce qui a été fait

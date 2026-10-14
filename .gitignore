@@ -7,11 +7,8 @@ __pycache__/
 # Captures d'écran et rendus de test
 captures/
 
-# Copies de travail locales (historique dans leurs propres dépôts / branches)
-_backup/
-_ddgi-test/
-_nodal-editor/
-_rts-test/
+# Anciens prototypes archivés localement (intégrés à main ; historique DDGI dans la branche archive/ddgi-study)
+_archive/
 
 # Dossiers d'échange locaux (références, dépôts pour Claude)
 00 - REFERENCES/

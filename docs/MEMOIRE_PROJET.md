@@ -1,5 +1,7 @@
 # Mémoire du projet : prototype RTS « village » (Unity puis Unreal)
 
+> Ce document décrit le prototype fait dans Unity et Unreal **avant** WZX Engine ; il sert de cahier des charges au jeu RTS. L'état du moteur lui-même est dans le `README.md` et les rapports `RAPPORT_DDGI.md` et `RAPPORT_RTS.md` (jalon `v0.1` du 14/10/2026 : DDGI, éditeur nodal et RTS fusionnés dans `main`).
+
 Fichier généré à la fin de la session du 12/10/2026. Il résume tout ce qui a été fait, les choix techniques, les pièges rencontrés et comment reprendre le travail.
 
 ---

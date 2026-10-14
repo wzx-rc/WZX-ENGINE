@@ -26,9 +26,12 @@ Options : `--scene cornell|studio`, `--open scene.v3d.json`, `--view N`, `--sele
 
 ## Modes de rendu
 
-- **Viewport (raster)** par défaut : PBR direct, shadow map PCF, MSAA 4x, ~1 ms GPU.
-- **Path tracing** (touche P ou bouton en haut du viewport) : le rendu progressif complet.
-- **GI sondes temps réel** (touche L, ou « GI » / « GI probes » dans les menus de rendu) : grille de sondes d'éclairage indirect mise à jour à chaque image, avec historique d'image. Expérimental ; rapport : `docs/RAPPORT_DDGI.md`. Options : `--ddgi 1`, `--probes N`, `--ddgi-view 0|1|2`, `--hysteresis x`.
+Quatre modes, choisis dans le menu de rendu en haut du viewport ; leurs réglages sont dans l'onglet **Render** de l'Inspector (icône i sur chaque option).
+
+- **Real time (raster)** par défaut : PBR direct, shadow map PCF, MSAA 4x, ~1 ms GPU.
+- **Temporal path tracing** (touche P depuis le raster) : path tracing avec historique d'image (fondu réglable après un déplacement) et débruiteur à-trous réglable. Remplace les anciens modes Interactive et Temporal.
+- **Progressive path tracing** : le rendu progressif complet, sans débruiteur, qui sert de référence.
+- **GI probes (DDGI)** (touche L) : grille de sondes d'éclairage indirect mise à jour à chaque image, avec historique d'image. Expérimental ; rapport : `docs/RAPPORT_DDGI.md`. Options : `--ddgi 1`, `--probes N`, `--ddgi-view 0|1|2`, `--hysteresis x`.
 
 ## Transformations de vue
 
@@ -48,7 +51,6 @@ ACES (fit de Hill, RRT+ODT), AgX, AgX Punchy, Standard. Espace de travail : lin�
   - `Renderer` : device DX12, BLAS/TLAS, accumulation, débruitage, tonemap
   - `Scene`, `MeshGen` : description de scène, meshes procéduraux (box, sphère, lathe, shader ball)
   - `AssetImport` : import OBJ (positions, UV, normales) et images (WIC : jpg, png, bmp) ; textures de base (`Material::baseColorTex`) échantillonnées en raster et en traçage
-  - `UI` : UI immédiate Direct2D/DirectWrite au-dessus du swapchain (D3D11On12), sans dépendance externe
   - `shaders/` : `PathTrace.hlsl`, `Denoise.hlsl`, `Tonemap.hlsl`, `Raster.hlsl`, GI sondes (`DDGIUpdate.hlsl`, `DDGIBlend.hlsl`, `GIShade.hlsl`, `DDGICommon.hlsli`, `Temporal.hlsli`)
 - `src/app/` : éditeur (espaces de travail Atelier dessinés avec Dear ImGui)
   - `App` : fenêtre, boucle, édition (annuler, sélection, ajout…) · `ImGuiLayer` : backends Win32 + DX12, polices, textures · `Theme` : couleurs et réglages
@@ -61,10 +63,12 @@ ACES (fit de Hill, RRT+ODT), AgX, AgX Punchy, Standard. Espace de travail : lin�
 - `third_party/atelier_reference/` : code de référence de l'UI Atelier
 - `assets/` : modèles et thèmes copiés à côté de l'exécutable par `build.bat`
 - `docs/` : mémoire du projet et rapports (DDGI, RTS)
+- `archive/` : code retiré gardé pour référence (ancien graphe Atelier)
 - `tools/` : outils annexes (`curve_cut`)
 
-Dossiers locaux non versionnés (voir `.gitignore`) : `build/`, `captures/`, `_backup/`,
-copies de travail `_ddgi-test/`, `_nodal-editor/`, `_rts-test/`, et les dossiers d'échange
+Dossiers locaux non versionnés (voir `.gitignore`) : `build/`, `builds/`, `captures/`,
+`_archive/` (anciens prototypes `ddgi-test`, `nodal-editor`, `rts-test` et `backup`, intégrés à `main` ;
+l'historique du prototype DDGI est dans la branche `archive/ddgi-study`), et les dossiers d'échange
 `00 - REFERENCES/` et `01 - INBOX/` (fichiers déposés pour Claude).
 
 ## Langue
@@ -77,7 +81,8 @@ copies de travail `_ddgi-test/`, `_nodal-editor/`, `_rts-test/`, et les dossiers
   - Scene : `src/app/AtelierUI.cpp`, branché sur le moteur.
   - Graph : éditeur nodal du jeu (`src/game`), dans le style Atelier : bibliothèque de nœuds à gauche, canevas avec groupes, Inspector à droite, panneau de sortie en bas (Output, Compiler Results, Execution Trace). Compile sauvegarde le graphe et le valide. L'ancien graphe Atelier est archivé dans `archive/atelier-graph/`.
   - Material Studio : module Atelier de `src/app/atelier`. Le panneau de droite du Material Studio est l'Attribute Editor (`inspector.cpp`, livrable Atelier-Design-AttributEditor).
-  - Les fonctions pas encore développées (Build, Play…) restent visibles mais désactivées.
+  - **Play** (F5) lance le jeu décrit par le graphe dans la vue ; **Build** (F7) produit un exécutable autonome `WZX Game.exe` dans `builds/windows-release` (ou `windows-debug`). F3 ouvre le graphe.
+  - API de commandes locale pour piloter l'éditeur : `http://127.0.0.1:7878`.
   - Espace au démarrage : `--workspace scene|graph|material`.
 - Fenêtre **Settings** (icône engrenage de la barre du haut, ou Project › Settings…), enregistrée dans `build/bin/wzx_settings.ini` :
   - Mode : Dark / Light (le mode clair est volontairement un peu atténué).
@@ -87,8 +92,7 @@ copies de travail `_ddgi-test/`, `_nodal-editor/`, `_rts-test/`, et les dossiers
   - Text size, Icon size, Layout size (espacement : plus compact en dessous de 100 %, plus aéré au-dessus).
 - Couleurs partagées par tous les espaces : `src/app/atelier/atelier_style.h`, recalculées à chaque image depuis ces réglages. Métriques et couleurs de base : `assets/themes/Blue 01.theme`.
 - Tests en ligne de commande (sans enregistrer) : `--light 0|1`, `--main-color r,g,b`, `--sizes texte,icônes,layout`, `--settings`.
-- `assets/` : modèles (copiés à côté de l'exe au build) · `00 - REFERENCES/` : concepts visuels
-- `references/` : images de référence · `captures/` : rendus de test
+- `assets/` : modèles (copiés à côté de l'exe au build) · `00 - REFERENCES/` : concepts visuels · `captures/` : rendus de test
 
 ## Intégrer le module dans une autre app
 

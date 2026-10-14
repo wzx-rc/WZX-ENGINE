@@ -1,6 +1,8 @@
 # Starter RTS jouable dans WZX Engine (13/10/2026)
 
-Copie séparée : `WZX ENGINE\_rts-test` (le dossier `WZX ENGINE` n'est pas un dépôt git, même convention que `_ddgi-test`). Le dossier principal, `_ddgi-test`, `_nodal-editor` et `00 - REFERENCES\RTS GAME - Starter` n'ont pas été modifiés : les assets de la maison ont été lus depuis `_rts-test\assets\HOUSE` (copie identique).
+> État au 14/10/2026 : ce starter a été construit dans une copie séparée (`_rts-test`, aujourd'hui archivée localement dans `_archive/rts-test`). Il est intégré à `main` (tag `v0.1`) sous une autre forme : plus de `RTSGame.exe` ni de `--build-rts`, la logique RTS passe par les nœuds du graphe, Play (F5) et Build (F7) de l'éditeur (voir le README). Les sections ci-dessous décrivent la copie d'origine.
+
+Copie séparée d'origine : `WZX ENGINE\_rts-test`. Les assets de la maison ont été lus depuis `_rts-test\assets\HOUSE` (copie identique de `00 - REFERENCES\RTS GAME - Starter`).
 GPU de test : NVIDIA GeForce RTX 5060, Release.
 
 ## Lancer et compiler
