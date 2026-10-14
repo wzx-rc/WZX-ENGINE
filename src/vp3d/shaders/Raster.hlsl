@@ -175,7 +175,7 @@ float V_Smith(float NoV, float NoL, float a) {
 
 float3 Fresnel(float3 f0, float c) { return f0 + (1 - f0) * pow(1 - saturate(c), 5); }
 
-float Shadow(float3 wpos, float3 n) {
+float Shadow(float3 wpos, float3 n, float bias) {
     float4 lp = mul(R.lightViewProj, float4(wpos + n * 0.03, 1));
     float3 p = lp.xyz / lp.w;
     float2 uv = float2(p.x * 0.5 + 0.5, 0.5 - p.y * 0.5);
@@ -187,7 +187,7 @@ float Shadow(float3 wpos, float3 n) {
     float s = 0;
     float radius = 2.5 * R.shadowTexel;
     [unroll] for (int k = 0; k < 12; ++k)
-        s += gShadow.SampleCmpLevelZero(gShadowCmp, uv + taps[k] * radius, p.z - 0.0015);
+        s += gShadow.SampleCmpLevelZero(gShadowCmp, uv + taps[k] * radius, p.z - bias);
     return s / 12.0;
 }
 
@@ -211,7 +211,7 @@ float3 GridColor(float3 base, float3 wpos, inout float3 emission) {
     return base;
 }
 
-float4 Shade(VSOut i, bool ghost) {
+float4 Shade(VSOut i, bool ghost, float shadowBias) {
     GpuMaterial m = gMats[D.materialId];
     float3 N = normalize(i.nrm);
     float3 V = normalize(R.camPos - i.wpos);
@@ -262,7 +262,7 @@ float4 Shade(VSOut i, bool ghost) {
         if (NoL <= 0 || cosL <= 0) continue;
         float size = sqrt(l.area);
         float3 E = l.radiance * R.lightScale * l.area * cosL / max(d2, l.area * 0.5);
-        float shadow = (li == R.keyLight) ? Shadow(i.wpos, N) : 1.0;
+        float shadow = (li == R.keyLight) ? Shadow(i.wpos, N, shadowBias) : 1.0;
         float3 H = normalize(V + L);
         float NoH = saturate(dot(N, H));
         float aL = saturate(a + size / (3.0 * sqrt(d2)));   // widen the lobe for the light's size
@@ -285,7 +285,7 @@ float4 Shade(VSOut i, bool ghost) {
             float3 F = Fresnel(f0, saturate(dot(V, H)));
             float3 spec = R.sunFromEnv > 0 ? 0 : D_GGX(NoH, a) * V_Smith(NoV, NoL, a) * F;
             float3 diff = diffuseCol / PI * (1 - F);
-            color += (diff + spec) * R.sunRadiance * R.lightScale * NoL * Shadow(i.wpos, N);
+            color += (diff + spec) * R.sunRadiance * R.lightScale * NoL * Shadow(i.wpos, N, shadowBias);
         }
     }
     // Hemisphere ambient + reflection of the environment, darkened in cavities facing down.
@@ -314,8 +314,8 @@ float4 Shade(VSOut i, bool ghost) {
     return float4(color, alpha);
 }
 
-float4 PSMain(VSOut i) : SV_Target { return Shade(i, false); }
-float4 PSGhost(VSOut i) : SV_Target { return Shade(i, true); }
+float4 PSMain(VSOut i) : SV_Target { return Shade(i, false, 0.0015); }
+float4 PSGhost(VSOut i) : SV_Target { return Shade(i, true, 0.0015); }
 float4 PSId(VSOut i) : SV_Target { return float4(0, 0, 0, (float)D.id); }
 
 // ---------------------------------------------------------------- DDGI probe capture
@@ -355,7 +355,8 @@ ProbeOut PSProbe(VSOut i, bool front : SV_IsFrontFace) {
     GpuMaterial m = gMats[D.materialId];
     float3 base = m.baseColor;
     if (m.baseColorTex != NO_TEXTURE) base *= gTextures[NonUniformResourceIndex(m.baseColorTex)].Sample(gLinearWrap, i.uv).rgb;
-    o.radiance = float4(Shade(i, false).rgb, d);
+    // Shadow bias of the probes: the main pass bias (0.0015) leaves acne on surfaces grazed by the key light.
+    o.radiance = float4(Shade(i, false, 0.01).rgb, d);
     o.albedo = float4(base * (1.0 - m.transmission) * (1.0 - 0.6 * m.metallic), 1);
     o.normal = float4(normalize(i.nrm), 1);
     return o;
