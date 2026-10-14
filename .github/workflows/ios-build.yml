@@ -27,6 +27,19 @@ jobs:
           tar xf MoltenVK-ios.tar
           echo "MOLTENVK_LIBRARY=$PWD/MoltenVK/MoltenVK/static/MoltenVK.xcframework/ios-arm64/libMoltenVK.a" >> "$GITHUB_ENV"
 
+      # Diligent Engine (hundreds of files) is rebuilt only when its version or the CMake setup changes: the whole
+      # Xcode build directory is cached between runs, our own sources recompile incrementally. Saved even when the
+      # build fails, so a broken commit in our code does not throw away the Diligent objects.
+      - name: Restore the build directory
+        id: build-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: build/ios
+          key: ios-build-${{ env.MOLTENVK_VERSION }}-${{ hashFiles('player/CMakeLists.txt', '.github/workflows/ios-build.yml') }}-${{ github.sha }}
+          restore-keys: |
+            ios-build-${{ env.MOLTENVK_VERSION }}-${{ hashFiles('player/CMakeLists.txt', '.github/workflows/ios-build.yml') }}-
+            ios-build-${{ env.MOLTENVK_VERSION }}-
+
       - name: Configure (Xcode project)
         run: |
           cmake -S player -B build/ios -G Xcode \
@@ -49,6 +62,13 @@ jobs:
           mkdir -p build/Payload
           cp -R "$APP" build/Payload/
           (cd build && zip -qr WZXPlayer-unsigned.ipa Payload)
+
+      - name: Save the build directory
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: build/ios
+          key: ${{ steps.build-cache.outputs.cache-primary-key }}
 
       - uses: actions/upload-artifact@v4
         with:
