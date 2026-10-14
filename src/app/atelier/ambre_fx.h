@@ -1,7 +1,9 @@
-// Drawing effects of the Ambre theme (graphite + amber), taken from the "Ambre UI" design pack
+// Drawing effects of the drawn themes. Ambre (graphite + amber), from the "Ambre UI" design pack
 // (01 - INBOX/UI/Ambre_UI_Composants: components/*.svg, theme.json): vertical gradients of the surfaces and
 // buttons, the light top edge, the amber halo of the active buttons, the selected rows, the underlined tabs,
-// the gold brand mark and the flat silver slider handle. Sizes are in reference pixels times the scale s.
+// the gold brand mark and the flat silver slider handle. Corail (anthracite + coral, see namespace coral): the
+// same functions draw rounded matte cards, coral selections without glow and floating bars.
+// Sizes are in reference pixels times the scale s.
 #pragma once
 #include "imgui.h"
 
@@ -28,6 +30,30 @@ constexpr ImU32 selectedLeft = rgb(0x553916), selectedRight = rgb(0x33271B);
 } // namespace col
 
 ImU32 Alpha(ImU32 c, float a);   // c with its alpha multiplied by a
+// colours of the Anthracite / Corail pack (01 - INBOX/UI/Anthracite-Corail_UI_Components: theme.json, components/*.svg)
+// The neutral surfaces and texts are variables: TintCoral recolours them with the main colour of the settings.
+namespace coral {
+inline ImU32 shell = col::rgb(0x111315), panel = col::rgb(0x181A1C), viewport = col::rgb(0x242424), card = col::rgb(0x1D1F22);
+inline ImU32 input = col::rgb(0x191B1E), raised = col::rgb(0x282C32), border = col::rgb(0x2B2F34), borderStrong = col::rgb(0x3A4047);
+inline ImU32 text = col::rgb(0xDDDFE2), muted = col::rgb(0x92979F), dim = col::rgb(0x626A74);
+inline ImU32 accent = col::rgb(0xD8977C), selection = col::rgb(0x302622), selectionBorder = col::rgb(0x6E4B3E);
+inline ImU32 fill = col::rgb(0x30343A), thumb = col::rgb(0xBEC3C9), primaryText = col::rgb(0xF2E5DE);
+inline ImU32 buttonTop = col::rgb(0x2B3038), buttonBottom = col::rgb(0x252A31), hoverTop = col::rgb(0x323842), hoverBottom = col::rgb(0x2B3038);
+constexpr ImU32 primaryTop = col::rgb(0xC45B39), primaryBottom = col::rgb(0xAD4428), primaryBorder = col::rgb(0xAD4C30);
+constexpr ImU32 axisX = col::rgb(0xBD726B), axisY = col::rgb(0x86A487), axisZ = col::rgb(0x729AB6), success = col::rgb(0x7DAA92);
+} // namespace coral
+bool Coral();   // the Corail theme is active (atelier::Style().skin == 2)
+// Recolours the neutral Corail colours from their pack values with tint (main colour of the settings).
+void TintCoral(ImU32 (*tint)(ImU32));
+
+// Soft drop shadow under a floating bar (the float-shadow filter: dy 4, blur 6, black 25 %).
+void Shadow(ImDrawList* dl, ImVec2 a, ImVec2 b, float rounding, float s);
+// Corail floating bar: rounded panel with its drop shadow (viewport toolbar, status bar).
+void FloatBar(ImDrawList* dl, ImVec2 a, ImVec2 b, float s);
+// Corail slider row a..b: label (left) and value (right) on top, below them a thin bar (a third of the pack field)
+// with its fill and the matte 5 x 16 handle.
+void SliderField(ImDrawList* dl, ImFont* font, float textSize, ImVec2 a, ImVec2 b, float t, const char* label, const char* value, bool focus, float s);
+
 
 // Filled rounded rectangle with a linear gradient: vertical (top -> bottom) or horizontal (left -> right).
 void Gradient(ImDrawList* dl, ImVec2 a, ImVec2 b, ImU32 top, ImU32 bottom, float rounding, ImDrawFlags flags = 0);

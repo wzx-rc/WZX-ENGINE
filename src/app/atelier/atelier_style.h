@@ -42,9 +42,10 @@ struct Palette {
     float iconScale = 1.0f;   // icon size / layout size
     float layoutScale = 1.0f; // layout size (spacing): multiplies the module scale
     bool light = false;
-    // Ambre theme (graphite + amber): the modules draw their buttons, panels and tabs with the effects of
-    // ambre_fx.h (gradients, glow, light edges) instead of flat boxes
-    bool ambre = false;
+    // Drawn themes: 0 Atelier (flat boxes), 1 Ambre (graphite + amber: gradients, glow, light edges),
+    // 2 Corail (anthracite + coral: rounded cards, floating bars, sliders with the value inside).
+    // When non zero the modules draw their buttons, panels and tabs with the effects of ambre_fx.h.
+    int skin = 0;
     ImFont* fontBold = nullptr;   // semibold text of the Ambre tabs and primary buttons (null: regular font)
     // top bar: start and width of the menus, offset of the workspace buttons (the Ambre brand is wider)
     float menuX = 53, menuW = 53, headerShift = 0;

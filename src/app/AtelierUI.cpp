@@ -7,6 +7,7 @@
 #include "Icons.h"
 #include "atelier/atelier_style.h"
 #include "atelier/ambre_fx.h"
+#include "imgui_internal.h"   // TempInputIsActive (Corail sliders)
 #include "atelier/material_ui.h"
 #include <cctype>
 
@@ -90,15 +91,16 @@ bool Button(const char* id, R r, const char* label, Icon icon, bool active = fal
     bool q = Hit(id, r, enabled);
     bool hover = enabled && ImGui::IsItemHovered();
     const float ix = r.x + (iconOnly ? (r.w / s - 13) / 2 : 8) * s, iy = r.y + (r.h - 13 * s) / 2;
-    if (P().ambre) {
+    if (P().skin) {
         // gradient face, light top edge; active: amber border, inner ring and halo, glowing icon
         afx::Face f = !enabled ? afx::Face::Disabled : active ? afx::Face::Active : hover ? afx::Face::Hover : afx::Face::Normal;
         ImU32 c = afx::Button(dl, r.min(), r.max(), f, s, 4);
-        if (active) GlowGlyph(icon, ix, iy, 13, c, afx::col::accent, 0.08f);
+        if (P().skin == 2) Glyph(icon, ix, iy, 13, c);   // Corail: no glow
+        else if (active) GlowGlyph(icon, ix, iy, 13, c, afx::col::accent, 0.08f);
         else GlowGlyph(icon, ix, iy, 13, c, c, enabled ? 0.025f : 0.0f);
         if (!iconOnly && label && *label) {
             dl->PushClipRect(r.min(), ImVec2(r.x + r.w - 4 * s, r.y + r.h), true);
-            Text(r.x + 28 * s, r.y + (r.h - 12 * s * ts()) / 2, label, active ? afx::col::accentHi : c);
+            Text(r.x + 28 * s, r.y + (r.h - 12 * s * ts()) / 2, label, active && P().skin == 1 ? afx::col::accentHi : c);
             dl->PopClipRect();
         }
         return q;
@@ -115,7 +117,7 @@ bool Button(const char* id, R r, const char* label, Icon icon, bool active = fal
 }
 // main action of a view (Build): solid amber button with dark text in the Ambre theme, a normal button otherwise
 bool PrimaryButton(const char* id, R r, const char* label, Icon icon, bool enabled = true) {
-    if (!P().ambre || !enabled) return Button(id, r, label, icon, false, false, enabled);
+    if (!P().skin || !enabled) return Button(id, r, label, icon, false, false, enabled);
     bool q = Hit(id, r, enabled);
     bool hover = ImGui::IsItemHovered(), held = ImGui::IsItemActive();
     ImU32 c = afx::Button(dl, r.min(), r.max(), afx::Face::Primary, s, 4);
@@ -126,14 +128,14 @@ bool PrimaryButton(const char* id, R r, const char* label, Icon icon, bool enabl
 }
 // tab of a tab row: underlined amber tab in the Ambre theme (tab-assembly.svg), a button otherwise
 bool TabButton(const char* id, R r, const char* label, Icon icon, bool active) {
-    if (!P().ambre) return Button(id, r, label, icon, active);
+    if (!P().skin) return Button(id, r, label, icon, active);
     bool q = Hit(id, r);
     bool hover = ImGui::IsItemHovered();
-    ImU32 c = active ? afx::col::accent : (hover ? P().text : P().muted);
+    ImU32 c = active ? P().accent : (hover ? P().text : P().muted);
     float tw = TextSize(label, 12).x, total = 13 * s * P().iconScale + 6 * s + tw;
     float x = r.x + std::max(4 * s, (r.w - total) / 2);
     dl->PushClipRect(r.min(), r.max(), true);
-    if (active) GlowGlyph(icon, x, r.y + (r.h - 13 * s) / 2 - 1 * s, 13, c, afx::col::accent, 0.07f);
+    if (active && P().skin == 1) GlowGlyph(icon, x, r.y + (r.h - 13 * s) / 2 - 1 * s, 13, c, afx::col::accent, 0.07f);
     else Glyph(icon, x, r.y + (r.h - 13 * s) / 2 - 1 * s, 13, c);
     float tx = x + 13 * s * P().iconScale + 6 * s, ty = r.y + (r.h - 12 * s * ts()) / 2 - 1 * s;
     if (active) TextBold(tx, ty, label, c);
@@ -145,7 +147,7 @@ bool TabButton(const char* id, R r, const char* label, Icon icon, bool active) {
 // checkbox; the Ambre theme redraws its box (amber border and tick when on)
 bool Check(const char* id, bool* v) {
     bool c = ImGui::Checkbox(id, v);
-    if (P().ambre) {
+    if (P().skin) {
         ImVec2 a = ImGui::GetItemRectMin();
         float sz = ImGui::GetFrameHeight();
         afx::Checkbox(ImGui::GetWindowDrawList(), a, ImVec2(a.x + sz, a.y + sz), *v, ImGui::IsItemHovered(), s);
@@ -154,12 +156,12 @@ bool Check(const char* id, bool* v) {
 }
 // selected row of a list / tree
 void SelectedRow(R r) {
-    if (P().ambre) afx::SelectedRow(dl, r.min(), r.max(), s);
+    if (P().skin) afx::SelectedRow(dl, r.min(), r.max(), s);
     else Box(r, P().select, 3);
 }
 // selected card / thumbnail
 void SelectedFrame(R r) {
-    if (P().ambre) afx::SelectedFrame(dl, r.min(), r.max(), s, 4);
+    if (P().skin) afx::SelectedFrame(dl, r.min(), r.max(), s, 4);
     else dl->AddRect(r.min(), r.max(), P().accent, 4 * s, 0, 1.4f * s);
 }
 // button with a value and a drop arrow (combos)
@@ -194,7 +196,18 @@ bool Search(const char* id, R r, char* value, size_t length, const char* hint) {
 }
 // panel frame with the former Atelier graph title row: icon, title, small tag on the right
 void Panel(R r, Icon icon, const char* title, const char* tag, ImU32 iconColor) {
-    if (P().ambre) {   // surface gradient with a title band (structure-header.svg)
+    if (P().skin == 2) {   // Corail card: bold title, the tag in a small pill ("Ruins Kit" of the reference)
+        afx::Panel(dl, r.min(), r.max(), s, 0);
+        TextBold(r.x + 16 * s, r.y + 11 * s, title, P().text, 13.5f);
+        if (tag && *tag) {
+            ImVec2 z = TextSize(tag, 8);
+            R pill = {r.x + r.w - 14 * s - z.x - 14 * s, r.y + 11 * s, z.x + 14 * s, 18 * s};
+            Box(pill, P().raised, 5);
+            Text(pill.x + 7 * s, pill.y + (pill.h - z.y) / 2, tag, P().muted, 8);
+        }
+        return;
+    }
+    if (P().skin) {   // surface gradient with a title band (structure-header.svg)
         afx::Panel(dl, r.min(), r.max(), s, 34 * s);
         GlowGlyph(icon, r.x + 12 * s, r.y + 11 * s, 13, iconColor, iconColor, iconColor == P().accent ? 0.06f : 0.0f);
         Text(r.x + 33 * s, r.y + 10 * s, title, P().text, 13);
@@ -208,7 +221,7 @@ void Panel(R r, Icon icon, const char* title, const char* tag, ImU32 iconColor) 
 }
 // section label ("NODE PROPERTIES"); Ambre: lighter label followed by a separator line up to g_labelRight
 void Label(float x, float y, const char* t) {
-    if (!P().ambre) { Text(x, y, t, P().muted, 9); return; }
+    if (!P().skin) { Text(x, y, t, P().muted, 9); return; }
     TextBold(x, y, t, P().text, 9);
     float e = x + TextSize(t, 9).x + 10 * s;
     if (g_labelRight > e) dl->AddLine(ImVec2(e, y + 6 * s), ImVec2(g_labelRight, y + 6 * s), P().border);
@@ -226,7 +239,39 @@ void Splitter(const char* id, R r, float& value, float low, float high, bool ver
 }
 // label above a full width slider (material / graph inspector pattern); returns true while edited
 bool SliderRow(const char* id, const char* label, float x, float& y, float w, float* v, float lo, float hi, const char* fmt, bool& activated) {
-    if (P().ambre) {
+    if (P().skin == 2) {
+        // Corail slider (slider-rugosite.svg, bar at a third of its height): label and value on top, a thin bar with
+        // the fill and the matte handle below. ImGui's slider over the bar gives the interaction (drag, Ctrl+click to
+        // type); its own drawing is hidden except while a value is typed. The right 24 px stay free (info icon slot).
+        const ImGuiID gid = ImGui::GetID(id);
+        const bool typing = ImGui::TempInputIsActive(gid);
+        const float fw = w - 24 * s, ih = 18 * s, iy = y + 16 * s;
+        if (typing) afx::Field(dl, ImVec2(x, iy), ImVec2(x + fw, iy + ih), s, true);
+        const ImVec4 clear(0, 0, 0, 0);
+        for (ImGuiCol k : {ImGuiCol_FrameBg, ImGuiCol_FrameBgHovered, ImGuiCol_FrameBgActive, ImGuiCol_SliderGrab, ImGuiCol_SliderGrabActive})
+            ImGui::PushStyleColor(k, clear);
+        ImGui::PushStyleColor(ImGuiCol_Text, typing ? ImGui::GetStyleColorVec4(ImGuiCol_Text) : clear);
+        ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(8 * s, std::max(0.0f, (ih - ImGui::GetFontSize()) / 2)));
+        ImGui::SetCursorScreenPos(ImVec2(x, iy));
+        ImGui::SetNextItemWidth(fw);
+        bool c = ImGui::SliderFloat(id, v, lo, hi, fmt);
+        activated |= ImGui::IsItemActivated();
+        const bool focus = ImGui::IsItemActive() || ImGui::IsItemHovered();
+        ImGui::PopStyleVar(2);
+        ImGui::PopStyleColor(6);
+        Tip("Drag to edit · Ctrl+click to type a value");
+        if (!typing) {
+            char value[64];
+            snprintf(value, sizeof(value), fmt, *v);
+            afx::SliderField(dl, font, 11 * s * ts(), ImVec2(x, y), ImVec2(x + fw, iy + ih), hi > lo ? (*v - lo) / (hi - lo) : 0.0f, label, value, focus, s);
+        } else {
+            Text(x + 1 * s, y, label, P().text, 11);
+        }
+        y += 42 * s;
+        return c;
+    }
+    if (P().skin) {
         // slider of the pack (slider-roughness.svg): label and numeric field on one row, thin amber track and flat
         // silver handle below; the right 24 px stay free (reset / info icon slot)
         Text(x, y, label, P().text, 11);
@@ -280,9 +325,9 @@ bool AxisFields(const char* id, float x, float y, float width, float* values, fl
         ImGui::PushID(i);
         ImGui::SetCursorScreenPos(ImVec2(fx, y));
         ImGui::SetNextItemWidth(w);
-        const bool amb = P().ambre;
-        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2((amb ? 24 : 16) * s, 5 * s));
-        if (amb) ImGui::PushStyleColor(ImGuiCol_Border, ImGui::ColorConvertU32ToFloat4(afx::col::fieldBorder));
+        const bool amb = P().skin, cor = P().skin == 2;
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2((amb ? (cor ? 18 : 24) : 16) * s, (cor ? 7 : 5) * s));
+        if (amb) ImGui::PushStyleColor(ImGuiCol_Border, ImGui::ColorConvertU32ToFloat4(cor ? afx::coral::border : afx::col::fieldBorder));
         changed |= ImGui::DragFloat("##axis", &values[i], speed, 0, 0, fmt, ImGuiSliderFlags_NoRoundToFormat);
         activated |= ImGui::IsItemActivated();
         const bool focus = ImGui::IsItemActive();
@@ -292,9 +337,10 @@ bool AxisFields(const char* id, float x, float y, float width, float* values, fl
         if (amb) {   // tinted X / Y / Z tag on the left of the field (transform-position-x.svg), amber border while edited
             ImVec2 a(fx, y), b(fx + w, y + h);
             afx::AxisTag(dl, a, b, i, s);
-            if (focus) dl->AddRect(a, b, afx::col::accent, 3 * s);
+            if (focus) dl->AddRect(a, b, cor ? afx::coral::selectionBorder : afx::col::accent, (cor ? 5 : 3) * s);
             ImU32 ac = afx::AxisColor(i);
-            Text(fx + 12 * s - TextSize(axes[i], 10).x / 2, y + (h - 10 * s * ts()) / 2, axes[i], ac, 10);
+            if (cor) TextBold(fx + 9 * s, y + (h - 10 * s * ts()) / 2, axes[i], ac, 10);   // vector-position.svg: letter only
+            else Text(fx + 12 * s - TextSize(axes[i], 10).x / 2, y + (h - 10 * s * ts()) / 2, axes[i], ac, 10);
         } else {
             dl->AddLine(ImVec2(fx + 1.5f * s, y + 4 * s), ImVec2(fx + 1.5f * s, y + h - 4 * s), colors[i], 2 * s);
             Text(fx + 6 * s, y + (h - 9 * s * ts()) / 2, axes[i], colors[i], 9);
@@ -351,8 +397,8 @@ static void syncAtelierStyle(ImFont* bold) {
     a.textScale = th::textSize() / a.layoutScale;
     a.iconScale = th::iconSize() / a.layoutScale;
     a.fontBold = bold;
-    a.ambre = th::ambre();
-    if (a.ambre) {
+    a.skin = th::skin();
+    if (a.skin == 1) {
         // Ambre: colours of the pack; the graph keeps its Atelier node style on graphite surfaces
         using namespace atelier::fx::col;
         a.light = false;
@@ -365,6 +411,25 @@ static void syncAtelierStyle(ImFont* bold) {
         a.track = border; a.frameHover = rgb(0x4A5058); a.checkerA = rgb(0x3A3E44); a.checkerB = rgb(0x6E737A);
         a.toast = rgb(0x2A2117, 245); a.knob = thumb; a.pinExec = rgb(0xE0E1E4);
         a.menuX = 168; a.menuW = 46; a.headerShift = 65;   // room for the WZX ENGINE brand
+        return;
+    }
+    if (a.skin == 2) {
+        // Anthracite-Corail: colours of the pack; the graph keeps its Atelier node style on charcoal surfaces
+        using namespace atelier::fx::coral;
+        // the main colour of the settings (Corail value) tints the neutral colours, the coral accents keep their hue
+        auto tint32 = [](ImU32 c) { return ImGui::ColorConvertFloat4ToU32(th::tint(ImGui::ColorConvertU32ToFloat4(c))); };
+        atelier::fx::TintCoral(tint32);
+        auto rgb = [&](unsigned h, int al = 255) { return tint32(atelier::fx::col::rgb(h, al)); };
+        a.light = false;
+        a.accent = accent; a.select = selection; a.strong = rgb(0xB94F2F);
+        a.bg = shell; a.panel = panel; a.raised = raised; a.hover = rgb(0x23262A); a.bar = shell; a.border = border;
+        a.text = text; a.muted = muted; a.mutedLight = rgb(0xB4B8BE);
+        a.canvas = viewport; a.node = rgb(0x2A2D31); a.nodeOff = rgb(0x1C1E21);
+        a.gridDot = rgb(0x3A3E44, 150); a.gridLine = rgb(0x2A2D31, 95);
+        a.overlay = rgb(0x181A1C, 230); a.minimap = rgb(0x181A1C, 240); a.headerBar = card; a.popupHeader = rgb(0x24272B);
+        a.track = fill; a.frameHover = borderStrong; a.checkerA = rgb(0x3F4248); a.checkerB = rgb(0x2A2E33);
+        a.toast = rgb(0x24201E, 245); a.knob = thumb; a.pinExec = rgb(0xE2E4E7);
+        a.menuX = 168; a.menuW = 46; a.headerShift = 65;   // room for the WZX Engine brand
         return;
     }
     a.menuX = 53; a.menuW = 53; a.headerShift = 0;
@@ -455,7 +520,7 @@ void App::drawAtelier() {
 
 void App::atlTopBar(float x0, float y0, float width) {
     Box({x0, y0, width, 37 * s}, P().bar, 0);
-    if (P().ambre) {   // topbar.svg: gold cube and WZX ENGINE wordmark, bottom border
+    if (P().skin) {   // topbar.svg: gold cube and WZX ENGINE wordmark, bottom border
         dl->AddLine(ImVec2(x0, y0 + 37 * s - 0.5f), ImVec2(x0 + width, y0 + 37 * s - 0.5f), P().border);
         afx::Brand(dl, font, P().fontBold, ImVec2(x0 + 13 * s, y0 + 6.5f * s), s);
     } else {
@@ -507,8 +572,13 @@ void App::atlTopBar(float x0, float y0, float width) {
                 ImGui::MenuItem("Transform Gizmo", nullptr, &m_showGizmo);
                 if (ImGui::MenuItem("Restore Panel Layout")) { m_atl.leftW = 222; m_atl.rightW = 284; m_atl.bottomH = 190; }
                 ImGui::Separator();
-                if (ImGui::MenuItem("Light Mode", nullptr, th::settings().light && !th::ambre(), !th::ambre())) { th::settings().light = !th::settings().light; th::apply(m_dpi); save(); }
-                if (ImGui::MenuItem("Ambre Theme", nullptr, th::ambre())) { th::settings().theme = th::ambre() ? "Atelier" : "Ambre"; th::apply(m_dpi); save(); }
+                if (ImGui::MenuItem("Light Mode", nullptr, th::settings().light && !th::styled(), !th::styled())) { th::settings().light = !th::settings().light; th::apply(m_dpi); save(); }
+                if (ImGui::BeginMenu("Theme")) {
+                    const char* names[] = {"Atelier", "Ambre", "Anthracite-Corail"}, *ids[] = {"Atelier", "Ambre", "Corail"};
+                    for (int i = 0; i < 3; ++i)
+                        if (ImGui::MenuItem(names[i], nullptr, th::skin() == i)) { th::settings().theme = ids[i]; th::apply(m_dpi); save(); }
+                    ImGui::EndMenu();
+                }
                 if (ImGui::MenuItem("Appearance Settings…")) m_showSettings = true;
             }
             if (mi == 3) {
@@ -713,7 +783,8 @@ void App::atlHierarchy(float x, float y, float w, float h) {
 void App::atlViewport(float x, float y, float w, float h) {
     // header
     R hr = {x, y, w, 35 * s};
-    if (P().ambre) {   // header strip of the pack (header gradient, border, light edge)
+    if (P().skin == 2) afx::FloatBar(dl, hr.min(), hr.max(), s);   // Corail: floating tool bar with its shadow
+    else if (P().skin) {   // header strip of the pack (header gradient, border, light edge)
         afx::Gradient(dl, hr.min(), hr.max(), afx::col::headerTop, afx::col::headerBottom, 4 * s);
         dl->AddRect(hr.min(), hr.max(), P().border, 4 * s);
         afx::TopEdge(dl, hr.min(), hr.max(), s, IM_COL32(181, 186, 192, 255), 0.10f);
@@ -767,7 +838,7 @@ void App::atlViewport(float x, float y, float w, float h) {
 
     // canvas
     R r = {x, y + 40 * s, w, h - 40 * s - 27 * s};
-    Box(r, P().canvas, 3, true);
+    Box(r, P().canvas, P().skin == 2 ? 8 : 3, P().skin != 2);   // Corail: borderless rounded viewport card
     viewportCanvas(ImVec2(r.x + 1, r.y + 1), ImVec2(r.w - 2, r.h - 2));   // image, input and gizmo; overlays below
     dl = ImGui::GetWindowDrawList();
     dl->PushClipRect(r.min(), r.max(), true);
@@ -829,7 +900,8 @@ void App::atlViewport(float x, float y, float w, float h) {
     dl->PopClipRect();
     // footer (former Atelier graph Footer): state of the tools and of the renderer
     R fr = {x, r.y + r.h + 3 * s, w, 24 * s};
-    if (P().ambre) { Box(fr, afx::col::footer, 0); dl->AddLine(ImVec2(fr.x, fr.y + 0.5f), ImVec2(fr.x + fr.w, fr.y + 0.5f), P().border); }
+    if (P().skin == 2) afx::FloatBar(dl, fr.min(), fr.max(), s);   // Corail: floating status bar
+    else if (P().skin) { Box(fr, afx::col::footer, 0); dl->AddLine(ImVec2(fr.x, fr.y + 0.5f), ImVec2(fr.x + fr.w, fr.y + 0.5f), P().border); }
     else Box(fr, P().bg, 0);
     float fx = fr.x + 9 * s;
     const char* toolNames[] = {"Select", "Move", "Rotate", "Scale"};
@@ -853,7 +925,7 @@ void App::atlViewport(float x, float y, float w, float h) {
 void App::atlContent(float x, float y, float w, float h) {
     AtelierState& A = m_atl;
     R r = {x, y, w, h};
-    if (P().ambre) afx::Panel(dl, r.min(), r.max(), s, 33 * s);   // the tab row sits in the title band
+    if (P().skin) afx::Panel(dl, r.min(), r.max(), s, 33 * s);   // the tab row sits in the title band
     else Box(r, P().panel, 4, true);
     const char* names[] = {"Content Browser", "Materials", "Camera Views", "Output Log"};
     Icon icons[] = {Icon::Cube, Icon::Material, Icon::Camera, Icon::List};
@@ -863,7 +935,7 @@ void App::atlContent(float x, float y, float w, float h) {
     for (int i = 0; i < 4; ++i) {
         char id[24];
         snprintf(id, sizeof(id), "contentTab%d", i);
-        if (TabButton(id, {tx, r.y + 4 * s, widths[i] * s, (P().ambre ? 29 : 25) * s}, names[i], icons[i], A.contentTab == i)) A.contentTab = i;
+        if (TabButton(id, {tx, r.y + 4 * s, widths[i] * s, (P().skin ? 29 : 25) * s}, names[i], icons[i], A.contentTab == i)) A.contentTab = i;
         tx += (widths[i] + 5) * s;
     }
     std::vector<Asset> assets = assetList();
@@ -1109,10 +1181,10 @@ void App::atlInspector(float x, float y, float w, float h) {
     for (int i = 0; i < 4; ++i) {
         char id[24];
         snprintf(id, sizeof(id), "inspectorTab%d", i);
-        if (TabButton(id, {tx, r.y + 40 * s, tw, (P().ambre ? 29 : 25) * s}, tabs[i], is[i], A.inspectorTab == i)) A.inspectorTab = i;
+        if (TabButton(id, {tx, r.y + 40 * s, tw, (P().skin ? 29 : 25) * s}, tabs[i], is[i], A.inspectorTab == i)) A.inspectorTab = i;
         tx += tw + 5 * s;
     }
-    if (P().ambre) dl->AddLine(ImVec2(r.x + 13 * s, r.y + 69 * s), ImVec2(r.x + r.w - 13 * s, r.y + 69 * s), P().border);
+    if (P().skin) dl->AddLine(ImVec2(r.x + 13 * s, r.y + 69 * s), ImVec2(r.x + r.w - 13 * s, r.y + 69 * s), P().border);
     float by = r.y + 76 * s;
     g_labelRight = r.x + r.w - 21 * s;   // inner width of the inspector body (scrollbar room excluded)
     ImGui::SetCursorScreenPos(ImVec2(r.x + 13 * s, by));
@@ -1388,11 +1460,11 @@ void App::atlInspectorRender(float x, float y, float w, float) {
         y += 26 * s;
     };
     auto sliderF = [&](const char* id, const char* label, float& v, float lo, float hi, const char* fmt, const char* help) {
-        info((std::string(id) + "_i").c_str(), x + w - 18 * s, y + 0 * s, help);
+        info((std::string(id) + "_i").c_str(), x + w - 18 * s, y + (P().skin == 2 ? 16 : 0) * s, help);
         ch |= SliderRow(id, label, x, y, w, &v, lo, hi, fmt, act);
     };
     auto sliderI = [&](const char* id, const char* label, int& v, float lo, float hi, const char* fmt, const char* help) {
-        info((std::string(id) + "_i").c_str(), x + w - 18 * s, y + 0 * s, help);
+        info((std::string(id) + "_i").c_str(), x + w - 18 * s, y + (P().skin == 2 ? 16 : 0) * s, help);
         float f = (float)v;
         if (SliderRow(id, label, x, y, w, &f, lo, hi, fmt, act)) { v = (int)std::round(f); ch = true; }
     };
