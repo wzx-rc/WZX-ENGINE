@@ -36,7 +36,7 @@ struct RenderSettings {
     float vignette = 0.12f;
     bool raster = false;
     int tonemapper = 0;           // 0 ACES (Hill fit), 1 AgX, 2 AgX Punchy, 3 Standard (clip)          // light raster viewport instead of path tracing
-    // Interactive path tracing: one path per pixel per frame, blended into the history of the previous frames.
+    // Temporal path tracing: one path per pixel per frame, blended into the history of the previous frames.
     // Off = progressive accumulation (reference, reset on every change).
     bool temporal = false;
     // Stable history (interactive, GI): the history is dropped when an object moves, edges are validated on the
