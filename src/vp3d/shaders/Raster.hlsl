@@ -302,8 +302,7 @@ float4 Shade(VSOut i, bool ghost) {
     float alpha = 1;
     if (trans > 0.5) alpha = 0.55 + 0.4 * Fresnel(0.04, NoV).x;
     if (ghost) {
-        float rim = pow(1 - NoV, 2);
-        color = lerp(color, float3(1.0, 0.92, 0.6), 0.35) + rim * float3(1.0, 0.85, 0.3);
+        color = lerp(color, float3(1.0, 0.92, 0.6), 0.35);   // no rim light on the placement ghost
         alpha = D.alpha;
     }
     return float4(color, alpha);
