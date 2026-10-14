@@ -65,16 +65,16 @@ ImU32 Button(ImDrawList* dl, ImVec2 a, ImVec2 b, Face face, float s, float round
     const float r = rounding * s;
     switch (face) {
     case Face::Active:
-        Glow(dl, a, b, col::accent, r, 6 * s, 0.30f);
+        Glow(dl, a, b, col::accent, r, 6 * s, 0.15f);
         Gradient(dl, a, b, col::activeTop, col::activeBottom, r);
         dl->AddRect(a, b, col::accentBorder, r);
         // inner amber ring with its own small blur (the "#D19B43, 45 %" ring of toolbar-move-active.svg)
-        dl->AddRect(ImVec2(a.x + 1 * s, a.y + 1 * s), ImVec2(b.x - 1 * s, b.y - 1 * s), Alpha(col::rgb(0xD19B43), 0.20f), r - s, 0, 2.2f * s);
+        dl->AddRect(ImVec2(a.x + 1 * s, a.y + 1 * s), ImVec2(b.x - 1 * s, b.y - 1 * s), Alpha(col::rgb(0xD19B43), 0.10f), r - s, 0, 2.2f * s);
         dl->AddRect(ImVec2(a.x + 1 * s, a.y + 1 * s), ImVec2(b.x - 1 * s, b.y - 1 * s), Alpha(col::rgb(0xD19B43), 0.45f), r - s, 0, 0.65f * s);
         TopEdge(dl, a, b, s, col::rgb(0xC3BDA5));
         return col::accentHi;
     case Face::Primary:
-        Glow(dl, a, b, col::accent, r, 4 * s, 0.18f);
+        Glow(dl, a, b, col::accent, r, 4 * s, 0.09f);
         Gradient(dl, a, b, col::primaryTop, col::primaryBottom, r);
         dl->AddRect(a, b, col::primaryBorder, r);
         TopEdge(dl, a, b, s, IM_COL32_WHITE, 0.35f);
@@ -116,7 +116,7 @@ void SelectedRow(ImDrawList* dl, ImVec2 a, ImVec2 b, float s) {
 void TabLine(ImDrawList* dl, ImVec2 a, ImVec2 b, bool active, bool hovered, float s) {
     ImVec2 la(a.x, b.y - 2 * s), lb(b.x, b.y);
     if (active) {
-        Glow(dl, la, lb, col::accent, 1 * s, 3 * s, 0.22f);
+        Glow(dl, la, lb, col::accent, 1 * s, 3 * s, 0.11f);
         dl->AddRectFilled(la, lb, col::accent);
     } else if (hovered) {
         dl->AddRectFilled(ImVec2(a.x, b.y - 1 * s), lb, col::rgb(0x4A5058));
@@ -124,7 +124,7 @@ void TabLine(ImDrawList* dl, ImVec2 a, ImVec2 b, bool active, bool hovered, floa
 }
 
 void SelectedFrame(ImDrawList* dl, ImVec2 a, ImVec2 b, float s, float rounding) {
-    Glow(dl, a, b, col::accent, rounding * s, 5 * s, 0.32f);
+    Glow(dl, a, b, col::accent, rounding * s, 5 * s, 0.16f);
     dl->AddRect(a, b, col::accent, rounding * s, 0, 1.5f * s);
 }
 
@@ -201,7 +201,7 @@ float SpacedText(ImDrawList* dl, ImFont* font, float size, ImVec2 p, ImU32 color
 
 float Brand(ImDrawList* dl, ImFont* font, ImFont* bold, ImVec2 p, float s) {
     const float mark = 24 * s;
-    Glow(dl, ImVec2(p.x + 6 * s, p.y + 6 * s), ImVec2(p.x + mark - 6 * s, p.y + mark - 6 * s), col::accent, 6 * s, 6 * s, 0.10f);
+    Glow(dl, ImVec2(p.x + 6 * s, p.y + 6 * s), ImVec2(p.x + mark - 6 * s, p.y + mark - 6 * s), col::accent, 6 * s, 6 * s, 0.05f);
     BrandMark(dl, p, mark);
     float x = p.x + mark + 9 * s;
     const float big = 15 * s, small = 12.5f * s;

@@ -94,8 +94,8 @@ bool Button(const char* id, R r, const char* label, Icon icon, bool active = fal
         // gradient face, light top edge; active: amber border, inner ring and halo, glowing icon
         afx::Face f = !enabled ? afx::Face::Disabled : active ? afx::Face::Active : hover ? afx::Face::Hover : afx::Face::Normal;
         ImU32 c = afx::Button(dl, r.min(), r.max(), f, s, 4);
-        if (active) GlowGlyph(icon, ix, iy, 13, c, afx::col::accent, 0.16f);
-        else GlowGlyph(icon, ix, iy, 13, c, c, enabled ? 0.05f : 0.0f);
+        if (active) GlowGlyph(icon, ix, iy, 13, c, afx::col::accent, 0.08f);
+        else GlowGlyph(icon, ix, iy, 13, c, c, enabled ? 0.025f : 0.0f);
         if (!iconOnly && label && *label) {
             dl->PushClipRect(r.min(), ImVec2(r.x + r.w - 4 * s, r.y + r.h), true);
             Text(r.x + 28 * s, r.y + (r.h - 12 * s * ts()) / 2, label, active ? afx::col::accentHi : c);
@@ -133,7 +133,7 @@ bool TabButton(const char* id, R r, const char* label, Icon icon, bool active) {
     float tw = TextSize(label, 12).x, total = 13 * s * P().iconScale + 6 * s + tw;
     float x = r.x + std::max(4 * s, (r.w - total) / 2);
     dl->PushClipRect(r.min(), r.max(), true);
-    if (active) GlowGlyph(icon, x, r.y + (r.h - 13 * s) / 2 - 1 * s, 13, c, afx::col::accent, 0.14f);
+    if (active) GlowGlyph(icon, x, r.y + (r.h - 13 * s) / 2 - 1 * s, 13, c, afx::col::accent, 0.07f);
     else Glyph(icon, x, r.y + (r.h - 13 * s) / 2 - 1 * s, 13, c);
     float tx = x + 13 * s * P().iconScale + 6 * s, ty = r.y + (r.h - 12 * s * ts()) / 2 - 1 * s;
     if (active) TextBold(tx, ty, label, c);
@@ -196,7 +196,7 @@ bool Search(const char* id, R r, char* value, size_t length, const char* hint) {
 void Panel(R r, Icon icon, const char* title, const char* tag, ImU32 iconColor) {
     if (P().ambre) {   // surface gradient with a title band (structure-header.svg)
         afx::Panel(dl, r.min(), r.max(), s, 34 * s);
-        GlowGlyph(icon, r.x + 12 * s, r.y + 11 * s, 13, iconColor, iconColor, iconColor == P().accent ? 0.12f : 0.0f);
+        GlowGlyph(icon, r.x + 12 * s, r.y + 11 * s, 13, iconColor, iconColor, iconColor == P().accent ? 0.06f : 0.0f);
         Text(r.x + 33 * s, r.y + 10 * s, title, P().text, 13);
         if (tag && *tag) Text(r.x + r.w - 12 * s - TextSize(tag, 8).x, r.y + 14 * s, tag, P().muted, 8);
         return;
