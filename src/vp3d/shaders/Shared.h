@@ -114,7 +114,14 @@ struct DDGIConstants {
     float4 rot0, rot1, rot2;               // per-frame random rotation of the ray set (rows)
     uint frame; uint temporalMax; uint view; uint flags;  // view: 0 full, 1 indirect diffuse only, 2 direct only
     float normalBias; float viewBias; float energy; float pad;
+    // Raster probe capture (flags bit 2): the probes of the batch starting at captureBase (mod total) were rendered
+    // this frame into the cube captures; probes below captureSeen have been captured at least once.
+    uint captureBase; uint captureSeen; uint captureSlots; uint pad1;
 };
+
+// Probe cube faces (raster capture): forward and up per face, right = cross(up, forward). Same order in C++.
+// Cube face texture size and the face field of view (90 degrees).
+#define DDGI_FACE 16
 
 #ifdef __cplusplus
 }} // namespace vp3d::gpu

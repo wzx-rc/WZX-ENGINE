@@ -70,6 +70,8 @@ struct Options {
     std::wstring hdri;          // HDRI to load at startup (file, or "sky" for the procedural sky)
     // DDGI probe GI (real-time mode)
     bool ddgi = false;          // start in the real-time probe GI mode
+    bool ddgiRaster = false;    // probe rays from raster cube captures (no ray tracing for the probes)
+    int ddgiCapture = 32;       // probes captured per frame (raster)
     int probes = 2048;          // target probe count over the scene bounds
     int ddgiView = 0;           // 0 full, 1 indirect only, 2 direct only
     int temporalCap = 1024;      // history length in frames (converges; the history is dropped on lighting changes)

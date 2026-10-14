@@ -106,6 +106,8 @@ bool App::init(HINSTANCE inst, const Options& opt) {
     m_vpPx.w = (int)(960 * m_dpi);
     m_vpPx.h = (int)(540 * m_dpi);
     m_rs.ddgi = opt.ddgi;
+    m_rs.ddgiRaster = opt.ddgiRaster;
+    m_rs.ddgiCaptureProbes = opt.ddgiCapture;
     m_rs.ddgiProbeBudget = opt.probes;
     m_rs.ddgiView = opt.ddgiView;
     m_rs.temporalCap = opt.temporalCap;
@@ -818,6 +820,8 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         else if (a == L"--workspace") { std::wstring w = next(); opt.workspace = w == L"graph" ? 1 : (w == L"material" ? 2 : 0); }
         else if (a == L"--ddgi") opt.ddgi = _wtoi(next().c_str()) != 0;
         else if (a == L"--probes") opt.probes = _wtoi(next().c_str());
+        else if (a == L"--ddgi-raster") opt.ddgiRaster = _wtoi(next().c_str()) != 0;
+        else if (a == L"--ddgi-capture") opt.ddgiCapture = _wtoi(next().c_str());
         else if (a == L"--ddgi-view") opt.ddgiView = _wtoi(next().c_str());
         else if (a == L"--temporal-cap") opt.temporalCap = _wtoi(next().c_str());
         else if (a == L"--hysteresis") opt.hysteresis = (float)_wtof(next().c_str());

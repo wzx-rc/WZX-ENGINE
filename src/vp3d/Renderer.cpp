@@ -131,7 +131,7 @@ bool Renderer::init(HWND hwnd, uint32_t width, uint32_t height, const std::wstri
 
     D3D12_DESCRIPTOR_HEAP_DESC hd = {};
     hd.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-    hd.NumDescriptors = kEnvHeapSlot + 1;  // + shadow map SRV + material textures + DDGI UAVs + history UAVs + HDRI SRV
+    hd.NumDescriptors = kCapHeapSlot + 3;  // + shadow map SRV + material textures + DDGI UAVs + history UAVs + HDRI SRV + capture UAVs
     hd.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
     m_device->CreateDescriptorHeap(&hd, IID_PPV_ARGS(&m_heap));
     m_descSize = m_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
@@ -193,7 +193,12 @@ bool Renderer::createPipelines(std::string* error) {
     envRange.NumDescriptors = 1;
     envRange.BaseShaderRegister = 7;
 
-    D3D12_ROOT_PARAMETER p[15] = {};
+    D3D12_DESCRIPTOR_RANGE capRange = {};   // u12..u14 probe captures (raster DDGI)
+    capRange.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_UAV;
+    capRange.NumDescriptors = 3;
+    capRange.BaseShaderRegister = 12;
+
+    D3D12_ROOT_PARAMETER p[16] = {};
     p[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
     p[0].Descriptor.ShaderRegister = 0;
     p[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
@@ -222,6 +227,9 @@ bool Renderer::createPipelines(std::string* error) {
     p[14].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;   // t7 HDRI texture
     p[14].DescriptorTable.NumDescriptorRanges = 1;
     p[14].DescriptorTable.pDescriptorRanges = &envRange;
+    p[15].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;   // u12 probe captures (raster DDGI)
+    p[15].DescriptorTable.NumDescriptorRanges = 1;
+    p[15].DescriptorTable.pDescriptorRanges = &capRange;
 
     D3D12_STATIC_SAMPLER_DESC ss = {};   // gLinearWrap (s0) of the path tracer
     ss.Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
@@ -230,7 +238,7 @@ bool Renderer::createPipelines(std::string* error) {
     ss.ShaderRegister = 0;
 
     D3D12_ROOT_SIGNATURE_DESC rsd = {};
-    rsd.NumParameters = 15;
+    rsd.NumParameters = 16;
     rsd.pParameters = p;
     rsd.NumStaticSamplers = 1;
     rsd.pStaticSamplers = &ss;
@@ -257,7 +265,8 @@ bool Renderer::createPipelines(std::string* error) {
         return true;
     };
     return make(L"PathTrace.cso", m_psoTrace) && make(L"Denoise.cso", m_psoDenoise) && make(L"Tonemap.cso", m_psoTonemap) &&
-           make(L"DDGIUpdate.cso", m_psoGIUpdate) && make(L"DDGIBlend.cso", m_psoGIBlend) && make(L"GIShade.cso", m_psoGIShade);
+           make(L"DDGIUpdate.cso", m_psoGIUpdate) && make(L"DDGIRaster.cso", m_psoGIRaster) &&
+           make(L"DDGIBlend.cso", m_psoGIBlend) && make(L"GIShade.cso", m_psoGIShade);
 }
 
 void Renderer::createTargets(uint32_t w, uint32_t h) {
@@ -1039,6 +1048,8 @@ void Renderer::setupProbeGrid(const RenderSettings& rs) {
     m_giGridVersion = m_sceneGeometryVersion;
     m_giBudget = budget;
     m_giFrame = 0;
+    m_capBase = 0;
+    m_capSeen = 0;
 
     uint32_t total = n[0] * n[1] * n[2];
     struct TexDesc { uint32_t w, h; DXGI_FORMAT fmt; };
@@ -1095,7 +1106,10 @@ void Renderer::recordDDGI(const RenderSettings& rs, UINT gx, UINT gy) {
     c.frame = m_giFrame++;
     c.temporalMax = (uint32_t)std::max(1, rs.temporalCap);
     c.view = (uint32_t)rs.ddgiView;
-    c.flags = rs.ddgiShowProbes ? 1u : 0u;
+    c.flags = (rs.ddgiShowProbes ? 1u : 0u) | (rs.ddgiRaster ? 2u : 0u);
+    c.captureBase = m_capBase;
+    c.captureSlots = m_capSlots;
+    c.captureSeen = rs.ddgiRaster ? std::min(total, m_capSeen + m_capSlots) : total;
     c.normalBias = 0.06f;
     c.viewBias = 0.24f;
     c.energy = 1.0f;
@@ -1106,8 +1120,17 @@ void Renderer::recordDDGI(const RenderSettings& rs, UINT gx, UINT gy) {
     m_cmd->SetComputeRootConstantBufferView(10, m_giConstants.va());
     m_cmd->SetComputeRootDescriptorTable(11, giTable);
 
-    m_cmd->SetPipelineState(m_psoGIUpdate.Get());
-    m_cmd->Dispatch(DDGI_RAYS / 64, total, 1);
+    if (rs.ddgiRaster) {
+        // One group per captured probe of the batch: the rays are read from the captures (u12).
+        D3D12_GPU_DESCRIPTOR_HANDLE capTable = m_heap->GetGPUDescriptorHandleForHeapStart();
+        capTable.ptr += (UINT64)kCapHeapSlot * m_descSize;
+        m_cmd->SetComputeRootDescriptorTable(15, capTable);
+        m_cmd->SetPipelineState(m_psoGIRaster.Get());
+        m_cmd->Dispatch(m_capSlots, 1, 1);
+    } else {
+        m_cmd->SetPipelineState(m_psoGIUpdate.Get());
+        m_cmd->Dispatch(DDGI_RAYS / 64, total, 1);
+    }
     uavBarrier();
     m_cmd->EndQuery(m_queryHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 2);
     m_cmd->SetPipelineState(m_psoGIBlend.Get());
@@ -1118,6 +1141,11 @@ void Renderer::recordDDGI(const RenderSettings& rs, UINT gx, UINT gy) {
     m_cmd->Dispatch(gx, gy, 1);
     uavBarrier();
     m_giTimed = true;
+    // The batch just captured is the one the next frame starts after.
+    if (rs.ddgiRaster) {
+        m_capSeen = c.captureSeen;
+        m_capBase = (m_capBase + m_capSlots) % total;
+    }
 }
 
 // Copies ACCUM and NORMAL into the history textures, after the frame's compute work and before the copy to the back buffer.
@@ -1151,6 +1179,8 @@ uint32_t renderSignature(const RenderSettings& rs) {
     mix(&rs.ddgiView, sizeof(int));
     mix(&rs.ddgiShowProbes, sizeof(bool));
     mix(&rs.ddgiProbeBudget, sizeof(int));
+    mix(&rs.ddgiRaster, sizeof(bool));
+    mix(&rs.ddgiCaptureProbes, sizeof(int));
     mix(&rs.ddgiHysteresis, sizeof(float));
     mix(&rs.maxBounces, sizeof(int));
     mix(&rs.bevel, sizeof(bool));
@@ -1389,6 +1419,12 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
     bool traced = false;
     m_cmd->EndQuery(m_queryHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 0);
     if (rs.ddgi) {
+        if (rs.ddgiRaster) {
+            // Raster rays: the cube captures of the next probes, rendered before the probe pass reads them.
+            setupProbeGrid(rs);
+            ensureCapture(std::min(giProbeCount(), (uint32_t)std::max(1, rs.ddgiCaptureProbes)));
+            recordRaster(scene, rs, vp, true);
+        }
         recordDDGI(rs, gx, gy);   // never converges: probes and image history keep updating
         ++m_sampleIndex;
         traced = true;
