@@ -281,6 +281,281 @@ bool exrRle(const uint8_t* s, size_t n, std::vector<uint8_t>& out, size_t expect
     return out.size() == expected;
 }
 
+// ------------------------------------------------------------------ EXR PIZ (wavelet + Huffman), after OpenEXR's
+// ImfPizCompressor / ImfHuf / ImfWav (BSD-3). Poly Haven and many renderers write their EXR files with it.
+
+const int HUF_ENCBITS = 16, HUF_DECBITS = 14;
+const int HUF_ENCSIZE = (1 << HUF_ENCBITS) + 1, HUF_DECSIZE = 1 << HUF_DECBITS, HUF_DECMASK = HUF_DECSIZE - 1;
+const int SHORT_ZEROCODE_RUN = 59, LONG_ZEROCODE_RUN = 63, SHORTEST_LONG_RUN = 2 + LONG_ZEROCODE_RUN - SHORT_ZEROCODE_RUN;
+
+struct HufDec {
+    int len = 0, lit = 0;
+    std::vector<int> p;   // long codes starting with this prefix
+};
+
+inline int hufLength(uint64_t code) { return (int)(code & 63); }
+inline uint64_t hufCode(uint64_t code) { return code >> 6; }
+
+struct HufIn {
+    const uint8_t* p;
+    const uint8_t* end;
+    uint64_t c = 0;
+    int lc = 0;
+    bool bad = false;
+    void getChar() {
+        if (p >= end) { bad = true; c <<= 8; lc += 8; return; }
+        c = (c << 8) | *p++;
+        lc += 8;
+    }
+    uint64_t getBits(int n) {
+        while (lc < n) getChar();
+        lc -= n;
+        return (c >> lc) & ((1ull << n) - 1);
+    }
+};
+
+void hufCanonicalCodeTable(std::vector<uint64_t>& hcode) {
+    uint64_t n[59] = {};
+    for (int i = 0; i < HUF_ENCSIZE; ++i) n[hcode[i]] += 1;
+    uint64_t c = 0;
+    for (int i = 58; i > 0; --i) {
+        uint64_t nc = (c + n[i]) >> 1;
+        n[i] = c;
+        c = nc;
+    }
+    for (int i = 0; i < HUF_ENCSIZE; ++i) {
+        int l = (int)hcode[i];
+        if (l > 0) hcode[i] = (uint64_t)l | (n[l]++ << 6);
+    }
+}
+
+bool hufUnpackEncTable(HufIn& in, int im, int iM, std::vector<uint64_t>& hcode) {
+    hcode.assign(HUF_ENCSIZE, 0);
+    for (; im <= iM; im++) {
+        uint64_t l = hcode[im] = in.getBits(6);
+        if (in.bad) return false;
+        if (l == (uint64_t)LONG_ZEROCODE_RUN) {
+            int zerun = (int)in.getBits(8) + SHORTEST_LONG_RUN;
+            if (im + zerun > iM + 1) return false;
+            while (zerun--) hcode[im++] = 0;
+            im--;
+        } else if (l >= (uint64_t)SHORT_ZEROCODE_RUN) {
+            int zerun = (int)l - SHORT_ZEROCODE_RUN + 2;
+            if (im + zerun > iM + 1) return false;
+            while (zerun--) hcode[im++] = 0;
+            im--;
+        }
+    }
+    hufCanonicalCodeTable(hcode);
+    return true;
+}
+
+bool hufBuildDecTable(const std::vector<uint64_t>& hcode, int im, int iM, std::vector<HufDec>& dec) {
+    dec.assign(HUF_DECSIZE, HufDec());
+    for (; im <= iM; im++) {
+        uint64_t c = hufCode(hcode[im]);
+        int l = hufLength(hcode[im]);
+        if (l > 58 || (c >> l)) return false;
+        if (l > HUF_DECBITS) {
+            HufDec& pl = dec[(size_t)(c >> (l - HUF_DECBITS))];
+            if (pl.len) return false;
+            pl.lit++;
+            pl.p.push_back(im);
+        } else if (l) {
+            size_t base = (size_t)(c << (HUF_DECBITS - l));
+            for (size_t i = 0; i < ((size_t)1 << (HUF_DECBITS - l)); ++i) {
+                HufDec& pl = dec[base + i];
+                if (pl.len || !pl.p.empty()) return false;
+                pl.len = l;
+                pl.lit = im;
+            }
+        }
+    }
+    return true;
+}
+
+bool hufGetCode(int po, int rlc, HufIn& in, uint16_t*& out, uint16_t* ob, uint16_t* oe) {
+    if (po == rlc) {
+        if (in.lc < 8) in.getChar();
+        in.lc -= 8;
+        uint8_t cs = (uint8_t)(in.c >> in.lc);
+        if (out + cs > oe || out == ob) return false;
+        uint16_t s = out[-1];
+        while (cs-- > 0) *out++ = s;
+    } else if (out < oe) {
+        *out++ = (uint16_t)po;
+    } else {
+        return false;
+    }
+    return true;
+}
+
+bool hufDecode(const std::vector<uint64_t>& hcode, const std::vector<HufDec>& dec, const uint8_t* src, int nBits, int rlc,
+               int no, uint16_t* out) {
+    uint16_t* ob = out;
+    uint16_t* oe = out + no;
+    HufIn in{src, src + (nBits + 7) / 8};
+    while (in.p < in.end) {
+        in.getChar();
+        while (in.lc >= HUF_DECBITS) {
+            const HufDec& pl = dec[(in.c >> (in.lc - HUF_DECBITS)) & HUF_DECMASK];
+            if (pl.len) {
+                in.lc -= pl.len;
+                if (!hufGetCode(pl.lit, rlc, in, out, ob, oe)) return false;
+            } else {
+                if (pl.p.empty()) return false;
+                int j = 0;
+                for (; j < pl.lit; j++) {
+                    int l = hufLength(hcode[pl.p[j]]);
+                    while (in.lc < l && in.p < in.end) in.getChar();
+                    if (in.lc >= l && hufCode(hcode[pl.p[j]]) == ((in.c >> (in.lc - l)) & ((1ull << l) - 1))) {
+                        in.lc -= l;
+                        if (!hufGetCode(pl.p[j], rlc, in, out, ob, oe)) return false;
+                        break;
+                    }
+                }
+                if (j == pl.lit) return false;
+            }
+        }
+    }
+    int i = (8 - nBits) & 7;
+    in.c >>= i;
+    in.lc -= i;
+    while (in.lc > 0) {
+        const HufDec& pl = dec[(in.c << (HUF_DECBITS - in.lc)) & HUF_DECMASK];
+        if (!pl.len) return false;
+        in.lc -= pl.len;
+        if (!hufGetCode(pl.lit, rlc, in, out, ob, oe)) return false;
+    }
+    return out - ob == no;
+}
+
+bool hufUncompress(const uint8_t* src, size_t n, uint16_t* raw, int nRaw) {
+    if (n == 0) return nRaw == 0;
+    if (n < 20) return false;
+    auto rd = [&](size_t o) { return (int)((uint32_t)src[o] | ((uint32_t)src[o + 1] << 8) | ((uint32_t)src[o + 2] << 16) | ((uint32_t)src[o + 3] << 24)); };
+    int im = rd(0), iM = rd(4), nBits = rd(12);
+    if (im < 0 || im >= HUF_ENCSIZE || iM < 0 || iM >= HUF_ENCSIZE) return false;
+    HufIn table{src + 20, src + n};
+    std::vector<uint64_t> hcode;
+    if (!hufUnpackEncTable(table, im, iM, hcode)) return false;
+    const uint8_t* data = table.p;
+    if (nBits < 0 || (size_t)(nBits + 7) / 8 > (size_t)(src + n - data)) return false;
+    std::vector<HufDec> dec;
+    if (!hufBuildDecTable(hcode, im, iM, dec)) return false;
+    return hufDecode(hcode, dec, data, nBits, iM, nRaw, raw);
+}
+
+inline void wdec14(uint16_t l, uint16_t h, uint16_t& a, uint16_t& b) {
+    int16_t ls = (int16_t)l, hs = (int16_t)h;
+    int hi = hs;
+    int ai = ls + (hi & 1) + (hi >> 1);
+    a = (uint16_t)(int16_t)ai;
+    b = (uint16_t)(int16_t)(ai - hi);
+}
+
+inline void wdec16(uint16_t l, uint16_t h, uint16_t& a, uint16_t& b) {
+    const int A_OFFSET = 1 << 15, MOD_MASK = (1 << 16) - 1;
+    int m = l, d = h;
+    int bb = (m - (d >> 1)) & MOD_MASK;
+    int aa = (d + bb - A_OFFSET) & MOD_MASK;
+    b = (uint16_t)bb;
+    a = (uint16_t)aa;
+}
+
+void wav2Decode(uint16_t* in, int nx, int ox, int ny, int oy, uint16_t mx) {
+    bool w14 = mx < (1 << 14);
+    auto dec = [w14](uint16_t l, uint16_t h, uint16_t& a, uint16_t& b) { if (w14) wdec14(l, h, a, b); else wdec16(l, h, a, b); };
+    int n = nx > ny ? ny : nx;
+    int p = 1, p2;
+    while (p <= n) p <<= 1;
+    p >>= 1;
+    p2 = p;
+    p >>= 1;
+    while (p >= 1) {
+        uint16_t* py = in;
+        uint16_t* ey = in + (ptrdiff_t)oy * (ny - p2);
+        int oy1 = oy * p, oy2 = oy * p2, ox1 = ox * p, ox2 = ox * p2;
+        uint16_t i00, i01, i10, i11;
+        for (; py <= ey; py += oy2) {
+            uint16_t* px = py;
+            uint16_t* ex = py + (ptrdiff_t)ox * (nx - p2);
+            for (; px <= ex; px += ox2) {
+                uint16_t* p01 = px + ox1;
+                uint16_t* p10 = px + oy1;
+                uint16_t* p11 = p10 + ox1;
+                dec(*px, *p10, i00, i10);
+                dec(*p01, *p11, i01, i11);
+                dec(i00, i01, *px, *p01);
+                dec(i10, i11, *p10, *p11);
+            }
+            if (nx & p) {
+                uint16_t* p10 = px + oy1;
+                dec(*px, *p10, i00, *p10);
+                *px = i00;
+            }
+        }
+        if (ny & p) {
+            uint16_t* px = py;
+            uint16_t* ex = py + (ptrdiff_t)ox * (nx - p2);
+            for (; px <= ex; px += ox2) {
+                uint16_t* p01 = px + ox1;
+                dec(*px, *p01, i00, *p01);
+                *px = i00;
+            }
+        }
+        p2 = p;
+        p >>= 1;
+    }
+}
+
+// One PIZ chunk of nl scanlines; words[c] = 16-bit words per pixel of channel c (half 1, float/uint 2).
+bool exrPiz(const uint8_t* src, size_t n, std::vector<uint8_t>& out, int width, int nl, const std::vector<int>& words) {
+    size_t total = 0;
+    for (int w : words) total += (size_t)width * nl * w;
+    std::vector<uint16_t> tmp(total);
+    if (n < 4) return false;
+    uint16_t minNZ = (uint16_t)(src[0] | (src[1] << 8)), maxNZ = (uint16_t)(src[2] | (src[3] << 8));
+    size_t p = 4;
+    const int BITMAP_SIZE = 8192;
+    if (maxNZ >= BITMAP_SIZE) return false;
+    std::vector<uint8_t> bitmap(BITMAP_SIZE, 0);
+    if (minNZ <= maxNZ) {
+        size_t len = (size_t)maxNZ - minNZ + 1;
+        if (p + len > n) return false;
+        memcpy(&bitmap[minNZ], src + p, len);
+        p += len;
+    }
+    std::vector<uint16_t> lut(65536, 0);
+    int k = 0;
+    for (int i = 0; i < 65536; ++i)
+        if (i == 0 || (bitmap[i >> 3] & (1 << (i & 7)))) lut[k++] = (uint16_t)i;
+    uint16_t maxValue = (uint16_t)(k - 1);
+    if (p + 4 > n) return false;
+    int length = (int)((uint32_t)src[p] | ((uint32_t)src[p + 1] << 8) | ((uint32_t)src[p + 2] << 16) | ((uint32_t)src[p + 3] << 24));
+    p += 4;
+    if (length < 0 || p + (size_t)length > n) return false;
+    if (!hufUncompress(src + p, (size_t)length, tmp.data(), (int)total)) return false;
+    size_t off = 0;
+    std::vector<size_t> start(words.size());
+    for (size_t c = 0; c < words.size(); ++c) {
+        start[c] = off;
+        for (int j = 0; j < words[c]; ++j) wav2Decode(&tmp[off + j], width, words[c], nl, width * words[c], maxValue);
+        off += (size_t)width * nl * words[c];
+    }
+    for (uint16_t& v : tmp) v = lut[v];
+    out.resize(total * 2);
+    uint8_t* o = out.data();
+    for (int y = 0; y < nl; ++y)
+        for (size_t c = 0; c < words.size(); ++c) {
+            size_t cnt = (size_t)width * words[c];
+            memcpy(o, &tmp[start[c]], cnt * 2);   // little-endian words, as in the file
+            start[c] += cnt;
+            o += cnt * 2;
+        }
+    return true;
+}
+
 // ------------------------------------------------------------------ OpenEXR (scanline, single part)
 
 bool loadExr(const std::vector<uint8_t>& d, EnvImage& img, std::string* err) {
@@ -334,15 +609,17 @@ bool loadExr(const std::vector<uint8_t>& d, EnvImage& img, std::string* err) {
     switch (compression) {
     case 0: case 1: case 2: lines = 1; break;   // NONE, RLE, ZIPS
     case 3: lines = 16; break;                  // ZIP
-    case 4: return fail(err, "EXR PIZ compression is not supported: re-save as ZIP or .hdr");
-    default: return fail(err, "EXR compression " + std::to_string(compression) + " is not supported: re-save as ZIP or .hdr");
+    case 4: lines = 32; break;                  // PIZ
+    default: return fail(err, "EXR compression " + std::to_string(compression) + " (PXR24, B44 or DWA) is not supported: re-save as ZIP, PIZ or .hdr");
     }
     // Channel layout of one scanline (channels are stored in the chlist order, which is sorted).
     std::vector<size_t> chOffset(chans.size());
+    std::vector<int> words(chans.size());   // 16-bit words per pixel (PIZ)
     size_t lineBytes = 0;
     for (size_t i = 0; i < chans.size(); ++i) {
         if (chans[i].xs != 1 || chans[i].ys != 1) return fail(err, "sub-sampled EXR channels are not supported");
         chOffset[i] = lineBytes;
+        words[i] = chans[i].type == 1 ? 1 : 2;
         lineBytes += (size_t)w * (chans[i].type == 1 ? 2 : 4);
     }
     // R, G, B: plain names first, then any layer ("xxx.R"); a single luminance channel is used as grey.
@@ -381,12 +658,16 @@ bool loadExr(const std::vector<uint8_t>& d, EnvImage& img, std::string* err) {
         size_t expected = lineBytes * nl;
         const uint8_t* px = src;
         if (size < expected) {   // compressed (a chunk that did not shrink is stored as is)
-            if (compression == 1) {
-                if (!exrRle(src, size, tmp, expected)) return fail(err, "bad EXR RLE data");
+            if (compression == 4) {
+                if (!exrPiz(src, size, raw, w, nl, words) || raw.size() != expected) return fail(err, "bad EXR PIZ data");
             } else {
-                if (!inflateZlib(src, size, tmp, expected) || tmp.size() != expected) return fail(err, "bad EXR ZIP data");
+                if (compression == 1) {
+                    if (!exrRle(src, size, tmp, expected)) return fail(err, "bad EXR RLE data");
+                } else {
+                    if (!inflateZlib(src, size, tmp, expected) || tmp.size() != expected) return fail(err, "bad EXR ZIP data");
+                }
+                exrUnpredict(tmp, raw);
             }
-            exrUnpredict(tmp, raw);
             px = raw.data();
         } else if (size != expected) {
             return fail(err, "bad EXR chunk size");
@@ -506,8 +787,8 @@ void makeProceduralSky(EnvImage& out, uint32_t width) {
     out.sourceWidth = out.width;
     out.sourceHeight = out.height;
     out.rgb.resize((size_t)out.width * out.height * 3);
-    // sun: 40 degrees high, front right of the default view; a disc of about 2 degrees
-    float se = radians(40.0f), sa = radians(35.0f);
+    // sun: 40 degrees high, behind the default view on its right (front lighting); a disc of about 2 degrees
+    float se = radians(40.0f), sa = radians(145.0f);
     float3 sun(std::cos(se) * std::sin(sa), std::sin(se), -std::cos(se) * std::cos(sa));
     const float cosSun = std::cos(radians(1.0f));
     const float3 sunL = float3(1.0f, 0.93f, 0.82f) * 3200.0f;   // ~3 of irradiance, like the studio sun

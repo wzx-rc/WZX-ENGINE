@@ -121,6 +121,7 @@ bool App::init(HINSTANCE inst, const Options& opt) {
         m_scene.camera = m_views[opt.view].cam;
     }
     if (!opt.openPath.empty()) loadSceneFile(opt.openPath);
+    if (!opt.hdri.empty()) setHdri(opt.hdri);
     if (opt.select >= 0 && opt.select < (int)m_scene.objects.size()) m_selected = opt.select;
     if (opt.tool >= 0 && opt.tool <= TOOL_ROTATE) m_tool = (Tool)opt.tool;
     m_game = new GameHost(*this);   // node graph, Play, builds, command API
@@ -199,6 +200,8 @@ void App::setRenderMode(int mode) {
     m_rs.historyFixes = true;
     m_rs.ddgi = mode == 3;
     m_rs.denoise = mode != 2 && mode != 3;   // progressive: clean reference; GI: off by default (it blurs shadows)
+    m_rs.filterGlossy = mode == 1 ? 0.4f : 0.0f;   // temporal: fast and approximate (no caustic sparkles); progressive: exact
+    m_rs.indirectClamp = mode == 1 ? 3.0f : 0.0f;  // same: the temporal image has no sparkles, the progressive one is unbiased
     m_quality = mode == 2 ? 1 : 0;
     applyQuality();
     markDirty();
@@ -243,17 +246,20 @@ void App::status(const std::wstring& text, int level) {
 void App::loadScene(int id) {
     m_sceneId = id;
     if (id == SCENE_CORNELL) buildCornellBox(m_scene);
+    else if (id == SCENE_LOOKDEV) buildLookDevScene(m_scene);
     else buildStudioScene(m_scene);
+    m_hdriPath.clear();   // the new scene has no HDRI (LookDev gets one below)
     m_selected = -1;
     m_multi.clear();
     m_undo.clear();
     if (m_game) m_game->resetVillage();   // the houses belong to the scene they were placed in
     m_redo.clear();
-    m_rs.exposure = id == SCENE_CORNELL ? 1.0f : 1.3f;
+    m_rs.exposure = id == SCENE_STUDIO ? 1.3f : 1.0f;
     if (id == SCENE_CORNELL) m_scene.env.ambient = float3(0.16f, 0.15f, 0.13f);
     m_rs.vignette = id == SCENE_CORNELL ? 0.10f : 0.18f;
     m_tool = id == SCENE_CORNELL ? TOOL_SELECT : TOOL_MOVE;
     m_gz = GizmoDrag();
+    if (id == SCENE_LOOKDEV) setHdri(m_lastHdri.empty() ? defaultHdri() : m_lastHdri);
     m_renderer.setScene(m_scene);
     clearViews();
     for (auto& v : defaultViews(m_scene, id == SCENE_CORNELL)) m_views.push_back({v.name, v.cam, 0});
@@ -262,6 +268,73 @@ void App::loadScene(int id) {
     m_scene.camera = m_views[0].cam;
     log("Scene loaded: " + m_scene.name, 1);
     markDirty();
+}
+
+
+// --------------------------------------------------------------------------- HDRI
+
+static void listEnvFiles(const std::wstring& dir, bool hdrOnly, std::vector<std::wstring>& out) {
+    WIN32_FIND_DATAW fd;
+    HANDLE h = FindFirstFileW((dir + L"\*").c_str(), &fd);
+    if (h == INVALID_HANDLE_VALUE) return;
+    do {
+        if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
+        std::wstring p = dir + L"\\" + fd.cFileName;
+        if (!isEnvImageFile(p)) continue;
+        std::wstring e = p.substr(p.find_last_of(L'.'));
+        for (auto& c : e) c = (wchar_t)towlower(c);
+        if (hdrOnly && e != L".hdr" && e != L".exr") continue;   // the inbox also holds reference pictures
+        out.push_back(p);
+    } while (FindNextFileW(h, &fd));
+    FindClose(h);
+}
+
+std::vector<std::wstring> App::hdriFiles() const {
+    std::vector<std::wstring> v;
+    listEnvFiles(m_exeDir + L"\..\..\01 - INBOX", true, v);
+    listEnvFiles(m_exeDir + L"\assets\hdri", false, v);
+    return v;
+}
+
+std::wstring App::defaultHdri() const {
+    std::vector<std::wstring> v = hdriFiles();
+    return v.empty() ? std::wstring(L"sky") : v.front();
+}
+
+bool App::setHdri(const std::wstring& path) {
+    if (path.empty()) {
+        m_scene.env.hdri.reset();
+        m_hdriPath.clear();
+        markDirty();
+        return true;
+    }
+    EnvImagePtr img;
+    auto it = m_hdriCache.find(path);
+    if (it != m_hdriCache.end()) {
+        img = it->second;
+    } else {
+        auto e = std::make_shared<EnvImage>();
+        if (path == L"sky") {
+            makeProceduralSky(*e);
+        } else {
+            std::string err;
+            if (!loadEnvImage(path, *e, &err)) {
+                status(L"HDRI not loaded: " + fromUtf8(err), 2);
+                return false;
+            }
+        }
+        img = e;
+        m_hdriCache[path] = img;
+        char b[256];
+        snprintf(b, sizeof(b), "HDRI loaded: %s (%ux%u%s)", img->name.c_str(), img->sourceWidth, img->sourceHeight,
+                 img->sourceWidth != img->width ? ", reduced to 4096" : "");
+        log(b, 1);
+    }
+    m_scene.env.hdri = img;
+    m_hdriPath = path;
+    m_lastHdri = path;
+    markDirty();
+    return true;
 }
 
 // --------------------------------------------------------------------------- frame
@@ -468,6 +541,7 @@ void App::handleShortcuts() {
     }
     if (pressed(ImGuiKey_F1)) m_pendingScene = SCENE_CORNELL;
     if (pressed(ImGuiKey_F2)) m_pendingScene = SCENE_STUDIO;
+    if (pressed(ImGuiKey_F3)) m_pendingScene = SCENE_LOOKDEV;
     if (pressed(ImGuiKey_F12)) saveScreenshot(false);
     if (pressed(ImGuiKey_P)) setRenderMode(m_rs.raster ? 1 : 0);            // viewport <-> temporal path tracing
     if (pressed(ImGuiKey_L)) setRenderMode(m_rs.ddgi ? 1 : 3);              // real-time probe GI (DDGI) <-> temporal path tracing
@@ -723,7 +797,8 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
     for (int i = 1; i < argc; ++i) {
         std::wstring a = argv[i];
         auto next = [&]() -> std::wstring { return i + 1 < argc ? std::wstring(argv[++i]) : std::wstring(); };
-        if (a == L"--scene") opt.scene = next() == L"studio" ? app::SCENE_STUDIO : app::SCENE_CORNELL;
+        if (a == L"--scene") { std::wstring sc = next(); opt.scene = sc == L"studio" ? app::SCENE_STUDIO : (sc == L"lookdev" ? app::SCENE_LOOKDEV : app::SCENE_CORNELL); }
+        else if (a == L"--hdri") opt.hdri = next();
         else if (a == L"--raster") opt.raster = _wtoi(next().c_str()) != 0;
         else if (a == L"--open") opt.openPath = next();
         else if (a.size() > 5 && a.find(L".json") != std::wstring::npos) opt.openPath = a;

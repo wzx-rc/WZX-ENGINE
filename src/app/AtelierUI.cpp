@@ -196,6 +196,7 @@ std::vector<Asset> assetList() {
     for (size_t i = 0; i < presetNames().size(); ++i) a.push_back({1, (int)i, "M_" + toUtf8(presetNames()[i]), "Material", "Materials"});
     a.push_back({2, SCENE_CORNELL, "Cornell Box", "Scene", "Scenes"});
     a.push_back({2, SCENE_STUDIO, "Studio", "Scene", "Scenes"});
+    a.push_back({2, SCENE_LOOKDEV, "LookDev", "Scene", "Scenes"});
     return a;
 }
 
@@ -321,6 +322,7 @@ void App::atlTopBar(float x0, float y0, float width) {
                 ImGui::Separator();
                 if (ImGui::MenuItem("Cornell Box Scene", "F1", m_sceneId == SCENE_CORNELL)) m_pendingScene = SCENE_CORNELL;
                 if (ImGui::MenuItem("Studio Scene", "F2", m_sceneId == SCENE_STUDIO)) m_pendingScene = SCENE_STUDIO;
+                if (ImGui::MenuItem("LookDev Scene", "F3", m_sceneId == SCENE_LOOKDEV)) m_pendingScene = SCENE_LOOKDEV;
                 ImGui::Separator();
                 ImGui::BeginDisabled();
                 ImGui::MenuItem("Build for PC (DX12)");
@@ -406,8 +408,8 @@ void App::atlHierarchy(float x, float y, float w, float h) {
     float px = r.x + 10 * s, py = r.y + 44 * s, pw = r.w - 20 * s;
     Label(px, py, "SCENES");
     py += 21 * s;
-    const char* scenes[] = {"Cornell Box", "Studio"};
-    for (int i = 0; i < 2; ++i) {
+    const char* scenes[] = {"Cornell Box", "Studio", "LookDev"};
+    for (int i = 0; i < 3; ++i) {
         char id[16];
         snprintf(id, sizeof(id), "scene%d", i);
         if (Button(id, {px, py, pw, 26 * s}, scenes[i], i == 0 ? Icon::Cube : Icon::Sun, m_sceneId == i) && m_sceneId != i) m_pendingScene = i;
@@ -1236,10 +1238,62 @@ void App::atlInspectorRender(float x, float y, float w, float) {
         sliderF("##dedge", "Edge sensitivity", m_rs.denoiseEdgeLuma, 0.05f, 4, "%.2f", "Lower = the filter stops at light and shadow edges, so shadows stay sharp. Higher = smoother, softer shadows.");
         y += 8 * s;
     };
+    // HDRI: shared by every engine (each one uses it its own way, see the text under the options)
+    {
+        Label(x, y, "HDRI ENVIRONMENT · ALL ENGINES");
+        y += 24 * s;
+        std::vector<std::wstring> files = hdriFiles();
+        std::vector<std::string> names = {"None (gradient sky)", "Procedural sky"};
+        int cur = m_hdriPath.empty() ? 0 : (m_hdriPath == L"sky" ? 1 : -1);
+        for (size_t i = 0; i < files.size(); ++i) {
+            std::wstring f = files[i];
+            std::wstring n = f.substr(f.find_last_of(L"\/") + 1);
+            names.push_back(toUtf8(n) + (f.find(L"01 - INBOX") != std::wstring::npos ? "  (inbox)" : ""));
+            if (_wcsicmp(f.c_str(), m_hdriPath.c_str()) == 0) cur = (int)i + 2;
+        }
+        if (cur < 0) {   // loaded from another folder (Load...)
+            std::wstring n = m_hdriPath.substr(m_hdriPath.find_last_of(L"\/") + 1);
+            names.push_back(toUtf8(n));
+            files.push_back(m_hdriPath);
+            cur = (int)names.size() - 1;
+        }
+        std::vector<const char*> opts;
+        for (auto& n : names) opts.push_back(n.c_str());
+        int sel = cur;
+        const float bw = 64 * s;
+        if (Combo("##hdri", R{x, y, w - bw - 6 * s - 22 * s, 28 * s}, sel, opts.data(), (int)opts.size(), Icon::Sun) && sel != cur)
+            setHdri(sel == 0 ? std::wstring() : (sel == 1 ? std::wstring(L"sky") : files[sel - 2]));
+        if (Button("##hdriLoad", R{x + w - bw - 22 * s, y, bw, 28 * s}, "Load…", Icon::FolderOpen)) m_pendingAction = 3;
+        info("##hdri_i", x + w - 18 * s, y + 5 * s,
+             "Image that surrounds the scene: it lights it, shows in reflections and in the background.\n"
+             "Files: .hdr and .exr (half/float, uncompressed, RLE or ZIP) are read as they are; jpg/png are\n"
+             "converted to linear but have no real dynamic range (no sun). Images wider than 4096 are reduced.\n"
+             "The list shows the .hdr/.exr of 01 - INBOX and the images of assets/hdri.");
+        y += 36 * s;
+        if (m_scene.env.hdri) {
+            const EnvImage& e = *m_scene.env.hdri;
+            char b[160];
+            snprintf(b, sizeof(b), "%u x %u%s", e.sourceWidth, e.sourceHeight, e.sourceWidth != e.width ? " (reduced to 4096)" : "");
+            Text(x, y, b, P().muted, 10);
+            y += 20 * s;
+            sliderF("##hdrInt", "HDRI intensity", m_scene.env.hdriIntensity, 0, 4, "%.2f", "Multiplies the light of the image (light, reflections and background).");
+            float deg = degrees(m_scene.env.hdriRotation);
+            info("##hdrRot_i", x + w - 18 * s, y, "Turns the image around the vertical axis: moves the sun and the reflections.");
+            if (SliderRow("##hdrRot", "HDRI rotation", x, y, w, &deg, -180, 180, "%.0f deg", act)) {
+                m_scene.env.hdriRotation = radians(deg);
+                ch = true;
+            }
+            check("##hdrVis", "Visible to the camera", m_scene.env.visibleToCamera, "Off: the background shows the gradient sky, the image still lights the scene and shows in reflections.");
+        }
+        y += 8 * s;
+    }
     if (mode == 0) {
-        Text(x, y, "The rasterized viewport has no path tracing options.", P().muted, 11);
+        Label(x, y, "HDRI (APPROXIMATE)");
+        y += 24 * s;
+        check("##envsun", "Sun of the HDRI casts shadows", m_rs.rasterEnvSun, "The brightest spot of the image (the sun) becomes a directional light with the shadow map; the rest of the image lights the scene as a soft ambient (SH). Off: all the image is ambient, no shadows. Ignored when the scene has its own sun.");
+        Text(x, y, "Ambient from the HDRI, glossy reflections from its blurred mips.", P().muted, 11);
         y += 19 * s;
-        Text(x, y, "Its light: the sun and the area lights, its shadows: the shadow map.", P().muted, 11);
+        Text(x, y, "Emissive objects light as sphere lights (no shadow).", P().muted, 11);
         y += 25 * s;
     } else if (mode == 1) {
         Label(x, y, "HISTORY");
@@ -1254,6 +1308,10 @@ void App::atlInspectorRender(float x, float y, float w, float) {
         y += 24 * s;
         sliderI("##bnc", "Bounces", m_rs.maxBounces, 1, 16, "%.0f", "Light bounces per path. More = more indirect light, slower.");
         sliderF("##fl", "Firefly clamp", m_rs.fireflyClamp, 1, 200, "%.0f", "Caps very bright single samples to prevent sparkles.");
+        sliderF("##fg", "Filter glossy (caustics)", m_rs.filterGlossy, 0, 1, "%.2f", "After a rough bounce, mirrors and glass are seen at least this rough. 0 = exact, with the caustics of the chrome and glass balls (sparkles until the image converges). 0.3 to 0.5 = smooth and fast, the caustics are spread (approximate).");
+        sliderF("##ic", "Indirect clamp", m_rs.indirectClamp, 0, 20, m_rs.indirectClamp > 0 ? "%.1f" : "off", "Caps each light contribution after a rough bounce or through subsurface scattering. Removes the sparkles of rare bright paths; lower = cleaner but the indirect light gets a little darker. 0 = off (exact).");
+        Text(x, y, "HDRI and emissive objects are sampled as lights (MIS).", P().muted, 11);
+        y += 22 * s;
     } else if (mode == 2) {
         Label(x, y, "SAMPLES");
         y += 24 * s;
@@ -1263,6 +1321,10 @@ void App::atlInspectorRender(float x, float y, float w, float) {
         y += 24 * s;
         sliderI("##bnc", "Bounces", m_rs.maxBounces, 1, 16, "%.0f", "Light bounces per path. More = more indirect light, slower.");
         sliderF("##fl", "Firefly clamp", m_rs.fireflyClamp, 1, 200, "%.0f", "Caps very bright single samples to prevent sparkles.");
+        sliderF("##fg", "Filter glossy (caustics)", m_rs.filterGlossy, 0, 1, "%.2f", "After a rough bounce, mirrors and glass are seen at least this rough. 0 = exact, with the caustics of the chrome and glass balls (sparkles until the image converges). 0.3 to 0.5 = smooth and fast, the caustics are spread (approximate).");
+        sliderF("##ic", "Indirect clamp", m_rs.indirectClamp, 0, 20, m_rs.indirectClamp > 0 ? "%.1f" : "off", "Caps each light contribution after a rough bounce or through subsurface scattering. Removes the sparkles of rare bright paths; lower = cleaner but the indirect light gets a little darker. 0 = off (exact).");
+        Text(x, y, "HDRI and emissive objects are sampled as lights (MIS).", P().muted, 11);
+        y += 22 * s;
         Text(x, y, "No denoiser: the image converges to the clean result.", P().muted, 11);
         y += 25 * s;
     } else {
@@ -1292,7 +1354,7 @@ void App::atlInspectorRender(float x, float y, float w, float) {
 void App::atlInspectorWorld(float x, float y, float w, float) {
     Text(x, y, m_scene.name.empty() ? "Scene" : m_scene.name, P().text, 15);
     y += 25 * s;
-    Text(x, y, m_sceneId == SCENE_CORNELL ? "Test scene · Cornell Box" : "Test scene · Studio", P().muted, 11);
+    Text(x, y, m_sceneId == SCENE_CORNELL ? "Test scene · Cornell Box" : (m_sceneId == SCENE_LOOKDEV ? "Test scene · LookDev" : "Test scene · Studio"), P().muted, 11);
     y += 41 * s;
     Label(x, y, "SCENE PROPERTIES");
     y += 24 * s;

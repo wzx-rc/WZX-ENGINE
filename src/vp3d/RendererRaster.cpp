@@ -341,7 +341,7 @@ void Renderer::recordRaster(const Scene& scene, const RenderSettings& rs, const 
     // HDRI: without a scene sun, the sun of the image is the key light (shadow map); the rest of the image is
     // the SH ambient. Its highlight already is in the blurred reflections, so this key has no specular term.
     const bool envMap = scene.env.hdri && scene.env.hdri == m_envImage && m_envW > 0;
-    const bool envSun = envMap && !sun && m_envSunValid;
+    const bool envSun = envMap && !sun && m_envSunValid && rs.rasterEnvSun;
     float3 envSunDir = m_envSunDir;
     {
         float cr = std::cos(scene.env.hdriRotation), sr = std::sin(scene.env.hdriRotation);   // image space to world

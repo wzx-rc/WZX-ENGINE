@@ -31,6 +31,8 @@ struct RenderSettings {
     float bevelScale = 1.0f;
     int bevelSamples = 4;
     float fireflyClamp = 25.0f;
+    float filterGlossy = 0.0f;     // minimum roughness of glossy surfaces seen after a rough bounce (0 = exact; >0 removes caustic fireflies)
+    float indirectClamp = 0.0f;    // caps each light contribution after a rough bounce (0 = off; temporal: fewer sparkles)
     float sssScale = 1.0f;
     float lightScale = 1.0f;
     float vignette = 0.12f;
@@ -42,6 +44,7 @@ struct RenderSettings {
     // Stable history (interactive, GI): the history is dropped when an object moves, edges are validated on the
     // pixel centre, the denoiser strength is bounded. Off = the previous behaviour (marks behind moved objects).
     bool historyFixes = true;
+    bool rasterEnvSun = true;      // raster: the sun of the HDRI is a shadowed directional light (else all the image is ambient)
     // Drop the history when an object moves (and light changes). Off = keep it: less noise, but marks behind moved objects.
     bool resetOnMove = true;
     float resetDelay = 2.0f;   // seconds: the history fades to new samples over this time after a move

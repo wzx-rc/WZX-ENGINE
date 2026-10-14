@@ -22,6 +22,9 @@ bool App::saveSceneFile(const std::wstring& path) {
     js << "  \"camera\": {\"target\": [" << c.target.x << ", " << c.target.y << ", " << c.target.z << "], \"yaw\": "
        << degrees(c.yaw) << ", \"pitch\": " << degrees(c.pitch) << ", \"distance\": " << c.distance
        << ", \"fov\": " << degrees(c.fovY) << "},\n";
+    if (!m_hdriPath.empty())
+        js << "  \"environment\": {\"hdri\": \"" << jsonEscape(toUtf8(m_hdriPath)) << "\", \"intensity\": " << m_scene.env.hdriIntensity
+           << ", \"rotation\": " << degrees(m_scene.env.hdriRotation) << ", \"visible\": " << (m_scene.env.visibleToCamera ? "true" : "false") << "},\n";
     js << "  \"objects\": [";
     bool first = true;
     int count = 0;
@@ -87,6 +90,12 @@ bool App::loadSceneFile(const std::wstring& path) {
         ++count;
     }
     if (m_game) m_game->loadVillage(j["village"]);   // after the objects: the houses go on the grid
+    const Json& env = j["environment"];
+    if (env.type == Json::Object && env["hdri"].type == Json::String && setHdri(fromUtf8(env["hdri"].s))) {
+        m_scene.env.hdriIntensity = (float)env["intensity"].num(1);
+        m_scene.env.hdriRotation = radians((float)env["rotation"].num(0));
+        m_scene.env.visibleToCamera = env["visible"].type != Json::Bool || env["visible"].b;
+    }
     const Json& c = j["camera"];
     if (c.type == Json::Object) {
         Camera& cam = m_scene.camera;
@@ -125,6 +134,15 @@ void App::runPendingAction() {
     } else if (a == 2) {
         std::wstring p = fileDialog(m_hwnd, false);
         if (!p.empty()) loadSceneFile(p);
+    } else if (a == 3) {
+        wchar_t buf[MAX_PATH] = L"";
+        OPENFILENAMEW of = {sizeof(of)};
+        of.hwndOwner = m_hwnd;
+        of.lpstrFilter = L"HDR images (*.hdr, *.exr)\0*.hdr;*.exr;*.pic\0Images (*.jpg, *.png, *.tif)\0*.jpg;*.jpeg;*.png;*.bmp;*.tif;*.tiff\0All files\0*.*\0";
+        of.lpstrFile = buf;
+        of.nMaxFile = MAX_PATH;
+        of.Flags = OFN_FILEMUSTEXIST;
+        if (GetOpenFileNameW(&of)) setHdri(buf);
     }
 }
 

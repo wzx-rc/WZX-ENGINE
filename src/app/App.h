@@ -15,7 +15,7 @@
 namespace app {
 
 enum Tool { TOOL_SELECT, TOOL_MOVE, TOOL_ROTATE, TOOL_SCALE };
-enum SceneId { SCENE_CORNELL = 0, SCENE_STUDIO = 1 };
+enum SceneId { SCENE_CORNELL = 0, SCENE_STUDIO = 1, SCENE_LOOKDEV = 2 };
 
 // Move / rotate manipulator drag on the selected object.
 struct GizmoDrag {
@@ -66,6 +66,7 @@ struct Options {
     int quality = 1;
     bool raster = true;         // light raster viewport by default, P toggles path tracing
     std::wstring openPath;      // scene file to open at startup
+    std::wstring hdri;          // HDRI to load at startup (file, or "sky" for the procedural sky)
     // DDGI probe GI (real-time mode)
     bool temporal = true;       // temporal path tracing; --temporal 0 = progressive reference
     bool ddgi = false;          // start in the real-time probe GI mode
@@ -142,7 +143,15 @@ private:
     bool saveSceneFile(const std::wstring& path);
     bool loadSceneFile(const std::wstring& path);
     void runPendingAction();
-    int m_pendingAction = 0;   // 1 save dialog, 2 open dialog
+    int m_pendingAction = 0;   // 1 save dialog, 2 open dialog, 3 HDRI file dialog
+
+    // HDRI environment (App.cpp): files of 01 - INBOX and assets/hdri, loaded once and kept in a cache
+    bool setHdri(const std::wstring& path);   // empty = gradient sky, L"sky" = procedural sky
+    std::vector<std::wstring> hdriFiles() const;
+    std::wstring defaultHdri() const;          // first HDRI of 01 - INBOX, else of assets/hdri, else the procedural sky
+    std::map<std::wstring, EnvImagePtr> m_hdriCache;
+    std::wstring m_hdriPath;                  // HDRI of the scene (empty = none)
+    std::wstring m_lastHdri;                  // last HDRI chosen, reused when the LookDev scene is loaded again
 
     // output (App.cpp)
     void generateThumbnails();

@@ -677,18 +677,29 @@ void Renderer::uploadEnvironment(const EnvImagePtr& img) {
     m_device->CreateShaderResourceView(m_envTex.Get(), &sv, h);
     m_envMips = (float)levels;
 
-    // Sampling tables on the first level at most 1024 wide (the sun stays a few texels wide).
+    // Sampling tables on the first level at most 2048 wide. Each cell takes the largest luminance of its texels and
+    // of their neighbours: the bilinear filter spreads the sun over the next texels, and a cell whose pdf would be far
+    // below the radiance it returns makes fireflies.
     size_t li = 0;
-    while (mips[li].w > 1024 && li + 1 < mips.size()) ++li;
+    while (mips[li].w > 2048 && li + 1 < mips.size()) ++li;
     const Level& S = mips[li];
-    const uint32_t W = S.w, H = S.h;
+    const Level& L0 = mips[0];
+    const uint32_t W = S.w, H = S.h, k = std::max(1u, L0.w / W);
+    std::vector<float> lum0((size_t)L0.w * L0.h);
+    for (size_t i = 0; i < lum0.size(); ++i) lum0[i] = std::max(lum(float3(L0.rgb[i * 3], L0.rgb[i * 3 + 1], L0.rgb[i * 3 + 2])), 0.0f);
     std::vector<float> func((size_t)W * H), dist((size_t)W * H + (size_t)H * (W + 1) + H + 1);
     double sum = 0;
     for (uint32_t y = 0; y < H; ++y) {
         float st = std::sin((y + 0.5f) / H * kPi);
+        int y0 = std::max(0, (int)(y * k) - 1), y1 = std::min((int)L0.h - 1, (int)(y * k + k));
         for (uint32_t x = 0; x < W; ++x) {
-            const float* p = &S.rgb[((size_t)y * W + x) * 3];
-            float f = std::max(lum(float3(p[0], p[1], p[2])), 0.0f) * st;
+            float m = 0;
+            for (int sy = y0; sy <= y1; ++sy)
+                for (int sx = (int)(x * k) - 1; sx <= (int)(x * k + k); ++sx) {
+                    int wx = (sx + (int)L0.w) % (int)L0.w;   // the image wraps horizontally
+                    m = std::max(m, lum0[(size_t)sy * L0.w + wx]);
+                }
+            float f = m * st;
             func[(size_t)y * W + x] = f;
             sum += f;
         }
@@ -1146,6 +1157,8 @@ uint32_t renderSignature(const RenderSettings& rs) {
     mix(&rs.bevelScale, sizeof(float));
     mix(&rs.bevelSamples, sizeof(int));
     mix(&rs.fireflyClamp, sizeof(float));
+    mix(&rs.filterGlossy, sizeof(float));
+    mix(&rs.indirectClamp, sizeof(float));
     mix(&rs.sssScale, sizeof(float));
     mix(&rs.lightScale, sizeof(float));
     return h;
@@ -1336,6 +1349,8 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
     fc.envMapIntensity = scene.env.hdriIntensity;
     fc.envPdfScale = m_envPdfScale;
     fc.envMips = m_envMips;
+    fc.filterGlossy = rs.filterGlossy;
+    fc.indirectClamp = rs.indirectClamp;
     memcpy(m_constants.mapped, &fc, sizeof(fc));
 
     ID3D12DescriptorHeap* heaps[] = {m_heap.Get()};

@@ -74,6 +74,37 @@ float3 ShadePixel(float3 o, float3 d, inout uint rng, inout Guides g, float3 ul,
     // Diffuse GI from the probes.
     if (showIndirect) c += kd * (1.0 - F0) * SampleIrradiance(h.P, N, V);
 
+    // Glass: the mirror reflection and a refracted ray through the object (smooth dielectric, a few interfaces).
+    if (s.trans > 0.5 && showIndirect) {
+        float Fr0 = FresnelDielectric(max(NoV, 1e-4), 1.0 / s.ior);
+        float3 Rd = reflect(-V, N);
+        Hit rh;
+        if (!TraceClosest(OffsetRay(h.P, h.Ng), Rd, 1e30, 0xFF, rh)) c += Fr0 * EnvironmentRough(Rd, s.rough);
+        else if (!IsRectLight(gInst[rh.inst])) c += Fr0 * ShadeSecondary(rh, -Rd, rng);
+        float3 thr = (1.0 - Fr0) * s.base;
+        float3 o3 = OffsetRay(h.P, -h.Ng);
+        float3 d3 = refract(-V, N, 1.0 / s.ior);
+        for (uint k = 0; k < 6 && dot(d3, d3) > 1e-6 && max(thr.x, max(thr.y, thr.z)) > 1e-3; ++k) {
+            Hit e;
+            if (!TraceClosest(o3, d3, 1e30, 0xFF, e)) { c += thr * EnvironmentRough(d3, 0.0); break; }
+            GpuInstance ei = gInst[e.inst];
+            if (IsRectLight(ei)) { if (e.front) c += thr * gLights[ei.lightId].radiance * F.lightScale; break; }
+            GpuMaterial em = gMats[ei.materialId];
+            if (em.transmission > 0.5) {
+                float eta = e.front ? 1.0 / em.ior : em.ior;
+                float3 t = refract(d3, e.N, eta);
+                if (dot(t, t) < 1e-6) { d3 = reflect(d3, e.N); o3 = OffsetRay(e.P, e.Ng); continue; }   // total internal reflection
+                thr *= 1.0 - FresnelDielectric(saturate(dot(-d3, e.N)), eta);
+                if (e.front) thr *= em.baseColor;
+                o3 = OffsetRay(e.P, -e.Ng);
+                d3 = normalize(t);
+                continue;
+            }
+            c += thr * ShadeSecondary(e, -d3, rng);
+            break;
+        }
+    }
+
     // Glossy reflections (VNDF sampling), each hit shaded with direct light + probe GI. Glossy surfaces take several
     // rays: a bright reflection of the light is hit in only some frames, so a single ray flickers.
     if (s.trans < 0.5 && Luminance(F0) > 0.01) {
@@ -90,7 +121,7 @@ float3 ShadePixel(float3 o, float3 d, inout uint rng, inout Guides g, float3 ul,
                 Hit r;
                 float3 o2 = OffsetRay(h.P, h.Ng);
                 if (!TraceClosest(o2, L, 1e30, 0xFF, r)) {
-                    if (showIndirect) c += w * Environment(L);
+                    if (showIndirect) c += w * EnvironmentRough(L, s.rough);
                 } else {
                     GpuInstance ri = gInst[r.inst];
                     if (IsRectLight(ri)) {

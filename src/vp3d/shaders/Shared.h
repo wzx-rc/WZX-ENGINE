@@ -99,7 +99,7 @@ struct FrameConstants {
     float denoiseEdgeLuma; float pad7; float pad8; float pad9;   // edge sensitivity of the denoiser (lower = keeps shadows)
     // HDRI: lat-long texture (gEnvTex) and its importance sampling tables (gEnvDist, see EnvSample in PathTrace.hlsl)
     uint envW; uint envH; float envRotation; float envMapIntensity;   // table size, rotation (radians), intensity
-    float envPdfScale; float envMips; float pad10; float pad11;      // W*H / sum of the table, mip count of gEnvTex
+    float envPdfScale; float envMips; float filterGlossy; float indirectClamp;   // W*H / sum of the table, mip count of gEnvTex; see TracePath
 };
 
 // DDGI probe volume (real-time GI test). Atlases: irradiance 8x8 octahedral texels per probe, distance

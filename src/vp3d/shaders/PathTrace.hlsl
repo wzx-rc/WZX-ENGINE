@@ -348,6 +348,12 @@ float3 EnvMap(float3 d, float lod) {
 
 float3 Environment(float3 d) { return EnvEnabled() ? EnvMap(d, 0) : Gradient(d); }
 
+// HDRI seen by a glossy ray without next-event estimation (GI probes): a mip blurred by the roughness, so that the
+// sun does not make fireflies. Approximate: the reflections of rough surfaces are a little too soft.
+float3 EnvironmentRough(float3 d, float rough) {
+    return EnvEnabled() ? EnvMap(d, sqrt(saturate(rough)) * max(F.envMips - 3.0, 0.0)) : Gradient(d);
+}
+
 // What the camera sees where no object is hit (the HDRI can be hidden from the camera and still light the scene).
 float3 Background(float3 d) {
     if (EnvEnabled() && !(F.flags & FRAME_FLAG_ENV_VISIBLE)) return Gradient(d);
@@ -592,6 +598,14 @@ struct Guides {
     float3 geom;     // geometric normal of the primary hit (stable under bevel jitter; used by reprojection)
 };
 
+// Indirect clamp: after a rough bounce, one light contribution is capped to F.indirectClamp (biased: removes the
+// sparkles of rare bright paths, such as the sun reflected by the chrome ball onto the floor). 0 = off.
+float3 Indirect(float3 c, bool roughSeen) {
+    if (!roughSeen || F.indirectClamp <= 0) return c;
+    float l = Luminance(c);
+    return l > F.indirectClamp ? c * (F.indirectClamp / l) : c;
+}
+
 float3 TracePath(float3 o, float3 d, inout uint rng, inout Guides g) {
     float3 radiance = 0, thr = 1;
     bool specPrev = true;
@@ -599,6 +613,7 @@ float3 TracePath(float3 o, float3 d, inout uint rng, inout Guides g) {
     // Light that reaches a surface through glass is already counted by its next-event estimation (shadow rays
     // cross glass, see ShadowTransmittance): a path that crossed glass after such a surface does not add it again.
     bool neeDone = false, viaGlass = false;
+    bool roughSeen = false;   // a rough (diffuse-like) bounce happened: see filterGlossy below
     uint mask = 0xFF & ~MASK_LIGHT_HIDDEN;
     for (uint bounce = 0; bounce <= F.maxBounces; ++bounce) {
         Hit h;
@@ -609,7 +624,7 @@ float3 TracePath(float3 o, float3 d, inout uint rng, inout Guides g) {
                 if (viaGlass && neeDone) w = 0.0;
                 else if (!specPrev) w = PowerHeuristic(prevPdf, EnvPdf(d));
             }
-            radiance += thr * env * w;
+            radiance += Indirect(thr * env * w, roughSeen);
             if (bounce == 0) { g.albedo = 1; g.normal = -d; g.geom = -d; g.depth = 1e6; g.id = 0; }
             break;
         }
@@ -621,13 +636,19 @@ float3 TracePath(float3 o, float3 d, inout uint rng, inout Guides g) {
             if (h.front && !(viaGlass && neeDone)) {
                 float3 Le = gLights[gi.lightId].radiance * F.lightScale;
                 float w = specPrev ? 1.0 : PowerHeuristic(prevPdf, LightPdf(gi.lightId, o, d, h.t));
-                radiance += thr * Le * w;
+                radiance += Indirect(thr * Le * w, roughSeen);
             }
             if (bounce == 0) { g.albedo = 1; g.normal = h.N; g.geom = h.Ng; g.depth = h.t; g.id = h.inst + 1; }
             break;
         }
 
         Surf s = MakeSurf(gm, h);
+        // Filter glossy: after a rough bounce, mirror-like surfaces are blurred to at least F.filterGlossy. The
+        // caustics they would cast (sun seen in the chrome ball from the floor) are spread instead of fireflies.
+        if (roughSeen && F.filterGlossy > 0) {
+            s.rough = max(s.rough, F.filterGlossy);
+            s.coatRough = max(s.coatRough, F.filterGlossy);
+        }
         if (h.front) {
             // emissive objects are lights too (next-event estimation): MIS weight of the BSDF sampling
             float w = 1.0;
@@ -635,7 +656,7 @@ float3 TracePath(float3 o, float3 d, inout uint rng, inout Guides g) {
                 if (viaGlass && neeDone) w = 0.0;
                 else if (!specPrev) w = PowerHeuristic(prevPdf, LightPdf(gi.lightId, o, d, h.t));
             }
-            radiance += thr * s.emission * w;
+            radiance += Indirect(thr * s.emission * w, roughSeen);
         }
 
         if ((F.flags & FRAME_FLAG_BEVEL) && s.bevel > 0 && h.front) {
@@ -683,9 +704,10 @@ float3 TracePath(float3 o, float3 d, inout uint rng, inout Guides g) {
         }
 
         // --- Next-event estimation
-        radiance += thr * DirectLight(s, h, V, false, rng);
+        radiance += Indirect(thr * DirectLight(s, h, V, false, rng), roughSeen);
         neeDone = true;
         viaGlass = false;
+        if (s.rough > 0.3 || DiffuseWeight(s) > 0.5) roughSeen = true;
 
         // --- Sample the BSDF
         float NoV = dot(h.N, V);
@@ -698,7 +720,7 @@ float3 TracePath(float3 o, float3 d, inout uint rng, inout Guides g) {
             thr *= DiffuseWeight(s) * (1.0 - Fv) / (1.0 - pSpec);
             if (!RandomWalk(h, s, thr, rng)) break;
             Surf exitSurf = s;
-            radiance += thr * DirectLight(exitSurf, h, h.N, true, rng);
+            radiance += Indirect(thr * DirectLight(exitSurf, h, h.N, true, rng), true);   // the random walk is a rough bounce
             L = CosineHemisphere(h.N, Rnd2(rng));
             prevPdf = max(dot(h.N, L), 1e-4) / PI;
         } else {
