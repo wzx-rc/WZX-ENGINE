@@ -25,6 +25,14 @@ float3 TexelDir(int2 t, int n) {
 void main(uint3 gid : SV_GroupID, uint3 tid3 : SV_GroupThreadID) {
     uint p = gid.x;
     uint tid = tid3.x;
+    // Raster capture: a probe never captured has no rays yet; it stays inactive (its tiles are not read).
+    const bool rasterCapture = (G.flags & 2u) != 0u;
+    if (rasterCapture && p >= G.captureSeen) {
+        if (tid == 0) gProbe[int2(p, 0)] = float4(0, 0, 0, 1);
+        return;
+    }
+    // First capture of this probe: no history yet (its tiles hold no valid data).
+    const bool fresh = rasterCapture && G.captureSeen < G.counts.w && p + G.captureSlots >= G.captureSeen;
     if (tid == 0) sBackfaces = 0;
     GroupMemoryBarrierWithGroupSync();
     float4 r = gRays[int2(tid, p)];
@@ -33,7 +41,7 @@ void main(uint3 gid : SV_GroupID, uint3 tid3 : SV_GroupThreadID) {
     if (r.w < 0) InterlockedAdd(sBackfaces, 1u);
     GroupMemoryBarrierWithGroupSync();
 
-    float h = G.frame == 0 ? 0.0 : G.hysteresis;
+    float h = (G.frame == 0 || fresh) ? 0.0 : G.hysteresis;
     const uint irrTile = DDGI_IRR_N + 2, distTile = DDGI_DIST_N + 2;
     const uint irrCount = irrTile * irrTile, total = irrCount + distTile * distTile;
     for (uint t = tid; t < total; t += DDGI_RAYS) {

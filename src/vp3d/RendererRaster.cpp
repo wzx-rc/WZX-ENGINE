@@ -60,6 +60,10 @@ void setRows(float* m, int row, const float3& v, float w) {
     m[row * 4 + 3] = w;
 }
 
+// Cube faces of a probe capture (+X -X +Y -Y +Z -Z): forward and up, right = cross(up, forward). Same as DDGIRaster.hlsl.
+const float3 kProbeFwd[6] = {float3(1, 0, 0), float3(-1, 0, 0), float3(0, 1, 0), float3(0, -1, 0), float3(0, 0, 1), float3(0, 0, -1)};
+const float3 kProbeUp[6] = {float3(0, 1, 0), float3(0, 1, 0), float3(0, 0, -1), float3(0, 0, 1), float3(0, 1, 0), float3(0, 1, 0)};
+
 } // namespace
 
 bool Renderer::createRasterPipelines(std::string* error) {
@@ -79,7 +83,7 @@ bool Renderer::createRasterPipelines(std::string* error) {
     envRange.NumDescriptors = 1;
     envRange.BaseShaderRegister = 3;
 
-    D3D12_ROOT_PARAMETER p[7] = {};
+    D3D12_ROOT_PARAMETER p[8] = {};
     p[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
     p[0].Descriptor.ShaderRegister = 0;
     p[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
@@ -101,6 +105,9 @@ bool Renderer::createRasterPipelines(std::string* error) {
     p[6].DescriptorTable.NumDescriptorRanges = 1;
     p[6].DescriptorTable.pDescriptorRanges = &envRange;
     p[6].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+    p[7].ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;   // b3 probe face (DDGI capture), vertex + pixel
+    p[7].Constants.ShaderRegister = 3;
+    p[7].Constants.Num32BitValues = 20;
 
     D3D12_STATIC_SAMPLER_DESC ss = {};
     ss.Filter = D3D12_FILTER_COMPARISON_MIN_MAG_LINEAR_MIP_POINT;
@@ -120,7 +127,7 @@ bool Renderer::createRasterPipelines(std::string* error) {
     ts.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
 
     D3D12_ROOT_SIGNATURE_DESC rsd = {};
-    rsd.NumParameters = 7;
+    rsd.NumParameters = 8;
     rsd.pParameters = p;
     rsd.NumStaticSamplers = 2;
     rsd.pStaticSamplers = samplers;
@@ -140,10 +147,10 @@ bool Renderer::createRasterPipelines(std::string* error) {
         }
         return false;
     };
-    std::vector<char> vsMain, vsShadow, vsBg, psMain, psGhost, psId, psBg;
+    std::vector<char> vsMain, vsShadow, vsBg, vsProbe, psMain, psGhost, psId, psBg, psProbe;
     if (!load(L"Raster_VSMain.cso", vsMain) || !load(L"Raster_VSShadow.cso", vsShadow) || !load(L"Raster_VSBackground.cso", vsBg) ||
-        !load(L"Raster_PSMain.cso", psMain) || !load(L"Raster_PSGhost.cso", psGhost) || !load(L"Raster_PSId.cso", psId) ||
-        !load(L"Raster_PSBackground.cso", psBg))
+        !load(L"Raster_VSProbe.cso", vsProbe) || !load(L"Raster_PSMain.cso", psMain) || !load(L"Raster_PSGhost.cso", psGhost) ||
+        !load(L"Raster_PSId.cso", psId) || !load(L"Raster_PSBackground.cso", psBg) || !load(L"Raster_PSProbe.cso", psProbe))
         return false;
 
     D3D12_INPUT_ELEMENT_DESC layout[] = {
@@ -231,13 +238,22 @@ bool Renderer::createRasterPipelines(std::string* error) {
     d.RasterizerState.MultisampleEnable = FALSE;
     if (!make(d, m_psoId, "id")) return false;
 
-    // Heaps and the shadow map
+    // DDGI probe capture: cube faces (single sample), lit like the main pass, distance in alpha
+    d = base();
+    d.VS = {vsProbe.data(), vsProbe.size()};
+    d.PS = {psProbe.data(), psProbe.size()};
+    d.NumRenderTargets = 3;   // radiance + distance, albedo, normal
+    for (int k = 0; k < 3; ++k) d.RTVFormats[k] = DXGI_FORMAT_R16G16B16A16_FLOAT;
+    d.RasterizerState.MultisampleEnable = FALSE;
+    if (!make(d, m_psoProbe, "probe")) return false;
+
+    // Heaps and the shadow map (RTV 0-1 viewport and id, 2-4 probe capture; DSV 0-1 as before, 2 shadow, 3 capture)
     D3D12_DESCRIPTOR_HEAP_DESC hd = {};
     hd.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
-    hd.NumDescriptors = 2;
+    hd.NumDescriptors = 5;
     m_device->CreateDescriptorHeap(&hd, IID_PPV_ARGS(&m_rtvHeap));
     hd.Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
-    hd.NumDescriptors = 3;
+    hd.NumDescriptors = 4;
     m_device->CreateDescriptorHeap(&hd, IID_PPV_ARGS(&m_dsvHeap));
     m_rtvSize = m_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
     m_dsvSize = m_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_DSV);
@@ -273,6 +289,49 @@ bool Renderer::createRasterPipelines(std::string* error) {
 
     m_rasterCB = createBuffer(1024, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ);
     return true;
+}
+
+// Cube captures of the DDGI probes (see recordRaster): slots probes of kProbeFace texels per face, six faces wide.
+void Renderer::ensureCapture(uint32_t slots) {
+    if (m_capTex && m_capSlots == slots) return;
+    waitIdle();
+    m_capSlots = slots;
+    const uint32_t F = kProbeFace;
+    auto hp = defaultHeap();
+    D3D12_RESOURCE_DESC d = {};
+    d.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+    d.Width = 6 * F;
+    d.Height = slots * F;
+    d.DepthOrArraySize = 1;
+    d.MipLevels = 1;
+    d.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
+    d.SampleDesc.Count = 1;
+    d.Flags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET | D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
+    // Radiance (with distance), albedo and normal: render targets of the capture and UAVs u12..u14 of the ray pass.
+    ComPtr<ID3D12Resource>* targets[3] = {&m_capTex, &m_capAlbedo, &m_capNormal};
+    D3D12_CPU_DESCRIPTOR_HANDLE rtv = m_rtvHeap->GetCPUDescriptorHandleForHeapStart();
+    rtv.ptr += 2 * (SIZE_T)m_rtvSize;
+    for (uint32_t k = 0; k < 3; ++k) {
+        targets[k]->Reset();
+        m_device->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &d, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, nullptr,
+                                          IID_PPV_ARGS(targets[k]->GetAddressOf()));
+        D3D12_UNORDERED_ACCESS_VIEW_DESC u = {};
+        u.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
+        u.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
+        D3D12_CPU_DESCRIPTOR_HANDLE hnd = m_heap->GetCPUDescriptorHandleForHeapStart();
+        hnd.ptr += (SIZE_T)(kCapHeapSlot + k) * m_descSize;
+        m_device->CreateUnorderedAccessView(targets[k]->Get(), nullptr, &u, hnd);
+        m_device->CreateRenderTargetView(targets[k]->Get(), nullptr, rtv);
+        rtv.ptr += m_rtvSize;
+    }
+    d.Format = DXGI_FORMAT_D32_FLOAT;
+    d.Flags = D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;
+    m_capDepth.Reset();
+    m_device->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &d, D3D12_RESOURCE_STATE_DEPTH_WRITE, nullptr,
+                                      IID_PPV_ARGS(&m_capDepth));
+    D3D12_CPU_DESCRIPTOR_HANDLE dsv = m_dsvHeap->GetCPUDescriptorHandleForHeapStart();
+    dsv.ptr += 3 * (SIZE_T)m_dsvSize;
+    m_device->CreateDepthStencilView(m_capDepth.Get(), nullptr, dsv);
 }
 
 void Renderer::createRasterTargets(uint32_t w, uint32_t h) {
@@ -315,7 +374,7 @@ void Renderer::createRasterTargets(uint32_t w, uint32_t h) {
     m_device->CreateDepthStencilView(m_idDepth.Get(), nullptr, dsv);
 }
 
-void Renderer::recordRaster(const Scene& scene, const RenderSettings& rs, const ViewRect& vp) {
+void Renderer::recordRaster(const Scene& scene, const RenderSettings& rs, const ViewRect& vp, bool probeCapture) {
     const Camera& cam = scene.camera;
     float3 r, u, f;
     cam.basis(r, u, f);
@@ -444,6 +503,55 @@ void Renderer::recordRaster(const Scene& scene, const RenderSettings& rs, const 
         for (const Draw& d : m_draws)
             if (!(d.flags & 7u) && !isTransparent(d)) drawOne(d);
     transition(m_shadowMap.Get(), D3D12_RESOURCE_STATE_DEPTH_WRITE, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+
+    // Probe capture (DDGI raster): the six cube faces of each probe of the batch, lit like the main pass, in one
+    // target: kProbeFace texels per face, faces side by side, one row of faces per probe slot. Alpha = distance.
+    if (probeCapture) {
+        const uint32_t F = kProbeFace;
+        const uint32_t total = giProbeCount(), nxy = m_giCounts[0] * m_giCounts[1];
+        const float zn = std::max(m_giSpacing * 0.01f, 1e-3f), zf = std::max(m_sceneRadius * 20.0f, m_giSpacing * 100.0f);
+        const float pA = zf / (zf - zn), pB = -zf * zn / (zf - zn);
+        D3D12_CPU_DESCRIPTOR_HANDLE capRtv = m_rtvHeap->GetCPUDescriptorHandleForHeapStart();
+        capRtv.ptr += 2 * (SIZE_T)m_rtvSize;
+        D3D12_CPU_DESCRIPTOR_HANDLE capDsv = m_dsvHeap->GetCPUDescriptorHandleForHeapStart();
+        capDsv.ptr += 3 * (SIZE_T)m_dsvSize;
+        ID3D12Resource* capTargets[3] = {m_capTex.Get(), m_capAlbedo.Get(), m_capNormal.Get()};
+        for (ID3D12Resource* r : capTargets) transition(r, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_RENDER_TARGET);
+        m_cmd->OMSetRenderTargets(3, &capRtv, TRUE, &capDsv);   // the three targets are consecutive in the RTV heap
+        const float miss[4] = {0, 0, 0, 1e27f};   // no surface: the ray takes the environment
+        const float none[4] = {0, 0, 0, 0};
+        m_cmd->ClearRenderTargetView(capRtv, miss, 0, nullptr);
+        D3D12_CPU_DESCRIPTOR_HANDLE capRtv1 = capRtv, capRtv2 = capRtv;
+        capRtv1.ptr += m_rtvSize;
+        capRtv2.ptr += 2 * (SIZE_T)m_rtvSize;
+        m_cmd->ClearRenderTargetView(capRtv1, none, 0, nullptr);
+        m_cmd->ClearRenderTargetView(capRtv2, none, 0, nullptr);
+        m_cmd->ClearDepthStencilView(capDsv, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
+        m_cmd->SetPipelineState(m_psoProbe.Get());
+        for (uint32_t s = 0; s < m_capSlots; ++s) {
+            const uint32_t p = (m_capBase + s) % total;
+            const float3 o = float3((float)(p % m_giCounts[0]), (float)((p / m_giCounts[0]) % m_giCounts[1]), (float)(p / nxy)) *
+                                 m_giSpacing + m_giOrigin;
+            for (uint32_t f = 0; f < 6; ++f) {
+                const float3 fwd = kProbeFwd[f], up = kProbeUp[f], right = cross(up, fwd);
+                float pc[20] = {};   // view-projection of the face (rows), probe position
+                setRows(pc, 0, right, -dot(right, o));
+                setRows(pc, 1, up, -dot(up, o));
+                setRows(pc, 2, fwd * pA, -dot(fwd, o) * pA + pB);
+                setRows(pc, 3, fwd, -dot(fwd, o));
+                pc[16] = o.x; pc[17] = o.y; pc[18] = o.z;
+                m_cmd->SetGraphicsRoot32BitConstants(7, 20, pc, 0);
+                D3D12_VIEWPORT fvp = {(float)(f * F), (float)(s * F), (float)F, (float)F, 0, 1};
+                D3D12_RECT fsc = {(LONG)(f * F), (LONG)(s * F), (LONG)((f + 1) * F), (LONG)((s + 1) * F)};
+                m_cmd->RSSetViewports(1, &fvp);
+                m_cmd->RSSetScissorRects(1, &fsc);
+                for (const Draw& d : m_draws)
+                    if (!(d.flags & 7u) && !isTransparent(d)) drawOne(d);
+            }
+        }
+        for (ID3D12Resource* r : capTargets) transition(r, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+        return;
+    }
 
     // 2) main MSAA pass
     D3D12_CPU_DESCRIPTOR_HANDLE rtvBase = m_rtvHeap->GetCPUDescriptorHandleForHeapStart();

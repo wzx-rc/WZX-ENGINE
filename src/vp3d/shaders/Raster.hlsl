@@ -297,3 +297,46 @@ float4 Shade(VSOut i, bool ghost) {
 float4 PSMain(VSOut i) : SV_Target { return Shade(i, false); }
 float4 PSGhost(VSOut i) : SV_Target { return Shade(i, true); }
 float4 PSId(VSOut i) : SV_Target { return float4(0, 0, 0, (float)D.id); }
+
+// ---------------------------------------------------------------- DDGI probe capture
+// One 90-degree cube face per draw: the view-projection of the face and the probe position (32-bit root constants b3).
+// The face is lit like the main pass; alpha = distance to the probe (negative for back faces, as the ray tracer).
+struct ProbeFaceConstants {
+    row_major float4x4 viewProj;
+    float3 origin; float pad;
+};
+ConstantBuffer<ProbeFaceConstants> PF : register(b3);
+
+VSOut VSProbe(VSIn i) {
+    VSOut o;
+    o.wpos = ToWorld(i.pos);
+    float3 n = float3(dot(D.row0.xyz, i.nrm), dot(D.row1.xyz, i.nrm), dot(D.row2.xyz, i.nrm));
+    o.nrm = normalize(n);
+    o.uv = i.uv;
+    o.pos = mul(PF.viewProj, float4(o.wpos, 1));
+    return o;
+}
+
+struct ProbeOut {
+    float4 radiance : SV_Target0;   // rgb: lit surface (direct, emission, sky), alpha: distance to the probe
+    float4 albedo : SV_Target1;     // diffuse albedo: the probe bounce is added by the ray pass (DDGIRaster.hlsl)
+    float4 normal : SV_Target2;     // world normal, alpha 1 on a front face
+};
+
+ProbeOut PSProbe(VSOut i, bool front : SV_IsFrontFace) {
+    ProbeOut o;
+    float d = length(i.wpos - PF.origin);
+    if (!front) {   // back face: the probe sees the inside of an object
+        o.radiance = float4(0, 0, 0, -d * 0.2);
+        o.albedo = 0;
+        o.normal = 0;
+        return o;
+    }
+    GpuMaterial m = gMats[D.materialId];
+    float3 base = m.baseColor;
+    if (m.baseColorTex != NO_TEXTURE) base *= gTextures[NonUniformResourceIndex(m.baseColorTex)].Sample(gLinearWrap, i.uv).rgb;
+    o.radiance = float4(Shade(i, false).rgb, d);
+    o.albedo = float4(base * (1.0 - m.transmission) * (1.0 - 0.6 * m.metallic), 1);
+    o.normal = float4(normalize(i.nrm), 1);
+    return o;
+}

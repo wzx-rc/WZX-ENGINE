@@ -52,6 +52,9 @@ struct RenderSettings {
     int temporalCap = 1024;        // history length in frames (exponential average window): 256 converges, 64 stays noisier
     int ddgiView = 0;             // 0 full, 1 indirect only, 2 direct only
     bool ddgiShowProbes = false;  // draw the probes as small spheres shaded with their irradiance
+    // DDGI rays from a raster capture of each probe (cube faces lit by the raster pass) instead of ray tracing.
+    bool ddgiRaster = false;
+    int ddgiCaptureProbes = 32;   // probes captured per frame (the whole grid is refreshed in total / this frames)
 };
 
 struct ViewRect { int x = 0, y = 0, w = 1, h = 1; };
@@ -129,7 +132,9 @@ private:
     bool createPipelines(std::string* error);
     bool createRasterPipelines(std::string* error);
     void createRasterTargets(uint32_t w, uint32_t h);
-    void recordRaster(const Scene& scene, const RenderSettings& rs, const ViewRect& vp);
+    // probeCapture: shadow map, then the cube captures of the next probes (m_capSlots) instead of the viewport.
+    void recordRaster(const Scene& scene, const RenderSettings& rs, const ViewRect& vp, bool probeCapture = false);
+    void ensureCapture(uint32_t slots);
     void createTargets(uint32_t w, uint32_t h);
     void uploadTextures(const Scene& scene);
     void uploadEnvironment(const EnvImagePtr& img);   // HDRI texture, sampling tables, SH and sun (when the image changes)
@@ -165,7 +170,7 @@ private:
 
     ComPtr<ID3D12RootSignature> m_rootSig;
     ComPtr<ID3D12PipelineState> m_psoTrace, m_psoDenoise, m_psoTonemap;
-    ComPtr<ID3D12PipelineState> m_psoGIUpdate, m_psoGIBlend, m_psoGIShade;
+    ComPtr<ID3D12PipelineState> m_psoGIUpdate, m_psoGIBlend, m_psoGIShade, m_psoGIRaster;
     ComPtr<ID3D12DescriptorHeap> m_heap;
     uint32_t m_descSize = 0;
 
@@ -177,6 +182,9 @@ private:
     static constexpr uint32_t kGIHeapBase = kTexCount + 1 + kMaxTextures;
     // HDRI SRV after the DDGI and history UAVs
     static constexpr uint32_t kEnvHeapSlot = kGIHeapBase + 4 + 2;
+    // UAVs of the probe cube captures (raster DDGI: radiance, albedo, normal), after the HDRI SRV
+    static constexpr uint32_t kCapHeapSlot = kEnvHeapSlot + 1;
+    static constexpr uint32_t kProbeFace = 16;   // texels per cube face of a probe capture
     std::vector<ComPtr<ID3D12Resource>> m_materialTex;
     ComPtr<ID3D12Resource> m_tex[kTexCount];
     uint32_t m_rtW = 0, m_rtH = 0;
@@ -208,6 +216,10 @@ private:
     static constexpr int kGITexCount = 4;
     ComPtr<ID3D12Resource> m_giTex[kGITexCount];
     Buffer m_giConstants;
+    // Raster probe capture: cube faces of m_capSlots probes (kProbeFace texels each), depth, first probe of the batch
+    ComPtr<ID3D12Resource> m_capTex, m_capAlbedo, m_capNormal, m_capDepth;
+    uint32_t m_capSlots = 0, m_capBase = 0, m_capSeen = 0;
+    ComPtr<ID3D12PipelineState> m_psoProbe;
     uint32_t m_giCounts[3] = {0, 0, 0};
     float3 m_giOrigin;
     float m_giSpacing = 1.0f;
