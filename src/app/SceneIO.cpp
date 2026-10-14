@@ -1,4 +1,5 @@
-// Scene file format (.v3d.json).
+// Old scene file format (.v3d.json): still written for the Build and the player, read as an import by the editor
+// (the editor saves .wx, see SceneWx.cpp).
 #include "App.h"
 #include "GameHost.h"
 #include "Json.h"
@@ -14,7 +15,7 @@ static float linToSrgb(float c) {
     return c <= 0.0031308f ? c * 12.92f : 1.055f * std::pow(c, 1.0f / 2.4f) - 0.055f;
 }
 
-bool App::saveSceneFile(const std::wstring& path) {
+bool App::saveLegacySceneFile(const std::wstring& path) {
     std::ostringstream js;
     js.setf(std::ios::fixed);
     js.precision(4);
@@ -42,25 +43,14 @@ bool App::saveSceneFile(const std::wstring& path) {
         ++count;
     }
     js << "\n  ],\n  \"village\": " << (m_game ? m_game->villageJson() : std::string("[]")) << "\n}\n";
-    std::ofstream f(path, std::ios::binary);
-    if (!f) return false;
-    f << js.str();
+    if (!writeFileSafe(path, js.str())) return false;
     wchar_t b[128];
     swprintf(b, 128, L"Scene saved (%d objects)", count);
     status(b, 1);
     return true;
 }
 
-bool App::loadSceneFile(const std::wstring& path) {
-    std::ifstream f(path, std::ios::binary);
-    if (!f) return false;
-    std::stringstream ss;
-    ss << f.rdbuf();
-    Json j;
-    if (!Json::parse(ss.str(), j) || j["format"].str() != "vp3d-scene") {
-        status(L"Invalid scene file", 2);
-        return false;
-    }
+bool App::loadLegacySceneFile(const Json& j, const std::wstring& path) {
     loadScene(SCENE_STUDIO);
     m_undo.clear();
     int count = 0;
@@ -91,6 +81,7 @@ bool App::loadSceneFile(const std::wstring& path) {
         ++count;
     }
     if (m_game) m_game->loadVillage(j["village"]);   // after the objects: the houses go on the grid
+    else m_pendingVillage = j["village"];             // opened from the command line, before the game layer
     const Json& env = j["environment"];
     if (env.type == Json::Object && env["hdri"].type == Json::String && setHdri(fromUtf8(env["hdri"].s))) {
         m_scene.env.hdriIntensity = (float)env["intensity"].num(1);
@@ -118,40 +109,6 @@ bool App::loadSceneFile(const std::wstring& path) {
     }
     markDirty();
     return true;
-}
-
-static std::wstring fileDialog(HWND hwnd, bool save) {
-    wchar_t buf[MAX_PATH] = L"scene.v3d.json";
-    OPENFILENAMEW of = {sizeof(of)};
-    of.hwndOwner = hwnd;
-    of.lpstrFilter = L"WZX scene (*.v3d.json)\0*.v3d.json;*.json\0All files\0*.*\0";
-    of.lpstrFile = buf;
-    of.nMaxFile = MAX_PATH;
-    of.lpstrDefExt = L"json";
-    of.Flags = save ? OFN_OVERWRITEPROMPT : OFN_FILEMUSTEXIST;
-    BOOL ok = save ? GetSaveFileNameW(&of) : GetOpenFileNameW(&of);
-    return ok ? std::wstring(buf) : std::wstring();
-}
-
-void App::runPendingAction() {
-    int a = m_pendingAction;
-    m_pendingAction = 0;
-    if (a == 1) {
-        std::wstring p = fileDialog(m_hwnd, true);
-        if (!p.empty()) saveSceneFile(p);
-    } else if (a == 2) {
-        std::wstring p = fileDialog(m_hwnd, false);
-        if (!p.empty()) loadSceneFile(p);
-    } else if (a == 3) {
-        wchar_t buf[MAX_PATH] = L"";
-        OPENFILENAMEW of = {sizeof(of)};
-        of.hwndOwner = m_hwnd;
-        of.lpstrFilter = L"HDR images (*.hdr, *.exr)\0*.hdr;*.exr;*.pic\0Images (*.jpg, *.png, *.tif)\0*.jpg;*.jpeg;*.png;*.bmp;*.tif;*.tiff\0All files\0*.*\0";
-        of.lpstrFile = buf;
-        of.nMaxFile = MAX_PATH;
-        of.Flags = OFN_FILEMUSTEXIST;
-        if (GetOpenFileNameW(&of)) setHdri(buf);
-    }
 }
 
 } // namespace app

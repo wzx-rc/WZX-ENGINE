@@ -539,8 +539,11 @@ void App::atlTopBar(float x0, float y0, float width) {
         Center(r, menus[mi], P().text, 11);
         if (ImGui::BeginPopup(id.c_str())) {
             if (mi == 0) {
-                if (ImGui::MenuItem("Open Scene…", "Ctrl+O")) m_pendingAction = 2;
-                if (ImGui::MenuItem("Save Scene…", "Ctrl+S")) m_pendingAction = 1;
+                if (ImGui::MenuItem("New Scene", "Ctrl+N")) m_pendingAction = PA_NEW;
+                if (ImGui::MenuItem("Open Scene…", "Ctrl+O")) m_pendingAction = PA_OPEN;
+                if (ImGui::MenuItem("Save Scene", "Ctrl+S")) m_pendingAction = PA_SAVE;
+                if (ImGui::MenuItem("Save Scene As…", "Ctrl+Shift+S")) m_pendingAction = PA_SAVE_AS;
+                if (ImGui::MenuItem("Import OBJ Mesh…")) m_pendingAction = PA_IMPORT_MESH;
                 ImGui::Separator();
                 if (ImGui::MenuItem("Cornell Box Scene", "F1", m_sceneId == SCENE_CORNELL)) m_pendingScene = SCENE_CORNELL;
                 if (ImGui::MenuItem("Studio Scene", "F2", m_sceneId == SCENE_STUDIO)) m_pendingScene = SCENE_STUDIO;
@@ -1592,7 +1595,8 @@ void App::atlInspectorRender(float x, float y, float w, float) {
 void App::atlInspectorWorld(float x, float y, float w, float) {
     Text(x, y, m_scene.name.empty() ? "Scene" : m_scene.name, P().text, 15);
     y += 25 * s;
-    Text(x, y, m_sceneId == SCENE_CORNELL ? "Test scene · Cornell Box" : (m_sceneId == SCENE_LOOKDEV ? "Test scene · LookDev" : "Test scene · Studio"), P().muted, 11);
+    Text(x, y, !m_docPath.empty() ? "File · " + toUtf8(m_docName) + (m_docDirty ? " (modified)" : "")
+               : m_sceneId == SCENE_CORNELL ? "Test scene · Cornell Box" : (m_sceneId == SCENE_LOOKDEV ? "Test scene · LookDev" : "Test scene · Studio"), P().muted, 11);
     y += 41 * s;
     Label(x, y, "SCENE PROPERTIES");
     y += 24 * s;
