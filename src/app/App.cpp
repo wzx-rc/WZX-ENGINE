@@ -94,8 +94,9 @@ bool App::init(HINSTANCE inst, const Options& opt) {
     if (opt.light >= 0) th::settings().light = opt.light != 0;
     if (opt.mainColor.x >= 0) th::settings().mainColor = opt.mainColor;
     if (opt.sizes.x > 0) { th::settings().textScale = opt.sizes.x; th::settings().iconScale = opt.sizes.y; th::settings().layoutScale = opt.sizes.z; }
+    if (!opt.theme.empty()) th::settings().theme = opt.theme;
     th::apply(m_dpi);
-    m_themeTestOnly = opt.light >= 0 || opt.mainColor.x >= 0 || opt.sizes.x > 0;
+    m_themeTestOnly = opt.light >= 0 || opt.mainColor.x >= 0 || opt.sizes.x > 0 || !opt.theme.empty();
     m_showSettings = opt.openSettings;
     m_workspace = opt.workspace;
     if (opt.inspectorTab >= 0 && opt.inspectorTab <= 3) m_atl.inspectorTab = opt.inspectorTab;
@@ -878,6 +879,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         else if (a == L"--quality") opt.quality = _wtoi(next().c_str());
         else if (a == L"--light") opt.light = _wtoi(next().c_str());
         else if (a == L"--settings") opt.openSettings = true;
+        else if (a == L"--theme") opt.theme = _wcsicmp(next().c_str(), L"ambre") == 0 ? "Ambre" : "Atelier";
         else if (a == L"--sizes") swscanf_s(next().c_str(), L"%f,%f,%f", &opt.sizes.x, &opt.sizes.y, &opt.sizes.z);
         else if (a == L"--main-color") swscanf_s(next().c_str(), L"%f,%f,%f", &opt.mainColor.x, &opt.mainColor.y, &opt.mainColor.z);
         else if (a == L"--workspace") { std::wstring w = next(); opt.workspace = w == L"graph" ? 1 : (w == L"material" ? 2 : 0); }

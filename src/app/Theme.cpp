@@ -104,6 +104,40 @@ static ThemePalette lightPalette(const ImVec4& accent) {
     return p;
 }
 
+// Ambre theme: graphite surfaces and one amber accent (theme.json of the Ambre UI pack, 01 - INBOX/UI/Ambre_UI_Composants).
+static ImVec4 hexv(unsigned h) { return ImVec4(((h >> 16) & 255) / 255.0f, ((h >> 8) & 255) / 255.0f, (h & 255) / 255.0f, 1); }
+static ThemePalette ambrePalette() {
+    ThemePalette p;
+    p.bg0 = hexv(0x101114);     // canvas
+    p.bg1 = hexv(0x1A1C20);     // panel
+    p.bg2 = hexv(0x24272C);     // raised
+    p.field = hexv(0x14161A);   // input
+    p.hover = hexv(0x29231C);   // warm hover
+    p.border = hexv(0x363A40);
+    p.text = hexv(0xD9DADF);
+    p.dim = hexv(0x959AA3);
+    p.faint = hexv(0x787D85);
+    p.accent = hexv(0xECA43D);
+    p.select = hexv(0x33271B);
+    p.bar = hexv(0x171B1E);
+    p.strong = p.accent;
+    return p;
+}
+// Metrics of imgui/WzxStyle.h of the pack: 3 px fields, 4 px windows, flat 5 px slider grab.
+static ImGuiStyle ambreStyle() {
+    ImGuiStyle s = editorStyle();
+    s.WindowRounding = 4;
+    s.ChildRounding = 4;
+    s.FrameRounding = 3;
+    s.PopupRounding = 4;
+    s.GrabRounding = 1;
+    s.ScrollbarRounding = 3;
+    s.TabRounding = 3;
+    s.GrabMinSize = 5;
+    s.FramePadding = ImVec2(8, 6);
+    return s;
+}
+
 // Full ImGui colour table from a palette (used by the built-in theme and the light mode).
 static void colorsFromPalette(const ThemePalette& p, bool light, ImVec4* c) {
     c[ImGuiCol_Text] = p.text;
@@ -366,7 +400,34 @@ void apply(float dpi) {
     auto tintPalette = [](ThemePalette& p) {
         for (ImVec4* c : {&p.bg0, &p.bg1, &p.bg2, &p.field, &p.hover, &p.border, &p.text, &p.dim, &p.faint, &p.bar}) *c = tint(*c);
     };
-    if (g_settings.light) {
+    if (ambre()) {
+        // fixed colours: no main colour tint, no custom accent, no light mode
+        g_tintMul = ImVec4(1, 1, 1, 1);
+        g_bright = 1.0f;
+        g_pal = ambrePalette();
+        st = ambreStyle();
+        colorsFromPalette(g_pal, false, st.Colors);
+        ImVec4* c = st.Colors;
+        c[ImGuiCol_WindowBg] = g_pal.bg1;
+        c[ImGuiCol_PopupBg] = alpha(hexv(0x1D2024), 0.99f);
+        c[ImGuiCol_FrameBgHovered] = hexv(0x1B1E23);
+        c[ImGuiCol_FrameBgActive] = hexv(0x1E1A15);
+        c[ImGuiCol_Button] = hexv(0x22262B);
+        c[ImGuiCol_ButtonHovered] = g_pal.hover;
+        c[ImGuiCol_ButtonActive] = g_pal.select;
+        c[ImGuiCol_HeaderHovered] = g_pal.hover;
+        c[ImGuiCol_CheckMark] = g_pal.accent;
+        c[ImGuiCol_SliderGrab] = hexv(0xC7C9CB);         // matte silver handle
+        c[ImGuiCol_SliderGrabActive] = hexv(0xF1F0ED);
+        c[ImGuiCol_Tab] = hexv(0x1A1D20);
+        c[ImGuiCol_TabHovered] = g_pal.hover;
+        c[ImGuiCol_TabSelected] = hexv(0x24272C);
+        c[ImGuiCol_TitleBg] = c[ImGuiCol_TitleBgActive] = c[ImGuiCol_TitleBgCollapsed] = c[ImGuiCol_MenuBarBg] = g_pal.bar;
+        c[ImGuiCol_ScrollbarGrab] = hexv(0x30343A);
+        c[ImGuiCol_ScrollbarGrabHovered] = hexv(0x464C53);
+        c[ImGuiCol_ScrollbarGrabActive] = hexv(0x8B6028);
+        c[ImGuiCol_TextSelectedBg] = alpha(g_pal.accent, 0.30f);
+    } else if (g_settings.light) {
         // light surfaces carry a softer tint
         ImVec4 r = mix(ImVec4(1, 1, 1, 1), ref, 0.12f), w = mix(ImVec4(1, 1, 1, 1), want, 0.12f);   // 0.12: blue tint of the light palette
         g_tintMul = ImVec4(w.x / r.x, w.y / r.y, w.z / r.z, 1);
@@ -406,6 +467,7 @@ void loadSettings(const std::wstring& file) {
         std::string k = trim(line.substr(0, eq)), v = trim(line.substr(eq + 1));
         float c[4];
         if (k == "theme" && v == "Default") g_settings.mainColor = ImVec4(0.5f, 0.5f, 0.5f, 1);   // settings of an older version
+        else if (k == "uiTheme") g_settings.theme = v == "Ambre" ? "Ambre" : "Atelier";
         else if (k == "light") g_settings.light = v == "1";
         else if (k == "customAccent") g_settings.customAccent = v == "1";
         else if (k == "accent") { if (parseVec(v, c, 4)) g_settings.accent = ImVec4(c[0], c[1], c[2], 1); }
@@ -430,7 +492,7 @@ void saveSettings(const std::wstring& file) {
     snprintf(a, sizeof(a), "%.3f %.3f %.3f 1", s.accent.x, s.accent.y, s.accent.z);
     snprintf(m, sizeof(m), "%.3f %.3f %.3f 1", s.mainColor.x, s.mainColor.y, s.mainColor.z);
     snprintf(sc, sizeof(sc), "%.3f %.3f %.3f 1", s.graphSelectColor.x, s.graphSelectColor.y, s.graphSelectColor.z);
-    f << "light=" << (s.light ? 1 : 0) << "\nmainColor=" << m << "\ncustomAccent=" << (s.customAccent ? 1 : 0) << "\naccent=" << a
+    f << "uiTheme=" << s.theme << "\nlight=" << (s.light ? 1 : 0) << "\nmainColor=" << m << "\ncustomAccent=" << (s.customAccent ? 1 : 0) << "\naccent=" << a
       << "\ntextScale=" << s.textScale << "\niconScale=" << s.iconScale << "\nlayoutScale=" << s.layoutScale << "\nglobalScale=" << s.globalScale
       << "\nlockBrightness=" << (s.lockBrightness ? 1 : 0) << "\nlanguage=" << s.language
       << "\ngraphOutline=" << (s.graphOutline ? 1 : 0) << "\ngraphOutlineWeight=" << s.graphOutlineWeight

@@ -181,6 +181,22 @@ void App::drawSettingsWindow() {
                 ImGui::EndDisabled();
                 ImGui::EndCombo();
             }
+            // theme: Atelier (Blue 01, tinted by the main / accent colours below) or Ambre (graphite + amber, fixed)
+            propLabel("Theme", labelW);
+            ImGui::SetNextItemWidth(-1);
+            const char* themeNames[] = {"Atelier (Blue 01)", "Ambre (graphite + amber)"};
+            const bool amb = th::ambre();
+            if (ImGui::BeginCombo("##uitheme", themeNames[amb ? 1 : 0])) {
+                if (ImGui::Selectable(themeNames[0], !amb)) { s.theme = "Atelier"; changed = true; }
+                if (ImGui::Selectable(themeNames[1], amb)) { s.theme = "Ambre"; changed = true; }
+                ImGui::EndCombo();
+            }
+            if (amb) {
+                indent();
+                ImGui::TextColored(th::dimV(), "Fixed colours: dark mode, amber accent.");
+            }
+            // the colour settings below only apply to the Atelier theme
+            ImGui::BeginDisabled(amb);
             // mode
             propLabel("Mode", labelW);
             int mode = s.light ? 1 : 0;
@@ -217,6 +233,7 @@ void App::drawSettingsWindow() {
             ImGui::SetNextItemWidth(-1);
             float c3[3] = {curAccent.x, curAccent.y, curAccent.z};
             if (ImGui::ColorEdit3("##accent", c3, ImGuiColorEditFlags_DisplayHex)) { s.accent = ImVec4(c3[0], c3[1], c3[2], 1); s.customAccent = true; changed = true; }
+            ImGui::EndDisabled();
             // sizes
             ImGui::Spacing();
             percent("Global UI", "##globalscale", s.globalScale, 80, 130, "%.0f %%");
@@ -230,7 +247,9 @@ void App::drawSettingsWindow() {
             ImGui::Separator();
             ImGui::Spacing();
             if (ImGui::Button(ICON_REFRESH "  Default Settings")) {
+                std::string theme = s.theme;   // the theme choice is kept
                 s = UiSettings();
+                s.theme = theme;
                 changed = true;
             }
             ImGui::SameLine();
