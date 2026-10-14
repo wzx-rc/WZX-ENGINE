@@ -1,0 +1,46 @@
+# iOS build of an exported WZX game (not the editor).
+# Runs on a GitHub macOS runner and produces an unsigned .ipa artifact.
+# Signing happens on the PC with Sideloadly (free Apple ID) or, later, with an Apple Developer account for TestFlight.
+# Status: prepared. It stops with a clear message until the iOS project (ios/) and the Metal renderer exist.
+name: iOS build
+
+on:
+  workflow_dispatch:
+    inputs:
+      game_folder:
+        description: "Exported game folder in the repository (builds/<profile>/<Game>)"
+        required: true
+        default: "builds/ios-release/WZX Game"
+
+jobs:
+  build-ipa:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check iOS project
+        run: |
+          if [ ! -f ios/WZXPlayer.xcodeproj/project.pbxproj ]; then
+            echo "::error::ios/WZXPlayer.xcodeproj is missing: the iOS player (Metal port) is not written yet."
+            exit 1
+          fi
+
+      - name: Copy the exported game into the app bundle
+        run: |
+          mkdir -p ios/WZXPlayer/Game
+          cp -R "${{ inputs.game_folder }}/." ios/WZXPlayer/Game/
+
+      - name: Build unsigned .ipa
+        run: |
+          xcodebuild -project ios/WZXPlayer.xcodeproj -scheme WZXPlayer -configuration Release \
+            -sdk iphoneos -destination 'generic/platform=iOS' \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
+            -archivePath build/WZXPlayer.xcarchive archive
+          mkdir -p build/Payload
+          cp -R build/WZXPlayer.xcarchive/Products/Applications/*.app build/Payload/
+          (cd build && zip -qr WZXPlayer-unsigned.ipa Payload)
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: WZXPlayer-unsigned
+          path: build/WZXPlayer-unsigned.ipa
