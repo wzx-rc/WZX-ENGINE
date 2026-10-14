@@ -1,5 +1,5 @@
 @echo off
-rem Recompiles the shaders only (buildinshaders), for quick shader iterations. Run from anywhere.
+rem Recompiles the shaders only (into build/bin/shaders), for quick shader iterations. Run from anywhere.
 cd /d "%~dp0.."
 for /f "usebackq delims=" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -property installationPath`) do set VSDIR=%%i
 call "%VSDIR%\VC\Auxiliary\Build\vcvars64.bat" >nul 2>nul
