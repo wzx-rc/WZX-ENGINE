@@ -1,5 +1,6 @@
 #include "EnvImage.h"
 #include "AssetImport.h"
+#include "FilePath.h"
 #include <cstdio>
 #include <cstring>
 #include <fstream>
@@ -14,7 +15,7 @@ bool fail(std::string* e, const std::string& m) {
 }
 
 bool readAll(const std::wstring& path, std::vector<uint8_t>& out) {
-    std::ifstream f(path, std::ios::binary | std::ios::ate);
+    std::ifstream f(nativePath(path), std::ios::binary | std::ios::ate);
     if (!f) return false;
     out.resize((size_t)f.tellg());
     f.seekg(0);
@@ -75,7 +76,11 @@ bool loadRgbe(const std::vector<uint8_t>& d, EnvImage& img, std::string* err) {
     std::string res = line();
     char ya[3] = {}, xa[3] = {};
     int h = 0, w = 0;
+#ifdef _MSC_VER
     if (sscanf_s(res.c_str(), "%2s %d %2s %d", ya, 3, &h, xa, 3, &w) != 4 || w <= 0 || h <= 0)
+#else
+    if (sscanf(res.c_str(), "%2s %d %2s %d", ya, &h, xa, &w) != 4 || w <= 0 || h <= 0)
+#endif
         return fail(err, "unsupported .hdr orientation (" + res + ")");
     bool flipY = ya[0] == '+', flipX = xa[0] == '-';
     img.width = (uint32_t)w;
@@ -755,7 +760,7 @@ bool loadEnvImage(const std::wstring& path, EnvImage& out, std::string* error, u
 }
 
 bool saveHdr(const std::wstring& path, const EnvImage& img) {
-    std::ofstream f(path, std::ios::binary);
+    std::ofstream f(nativePath(path), std::ios::binary);
     if (!f) return false;
     char head[128];
     int n = snprintf(head, sizeof(head), "#?RADIANCE\nFORMAT=32-bit_rle_rgbe\n\n-Y %u +X %u\n", img.height, img.width);

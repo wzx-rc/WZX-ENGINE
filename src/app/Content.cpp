@@ -1,9 +1,14 @@
 #include "Content.h"
+#ifdef _WIN32
 #include <windows.h>
+#else
+#include "vp3d/FilePath.h"
+#endif
 #include "vp3d/shaders/Shared.h"
 
 namespace app {
 
+#ifdef _WIN32
 std::string toUtf8(const std::wstring& w) {
     if (w.empty()) return {};
     int n = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), nullptr, 0, nullptr, nullptr);
@@ -19,6 +24,25 @@ std::wstring fromUtf8(const std::string& s) {
     MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), w.data(), n);
     return w;
 }
+#else
+std::string toUtf8(const std::wstring& w) { return nativePath(w); }
+
+std::wstring fromUtf8(const std::string& s) {
+    std::wstring w;
+    for (size_t i = 0; i < s.size();) {
+        uint8_t c = (uint8_t)s[i];
+        uint32_t cp = c;
+        int n = 0;
+        if (c >= 0xF0) { cp = c & 0x07; n = 3; }
+        else if (c >= 0xE0) { cp = c & 0x0F; n = 2; }
+        else if (c >= 0xC0) { cp = c & 0x1F; n = 1; }
+        ++i;
+        for (int k = 0; k < n && i < s.size(); ++k, ++i) cp = (cp << 6) | ((uint8_t)s[i] & 0x3F);
+        w.push_back((wchar_t)cp);
+    }
+    return w;
+}
+#endif
 
 // --------------------------------------------------------------------------- colours
 
@@ -332,21 +356,11 @@ void buildStudioScene(Scene& s) {
         s.addObject(o);
     }
 
-    // Key: a directional sun (sharp shadows, as in a sunny day); rim and top fill are soft area lights (hidden from camera).
+    // Key: a directional sun (sharp shadows, as in a sunny day); the top fill is a soft area light (hidden from camera).
     s.sun.enabled = true;
     s.sun.direction = normalize(float3(-28.0f, 34.0f, 30.0f));   // towards the sun
     s.sun.color = float3(1.0f, 0.95f, 0.88f);
     s.sun.intensity = 4.0f;
-    AreaLight rim;
-    rim.name = "Rim Light";
-    rim.position = {26, 22, -30};
-    rim.target = {0, 3, 0};
-    rim.width = 18;
-    rim.height = 12;
-    rim.color = float3(0.75f, 0.85f, 1.0f);
-    rim.intensity = 18.0f;
-    rim.visibleToCamera = false;
-    s.lights.push_back(rim);
     AreaLight top;
     top.name = "Top Fill";
     top.position = {4, 45, 4};
@@ -440,6 +454,24 @@ void buildLookDevScene(Scene& s) {
     c.dof = false;
     c.focusDistance = 58.0f;
     c.sensorScale = s.unitsPerMeter;
+}
+
+float lookDevHdriRotation(const EnvImage& img) {
+    float peak = 0;
+    double mean = 0;
+    uint32_t px = 0;
+    for (uint32_t y = 0; y < img.height; ++y)
+        for (uint32_t x = 0; x < img.width; ++x) {
+            float3 c = img.texel(x, y);
+            float l = 0.2126f * c.x + 0.7152f * c.y + 0.0722f * c.z;
+            mean += l;
+            if (l > peak) { peak = l; px = x; }
+        }
+    mean /= (double)img.width * img.height;
+    if (peak <= 30.0f * (float)mean) return 0.0f;
+    float az = ((px + 0.5f) / img.width - 0.5f) * 2.0f * kPi;   // azimuth of the sun in the image
+    float r = radians(145.0f) - az;
+    return std::atan2(std::sin(r), std::cos(r));
 }
 
 std::vector<ViewPreset> defaultViews(const Scene& s, bool cornell) {

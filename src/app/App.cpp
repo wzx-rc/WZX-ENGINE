@@ -332,26 +332,7 @@ bool App::setHdri(const std::wstring& path) {
     m_hdriPath = path;
     m_lastHdri = path;
     // LookDev: the sun of the image is turned behind the camera, on its right, so that the spheres are lit from the front.
-    if (m_sceneId == SCENE_LOOKDEV) {
-        float peak = 0;
-        double mean = 0;
-        uint32_t px = 0;
-        for (uint32_t y = 0; y < img->height; ++y)
-            for (uint32_t x = 0; x < img->width; ++x) {
-                float3 c = img->texel(x, y);
-                float l = 0.2126f * c.x + 0.7152f * c.y + 0.0722f * c.z;
-                mean += l;
-                if (l > peak) { peak = l; px = x; }
-            }
-        mean /= (double)img->width * img->height;
-        if (peak > 30.0f * (float)mean) {
-            float az = ((px + 0.5f) / img->width - 0.5f) * 2.0f * kPi;   // azimuth of the sun in the image
-            float r = radians(145.0f) - az;
-            m_scene.env.hdriRotation = std::atan2(std::sin(r), std::cos(r));
-        } else {
-            m_scene.env.hdriRotation = 0.0f;
-        }
-    }
+    if (m_sceneId == SCENE_LOOKDEV) m_scene.env.hdriRotation = lookDevHdriRotation(*img);
     markDirty();
     return true;
 }
@@ -437,7 +418,8 @@ void App::frame() {
     if (!m_opt.shotPath.empty() && ((int)m_renderer.sampleCount() >= m_opt.shotSpp || !m_viewportRendered) && ++m_frameCounter > 6) {
         std::vector<uint8_t> img;
         uint32_t w, h;
-        if (m_renderer.readBackBuffer(img, w, h)) savePng(m_opt.shotPath, img, w, h);
+        bool ok = m_opt.shotViewport ? m_renderer.readViewport(img, w, h) : m_renderer.readBackBuffer(img, w, h);
+        if (ok) savePng(m_opt.shotPath, img, w, h);
         m_running = false;
     }
     m_renderer.present(true);
@@ -823,6 +805,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         else if (a == L"--open") opt.openPath = next();
         else if (a.size() > 5 && a.find(L".json") != std::wstring::npos) opt.openPath = a;
         else if (a == L"--shot") opt.shotPath = next();
+        else if (a == L"--shot-viewport") { opt.shotPath = next(); opt.shotViewport = true; }
         else if (a == L"--spp") opt.shotSpp = _wtoi(next().c_str());
         else if (a == L"--view") opt.view = _wtoi(next().c_str());
         else if (a == L"--select") opt.select = _wtoi(next().c_str());

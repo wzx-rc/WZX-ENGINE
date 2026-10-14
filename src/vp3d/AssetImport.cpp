@@ -1,7 +1,14 @@
 #include "AssetImport.h"
+#include "FilePath.h"
+#ifdef _WIN32
 #include <windows.h>
 #include <wincodec.h>
 #include <wrl/client.h>
+#elif defined(__APPLE__)
+#include <CoreGraphics/CoreGraphics.h>
+#include <ImageIO/ImageIO.h>
+#endif
+#include <algorithm>
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
@@ -17,7 +24,7 @@ std::string narrowPath(const std::wstring& w) {
 }
 
 bool readAll(const std::wstring& path, std::vector<char>& data) {
-    std::ifstream f(path, std::ios::binary | std::ios::ate);
+    std::ifstream f(nativePath(path), std::ios::binary | std::ios::ate);
     if (!f) return false;
     data.resize((size_t)f.tellg());
     f.seekg(0);
@@ -206,11 +213,56 @@ bool loadObj(const std::wstring& path, MeshData& out, ObjInfo* info, std::string
 }
 
 bool loadImage(const std::wstring& path, Texture& out, std::string* error, uint32_t maxSize) {
-    using Microsoft::WRL::ComPtr;
     auto fail = [&](const char* what) {
         if (error) *error = std::string(what) + ": " + narrowPath(path);
         return false;
     };
+#if defined(__APPLE__)
+    // iOS: ImageIO decodes, CoreGraphics draws into 8-bit RGBA (sRGB values kept, as WIC gives them)
+    std::string p = nativePath(path);
+    CFURLRef url = CFURLCreateFromFileSystemRepresentation(nullptr, (const UInt8*)p.c_str(), (CFIndex)p.size(), false);
+    if (!url) return fail("Cannot open image");
+    CGImageSourceRef src = CGImageSourceCreateWithURL(url, nullptr);
+    CFRelease(url);
+    if (!src) return fail("Cannot open image");
+    CGImageRef img = CGImageSourceCreateImageAtIndex(src, 0, nullptr);
+    CFRelease(src);
+    if (!img) return fail("Cannot decode image");
+    size_t w = CGImageGetWidth(img), h = CGImageGetHeight(img);
+    if (maxSize > 0 && (w > maxSize || h > maxSize)) {
+        float k = (float)maxSize / (float)std::max(w, h);
+        w = std::max<size_t>(1, (size_t)(w * k));
+        h = std::max<size_t>(1, (size_t)(h * k));
+    }
+    out.width = (uint32_t)w;
+    out.height = (uint32_t)h;
+    out.rgba.assign(w * h * 4, 0);
+    CGColorSpaceRef cs = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
+    CGContextRef ctx = CGBitmapContextCreate(out.rgba.data(), w, h, 8, w * 4, cs,
+                                             (CGBitmapInfo)((uint32_t)kCGImageAlphaPremultipliedLast | (uint32_t)kCGBitmapByteOrder32Big));
+    CGColorSpaceRelease(cs);
+    if (!ctx) {
+        CGImageRelease(img);
+        return fail("Cannot read pixels");
+    }
+    CGContextSetInterpolationQuality(ctx, kCGInterpolationHigh);
+    CGContextDrawImage(ctx, CGRectMake(0, 0, (CGFloat)w, (CGFloat)h), img);
+    CGContextRelease(ctx);
+    CGImageRelease(img);
+    for (size_t i = 0; i < w * h; ++i) {   // back to straight alpha
+        uint8_t* px = &out.rgba[i * 4];
+        if (px[3] > 0 && px[3] < 255)
+            for (int c = 0; c < 3; ++c) px[c] = (uint8_t)std::min(255, px[c] * 255 / px[3]);
+    }
+    size_t slash = path.find_last_of(L"\\/");
+    out.name = narrowPath(slash == std::wstring::npos ? path : path.substr(slash + 1));
+    return true;
+#elif !defined(_WIN32)
+    (void)out;
+    (void)maxSize;
+    return fail("Image decoding is only available on Windows and iOS for now");
+#else
+    using Microsoft::WRL::ComPtr;
     ComPtr<IWICImagingFactory> f;
     if (FAILED(CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&f)))) return fail("WIC unavailable");
     ComPtr<IWICBitmapDecoder> dec;
@@ -243,6 +295,7 @@ bool loadImage(const std::wstring& path, Texture& out, std::string* error, uint3
     size_t slash = path.find_last_of(L"\\/");
     out.name = narrowPath(slash == std::wstring::npos ? path : path.substr(slash + 1));
     return true;
+#endif
 }
 
 } // namespace vp3d

@@ -63,6 +63,9 @@ void buildCornellBox(Scene& s);
 void buildStudioScene(Scene& s);
 // Neutral floor and five reference spheres (clay, chrome, glass, emissive, candle wax) lit by an HDRI.
 void buildLookDevScene(Scene& s);
+// HDRI rotation of the LookDev scene: the sun of the image goes behind the camera, on its right, so that the spheres
+// are lit from the front (0 when the image has no clear sun).
+float lookDevHdriRotation(const EnvImage& img);
 
 struct ViewPreset {
     std::wstring name;

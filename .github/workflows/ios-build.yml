@@ -1,16 +1,18 @@
-# iOS build of an exported WZX game (not the editor).
+# iOS build of the WZX Player (iPhone + iPad, one build), not the editor.
 # Runs on a GitHub macOS runner and produces an unsigned .ipa artifact.
 # Signing happens on the PC with Sideloadly (free Apple ID) or, later, with an Apple Developer account for TestFlight.
-# Status: prepared. It stops with a clear message until the iOS project (ios/) and the Metal renderer exist.
+# Rendering: the Lit renderer (src/lit) on Diligent Engine, Vulkan translated to Metal by MoltenVK.
+# Test build: the game of the editor (Studio scene, graph game/main.graph.json, houses of assets/HOUSE, HUD).
 name: iOS build
 
 on:
   workflow_dispatch:
-    inputs:
-      game_folder:
-        description: "Exported game folder in the repository (builds/<profile>/<Game>)"
-        required: true
-        default: "builds/ios-release/WZX Game"
+  push:
+    branches: [claude/project-thread-bzoypd]
+    paths: [player/**, src/vp3d/**, src/lit/**, src/game/**, src/app/Content.*, game/**, assets/HOUSE/**, third_party/imgui/**, .github/workflows/ios-build.yml]
+
+env:
+  MOLTENVK_VERSION: v1.4.1
 
 jobs:
   build-ipa:
@@ -18,27 +20,55 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Check iOS project
+      - name: MoltenVK (static library for iOS)
         run: |
-          if [ ! -f ios/WZXPlayer.xcodeproj/project.pbxproj ]; then
-            echo "::error::ios/WZXPlayer.xcodeproj is missing: the iOS player (Metal port) is not written yet."
-            exit 1
-          fi
+          curl -sSL -o MoltenVK-ios.tar \
+            "https://github.com/KhronosGroup/MoltenVK/releases/download/${MOLTENVK_VERSION}/MoltenVK-ios.tar"
+          tar xf MoltenVK-ios.tar
+          echo "MOLTENVK_LIBRARY=$PWD/MoltenVK/MoltenVK/static/MoltenVK.xcframework/ios-arm64/libMoltenVK.a" >> "$GITHUB_ENV"
 
-      - name: Copy the exported game into the app bundle
-        run: |
-          mkdir -p ios/WZXPlayer/Game
-          cp -R "${{ inputs.game_folder }}/." ios/WZXPlayer/Game/
+      # Diligent Engine (hundreds of files) is rebuilt only when its version or the CMake setup changes: the whole
+      # Xcode build directory is cached between runs, our own sources recompile incrementally. Saved even when the
+      # build fails, so a broken commit in our code does not throw away the Diligent objects.
+      - name: Restore the build directory
+        id: build-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: build/ios
+          key: ios-build-${{ env.MOLTENVK_VERSION }}-${{ hashFiles('player/CMakeLists.txt', '.github/workflows/ios-build.yml') }}-${{ github.sha }}
+          restore-keys: |
+            ios-build-${{ env.MOLTENVK_VERSION }}-${{ hashFiles('player/CMakeLists.txt', '.github/workflows/ios-build.yml') }}-
+            ios-build-${{ env.MOLTENVK_VERSION }}-
 
-      - name: Build unsigned .ipa
+      - name: Configure (Xcode project)
         run: |
-          xcodebuild -project ios/WZXPlayer.xcodeproj -scheme WZXPlayer -configuration Release \
-            -sdk iphoneos -destination 'generic/platform=iOS' \
-            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
-            -archivePath build/WZXPlayer.xcarchive archive
+          cmake -S player -B build/ios -G Xcode \
+            -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 \
+            -DCMAKE_XCODE_GENERATE_SCHEME=ON -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED=NO \
+            -DMOLTENVK_LIBRARY="$MOLTENVK_LIBRARY"
+
+      # xcodebuild -target (no scheme needed); signing is disabled, Sideloadly signs on the PC.
+      - name: Build unsigned .app
+        run: |
+          cmake --build build/ios --config Release --target WZXPlayer -- \
+            -sdk iphoneos CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=""
+
+      - name: Package .ipa
+        run: |
+          APP=$(find build/ios -path "*Release-iphoneos/WZXPlayer.app" -maxdepth 3 -type d | head -1)
+          test -n "$APP" || { echo "No .app built"; find build/ios -name "*.app"; exit 1; }
+          # the game must be inside the app: graph, house model, shaders
+          test -f "$APP/game/main.graph.json" && test -d "$APP/assets/HOUSE" && test -d "$APP/shaders" || { ls -R "$APP"; exit 1; }
           mkdir -p build/Payload
-          cp -R build/WZXPlayer.xcarchive/Products/Applications/*.app build/Payload/
+          cp -R "$APP" build/Payload/
           (cd build && zip -qr WZXPlayer-unsigned.ipa Payload)
+
+      - name: Save the build directory
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: build/ios
+          key: ${{ steps.build-cache.outputs.cache-primary-key }}
 
       - uses: actions/upload-artifact@v4
         with:

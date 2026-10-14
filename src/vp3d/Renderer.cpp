@@ -889,6 +889,7 @@ void Renderer::buildTLAS(const Scene& scene, bool buildAS) {
         gl.instance = (uint32_t)inst;
         lights.push_back(gl);
     }
+    m_sunLight = NO_LIGHT;
     // Path tracing: the sun becomes a small area light far away (hidden from the camera), with the same irradiance.
     if (scene.sun.enabled && scene.sun.intensity > 0) {
         const float dist = 2000.0f, size = 20.0f;   // a side of 20 at 2000: about half a degree, as the real sun (sharp shadows)
@@ -916,6 +917,7 @@ void Renderer::buildTLAS(const Scene& scene, bool buildAS) {
             gl.area = size * size;
             gl.radiance = radiance;
             gl.instance = (uint32_t)inst;
+            m_sunLight = (uint32_t)lights.size();
             lights.push_back(gl);
         }
     }

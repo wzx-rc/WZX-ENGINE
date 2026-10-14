@@ -1,10 +1,14 @@
-# iOS player (placeholder)
+# iOS player
 
-This folder will hold the Xcode project of the iOS player: a Metal renderer and touch input
-around the same game code as the Windows build. The Windows editor is not part of it.
+The iOS player is built from `player/` (CMake), not from a hand-written Xcode project:
+`player/ios/main_ios.mm` (UIKit, CAMetalLayer, touch) around the shared game (`player/src/Player.cpp`, `Game.cpp`,
+`ImGuiDiligent.cpp`) and the Lit renderer `src/lit` (Diligent Engine, Vulkan translated to Metal by MoltenVK).
 
-Until the project exists, `.github/workflows/ios-build.yml` stops with an explicit error.
+Build: GitHub Actions workflow `.github/workflows/ios-build.yml` (macOS runner, unsigned .ipa; started by hand or by a
+push on the branch of the player), then Sideloadly on the PC to sign it with an Apple ID and install it by USB.
+The editor is not part of it.
 
-Needed later:
-- `WZXPlayer.xcodeproj` with the scheme `WZXPlayer`, targeting iPhone and iPad (one build).
-- `WZXPlayer/Game/` filled by the workflow from an exported game folder (not committed).
+Test build: the game of the editor in Play, Studio scene (no rim light), graph `game/main.graph.json`, houses of
+`assets/HOUSE`, HUD and sun dial in Dear ImGui. Touch: one finger = the mouse (tap = click, drag = move a house,
+HUD buttons, touch buttons for R / C / Delete), two fingers = camera (drag, pinch, twist).
+The same game runs on Windows: `WZXPlayer.exe` (DirectX 12) and `WZXPlayerHeadless.exe --scene studio` (tests).

@@ -19,7 +19,7 @@ struct RasterConstants {
     float3 sunRadiance; float sunFromEnv;   // sunFromEnv: the key is the sun of the HDRI (its highlight is in the reflections)
     float4 shIrr[9];                     // HDRI irradiance (cosine-convolved SH, without the sun), image space
     float envMapOn; float envRotation; float envMapIntensity; float envMips;
-    float envVisible; float pad1; float pad2; float pad3;
+    float envVisible; uint sunLight; float pad2; float pad3;   // sunLight: index of the path tracer's sun quad (skipped here)
 };
 ConstantBuffer<RasterConstants> R : register(b0);
 
@@ -38,7 +38,12 @@ StructuredBuffer<GpuMaterial> gMats : register(t0);
 Texture2D<float> gShadow : register(t1);
 StructuredBuffer<GpuLight> gLights : register(t2);
 SamplerComparisonState gShadowCmp : register(s0);
+#ifdef VP3D_ATTRIB_SEMANTICS
+// Lit (Diligent): FXC (shader model 5) has no register spaces, t0..t3 would alias the buffers above. t4..t19 are free.
+Texture2D<float4> gTextures[MAX_TEXTURES] : register(t4);
+#else
 Texture2D<float4> gTextures[MAX_TEXTURES] : register(t0, space1);
+#endif
 SamplerState gLinearWrap : register(s1);
 Texture2D<float4> gEnvTex : register(t3);   // HDRI (lat-long, with mips)
 
@@ -46,10 +51,22 @@ static const float PI = 3.14159265;
 #define DRAW_GHOST 1u
 #define DRAW_LIGHT 2u
 
+// Vertex input semantics. The multi-API Lit renderer (src/lit, Diligent Engine) maps vertex inputs by ATTRIBn
+// semantics and defines VP3D_ATTRIB_SEMANTICS; the DirectX 12 viewport keeps the named ones.
+#ifdef VP3D_ATTRIB_SEMANTICS
+#define SEM_POSITION ATTRIB0
+#define SEM_NORMAL ATTRIB1
+#define SEM_TEXCOORD ATTRIB2
+#else
+#define SEM_POSITION POSITION
+#define SEM_NORMAL NORMAL
+#define SEM_TEXCOORD TEXCOORD
+#endif
+
 struct VSIn {
-    float3 pos : POSITION;
-    float3 nrm : NORMAL;
-    float2 uv : TEXCOORD;
+    float3 pos : SEM_POSITION;
+    float3 nrm : SEM_NORMAL;
+    float2 uv : SEM_TEXCOORD;
 };
 
 struct VSOut {
@@ -232,6 +249,9 @@ float4 Shade(VSOut i, bool ghost) {
             color += (diffuseCol / PI * (1 - F) + spec) * E * NoL;
             continue;
         }
+        // The sun is drawn once, by the directional term below (with the shadow map): its area light copy, made
+        // for the path tracer, is skipped (it doubled the sun and left the shadows half lit).
+        if (li == R.sunLight) continue;
         float3 c = l.corner + (l.edgeU + l.edgeV) * 0.5;
         float3 Ln = normalize(cross(l.edgeU, l.edgeV));
         float3 Lv = c - i.wpos;
