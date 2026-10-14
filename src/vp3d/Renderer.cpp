@@ -846,6 +846,7 @@ uint32_t renderSignature(const RenderSettings& rs) {
     mix(&rs.ddgi, sizeof(bool));
     mix(&rs.temporal, sizeof(bool));
     mix(&rs.historyFixes, sizeof(bool));
+    mix(&rs.resetOnMove, sizeof(bool));
     mix(&rs.ddgiView, sizeof(int));
     mix(&rs.ddgiShowProbes, sizeof(bool));
     mix(&rs.ddgiProbeBudget, sizeof(int));
@@ -939,7 +940,7 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
         createTargets(vp.w, vp.h);
     }
     if (scene.geometryVersion != m_sceneGeometryVersion) setScene(scene);
-    const uint32_t sig = sceneSignature(scene, rs.historyFixes) ^ (renderSignature(rs) * 16777619u);
+    const uint32_t sig = sceneSignature(scene, rs.historyFixes && rs.resetOnMove) ^ (renderSignature(rs) * 16777619u);
     if (sig != m_sceneSignature) {
         m_sceneSignature = sig;
         m_historyValid = false;

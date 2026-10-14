@@ -1224,7 +1224,10 @@ void App::atlInspectorRender(float x, float y, float w, float) {
         Label(x, y, "HISTORY");
         y += 24 * s;
         sliderI("##tcap", "History length", m_rs.temporalCap, 16, 1024, "%.0f frames");
-        if (mode == 1) check("##fix", "Stable history: drop on moves, stable edges", m_rs.historyFixes);
+        if (mode == 1) {
+            check("##fix", "Stable history: stable edges", m_rs.historyFixes);
+            check("##rom", "Reset history when objects move", m_rs.resetOnMove);
+        }
         else {
             Text(x, y, "Previous behaviour, for comparison: no reset on moves", P().muted, 11);
             y += 19 * s;
@@ -1261,6 +1264,7 @@ void App::atlInspectorRender(float x, float y, float w, float) {
         if (Combo("##gview", R{x, y, w, 28 * s}, view, views, 3, Icon::Sun)) { m_rs.ddgiView = view; ch = true; }
         y += 36 * s;
         check("##sp", "Show probes", m_rs.ddgiShowProbes);
+        check("##rom", "Reset history when objects move", m_rs.resetOnMove);
         y += 8 * s;
         Label(x, y, "HISTORY");
         y += 24 * s;

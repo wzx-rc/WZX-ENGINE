@@ -40,6 +40,8 @@ struct RenderSettings {
     // Stable history (interactive, GI): the history is dropped when an object moves, edges are validated on the
     // pixel centre, the denoiser strength is bounded. Off = the previous behaviour (marks behind moved objects).
     bool historyFixes = true;
+    // Drop the history when an object moves (and light changes). Off = keep it: less noise, but marks behind moved objects.
+    bool resetOnMove = true;
     // Real-time GI test: DDGI probe volume instead of path tracing (when raster is false).
     bool ddgi = false;
     int ddgiProbeBudget = 2048;   // target probe count over the scene bounds
