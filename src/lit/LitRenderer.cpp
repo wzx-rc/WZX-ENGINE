@@ -12,6 +12,10 @@ using namespace Diligent;
 
 namespace lit {
 
+using vp3d::float3;
+using vp3d::cross;
+using vp3d::dot;
+
 namespace {
 
 struct PostConstants {
@@ -80,6 +84,8 @@ bool LitRenderer::init(IRenderDevice* device, IDeviceContext* context, IEngineFa
     m_rasterCB = makeDynamicCB(device, sizeof(vp3d::lit::RasterConstants), "Lit raster constants");
     m_drawCB = makeDynamicCB(device, sizeof(vp3d::lit::DrawConstants), "Lit draw constants");
     m_postCB = makeDynamicCB(device, sizeof(PostConstants), "Lit post constants");
+    m_giCB = makeDynamicCB(device, sizeof(vp3d::gpu::DDGIConstants), "Lit DDGI constants");
+    m_probeCB = makeDynamicCB(device, sizeof(float) * 20, "Lit probe face constants");
 
     // 1x1 white texture: unused material texture slots and the HDRI when there is none
     const uint32_t white = 0xFFFFFFFFu;
@@ -111,7 +117,9 @@ bool LitRenderer::createPipelines(std::string* error) {
     // Raster.hlsl as the editor compiles it, with ATTRIBn vertex semantics (Diligent's input mapping). Outside
     // Direct3D (glslang has no NonUniformResourceIndex) the material texture index stays a plain index: it is the
     // same for the whole draw anyway.
-    std::vector<ShaderMacro> macros = {{"VP3D_ATTRIB_SEMANTICS", "1"}};
+    // VP3D_DDGI_PROBES: Shade can read the DDGI probes (R.giMode); DDGI_NO_RT: the DDGI compute passes without the
+    // path tracer (probe rays from the raster captures, blend).
+    std::vector<ShaderMacro> macros = {{"VP3D_ATTRIB_SEMANTICS", "1"}, {"VP3D_DDGI_PROBES", "1"}, {"DDGI_NO_RT", "1"}};
     if (!m_device->GetDeviceInfo().IsD3DDevice()) macros.push_back({"NonUniformResourceIndex(x)", "(x)"});
 
     auto shader = [&](const char* file, const char* entry, SHADER_TYPE type, RefCntAutoPtr<IShader>& out) {
@@ -134,8 +142,13 @@ bool LitRenderer::createPipelines(std::string* error) {
         }
         return out != nullptr;
     };
-    RefCntAutoPtr<IShader> vsMain, vsShadow, vsBg, psMain, psGhost, psBg, vsPost, psPost;
-    if (!shader("Raster.hlsl", "VSMain", SHADER_TYPE_VERTEX, vsMain) ||
+    RefCntAutoPtr<IShader> vsMain, vsShadow, vsBg, psMain, psGhost, psBg, vsPost, psPost, vsProbe, psProbe, psProbeBg, csRays, csBlend;
+    if (!shader("Raster.hlsl", "VSProbe", SHADER_TYPE_VERTEX, vsProbe) ||
+        !shader("Raster.hlsl", "PSProbe", SHADER_TYPE_PIXEL, psProbe) ||
+        !shader("Raster.hlsl", "PSProbeBackground", SHADER_TYPE_PIXEL, psProbeBg) ||
+        !shader("DDGIRaster.hlsl", "main", SHADER_TYPE_COMPUTE, csRays) ||
+        !shader("DDGIBlend.hlsl", "main", SHADER_TYPE_COMPUTE, csBlend) ||
+        !shader("Raster.hlsl", "VSMain", SHADER_TYPE_VERTEX, vsMain) ||
         !shader("Raster.hlsl", "VSShadow", SHADER_TYPE_VERTEX, vsShadow) ||
         !shader("Raster.hlsl", "VSBackground", SHADER_TYPE_VERTEX, vsBg) ||
         !shader("Raster.hlsl", "PSMain", SHADER_TYPE_PIXEL, psMain) ||
@@ -260,6 +273,41 @@ bool LitRenderer::createPipelines(std::string* error) {
         ci.pPS = psPost;
         if (!make(ci, P_POST)) return false;
     }
+    {   // DDGI probe capture: the six cube faces of a probe (viewport + scissor per face), three targets, single sample
+        GraphicsPipelineStateCreateInfo ci;
+        base(ci, "Lit probe capture");
+        ci.GraphicsPipeline.RasterizerDesc.ScissorEnable = True;
+        ci.GraphicsPipeline.NumRenderTargets = 3;
+        for (int k = 0; k < 3; ++k) ci.GraphicsPipeline.RTVFormats[k] = TEX_FORMAT_RGBA16_FLOAT;
+        ci.pVS = vsProbe;
+        ci.pPS = psProbe;
+        if (!make(ci, P_PROBE)) return false;
+        ci.PSODesc.Name = "Lit probe background";   // the environment under the geometry (misses of the ray pass)
+        ci.GraphicsPipeline.InputLayout = {};
+        ci.GraphicsPipeline.DepthStencilDesc.DepthEnable = False;
+        ci.GraphicsPipeline.DepthStencilDesc.DepthWriteEnable = False;
+        ci.pVS = vsBg;
+        ci.pPS = psProbeBg;
+        if (!make(ci, P_PROBE_BG)) return false;
+    }
+    {   // DDGI compute: probe rays read from the captures, blend into the atlases
+        ComputePipelineStateCreateInfo ci;
+        ci.PSODesc.Name = "Lit DDGI rays";
+        ci.PSODesc.PipelineType = PIPELINE_TYPE_COMPUTE;
+        ci.PSODesc.ResourceLayout.DefaultVariableType = SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC;
+        ci.pCS = csRays;
+        m_device->CreateComputePipelineState(ci, &m_pso[C_RAYS]);
+        ci.PSODesc.Name = "Lit DDGI blend";
+        ci.pCS = csBlend;
+        m_device->CreateComputePipelineState(ci, &m_pso[C_BLEND]);
+        for (int p : {C_RAYS, C_BLEND}) {
+            if (!m_pso[p]) {
+                if (error) *error = "Lit pipeline failed: DDGI compute";
+                return false;
+            }
+            m_pso[p]->CreateShaderResourceBinding(&m_srb[p], true);
+        }
+    }
     return true;
 }
 
@@ -362,11 +410,17 @@ void LitRenderer::bindFrameResources() {
     for (uint32_t i = 0; i < MAX_TEXTURES; ++i) texViews[i] = m_textures[i]->GetDefaultView(TEXTURE_VIEW_SHADER_RESOURCE);
     ITextureView* env = (m_envTex ? m_envTex : m_white)->GetDefaultView(TEXTURE_VIEW_SHADER_RESOURCE);
     ITextureView* shadow = m_shadow->GetDefaultView(TEXTURE_VIEW_SHADER_RESOURCE);
-    for (int p = P_SHADOW; p <= P_GHOST; ++p) {
+    // DDGI probes read by Shade (R.giMode > 0): the atlases, or the white texture before a grid exists (never read then).
+    ITextureView* irr = (m_giIrr ? m_giIrr : m_white)->GetDefaultView(TEXTURE_VIEW_SHADER_RESOURCE);
+    ITextureView* dist = (m_giDist ? m_giDist : m_white)->GetDefaultView(TEXTURE_VIEW_SHADER_RESOURCE);
+    ITextureView* state = (m_giProbe ? m_giProbe : m_white)->GetDefaultView(TEXTURE_VIEW_SHADER_RESOURCE);
+    for (int p : {P_SHADOW, P_BG, P_MAIN, P_TRANS, P_GHOST, P_PROBE, P_PROBE_BG}) {
         IShaderResourceBinding* srb = m_srb[p];
         for (SHADER_TYPE st : {SHADER_TYPE_VERTEX, SHADER_TYPE_PIXEL}) {
             setVar(srb, st, "R", m_rasterCB);
             setVar(srb, st, "D", m_drawCB);
+            setVar(srb, st, "PF", m_probeCB);
+            setVar(srb, st, "G", m_giCB);
         }
         setVar(srb, SHADER_TYPE_PIXEL, "gMats", m_materials->GetDefaultView(BUFFER_VIEW_SHADER_RESOURCE));
         setVar(srb, SHADER_TYPE_PIXEL, "gLights", m_lights->GetDefaultView(BUFFER_VIEW_SHADER_RESOURCE));
@@ -374,9 +428,27 @@ void LitRenderer::bindFrameResources() {
         if (p != P_SHADOW && p != P_BG) setVar(srb, SHADER_TYPE_PIXEL, "gShadow", shadow);
         if (IShaderResourceVariable* v = srb->GetVariableByName(SHADER_TYPE_PIXEL, "gTextures"))
             v->SetArray(texViews.data(), 0, MAX_TEXTURES);
+        setVar(srb, SHADER_TYPE_PIXEL, "gIrr", irr);
+        setVar(srb, SHADER_TYPE_PIXEL, "gDist", dist);
+        setVar(srb, SHADER_TYPE_PIXEL, "gProbe", state);
     }
     setVar(m_srb[P_POST], SHADER_TYPE_PIXEL, "PostConstants", m_postCB);
     setVar(m_srb[P_POST], SHADER_TYPE_PIXEL, "gHdr", m_hdr->GetDefaultView(TEXTURE_VIEW_SHADER_RESOURCE));
+}
+
+void LitRenderer::drawOne(const vp3d::lit::Draw& d) {
+    const vp3d::lit::MeshInfo& g = m_geo.meshes[d.mesh];
+    {
+        MapHelper<vp3d::lit::DrawConstants> dc(m_ctx, m_drawCB, MAP_WRITE, MAP_FLAG_DISCARD);
+        *dc = vp3d::lit::drawConstants(d);
+    }
+    DrawIndexedAttribs a;
+    a.NumIndices = g.indexCount;
+    a.IndexType = VT_UINT32;
+    a.FirstIndexLocation = g.indexOffset;
+    a.BaseVertex = g.vertexOffset;
+    a.Flags = DRAW_FLAG_VERIFY_ALL;
+    m_ctx->DrawIndexed(a);
 }
 
 void LitRenderer::render(const vp3d::Scene& scene, const Settings& settings, ITextureView* output, uint32_t width,
@@ -398,6 +470,8 @@ void LitRenderer::render(const vp3d::Scene& scene, const Settings& settings, ITe
     fs.lightScale = settings.lightScale;
     fs.envSun = settings.envSun;
     fs.shadowSize = kShadowSize;
+    fs.ddgi = settings.ddgi;
+    if (settings.ddgi) ensureProbes(scene, settings);
     bool castShadows = false;
     {
         MapHelper<vp3d::lit::RasterConstants> rc(m_ctx, m_rasterCB, MAP_WRITE, MAP_FLAG_DISCARD);
@@ -415,20 +489,6 @@ void LitRenderer::render(const vp3d::Scene& scene, const Settings& settings, ITe
     m_ctx->SetVertexBuffers(0, 1, vbs, offsets, RESOURCE_STATE_TRANSITION_MODE_TRANSITION, SET_VERTEX_BUFFERS_FLAG_RESET);
     m_ctx->SetIndexBuffer(m_ib, 0, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 
-    auto drawOne = [&](const vp3d::lit::Draw& d) {
-        const vp3d::lit::MeshInfo& g = m_geo.meshes[d.mesh];
-        {
-            MapHelper<vp3d::lit::DrawConstants> dc(m_ctx, m_drawCB, MAP_WRITE, MAP_FLAG_DISCARD);
-            *dc = vp3d::lit::drawConstants(d);
-        }
-        DrawIndexedAttribs a;
-        a.NumIndices = g.indexCount;
-        a.IndexType = VT_UINT32;
-        a.FirstIndexLocation = g.indexOffset;
-        a.BaseVertex = g.vertexOffset;
-        a.Flags = DRAW_FLAG_VERIFY_ALL;
-        m_ctx->DrawIndexed(a);
-    };
     auto usePipeline = [&](int p) {
         m_ctx->SetPipelineState(m_pso[p]);
         m_ctx->CommitShaderResources(m_srb[p], RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
@@ -444,6 +504,9 @@ void LitRenderer::render(const vp3d::Scene& scene, const Settings& settings, ITe
         for (const vp3d::lit::Draw& d : m_data.draws)
             if (!(d.flags & 7u) && !vp3d::lit::isTransparent(scene, d)) drawOne(d);
     }
+
+    // DDGI: probe captures (lit like the main pass, shadow map included), rays, blend; the main pass then reads the probes.
+    if (settings.ddgi) recordProbes(scene, settings);
 
     // 2) main MSAA pass: background, opaque, transparent, ghosts
     ITextureView* rtv = m_msaaColor->GetDefaultView(TEXTURE_VIEW_RENDER_TARGET);
@@ -483,6 +546,142 @@ void LitRenderer::render(const vp3d::Scene& scene, const Settings& settings, ITe
     DrawAttribs post;
     post.NumVertices = 3;
     m_ctx->Draw(post);
+}
+
+// ---------------------------------------------------------------- DDGI probe volume (no ray tracing)
+// Same passes as the editor with --ddgi-raster 1 (Renderer::render, giRaster branch): the probe grid of LitPrep over
+// the scene bounds, the six cube faces of a batch of probes rendered with the raster shading (PSProbe, environment
+// under it), the rays read from the captures and blended into the atlases (DDGIRaster.hlsl, DDGIBlend.hlsl), then the
+// main pass reads the atlases through Shade (R.giMode).
+
+void LitRenderer::ensureProbes(const vp3d::Scene& scene, const Settings& settings) {
+    const int budget = std::max(8, settings.ddgiProbeBudget);
+    const uint32_t slots = std::max(1u, (uint32_t)settings.ddgiCaptureProbes);
+    const bool grid = !m_giIrr || m_gridVersion != scene.geometryVersion || m_gridBudget != budget;
+    if (!grid && m_capTex && m_capSlots == std::min(slots, m_grid.total())) return;
+    m_ctx->Flush();
+    m_ctx->WaitForIdle();
+    if (grid) {
+        float3 mn, mx;
+        vp3d::lit::probeBounds(m_data, m_geo, mn, mx);
+        vp3d::lit::placeProbeGrid(mn, mx, m_data.center, m_data.radius, budget, m_grid);
+        m_gridVersion = scene.geometryVersion;
+        m_gridBudget = budget;
+        m_giFrame = 0;
+        m_capBase = 0;
+        m_capSeen = 0;
+        const BIND_FLAGS rw = BIND_SHADER_RESOURCE | BIND_UNORDERED_ACCESS;
+        m_giIrr = makeTexture2D(m_device, "Lit DDGI irradiance", m_grid.irrW(), m_grid.irrH(), TEX_FORMAT_RGBA16_FLOAT, rw);
+        m_giDist = makeTexture2D(m_device, "Lit DDGI distance", m_grid.distW(), m_grid.distH(), TEX_FORMAT_RGBA16_FLOAT, rw);
+        m_giRays = makeTexture2D(m_device, "Lit DDGI rays", DDGI_RAYS, m_grid.total(), TEX_FORMAT_RGBA32_FLOAT, rw);
+        m_giProbe = makeTexture2D(m_device, "Lit DDGI probe state", m_grid.total(), 1, TEX_FORMAT_RGBA16_FLOAT, rw);
+    }
+    m_capSlots = std::min(slots, m_grid.total());
+    const uint32_t F = kProbeFace;
+    const BIND_FLAGS cap = BIND_RENDER_TARGET | BIND_UNORDERED_ACCESS | BIND_SHADER_RESOURCE;
+    m_capTex = makeTexture2D(m_device, "Lit probe capture", 6 * F, m_capSlots * F, TEX_FORMAT_RGBA16_FLOAT, cap);
+    m_capAlbedo = makeTexture2D(m_device, "Lit probe capture albedo", 6 * F, m_capSlots * F, TEX_FORMAT_RGBA16_FLOAT, cap);
+    m_capNormal = makeTexture2D(m_device, "Lit probe capture normal", 6 * F, m_capSlots * F, TEX_FORMAT_RGBA16_FLOAT, cap);
+    m_capDepth = makeTexture2D(m_device, "Lit probe capture depth", 6 * F, m_capSlots * F, TEX_FORMAT_D32_FLOAT, BIND_DEPTH_STENCIL);
+}
+
+void LitRenderer::recordProbes(const vp3d::Scene& scene, const Settings& settings) {
+    if (!m_giIrr || !m_capTex) return;
+    const uint32_t F = kProbeFace, total = m_grid.total();
+
+    // Constants of the frame (random rotation of the ray set, capture batch), shared code with the editor.
+    vp3d::lit::DDGIFrame f;
+    f.frame = m_giFrame++;
+    f.hysteresis = settings.ddgiHysteresis;
+    f.view = settings.ddgiView;
+    f.showProbes = settings.showProbes;
+    f.rasterCapture = true;
+    f.captureBase = m_capBase;
+    f.captureSlots = m_capSlots;
+    f.captureSeen = std::min(total, m_capSeen + m_capSlots);
+    {
+        MapHelper<vp3d::gpu::DDGIConstants> g(m_ctx, m_giCB, MAP_WRITE, MAP_FLAG_DISCARD);
+        vp3d::lit::ddgiConstants(m_grid, f, m_giRng, *g);
+    }
+
+    // 1) cube captures of the batch: kProbeFace texels per face, six faces side by side, one row of faces per slot.
+    ITextureView* rtvs[3] = {m_capTex->GetDefaultView(TEXTURE_VIEW_RENDER_TARGET),
+                             m_capAlbedo->GetDefaultView(TEXTURE_VIEW_RENDER_TARGET),
+                             m_capNormal->GetDefaultView(TEXTURE_VIEW_RENDER_TARGET)};
+    ITextureView* dsv = m_capDepth->GetDefaultView(TEXTURE_VIEW_DEPTH_STENCIL);
+    m_ctx->SetRenderTargets(3, rtvs, dsv, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+    const float miss[4] = {0, 0, 0, 1e27f};   // no surface and no background: a miss for the ray pass
+    const float none[4] = {0, 0, 0, 0};
+    m_ctx->ClearRenderTarget(rtvs[0], miss, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+    m_ctx->ClearRenderTarget(rtvs[1], none, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+    m_ctx->ClearRenderTarget(rtvs[2], none, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+    m_ctx->ClearDepthStencil(dsv, CLEAR_DEPTH_FLAG, 1.0f, 0, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+    const uint32_t capW = 6 * F, capH = m_capSlots * F, nxy = m_grid.counts[0] * m_grid.counts[1];
+    const float zn = std::max(m_grid.spacing * 0.01f, 1e-3f), zf = std::max(m_data.radius * 20.0f, m_grid.spacing * 100.0f);
+    const float pA = zf / (zf - zn), pB = -zf * zn / (zf - zn);
+    // Cube faces (+X -X +Y -Y +Z -Z): forward and up, right = cross(up, forward). Same tables as the editor and DDGIRaster.hlsl.
+    static const float3 kFwd[6] = {float3(1, 0, 0), float3(-1, 0, 0), float3(0, 1, 0), float3(0, -1, 0), float3(0, 0, 1), float3(0, 0, -1)};
+    static const float3 kUp[6] = {float3(0, 1, 0), float3(0, 1, 0), float3(0, 0, -1), float3(0, 0, 1), float3(0, 1, 0), float3(0, 1, 0)};
+    auto setRows = [](float* m, int row, const float3& v, float w) {
+        m[row * 4 + 0] = v.x;
+        m[row * 4 + 1] = v.y;
+        m[row * 4 + 2] = v.z;
+        m[row * 4 + 3] = w;
+    };
+    for (uint32_t s = 0; s < m_capSlots; ++s) {
+        const uint32_t p = (m_capBase + s) % total;
+        const float3 o = float3((float)(p % m_grid.counts[0]), (float)((p / m_grid.counts[0]) % m_grid.counts[1]), (float)(p / nxy)) *
+                             m_grid.spacing + m_grid.origin;
+        for (uint32_t face = 0; face < 6; ++face) {
+            const float3 fwd = kFwd[face], up = kUp[face], right = cross(up, fwd);
+            {
+                MapHelper<float> pc(m_ctx, m_probeCB, MAP_WRITE, MAP_FLAG_DISCARD);   // view-projection rows, probe position
+                float* m = pc;
+                setRows(m, 0, right, -dot(right, o));
+                setRows(m, 1, up, -dot(up, o));
+                setRows(m, 2, fwd * pA, -dot(fwd, o) * pA + pB);
+                setRows(m, 3, fwd, -dot(fwd, o));
+                m[16] = o.x; m[17] = o.y; m[18] = o.z; m[19] = 0;
+            }
+            Viewport vp((float)(face * F), (float)(s * F), (float)F, (float)F);
+            Rect sc((Int32)(face * F), (Int32)(s * F), (Int32)((face + 1) * F), (Int32)((s + 1) * F));
+            m_ctx->SetViewports(1, &vp, capW, capH);
+            m_ctx->SetScissorRects(1, &sc, capW, capH);
+            m_ctx->SetPipelineState(m_pso[P_PROBE_BG]);   // environment first, geometry over it
+            m_ctx->CommitShaderResources(m_srb[P_PROBE_BG], RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+            DrawAttribs bg;
+            bg.NumVertices = 3;
+            m_ctx->Draw(bg);
+            m_ctx->SetPipelineState(m_pso[P_PROBE]);
+            m_ctx->CommitShaderResources(m_srb[P_PROBE], RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+            for (const vp3d::lit::Draw& d : m_data.draws)
+                if (!(d.flags & 7u) && !vp3d::lit::isTransparent(scene, d)) drawOne(d);
+        }
+    }
+    m_ctx->SetRenderTargets(0, nullptr, nullptr, RESOURCE_STATE_TRANSITION_MODE_NONE);
+
+    // 2) rays of the captured probes from the captures, then the blend into the atlases (all probes seen so far).
+    for (int p : {C_RAYS, C_BLEND}) {
+        IShaderResourceBinding* srb = m_srb[p];
+        setVar(srb, SHADER_TYPE_COMPUTE, "G", m_giCB);
+        setVar(srb, SHADER_TYPE_COMPUTE, "gIrr", m_giIrr->GetDefaultView(TEXTURE_VIEW_UNORDERED_ACCESS));
+        setVar(srb, SHADER_TYPE_COMPUTE, "gDist", m_giDist->GetDefaultView(TEXTURE_VIEW_UNORDERED_ACCESS));
+        setVar(srb, SHADER_TYPE_COMPUTE, "gRays", m_giRays->GetDefaultView(TEXTURE_VIEW_UNORDERED_ACCESS));
+        setVar(srb, SHADER_TYPE_COMPUTE, "gProbe", m_giProbe->GetDefaultView(TEXTURE_VIEW_UNORDERED_ACCESS));
+        setVar(srb, SHADER_TYPE_COMPUTE, "gCapture", m_capTex->GetDefaultView(TEXTURE_VIEW_UNORDERED_ACCESS));
+        setVar(srb, SHADER_TYPE_COMPUTE, "gCapAlbedo", m_capAlbedo->GetDefaultView(TEXTURE_VIEW_UNORDERED_ACCESS));
+        setVar(srb, SHADER_TYPE_COMPUTE, "gCapNormal", m_capNormal->GetDefaultView(TEXTURE_VIEW_UNORDERED_ACCESS));
+    }
+    m_ctx->SetPipelineState(m_pso[C_RAYS]);
+    m_ctx->CommitShaderResources(m_srb[C_RAYS], RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+    m_ctx->DispatchCompute(DispatchComputeAttribs(m_capSlots, 1, 1));
+    m_ctx->SetPipelineState(m_pso[C_BLEND]);
+    m_ctx->CommitShaderResources(m_srb[C_BLEND], RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+    m_ctx->DispatchCompute(DispatchComputeAttribs(total, 1, 1));
+
+    // The batch just captured is the one the next frame starts after.
+    m_capSeen = f.captureSeen;
+    m_capBase = (m_capBase + m_capSlots) % total;
 }
 
 } // namespace lit

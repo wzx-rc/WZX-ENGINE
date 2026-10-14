@@ -7,6 +7,7 @@
 //               ... draw overlay (UI) on backBuffer(backBufferIndex()) ...
 //               r.present();
 #pragma once
+#include "LitPrep.h"
 #include "Scene.h"
 #include <d3d12.h>
 #include <dxgi1_6.h>
@@ -230,7 +231,7 @@ private:
     // Raster probe capture: cube faces of m_capSlots probes (kProbeFace texels each), depth, first probe of the batch
     ComPtr<ID3D12Resource> m_capTex, m_capAlbedo, m_capNormal, m_capDepth;
     uint32_t m_capSlots = 0, m_capBase = 0, m_capSeen = 0;
-    ComPtr<ID3D12PipelineState> m_psoProbe;
+    ComPtr<ID3D12PipelineState> m_psoProbe, m_psoProbeBg;
     uint32_t m_giCounts[3] = {0, 0, 0};
     float3 m_giOrigin;
     float m_giSpacing = 1.0f;

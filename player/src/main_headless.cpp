@@ -1,7 +1,8 @@
 // WZX Player, headless: renders one image of the scene with the Lit renderer into a PNG, without a window.
 // Used to compare the targets with each other and with the editor (docs/RENDU_PARITE.md):
 //   WZXPlayerHeadless --out lookdev.png [--width 1280 --height 720] [--hdri sky|none|file.hdr]
-//                     [--backend d3d12|vk] [--shaders dir1;dir2] [--sun] [--scene lookdev|studio] [--data dir]
+//                     [--backend d3d12|vk] [--shaders dir1;dir2] [--sun] [--scene lookdev|studio|cornell] [--data dir]
+//                     [--ddgi 1 --ddgi-view 0|1|2 --probes N --show-probes 1]   (DDGI probes without ray tracing)
 // --scene studio plays the game (graph, houses, HUD) for --frames images; --data is the folder of game/ and assets/.
 // Scripted input for the game tests: --click x,y,frame  --drag x0,y0,x1,y1,frame (over 10 frames)  --key K,frame (A..Z, DEL).
 // Windows uses DirectX 12 by default, other systems Vulkan (on Linux, Mesa lavapipe renders without a GPU).
@@ -93,6 +94,10 @@ int main(int argc, char** argv) {
         else if (a == "--sun") opt.sun = true;
         else if (a == "--scene") opt.scene = next();
         else if (a == "--data") opt.dataDir = next();
+        else if (a == "--ddgi") opt.ddgi = std::atoi(next().c_str()) != 0;
+        else if (a == "--ddgi-view") opt.ddgiView = std::atoi(next().c_str());
+        else if (a == "--probes") opt.ddgiProbes = std::atoi(next().c_str());
+        else if (a == "--show-probes") opt.showProbes = std::atoi(next().c_str()) != 0;
         else if (a == "--click" || a == "--drag" || a == "--key") events.push_back({a, next()});
     }
 

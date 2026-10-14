@@ -159,10 +159,11 @@ bool Renderer::createRasterPipelines(std::string* error) {
         }
         return false;
     };
-    std::vector<char> vsMain, vsShadow, vsBg, vsProbe, psMain, psGhost, psId, psBg, psProbe;
+    std::vector<char> vsMain, vsShadow, vsBg, vsProbe, psMain, psGhost, psId, psBg, psProbe, psProbeBg;
     if (!load(L"Raster_VSMain.cso", vsMain) || !load(L"Raster_VSShadow.cso", vsShadow) || !load(L"Raster_VSBackground.cso", vsBg) ||
         !load(L"Raster_VSProbe.cso", vsProbe) || !load(L"Raster_PSMain.cso", psMain) || !load(L"Raster_PSGhost.cso", psGhost) ||
-        !load(L"Raster_PSId.cso", psId) || !load(L"Raster_PSBackground.cso", psBg) || !load(L"Raster_PSProbe.cso", psProbe))
+        !load(L"Raster_PSId.cso", psId) || !load(L"Raster_PSBackground.cso", psBg) || !load(L"Raster_PSProbe.cso", psProbe) ||
+        !load(L"Raster_PSProbeBackground.cso", psProbeBg))
         return false;
 
     D3D12_INPUT_ELEMENT_DESC layout[] = {
@@ -258,6 +259,13 @@ bool Renderer::createRasterPipelines(std::string* error) {
     for (int k = 0; k < 3; ++k) d.RTVFormats[k] = DXGI_FORMAT_R16G16B16A16_FLOAT;
     d.RasterizerState.MultisampleEnable = FALSE;
     if (!make(d, m_psoProbe, "probe")) return false;
+    // Background of the probe faces: the environment where no geometry is drawn (misses of the ray pass)
+    d.VS = {vsBg.data(), vsBg.size()};
+    d.PS = {psProbeBg.data(), psProbeBg.size()};
+    d.InputLayout = {nullptr, 0};
+    d.DepthStencilState.DepthEnable = FALSE;
+    d.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
+    if (!make(d, m_psoProbeBg, "probe background")) return false;
 
     // Heaps and the shadow map (RTV 0-1 viewport and id, 2-4 probe capture; DSV 0-1 as before, 2 shadow, 3 capture)
     D3D12_DESCRIPTOR_HEAP_DESC hd = {};
@@ -553,7 +561,6 @@ void Renderer::recordRaster(const Scene& scene, const RenderSettings& rs, const 
         m_cmd->ClearRenderTargetView(capRtv1, none, 0, nullptr);
         m_cmd->ClearRenderTargetView(capRtv2, none, 0, nullptr);
         m_cmd->ClearDepthStencilView(capDsv, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
-        m_cmd->SetPipelineState(m_psoProbe.Get());
         for (uint32_t s = 0; s < m_capSlots; ++s) {
             const uint32_t p = (m_capBase + s) % total;
             const float3 o = float3((float)(p % m_giCounts[0]), (float)((p / m_giCounts[0]) % m_giCounts[1]), (float)(p / nxy)) *
@@ -571,6 +578,9 @@ void Renderer::recordRaster(const Scene& scene, const RenderSettings& rs, const 
                 D3D12_RECT fsc = {(LONG)(f * F), (LONG)(s * F), (LONG)((f + 1) * F), (LONG)((s + 1) * F)};
                 m_cmd->RSSetViewports(1, &fvp);
                 m_cmd->RSSetScissorRects(1, &fsc);
+                m_cmd->SetPipelineState(m_psoProbeBg.Get());   // environment first, geometry over it
+                m_cmd->DrawInstanced(3, 1, 0, 0);
+                m_cmd->SetPipelineState(m_psoProbe.Get());
                 for (const Draw& d : m_draws)
                     if (!(d.flags & 7u) && !isTransparent(d)) drawOne(d);
             }

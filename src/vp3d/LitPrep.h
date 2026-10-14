@@ -108,12 +108,44 @@ struct FrameSettings {
     float lightScale = 1.0f;
     bool envSun = true;            // RenderSettings::rasterEnvSun
     uint32_t shadowSize = 2048;
+    bool ddgi = false;             // Shade reads the DDGI probes (R.giMode): the main pass and the probe captures
 };
 
 // Camera, key light and shadow frustum, sun, environment. env: the prepared HDRI of scene.env.hdri, or null.
 // castShadows: false when there is no key light (the shadow pass draws nothing).
 void computeFrame(const Scene& scene, const SceneData& data, const Environment* env, const FrameSettings& fs,
                   int viewW, int viewH, RasterConstants& out, bool& castShadows);
+
+// ---------------------------------------------------------------- DDGI probe volume (shared by both renderers)
+// Regular probe grid over the scene bounds: about `budget` probes, isotropic spacing, probe (0,0,0) at `origin`,
+// probe p = x + nx * (y + ny * z). The same grid in the editor and in the Lit builds (docs/RENDU_PARITE.md).
+struct ProbeGrid {
+    uint32_t counts[3] = {0, 0, 0};
+    float3 origin;
+    float spacing = 1.0f;
+    uint32_t total() const { return counts[0] * counts[1] * counts[2]; }
+    // Atlas sizes: irradiance (DDGI_IRR_N + 2 texels per tile), distance (DDGI_DIST_N + 2), rays, probe state.
+    uint32_t irrW() const { return counts[0] * counts[1] * (DDGI_IRR_N + 2); }
+    uint32_t irrH() const { return counts[2] * (DDGI_IRR_N + 2); }
+    uint32_t distW() const { return counts[0] * counts[1] * (DDGI_DIST_N + 2); }
+    uint32_t distH() const { return counts[2] * (DDGI_DIST_N + 2); }
+};
+// Bounds of the drawn objects (light quads excluded), the volume the probes cover.
+void probeBounds(const SceneData& data, const Geometry& geo, float3& mn, float3& mx);
+// mn / mx: probeBounds; sceneCenter / radius: SceneData::center / radius (the grid stays within 2 radii of the centre).
+void placeProbeGrid(const float3& mn, const float3& mx, const float3& sceneCenter, float sceneRadius, int budget, ProbeGrid& out);
+
+// Per-frame DDGI constants (random rotation of the ray set, capture batch, view).
+struct DDGIFrame {
+    uint32_t frame = 0;          // probe update counter (0: no history yet)
+    float hysteresis = 0.97f;
+    uint32_t temporalMax = 1;    // image history length (editor, ray traced visibility)
+    int view = 0;                // 0 full, 1 indirect only, 2 direct only
+    bool showProbes = false;
+    bool rasterCapture = false;  // probe rays from raster cube captures
+    uint32_t captureBase = 0, captureSlots = 0, captureSeen = 0;   // see DDGIConstants
+};
+void ddgiConstants(const ProbeGrid& grid, const DDGIFrame& f, Rng& rng, gpu::DDGIConstants& out);
 
 } // namespace lit
 } // namespace vp3d

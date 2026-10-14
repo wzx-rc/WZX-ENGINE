@@ -25,7 +25,7 @@ Une identité bit à bit est impossible entre deux GPU et deux API (arrondis flo
 
 ## Points de vigilance
 
-- La DDGI actuelle lance ses rayons par ray tracing matériel (`TraceClosest` dans `DDGIUpdate.hlsl`). Pour iOS sans ray tracing, il faut remplacer la source des rayons par une capture rasterisée (cubemap par sonde). Cette version devient aussi celle de Windows, pour que l'éditeur et les builds restent identiques.
+- DDGI sans ray tracing (14/10/2026) : sondes capturées en raster et lues par la passe raster (`--ddgi-raster 1` dans l'éditeur, `--ddgi 1` dans le lecteur), même code dans les deux (`DDGIProbe.hlsli`, `LitPrep`). Mesure Cornell : Lit (Diligent DX12) contre éditeur DX12, écart RMSE 1,6 sur 255 ; voir docs/RAPPORT_DDGI.md. Le mode ray tracing (`--ddgi-raster 0`) reste la référence de l'éditeur.
 - Les directions de rayons sont tirées au hasard à chaque image : les graines doivent être déterministes pour pouvoir comparer deux rendus.
 
 ## Mode Lit multi-API (Windows et iOS)

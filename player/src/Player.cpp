@@ -13,8 +13,14 @@ bool Player::init(Diligent::IRenderDevice* device, Diligent::IDeviceContext* con
                   std::string* error) {
     m_settings = lit::Settings();
     std::string hdri = options.hdri;
-    if (options.scene == "lookdev") {
-        // LookDev scene with the editor's settings for it (App::loadScene): exposure 1, vignette 0.18, ACES.
+    if (options.scene == "cornell") {
+        // Cornell Box with the editor settings for it (App::loadScene): exposure 1, vignette 0.10, ACES, no HDRI.
+        app::buildCornellBox(m_scene);
+        m_settings.exposure = 1.0f;
+        m_settings.vignette = 0.10f;
+        if (hdri.empty()) hdri = "none";
+    } else if (options.scene == "lookdev") {
+        // LookDev scene with the editor settings for it (App::loadScene): exposure 1, vignette 0.18, ACES.
         app::buildLookDevScene(m_scene);
         m_settings.exposure = 1.0f;
         m_settings.vignette = 0.18f;
@@ -43,6 +49,10 @@ bool Player::init(Diligent::IRenderDevice* device, Diligent::IDeviceContext* con
         m_scene.env.hdri = img;
         if (options.scene == "lookdev") m_scene.env.hdriRotation = app::lookDevHdriRotation(*img);
     }
+    m_settings.ddgi = options.ddgi;
+    m_settings.ddgiView = options.ddgiView;
+    m_settings.ddgiProbeBudget = options.ddgiProbes;
+    m_settings.showProbes = options.showProbes;
     m_home = m_scene.camera;
     if (!m_renderer.init(device, context, factory, shaderDirs, outputFormat, error)) return false;
 
@@ -71,7 +81,7 @@ bool Player::init(Diligent::IRenderDevice* device, Diligent::IDeviceContext* con
     if (!font) io.Fonts->AddFontDefaultVector();
     if (!m_gui.init(device, context, outputFormat, error)) return false;
 
-    if (options.scene != "lookdev" && options.game) {
+    if (options.scene == "studio" && options.game) {
         m_game = std::make_unique<Game>();
         if (!m_game->init(&m_scene, options.dataDir, options.uiScale, options.touch, error)) return false;
     }

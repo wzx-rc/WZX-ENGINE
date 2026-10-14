@@ -397,6 +397,18 @@ struct ProbeOut {
     float4 normal : SV_Target2;     // world normal, alpha 1 on a front face
 };
 
+// Background of a probe face: the environment in the texels no geometry covers, so the ray pass (DDGIRaster.hlsl) reads
+// misses from the capture itself (the Lit renderer has no environment code outside Raster.hlsl). Alpha 1e27 = miss.
+// The face basis comes from its view-projection: rows 0, 1 and 3 are right, up and forward (90 degrees).
+ProbeOut PSProbeBackground(BgOut i) {
+    float3 d = normalize(PF.viewProj[3].xyz + PF.viewProj[0].xyz * i.ndc.x + PF.viewProj[1].xyz * i.ndc.y);
+    ProbeOut o;
+    o.radiance = float4(Environment(d), 1e27);
+    o.albedo = 0;
+    o.normal = 0;
+    return o;
+}
+
 ProbeOut PSProbe(VSOut i, bool front : SV_IsFrontFace) {
     ProbeOut o;
     float d = length(i.wpos - PF.origin);

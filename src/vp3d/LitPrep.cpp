@@ -437,7 +437,81 @@ void computeFrame(const Scene& scene, const SceneData& data, const Environment* 
     rc.envMips = envMap ? (float)env->mips.size() : 1.0f;
     rc.envVisible = scene.env.visibleToCamera ? 1.0f : 0.0f;
     rc.sunLight = data.sunLight;
+    rc.giMode = fs.ddgi ? 1.0f : 0.0f;
     castShadows = key >= 0 || sun || envSun;
+}
+
+} // namespace lit
+} // namespace vp3d
+
+// ---------------------------------------------------------------- DDGI probe volume
+
+namespace vp3d {
+namespace lit {
+
+void probeBounds(const SceneData& data, const Geometry& geo, float3& mn, float3& mx) {
+    mn = float3(1e30f);
+    mx = float3(-1e30f);
+    for (const Draw& d : data.draws) {
+        if (d.flags & 2u) continue;   // light quads
+        const MeshInfo& g = geo.meshes[d.mesh];
+        for (int k = 0; k < 8; ++k) {
+            float3 p((k & 1) ? g.bmax.x : g.bmin.x, (k & 2) ? g.bmax.y : g.bmin.y, (k & 4) ? g.bmax.z : g.bmin.z);
+            p = d.xf.point(p);
+            mn = minv(mn, p);
+            mx = maxv(mx, p);
+        }
+    }
+}
+
+void placeProbeGrid(const float3& bmin, const float3& bmax, const float3& sceneCenter, float sceneRadius, int budget, ProbeGrid& out) {
+    budget = std::max(8, budget);
+    float3 mn = bmin, mx = bmax;
+    if (mn.x > mx.x) { mn = float3(-10); mx = float3(10); }
+    float3 lim(sceneRadius * 2.0f);
+    mn = maxv(mn, sceneCenter - lim);
+    mx = minv(mx, sceneCenter + lim);
+    float3 ext = maxv(mx - mn, float3(1e-3f));
+    float spacing = std::cbrt(ext.x * ext.y * ext.z / (float)budget);
+    uint32_t n[3];
+    for (;;) {
+        n[0] = std::max(2u, (uint32_t)std::ceil(ext.x / spacing));
+        n[1] = std::max(2u, (uint32_t)std::ceil(ext.y / spacing));
+        n[2] = std::max(2u, (uint32_t)std::ceil(ext.z / spacing));
+        uint32_t total = n[0] * n[1] * n[2];
+        if (n[0] * n[1] * (DDGI_DIST_N + 2) <= 16384 && n[2] * (DDGI_DIST_N + 2) <= 16384 && total <= 16384) break;
+        spacing *= 1.1f;
+    }
+    float3 center = (mn + mx) * 0.5f;
+    out.origin = center - float3((n[0] - 1) * 0.5f, (n[1] - 1) * 0.5f, (n[2] - 1) * 0.5f) * spacing;
+    out.spacing = spacing;
+    for (int i = 0; i < 3; ++i) out.counts[i] = n[i];
+}
+
+void ddgiConstants(const ProbeGrid& grid, const DDGIFrame& f, Rng& rng, gpu::DDGIConstants& c) {
+    c = gpu::DDGIConstants{};
+    c.origin = grid.origin;
+    c.hysteresis = f.hysteresis;
+    c.spacing = float3(grid.spacing);
+    c.maxDistance = grid.spacing * 2.6f;
+    c.counts = {grid.counts[0], grid.counts[1], grid.counts[2], grid.total()};
+    // Random rotation of the ray set (uniform random quaternion).
+    float u1 = rng.uniform(), u2 = rng.uniform() * 2 * kPi, u3 = rng.uniform() * 2 * kPi;
+    float4 q(std::sqrt(1 - u1) * std::sin(u2), std::sqrt(1 - u1) * std::cos(u2), std::sqrt(u1) * std::sin(u3), std::sqrt(u1) * std::cos(u3));
+    float3 ex = qRot(q, float3(1, 0, 0)), ey = qRot(q, float3(0, 1, 0)), ez = qRot(q, float3(0, 0, 1));
+    c.rot0 = float4(ex.x, ey.x, ez.x, 0);
+    c.rot1 = float4(ex.y, ey.y, ez.y, 0);
+    c.rot2 = float4(ex.z, ey.z, ez.z, 0);
+    c.frame = f.frame;
+    c.temporalMax = std::max(1u, f.temporalMax);
+    c.view = (uint32_t)f.view;
+    c.flags = (f.showProbes ? 1u : 0u) | (f.rasterCapture ? 2u : 0u);
+    c.captureBase = f.captureBase;
+    c.captureSlots = f.captureSlots;
+    c.captureSeen = f.captureSeen;
+    c.normalBias = 0.06f;
+    c.viewBias = 0.24f;
+    c.energy = 1.0f;
 }
 
 } // namespace lit

@@ -29,6 +29,14 @@ struct Settings {
     int tonemapper = 0;          // 0 ACES, 1 AgX, 2 AgX Punchy, 3 Standard
     float lightScale = 1.0f;
     bool envSun = true;          // the sun of the HDRI is the shadowed key light
+    // DDGI probe volume without ray tracing (as the editor's --ddgi-raster 1): probes captured in raster, read by
+    // the main pass instead of the hemisphere ambient. Same code, same probes as the editor.
+    bool ddgi = false;
+    int ddgiProbeBudget = 2048;  // probes over the scene bounds
+    int ddgiCaptureProbes = 32;  // probes captured per frame
+    float ddgiHysteresis = 0.97f;
+    int ddgiView = 0;            // 0 full, 1 indirect only, 2 direct only
+    bool showProbes = false;     // the probes as small spheres shaded with their irradiance
 };
 
 class LitRenderer {
@@ -54,6 +62,10 @@ private:
     void updateBuffer(RefCntAutoPtr<Diligent::IBuffer>& buf, const void* data, uint32_t size, uint32_t stride,
                       const char* name);
     void bindFrameResources();
+    void drawOne(const vp3d::lit::Draw& d);   // one mesh with its draw constants (vertex and index buffers bound)
+    // DDGI: probe grid and atlases (on geometry or budget change), cube captures, then the two compute passes.
+    void ensureProbes(const vp3d::Scene& scene, const Settings& settings);
+    void recordProbes(const vp3d::Scene& scene, const Settings& settings);
 
     RefCntAutoPtr<Diligent::IRenderDevice> m_device;
     RefCntAutoPtr<Diligent::IDeviceContext> m_ctx;
@@ -62,8 +74,9 @@ private:
     uint32_t m_msaa = 4;
     static constexpr uint32_t kShadowSize = 2048;
 
-    // pipelines (shadow, background, opaque, transparent, ghost, post) and their resource bindings
-    enum { P_SHADOW, P_BG, P_MAIN, P_TRANS, P_GHOST, P_POST, P_COUNT };
+    // pipelines (shadow, background, opaque, transparent, ghost, post, DDGI probe capture and its background, DDGI
+    // compute passes: rays from the captures, blend) and their resource bindings
+    enum { P_SHADOW, P_BG, P_MAIN, P_TRANS, P_GHOST, P_POST, P_PROBE, P_PROBE_BG, C_RAYS, C_BLEND, P_COUNT };
     RefCntAutoPtr<Diligent::IPipelineState> m_pso[P_COUNT];
     RefCntAutoPtr<Diligent::IShaderResourceBinding> m_srb[P_COUNT];
 
@@ -87,6 +100,17 @@ private:
     // targets
     uint32_t m_w = 0, m_h = 0;
     RefCntAutoPtr<Diligent::ITexture> m_shadow, m_msaaColor, m_msaaDepth, m_hdr;
+
+    // DDGI probe volume: grid, atlases (irradiance, distance, rays, state), cube captures of the probes of a batch
+    vp3d::lit::ProbeGrid m_grid;
+    uint32_t m_gridVersion = 0;
+    int m_gridBudget = 0;
+    uint32_t m_giFrame = 0, m_capBase = 0, m_capSeen = 0, m_capSlots = 0;
+    vp3d::Rng m_giRng{12345};
+    RefCntAutoPtr<Diligent::ITexture> m_giIrr, m_giDist, m_giRays, m_giProbe;
+    RefCntAutoPtr<Diligent::ITexture> m_capTex, m_capAlbedo, m_capNormal, m_capDepth;
+    RefCntAutoPtr<Diligent::IBuffer> m_giCB, m_probeCB;   // DDGIConstants (G), ProbeFaceConstants (PF)
+    static constexpr uint32_t kProbeFace = 16;   // texels per cube face of a probe capture (Renderer::kProbeFace)
 };
 
 } // namespace lit

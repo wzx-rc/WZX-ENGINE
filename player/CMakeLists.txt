@@ -92,6 +92,10 @@ set(WZX_SHADERS
     ${WZX_ROOT}/src/vp3d/shaders/Raster.hlsl
     ${WZX_ROOT}/src/vp3d/shaders/Shared.h
     ${WZX_ROOT}/src/vp3d/shaders/ToneCurves.hlsli
+    ${WZX_ROOT}/src/vp3d/shaders/DDGIProbe.hlsli
+    ${WZX_ROOT}/src/vp3d/shaders/DDGICommon.hlsli
+    ${WZX_ROOT}/src/vp3d/shaders/DDGIRaster.hlsl
+    ${WZX_ROOT}/src/vp3d/shaders/DDGIBlend.hlsl
     ${WZX_ROOT}/src/lit/shaders/LitPost.hlsl)
 
 function(wzx_copy_shaders target)

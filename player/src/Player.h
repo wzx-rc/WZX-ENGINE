@@ -13,7 +13,7 @@
 namespace player {
 
 struct Options {
-    std::string scene = "studio";    // "studio" (the game) or "lookdev" (the parity scene)
+    std::string scene = "studio";    // "studio" (the game), "lookdev" (the parity scene) or "cornell" (the DDGI parity scene)
     std::string hdri;                // "" = the scene's own (studio: none, lookdev: sky), "sky", "none", or an .hdr / .exr file
     bool sun = false;                // LookDev: scene sun on (as in RTS play), for the parity tests
     bool game = true;                // studio: play the game (graph, houses, HUD)
@@ -21,6 +21,11 @@ struct Options {
     float uiScale = 1.0f;            // HUD scale (DPI)
     bool touch = false;              // touch screen: touch buttons, no screen edge scrolling
     std::string fontFile;            // HUD font (TTF), empty = the built-in one
+    // DDGI probes without ray tracing (lit::Settings): on, view (0 full, 1 indirect only, 2 direct only), budget, debug spheres
+    bool ddgi = false;
+    int ddgiView = 0;
+    int ddgiProbes = 2048;
+    bool showProbes = false;
 };
 
 class Player {

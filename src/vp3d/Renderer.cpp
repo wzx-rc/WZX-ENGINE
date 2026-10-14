@@ -1032,25 +1032,13 @@ void Renderer::setupProbeGrid(const RenderSettings& rs) {
             mx = maxv(mx, p);
         }
     }
-    if (mn.x > mx.x) { mn = float3(-10); mx = float3(10); }
-    float3 lim(m_sceneRadius * 2.0f);
-    mn = maxv(mn, m_sceneCenter - lim);
-    mx = minv(mx, m_sceneCenter + lim);
-    float3 ext = maxv(mx - mn, float3(1e-3f));
-    float spacing = std::cbrt(ext.x * ext.y * ext.z / (float)budget);
-    uint32_t n[3];
-    for (;;) {
-        n[0] = std::max(2u, (uint32_t)std::ceil(ext.x / spacing));
-        n[1] = std::max(2u, (uint32_t)std::ceil(ext.y / spacing));
-        n[2] = std::max(2u, (uint32_t)std::ceil(ext.z / spacing));
-        uint32_t total = n[0] * n[1] * n[2];
-        if (n[0] * n[1] * (DDGI_DIST_N + 2) <= 16384 && n[2] * (DDGI_DIST_N + 2) <= 16384 && total <= 16384) break;
-        spacing *= 1.1f;
-    }
-    float3 center = (mn + mx) * 0.5f;
-    m_giOrigin = center - float3((n[0] - 1) * 0.5f, (n[1] - 1) * 0.5f, (n[2] - 1) * 0.5f) * spacing;
-    m_giSpacing = spacing;
-    for (int i = 0; i < 3; ++i) m_giCounts[i] = n[i];
+    // The grid itself is placed by the code shared with the Lit renderer (same probes in the editor and the builds).
+    lit::ProbeGrid grid;
+    lit::placeProbeGrid(mn, mx, m_sceneCenter, m_sceneRadius, budget, grid);
+    m_giOrigin = grid.origin;
+    m_giSpacing = grid.spacing;
+    for (int i = 0; i < 3; ++i) m_giCounts[i] = grid.counts[i];
+    const uint32_t* n = m_giCounts;
     m_giGridVersion = m_sceneGeometryVersion;
     m_giBudget = budget;
     m_giFrame = 0;
@@ -1108,29 +1096,23 @@ void Renderer::recordDDGI(const RenderSettings& rs, UINT gx, UINT gy, bool shade
     setupProbeGrid(rs);
     uint32_t total = giProbeCount();
 
-    gpu::DDGIConstants c = {};
-    c.origin = m_giOrigin;
-    c.hysteresis = rs.ddgiHysteresis;
-    c.spacing = float3(m_giSpacing);
-    c.maxDistance = m_giSpacing * 2.6f;
-    c.counts = {m_giCounts[0], m_giCounts[1], m_giCounts[2], total};
-    // Random rotation of the ray set (uniform random quaternion).
-    float u1 = m_giRng.uniform(), u2 = m_giRng.uniform() * 2 * kPi, u3 = m_giRng.uniform() * 2 * kPi;
-    float4 q(std::sqrt(1 - u1) * std::sin(u2), std::sqrt(1 - u1) * std::cos(u2), std::sqrt(u1) * std::sin(u3), std::sqrt(u1) * std::cos(u3));
-    float3 ex = qRot(q, float3(1, 0, 0)), ey = qRot(q, float3(0, 1, 0)), ez = qRot(q, float3(0, 0, 1));
-    c.rot0 = float4(ex.x, ey.x, ez.x, 0);
-    c.rot1 = float4(ex.y, ey.y, ez.y, 0);
-    c.rot2 = float4(ex.z, ey.z, ez.z, 0);
-    c.frame = m_giFrame++;
-    c.temporalMax = (uint32_t)std::max(1, rs.temporalCap);
-    c.view = (uint32_t)rs.ddgiView;
-    c.flags = (rs.ddgiShowProbes ? 1u : 0u) | (rs.ddgiRaster ? 2u : 0u);
-    c.captureBase = m_capBase;
-    c.captureSlots = m_capSlots;
-    c.captureSeen = rs.ddgiRaster ? std::min(total, m_capSeen + m_capSlots) : total;
-    c.normalBias = 0.06f;
-    c.viewBias = 0.24f;
-    c.energy = 1.0f;
+    // Constants shared with the Lit renderer (LitPrep): grid, random rotation of the ray set, capture batch.
+    lit::ProbeGrid grid;
+    grid.origin = m_giOrigin;
+    grid.spacing = m_giSpacing;
+    for (int i = 0; i < 3; ++i) grid.counts[i] = m_giCounts[i];
+    lit::DDGIFrame f;
+    f.frame = m_giFrame++;
+    f.hysteresis = rs.ddgiHysteresis;
+    f.temporalMax = (uint32_t)std::max(1, rs.temporalCap);
+    f.view = rs.ddgiView;
+    f.showProbes = rs.ddgiShowProbes;
+    f.rasterCapture = rs.ddgiRaster;
+    f.captureBase = m_capBase;
+    f.captureSlots = m_capSlots;
+    f.captureSeen = rs.ddgiRaster ? std::min(total, m_capSeen + m_capSlots) : total;
+    gpu::DDGIConstants c;
+    lit::ddgiConstants(grid, f, m_giRng, c);
     memcpy(m_giConstants.mapped, &c, sizeof(c));
 
     D3D12_GPU_DESCRIPTOR_HANDLE giTable = m_heap->GetGPUDescriptorHandleForHeapStart();

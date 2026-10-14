@@ -1,8 +1,17 @@
 // DDGI (Dynamic Diffuse Global Illumination) probe volume: shared resources and helpers.
 // Follows Majercik et al. 2019 / RTXGI: per-probe octahedral irradiance and distance moments,
 // Chebyshev visibility test, rays rotated randomly each frame, temporal hysteresis.
+//
+// DDGI_NO_RT: the passes that need no ray tracing (DDGIRaster.hlsl, DDGIBlend.hlsl) compiled without the path
+// tracer, for the multi-API Lit renderer (src/lit: DirectX 12, Vulkan, Metal).
+#ifdef DDGI_NO_RT
+#include "Shared.h"
+static const float PI = 3.14159265358979;
+float Luminance(float3 c) { return dot(c, float3(0.2126, 0.7152, 0.0722)); }
+#else
 #define VP3D_NO_MAIN
 #include "PathTrace.hlsl"
+#endif
 
 // Probe atlases (u6 irradiance, u7 distance, u9 state) and their sampling: DDGIProbe.hlsli (also used by Raster.hlsl).
 #include "DDGIProbe.hlsli"
@@ -22,6 +31,7 @@ float3 ProbeRayDir(uint i) {
     return normalize(float3(dot(G.rot0.xyz, d), dot(G.rot1.xyz, d), dot(G.rot2.xyz, d)));
 }
 
+#ifndef DDGI_NO_RT
 // Lambert-only next-event estimation (one light sample), returns radiance leaving towards any direction
 // divided by albedo / pi, i.e. the direct irradiance term E.
 float3 DirectIrradiance(float3 P, float3 N, float3 Ng, inout uint rng) {
@@ -55,3 +65,4 @@ float3 EnvDirectIrradiance(float3 P, float3 N, float3 Ng, inout uint rng) {
 float3 DiffuseAlbedo(Surf s) {
     return s.base * (1.0 - s.trans) * (1.0 - 0.6 * s.metal);
 }
+#endif

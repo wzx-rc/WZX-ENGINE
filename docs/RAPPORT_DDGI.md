@@ -182,3 +182,55 @@ Contrôle visuel (sphère orange animée, image 150) : défaut propre ; contours
 Piste non implémentée : garder la validation au centre pour la stabilité, mais limiter la mémoire des pixels dont le bord change (par exemple 16 images au lieu de 256). Les halos durent alors moins longtemps, et les contours restent plus stables qu'avec le défaut.
 
 Viewer : l'animation avance d'un pas fixe de 1/60 s, pour que les comparaisons soient reproductibles.
+
+## DDGI sans ray tracing : sondes raster et visibilité raster (14/10/2026)
+
+Objectif : la DDGI tourne sans aucun rayon (iOS), avec un rendu proche de la DDGI ray tracing de l'éditeur.
+
+### Ce qui a été fait
+- `--ddgi-raster 1` ne lance plus aucun rayon : captures des sondes en raster (6 faces de 16 × 16 par sonde, fond
+  d'environnement dessiné sous la géométrie), rayons lus dans les captures (`DDGIRaster.hlsl`), fusion
+  (`DDGIBlend.hlsl`), puis la **passe raster avant** (`Raster.hlsl`, la même que Lit) remplace son ambiance
+  hémisphérique par la lecture des sondes (`DDGIProbe.hlsli`, même code que les passes compute). Pas de TLAS, pas
+  d'historique d'image, pas de G-buffer (l'essai G-buffer archivé sur `archive/ddgi-raster-gbuffer` est abandonné).
+- Module Lit (Diligent, `src/lit`) : mêmes passes (`LitRenderer::recordProbes`), mêmes shaders, grille de sondes et
+  constantes calculées par le code partagé `LitPrep` (`placeProbeGrid`, `ddgiConstants`). Lecteur : `--ddgi 1`,
+  `--ddgi-view 0|1|2`, `--probes N`, `--show-probes 1`, scène `--scene cornell`.
+
+### Corrections trouvées en mesurant
+1. **Fusion des sondes raster** : seules les sondes capturées dans l'image sont fusionnées. Les rayons des autres
+   avaient été pris avec une autre rotation du jeu de rayons (tirée par image) ; les refusionner chaque image étalait
+   leur radiance dans toutes les directions (indirect à 1,46 de la référence). Hystérésis par cycle de capture
+   (`0,97^(total / sondes par image)`, plancher 0,5).
+2. **Shadow map de la lumière clé** (éditeur et Lit) : visée le long de la normale de la lampe, plan proche à la lampe.
+   Avant, elle visait le centre des bornes de scène (le sol du Cornell file vers la caméra) et le plafond, derrière la
+   lampe, occultait toute la scène : le viewport raster du Cornell n'avait plus de lumière directe.
+3. **Captures** : la sonde est le point de vue de son shading (normale et V), et la capture ne contient plus le terme
+   d'ambiance (le rebond vient des sondes, sinon il comptait deux fois).
+
+### Mesures (Cornell, 1335 × 726, 400 images, référence = DDGI ray tracing de l'éditeur, `tools\imgcmp`)
+
+| Test | Luminance test / référence | Écart RMSE (0-255) |
+|---|---|---|
+| Éditeur DX12, sondes raster + passe raster, indirect seul | 1,07 | 8,2 |
+| Éditeur DX12, sondes raster + passe raster, image complète | 1,07 | 17,2 |
+| Éditeur DX12, direct seul | 1,08 | 19,6 |
+| Sondes raster contre sondes RT (sphères de debug) | 0,99 | 5,6 |
+| Lit (Diligent, DirectX 12) contre éditeur DX12 sondes raster, image complète | 1,00 | **1,6** |
+| Lit contre éditeur, indirect seul | 0,99 | 2,0 |
+| Lit contre la référence ray tracing | 1,06 | 17,2 |
+
+Les 7 % restants viennent de la passe raster elle-même, pas des sondes : reflets brillants lus dans les sondes autour
+de la direction réfléchie (flous) au lieu de rayons de réflexion, ombres PCF au lieu de la lumière surfacique
+échantillonnée. Diagnostic : `--ddgi-raster-view 1` (passe raster sur les sondes ray tracing) donne 1,07 / 5,0.
+
+### Limites et suite
+- Non testé sur iOS (Metal via MoltenVK) : les passes compute (`RWTexture2D` RGBA16F lues et écrites) y restent à
+  vérifier ; la compilation glslang de `DDGIBlend.hlsl` et `DDGIRaster.hlsl` aussi.
+- Reflets : les surfaces brillantes lisent les sondes autour de la réflexion (flou). Une réflexion écran ou une
+  cubemap locale serait la suite pour les métaux.
+- Les sondes mettent `total / sondes par image` images à se rafraîchir (72 images pour 2 300 sondes à 32 par image) :
+  une lumière qui bouge se voit avec ce retard. `--ddgi-capture N` règle le compromis.
+
+Outils : `tools\imgcmp` (écart et planche référence | test | différence × 4), `tools\shaders.bat` (shaders seuls),
+`VP3D_DUMP_CAPTURE=chemin` (captures des sondes de la dernière image, éditeur), `--show-probes 1`.
