@@ -71,7 +71,7 @@ struct Options {
     bool ddgi = false;          // start in the real-time probe GI mode
     int probes = 2048;          // target probe count over the scene bounds
     int ddgiView = 0;           // 0 full, 1 indirect only, 2 direct only
-    int temporalCap = 256;      // history length in frames (converges; the history is dropped on lighting changes)
+    int temporalCap = 1024;      // history length in frames (converges; the history is dropped on lighting changes)
     float hysteresis = 0.97f;
     int light = -1;             // test: 1 light mode, 0 dark mode
     bool openSettings = false;  // test: open the settings window at startup

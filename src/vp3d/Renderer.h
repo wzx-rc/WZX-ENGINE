@@ -44,7 +44,7 @@ struct RenderSettings {
     bool ddgi = false;
     int ddgiProbeBudget = 2048;   // target probe count over the scene bounds
     float ddgiHysteresis = 0.97f;
-    int temporalCap = 256;        // history length in frames (exponential average window): 256 converges, 64 stays noisier
+    int temporalCap = 1024;        // history length in frames (exponential average window): 256 converges, 64 stays noisier
     int ddgiView = 0;             // 0 full, 1 indirect only, 2 direct only
     bool ddgiShowProbes = false;  // draw the probes as small spheres shaded with their irradiance
 };
