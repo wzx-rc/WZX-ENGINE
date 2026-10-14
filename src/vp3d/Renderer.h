@@ -133,7 +133,9 @@ private:
     bool createRasterPipelines(std::string* error);
     void createRasterTargets(uint32_t w, uint32_t h);
     // probeCapture: shadow map, then the cube captures of the next probes (m_capSlots) instead of the viewport.
-    void recordRaster(const Scene& scene, const RenderSettings& rs, const ViewRect& vp, bool probeCapture = false);
+    // gbuffer: the camera view into the DDGI G-buffer (raster visibility of GIShadeRaster).
+    void recordRaster(const Scene& scene, const RenderSettings& rs, const ViewRect& vp, bool probeCapture = false, bool gbuffer = false);
+    void ensureGBuffer(uint32_t w, uint32_t h);
     void ensureCapture(uint32_t slots);
     void createTargets(uint32_t w, uint32_t h);
     void uploadTextures(const Scene& scene);
@@ -170,7 +172,7 @@ private:
 
     ComPtr<ID3D12RootSignature> m_rootSig;
     ComPtr<ID3D12PipelineState> m_psoTrace, m_psoDenoise, m_psoTonemap;
-    ComPtr<ID3D12PipelineState> m_psoGIUpdate, m_psoGIBlend, m_psoGIShade, m_psoGIRaster;
+    ComPtr<ID3D12PipelineState> m_psoGIUpdate, m_psoGIBlend, m_psoGIShade, m_psoGIRaster, m_psoGIShadeRaster;
     ComPtr<ID3D12DescriptorHeap> m_heap;
     uint32_t m_descSize = 0;
 
@@ -219,7 +221,10 @@ private:
     // Raster probe capture: cube faces of m_capSlots probes (kProbeFace texels each), depth, first probe of the batch
     ComPtr<ID3D12Resource> m_capTex, m_capAlbedo, m_capNormal, m_capDepth;
     uint32_t m_capSlots = 0, m_capBase = 0, m_capSeen = 0;
-    ComPtr<ID3D12PipelineState> m_psoProbe;
+    ComPtr<ID3D12PipelineState> m_psoProbe, m_psoGBuffer;
+    // G-buffer of the camera view for the raster visibility (4 targets + depth), size m_gbW x m_gbH
+    ComPtr<ID3D12Resource> m_gbTex[4], m_gbDepth;
+    uint32_t m_gbW = 0, m_gbH = 0;
     uint32_t m_giCounts[3] = {0, 0, 0};
     float3 m_giOrigin;
     float m_giSpacing = 1.0f;

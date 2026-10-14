@@ -194,7 +194,7 @@ float3 GridColor(float3 base, float3 wpos, inout float3 emission) {
     return base;
 }
 
-float4 Shade(VSOut i, bool ghost, float shadowBias) {
+float4 Shade(VSOut i, bool ghost, float shadowBias, bool ambient) {
     GpuMaterial m = gMats[D.materialId];
     float3 N = normalize(i.nrm);
     float3 V = normalize(R.camPos - i.wpos);
@@ -270,14 +270,14 @@ float4 Shade(VSOut i, bool ghost, float shadowBias) {
     }
     // Hemisphere ambient + reflection of the environment, darkened in cavities facing down.
     float cavity = lerp(0.55, 1.0, saturate(i.wpos.y * 0.6 + 0.5 + N.y * 0.3));
-    if (R.envMapOn > 0) {
+    if (ambient && R.envMapOn > 0) {
         // HDRI: SH irradiance (diffuse) and the blurred mips of the image along the reflection (glossy).
         float3 Rd = reflect(-V, N);
         float3 refl = EnvMap(Rd, sqrt(rough) * max(R.envMips - 2.0, 0.0));
         float3 Fe = EnvBRDFApprox(f0, rough, NoV);
         float3 kd = diffuseCol * (1 - Fe);
         color += (kd / PI * EnvIrradiance(N) + Fe * refl) * cavity;
-    } else {
+    } else if (ambient) {
         float3 sky = Environment(N) + R.ambient * (0.65 + 0.35 * N.y);
         float3 refl = Environment(reflect(-V, N)) + R.ambient;
         float3 Fa = Fresnel(f0, NoV) * (1 - rough * 0.7);
@@ -294,8 +294,8 @@ float4 Shade(VSOut i, bool ghost, float shadowBias) {
     return float4(color, alpha);
 }
 
-float4 PSMain(VSOut i) : SV_Target { return Shade(i, false, 0.0015); }
-float4 PSGhost(VSOut i) : SV_Target { return Shade(i, true, 0.0015); }
+float4 PSMain(VSOut i) : SV_Target { return Shade(i, false, 0.0015, true); }
+float4 PSGhost(VSOut i) : SV_Target { return Shade(i, true, 0.0015, true); }
 float4 PSId(VSOut i) : SV_Target { return float4(0, 0, 0, (float)D.id); }
 
 // ---------------------------------------------------------------- DDGI probe capture
@@ -336,8 +336,28 @@ ProbeOut PSProbe(VSOut i, bool front : SV_IsFrontFace) {
     float3 base = m.baseColor;
     if (m.baseColorTex != NO_TEXTURE) base *= gTextures[NonUniformResourceIndex(m.baseColorTex)].Sample(gLinearWrap, i.uv).rgb;
     // Shadow bias of the probes: the main pass bias (0.0015) leaves acne on surfaces grazed by the key light.
-    o.radiance = float4(Shade(i, false, 0.01).rgb, d);
+    o.radiance = float4(Shade(i, false, 0.01, true).rgb, d);
     o.albedo = float4(base * (1.0 - m.transmission) * (1.0 - 0.6 * m.metallic), 1);
     o.normal = float4(normalize(i.nrm), 1);
+    return o;
+}
+
+// ---------------------------------------------------------------- DDGI raster G-buffer (camera view)
+// Direct light of the visible surface, lit by the same code as the raster viewport (no ambient: the probes give
+// the indirect light in GIShadeRaster.hlsl). The distance and the surface data go to the other targets.
+struct GBufferOut {
+    float4 direct : SV_Target0;   // rgb direct light and emission, alpha: distance from the camera
+    float4 normal : SV_Target1;   // shading normal, alpha 1 on a front face
+    float4 geom : SV_Target2;     // normal (xyz), material id (w)
+    float4 info : SV_Target3;     // uv (xy), 1 for an emissive quad (light), object id (w)
+};
+
+GBufferOut PSGBuffer(VSOut i, bool front : SV_IsFrontFace) {
+    GBufferOut o;
+    float3 N = normalize(i.nrm);
+    o.direct = float4(Shade(i, false, 0.0015, false).rgb, length(i.wpos - R.camPos));
+    o.normal = float4(N, front ? 1.0 : 0.0);
+    o.geom = float4(N, (float)D.materialId);
+    o.info = float4(i.uv, (D.flags & DRAW_LIGHT) ? 1.0 : 0.0, (float)D.id);
     return o;
 }

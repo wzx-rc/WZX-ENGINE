@@ -131,7 +131,7 @@ bool Renderer::init(HWND hwnd, uint32_t width, uint32_t height, const std::wstri
 
     D3D12_DESCRIPTOR_HEAP_DESC hd = {};
     hd.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-    hd.NumDescriptors = kCapHeapSlot + 3;  // + shadow map SRV + material textures + DDGI UAVs + history UAVs + HDRI SRV + capture UAVs
+    hd.NumDescriptors = kCapHeapSlot + 7;  // + shadow map SRV + material textures + DDGI UAVs + history UAVs + HDRI SRV + capture UAVs
     hd.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
     m_device->CreateDescriptorHeap(&hd, IID_PPV_ARGS(&m_heap));
     m_descSize = m_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
@@ -193,9 +193,9 @@ bool Renderer::createPipelines(std::string* error) {
     envRange.NumDescriptors = 1;
     envRange.BaseShaderRegister = 7;
 
-    D3D12_DESCRIPTOR_RANGE capRange = {};   // u12..u14 probe captures (raster DDGI)
+    D3D12_DESCRIPTOR_RANGE capRange = {};   // u12..u14 probe captures, u15..u18 G-buffer (raster DDGI)
     capRange.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_UAV;
-    capRange.NumDescriptors = 3;
+    capRange.NumDescriptors = 7;
     capRange.BaseShaderRegister = 12;
 
     D3D12_ROOT_PARAMETER p[16] = {};
@@ -266,7 +266,8 @@ bool Renderer::createPipelines(std::string* error) {
     };
     return make(L"PathTrace.cso", m_psoTrace) && make(L"Denoise.cso", m_psoDenoise) && make(L"Tonemap.cso", m_psoTonemap) &&
            make(L"DDGIUpdate.cso", m_psoGIUpdate) && make(L"DDGIRaster.cso", m_psoGIRaster) &&
-           make(L"DDGIBlend.cso", m_psoGIBlend) && make(L"GIShade.cso", m_psoGIShade);
+           make(L"DDGIBlend.cso", m_psoGIBlend) && make(L"GIShade.cso", m_psoGIShade) &&
+           make(L"GIShadeRaster.cso", m_psoGIShadeRaster);
 }
 
 void Renderer::createTargets(uint32_t w, uint32_t h) {
@@ -1135,7 +1136,7 @@ void Renderer::recordDDGI(const RenderSettings& rs, UINT gx, UINT gy) {
     m_cmd->Dispatch(total, 1, 1);
     uavBarrier();
     m_cmd->EndQuery(m_queryHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 3);
-    m_cmd->SetPipelineState(m_psoGIShade.Get());
+    m_cmd->SetPipelineState(rs.ddgiRaster ? m_psoGIShadeRaster.Get() : m_psoGIShade.Get());
     m_cmd->Dispatch(gx, gy, 1);
     uavBarrier();
     m_giTimed = true;
@@ -1277,6 +1278,24 @@ uint32_t Renderer::transformSignature(const Scene& s) const {
 
 void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRect& vpIn, int selectedObject,
                       bool toBackBuffer) {
+    if (getenv("VP3D_MSG")) {   // TEMP diagnostic: D3D12 debug messages of the previous frames -> C:/Users/wzx/ddgi_msg.txt
+        ComPtr<ID3D12InfoQueue> q;
+        if (SUCCEEDED(m_device.As(&q))) {
+            q->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_CORRUPTION, FALSE);
+            q->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_ERROR, FALSE);
+            std::ofstream out("C:/Users/wzx/ddgi_msg.txt", std::ios::app);
+            UINT64 n = q->GetNumStoredMessages();
+            for (UINT64 i = 0; i < n; ++i) {
+                SIZE_T len = 0;
+                q->GetMessage(i, nullptr, &len);
+                std::vector<char> buf(len);
+                D3D12_MESSAGE* msg = reinterpret_cast<D3D12_MESSAGE*>(buf.data());
+                q->GetMessage(i, msg, &len);
+                out << "[" << (int)msg->Severity << " id " << (int)msg->ID << "] " << msg->pDescription << std::endl;
+            }
+            q->ClearStoredMessages();
+        }
+    }
     ViewRect vp = vpIn;
     vp.x = std::max(0, std::min(vp.x, (int)m_width - 1));
     vp.y = std::max(0, std::min(vp.y, (int)m_height - 1));
@@ -1310,7 +1329,7 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
 
     beginCommands();
     m_giTimed = false;
-    buildTLAS(scene, !rs.raster);
+    buildTLAS(scene, !rs.raster && !rs.ddgiRaster);   // raster DDGI: no acceleration structure
 
     const Camera& cam = scene.camera;
     float3 right, up, fwd;
@@ -1398,7 +1417,8 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
     } else {
     m_cmd->SetComputeRootSignature(m_rootSig.Get());
     m_cmd->SetComputeRootConstantBufferView(0, m_constants.va());
-    m_cmd->SetComputeRootShaderResourceView(2, m_tlas.va());
+    // Raster DDGI has no acceleration structure: the (unused) scene slot gets a valid buffer, not a null address.
+    m_cmd->SetComputeRootShaderResourceView(2, rs.ddgiRaster ? m_instances.va() : m_tlas.va());
     m_cmd->SetComputeRootShaderResourceView(3, m_vb.va());
     m_cmd->SetComputeRootShaderResourceView(4, m_ib.va());
     m_cmd->SetComputeRootShaderResourceView(5, m_instances.va());
@@ -1419,9 +1439,11 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
     if (rs.ddgi) {
         if (rs.ddgiRaster) {
             // Raster rays: the cube captures of the next probes, rendered before the probe pass reads them.
+            ensureGBuffer(vp.w, vp.h);
             setupProbeGrid(rs);
             ensureCapture(std::min(giProbeCount(), (uint32_t)std::max(1, rs.ddgiCaptureProbes)));
-            recordRaster(scene, rs, vp, true);
+            recordRaster(scene, rs, vp, true, true);   // probes, then the G-buffer of the camera view (one pass set)
+            // Raster visibility: the camera view into the G-buffer (direct light lit there), read by GIShadeRaster.
         }
         recordDDGI(rs, gx, gy);   // never converges: probes and image history keep updating
         ++m_sampleIndex;
