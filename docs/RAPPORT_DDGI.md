@@ -234,3 +234,24 @@ de la direction réfléchie (flous) au lieu de rayons de réflexion, ombres PCF 
 
 Outils : `tools\imgcmp` (écart et planche référence | test | différence × 4), `tools\shaders.bat` (shaders seuls),
 `VP3D_DUMP_CAPTURE=chemin` (captures des sondes de la dernière image, éditeur), `--show-probes 1`.
+
+### Scène LookDev : bandes, taches noires, reflets (14/10/2026, suite)
+
+Sur la scène LookDev (sol immense, HDRI), le mode Metal iOS montrait des bandes sur le sol, des calottes noires en
+haut des sphères, un halo autour de la sphère émissive et des métaux sans reflet. Causes et corrections :
+
+- **Bandes** : chaque lot de sondes capturé dans une image avait son propre tirage de 128 rayons (rotation par
+  image) ; projetés sur des faces de 16 × 16 texels, ces rayons donnaient à chaque rangée de sondes un biais propre,
+  d'où les bandes. `DDGIRaster.hlsl` intègre maintenant **tous les texels** des six faces (1 536, pondérés par leur
+  angle solide) directement dans les tuiles d'irradiance et de distance, sans jeu de rayons ni fusion séparée :
+  résultat lisse et identique d'une capture à l'autre.
+- **Calottes noires** : les sondes de la dernière couche de la grille tombaient dans les objets. La grille compte une
+  sonde de plus par axe et déborde les bornes d'au moins un demi-espacement. Et quand aucune sonde ne répond
+  (dans un objet, hors du volume), la passe raster reprend son ambiance Lit (`SampleIrradiance` renvoie une
+  confiance, fondu sur un demi-espacement hors de la grille).
+- **Reflets** : la partie brillante garde la réflexion d'environnement de Lit (mips de l'HDRI) ; les sondes ne
+  remplacent que la partie diffuse de l'ambiance.
+- Plafond de 1 024 sondes capturées par image (texture de capture limitée à 16 384 texels).
+
+Mesures après correction (400 images) : LookDev Metal iOS contre Lit 1,00 (écart 1,9) ; Cornell contre la référence
+ray tracing 1,02 (16,5), indirect seul 0,95 (7,4) ; Lit (Diligent) contre éditeur : LookDev 0,17, Cornell 3,3.

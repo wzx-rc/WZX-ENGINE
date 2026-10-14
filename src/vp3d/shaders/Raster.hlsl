@@ -312,32 +312,39 @@ float4 Shade(VSOut i, bool ghost, float shadowBias, bool capture) {
     }
     // Hemisphere ambient + reflection of the environment, darkened in cavities facing down.
     float cavity = lerp(0.55, 1.0, saturate(i.wpos.y * 0.6 + 0.5 + N.y * 0.3));
-#ifdef VP3D_DDGI_PROBES
-    if (R.giMode > 0) {
-        // Diffuse GI from the probes (view 1: indirect only, 2: direct only, as GIShade.hlsl). The glossy part reads
-        // the probes around the reflected direction: a blurred reflection of the room, no sky leaking indoors.
-        if (G.view == 1 && !capture) color = 0;
-        if (!capture && G.view != 2) {
-            float3 Fe = EnvBRDFApprox(f0, rough, NoV);
-            float3 kd = diffuseCol * (1 - Fe);
-            color += kd * SampleIrradiance(i.wpos, N, V);
-            color += Fe * SampleIrradiance(i.wpos, reflect(-V, N), V);
-        }
-    } else
-#endif
+    // Ambient of Lit: diffuse and glossy parts kept apart (the DDGI probes replace the diffuse part only).
+    float3 ambDiffuse, ambGlossy;
+    float3 kdAmb;
     if (R.envMapOn > 0) {
         // HDRI: SH irradiance (diffuse) and the blurred mips of the image along the reflection (glossy).
         float3 Rd = reflect(-V, N);
         float3 refl = EnvMap(Rd, sqrt(rough) * max(R.envMips - 2.0, 0.0));
         float3 Fe = EnvBRDFApprox(f0, rough, NoV);
-        float3 kd = diffuseCol * (1 - Fe);
-        color += (kd / PI * EnvIrradiance(N) + Fe * refl) * cavity;
+        kdAmb = diffuseCol * (1 - Fe);
+        ambDiffuse = kdAmb / PI * EnvIrradiance(N) * cavity;
+        ambGlossy = Fe * refl * cavity;
     } else {
         float3 sky = Environment(N) + R.ambient * (0.65 + 0.35 * N.y);
         float3 refl = Environment(reflect(-V, N)) + R.ambient;
         float3 Fa = Fresnel(f0, NoV) * (1 - rough * 0.7);
-        color += (diffuseCol * sky + Fa * refl) * cavity;
+        kdAmb = diffuseCol * (1 - Fa);
+        ambDiffuse = diffuseCol * sky * cavity;
+        ambGlossy = Fa * refl * cavity;
     }
+#ifdef VP3D_DDGI_PROBES
+    if (R.giMode > 0) {
+        // Diffuse GI from the probes instead of the ambient (view 1: indirect only, 2: direct only, as GIShade.hlsl).
+        // Where no probe answers (inside geometry, outside the volume) the ambient of Lit stays. The glossy part is
+        // the one of Lit (environment reflection): the probes are too coarse for reflections.
+        if (G.view == 1 && !capture) color = 0;
+        if (!capture && G.view != 2) {
+            float conf;
+            float3 irr = SampleIrradiance(i.wpos, N, V, conf);
+            color += lerp(ambDiffuse, kdAmb * irr, conf) + ambGlossy;
+        }
+    } else
+#endif
+    color += ambDiffuse + ambGlossy;
     color += emission;
     float alpha = 1;
     if (trans > 0.5) alpha = 0.55 + 0.4 * Fresnel(0.04, NoV).x;

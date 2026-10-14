@@ -475,9 +475,11 @@ void placeProbeGrid(const float3& bmin, const float3& bmax, const float3& sceneC
     float spacing = std::cbrt(ext.x * ext.y * ext.z / (float)budget);
     uint32_t n[3];
     for (;;) {
-        n[0] = std::max(2u, (uint32_t)std::ceil(ext.x / spacing));
-        n[1] = std::max(2u, (uint32_t)std::ceil(ext.y / spacing));
-        n[2] = std::max(2u, (uint32_t)std::ceil(ext.z / spacing));
+        // One probe more than the extent needs: the grid, centred, then overshoots the bounds by at least half a
+        // spacing, so no surface sits on the last layer of probes (its probes would be the ones inside it).
+        n[0] = std::max(2u, (uint32_t)std::ceil(ext.x / spacing) + 1);
+        n[1] = std::max(2u, (uint32_t)std::ceil(ext.y / spacing) + 1);
+        n[2] = std::max(2u, (uint32_t)std::ceil(ext.z / spacing) + 1);
         uint32_t total = n[0] * n[1] * n[2];
         if (n[0] * n[1] * (DDGI_DIST_N + 2) <= 16384 && n[2] * (DDGI_DIST_N + 2) <= 16384 && total <= 16384) break;
         spacing *= 1.1f;

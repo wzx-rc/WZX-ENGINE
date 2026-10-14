@@ -556,7 +556,7 @@ void LitRenderer::render(const vp3d::Scene& scene, const Settings& settings, ITe
 
 void LitRenderer::ensureProbes(const vp3d::Scene& scene, const Settings& settings) {
     const int budget = std::max(8, settings.ddgiProbeBudget);
-    const uint32_t slots = std::max(1u, (uint32_t)settings.ddgiCaptureProbes);
+    const uint32_t slots = std::min(1024u, std::max(1u, (uint32_t)settings.ddgiCaptureProbes));   // 16 texels per row, 16384 max
     const bool grid = !m_giIrr || m_gridVersion != scene.geometryVersion || m_gridBudget != budget;
     if (!grid && m_capTex && m_capSlots == std::min(slots, m_grid.total())) return;
     m_ctx->Flush();
@@ -672,11 +672,9 @@ void LitRenderer::recordProbes(const vp3d::Scene& scene, const Settings& setting
         setVar(srb, SHADER_TYPE_COMPUTE, "gCapAlbedo", m_capAlbedo->GetDefaultView(TEXTURE_VIEW_UNORDERED_ACCESS));
         setVar(srb, SHADER_TYPE_COMPUTE, "gCapNormal", m_capNormal->GetDefaultView(TEXTURE_VIEW_UNORDERED_ACCESS));
     }
+    // One group per probe: the captured ones integrate their faces straight into their tiles (DDGIRaster.hlsl).
     m_ctx->SetPipelineState(m_pso[C_RAYS]);
     m_ctx->CommitShaderResources(m_srb[C_RAYS], RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-    m_ctx->DispatchCompute(DispatchComputeAttribs(m_capSlots, 1, 1));
-    m_ctx->SetPipelineState(m_pso[C_BLEND]);
-    m_ctx->CommitShaderResources(m_srb[C_BLEND], RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
     m_ctx->DispatchCompute(DispatchComputeAttribs(total, 1, 1));
 
     // The batch just captured is the one the next frame starts after.

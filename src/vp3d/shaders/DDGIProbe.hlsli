@@ -65,7 +65,9 @@ float4 SampleTile(DDGI_TEX tex, uint p, uint n, float3 dir) {
 
 // Irradiance (cosine-weighted mean radiance, i.e. E / pi) at P with normal N, seen from direction V
 // (V points from P towards the viewer). Multiply by the diffuse albedo to get outgoing radiance.
-float3 SampleIrradiance(float3 P, float3 N, float3 V) {
+// confidence: 1 when the surrounding probes answer, 0 when none does (all inside geometry or occluded) or when P lies
+// outside the probe volume, fading over half a spacing. The raster pass falls back to its own ambient there.
+float3 SampleIrradiance(float3 P, float3 N, float3 V, out float confidence) {
     float minSpacing = min(G.spacing.x, min(G.spacing.y, G.spacing.z));
     float3 biased = P + (N * G.normalBias + V * G.viewBias) * minSpacing;
     float3 rel = (biased - G.origin) / G.spacing;
@@ -104,7 +106,18 @@ float3 SampleIrradiance(float3 P, float3 N, float3 V) {
         sum += SampleTile(gIrr, p, DDGI_IRR_N, N).rgb * w;
         wsum += w;
     }
+    // Outside the volume: the border probes answer (clamped cell), but their light is not that of the open space
+    // beyond; the fallback takes over half a spacing past the last probes.
+    float3 relP = (P - G.origin) / G.spacing;
+    float3 outside = max(max(-relP, relP - float3(G.counts.xyz) + 1.0), 0.0);
+    float inside = saturate(1.0 - 2.0 * max(outside.x, max(outside.y, outside.z)));
+    confidence = saturate(wsum / 0.25) * inside;
     return wsum > 0 ? sum / wsum * G.energy : 0;
+}
+
+float3 SampleIrradiance(float3 P, float3 N, float3 V) {
+    float c;
+    return SampleIrradiance(P, N, V, c);
 }
 
 #endif

@@ -1121,22 +1121,25 @@ void Renderer::recordDDGI(const RenderSettings& rs, UINT gx, UINT gy, bool shade
     m_cmd->SetComputeRootDescriptorTable(11, giTable);
 
     if (rs.ddgiRaster) {
-        // One group per captured probe of the batch: the rays are read from the captures (u12).
+        // One group per probe: the captured ones integrate their faces (u12..u14) straight into their tiles, no blend pass.
         D3D12_GPU_DESCRIPTOR_HANDLE capTable = m_heap->GetGPUDescriptorHandleForHeapStart();
         capTable.ptr += (UINT64)kCapHeapSlot * m_descSize;
         m_cmd->SetComputeRootDescriptorTable(15, capTable);
         m_cmd->SetPipelineState(m_psoGIRaster.Get());
-        m_cmd->Dispatch(m_capSlots, 1, 1);
+        m_cmd->Dispatch(total, 1, 1);
+        uavBarrier();
+        m_cmd->EndQuery(m_queryHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 2);
+        m_cmd->EndQuery(m_queryHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 3);
     } else {
         m_cmd->SetPipelineState(m_psoGIUpdate.Get());
         m_cmd->Dispatch(DDGI_RAYS / 64, total, 1);
+        uavBarrier();
+        m_cmd->EndQuery(m_queryHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 2);
+        m_cmd->SetPipelineState(m_psoGIBlend.Get());
+        m_cmd->Dispatch(total, 1, 1);
+        uavBarrier();
+        m_cmd->EndQuery(m_queryHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 3);
     }
-    uavBarrier();
-    m_cmd->EndQuery(m_queryHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 2);
-    m_cmd->SetPipelineState(m_psoGIBlend.Get());
-    m_cmd->Dispatch(total, 1, 1);
-    uavBarrier();
-    m_cmd->EndQuery(m_queryHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 3);
     if (shade) {   // ray traced visibility; without it the raster pass reads the probes (recordRaster, probes = true)
         m_cmd->SetPipelineState(m_psoGIShade.Get());
         m_cmd->Dispatch(gx, gy, 1);
@@ -1407,7 +1410,8 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
         m_cmd->EndQuery(m_queryHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 0);
         setupProbeGrid(rs);
         if (rs.ddgiRaster) {
-            ensureCapture(std::min(giProbeCount(), (uint32_t)std::max(1, rs.ddgiCaptureProbes)));
+            // At most 1024 probes per frame: the capture is 16 texels per probe row, D3D12 textures stop at 16384.
+            ensureCapture(std::min(std::min(giProbeCount(), 1024u), (uint32_t)std::max(1, rs.ddgiCaptureProbes)));
             recordRaster(scene, rs, vp, true);   // shadow map + cube captures of the next probes
         }
         m_cmd->SetComputeRootSignature(m_rootSig.Get());
