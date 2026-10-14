@@ -182,6 +182,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show) {
         else if (a == L"--ddgi-view" && i + 1 < argc) opt.ddgiView = _wtoi(argv[++i]);
         else if (a == L"--probes" && i + 1 < argc) opt.ddgiProbes = _wtoi(argv[++i]);
         else if (a == L"--show-probes" && i + 1 < argc) opt.showProbes = _wtoi(argv[++i]) != 0;
+        else if (a == L"--baked" && i + 1 < argc) opt.bakedProbes = _wtoi(argv[++i]) != 0;
     }
     LocalFree(argv);
 

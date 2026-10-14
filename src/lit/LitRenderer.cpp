@@ -470,7 +470,7 @@ void LitRenderer::render(const vp3d::Scene& scene, const Settings& settings, ITe
     fs.lightScale = settings.lightScale;
     fs.envSun = settings.envSun;
     fs.shadowSize = kShadowSize;
-    fs.ddgi = settings.ddgi;
+    fs.ddgi = settings.ddgi || (settings.bakedProbes && m_baked);   // live or baked probes: Shade reads the atlases
     if (settings.ddgi) ensureProbes(scene, settings);
     bool castShadows = false;
     {
@@ -506,7 +506,17 @@ void LitRenderer::render(const vp3d::Scene& scene, const Settings& settings, ITe
     }
 
     // DDGI: probe captures (lit like the main pass, shadow map included), rays, blend; the main pass then reads the probes.
-    if (settings.ddgi) recordProbes(scene, settings);
+    if (settings.ddgi) {
+        recordProbes(scene, settings);
+    } else if (settings.bakedProbes && m_baked) {
+        // Baked probes: only the grid constants (no rotation, no capture) for Shade.
+        vp3d::lit::DDGIFrame f;
+        f.frame = 1;
+        f.view = settings.ddgiView;
+        f.showProbes = settings.showProbes;
+        MapHelper<vp3d::gpu::DDGIConstants> g(m_ctx, m_giCB, MAP_WRITE, MAP_FLAG_DISCARD);
+        vp3d::lit::ddgiConstants(m_grid, f, m_giRng, *g);
+    }
 
     // 2) main MSAA pass: background, opaque, transparent, ghosts
     ITextureView* rtv = m_msaaColor->GetDefaultView(TEXTURE_VIEW_RENDER_TARGET);
@@ -691,6 +701,27 @@ void LitRenderer::recordProbes(const vp3d::Scene& scene, const Settings& setting
     m_capSeen = f.captureSeen;
     m_capBase = (m_capBase + m_capSlots) % total;
     if (m_capWarmup > 0) --m_capWarmup;
+}
+
+void LitRenderer::setBakedProbes(const vp3d::lit::BakedProbes& probes) {
+    if (!probes.valid() || !m_device) return;
+    m_ctx->Flush();
+    m_ctx->WaitForIdle();
+    m_grid = probes.grid;
+    m_gridVersion = 0;   // a live DDGI update (Settings::ddgi) rebuilds its own grid and textures over these
+    m_gridBudget = 0;
+    auto upload = [&](const char* name, const std::vector<uint16_t>& texels, uint32_t w, uint32_t h) {
+        TextureSubResData sub;
+        sub.pData = texels.data();
+        sub.Stride = (Uint64)w * 8;
+        TextureData td{&sub, 1};
+        return makeTexture2D(m_device, name, w, h, TEX_FORMAT_RGBA16_FLOAT, BIND_SHADER_RESOURCE, 1, 1, &td);
+    };
+    m_giIrr = upload("Lit baked irradiance", probes.irradiance, m_grid.irrW(), m_grid.irrH());
+    m_giDist = upload("Lit baked distance", probes.distance, m_grid.distW(), m_grid.distH());
+    m_giProbe = upload("Lit baked probe state", probes.state, m_grid.total(), 1);
+    m_giRays.Release();
+    m_baked = m_giIrr && m_giDist && m_giProbe;
 }
 
 } // namespace lit

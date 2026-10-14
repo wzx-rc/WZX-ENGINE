@@ -2,6 +2,7 @@
 // uploadTextures, uploadEnvironment and recordRaster (DirectX 12 viewport) so that both renderers match.
 #include "LitPrep.h"
 #include <cstring>
+#include <fstream>
 
 namespace vp3d {
 namespace lit {
@@ -514,6 +515,72 @@ void ddgiConstants(const ProbeGrid& grid, const DDGIFrame& f, Rng& rng, gpu::DDG
     c.normalBias = 0.06f;
     c.viewBias = 0.24f;
     c.energy = 1.0f;
+}
+
+} // namespace lit
+} // namespace vp3d
+
+// ---------------------------------------------------------------- baked probes file
+// Binary file: header, then the irradiance atlas, the distance atlas and the probe state as RGBA16F texels
+// (the exact GPU textures of the DDGI volume). Little-endian.
+
+namespace vp3d {
+namespace lit {
+
+namespace {
+struct ProbeFileHeader {
+    char magic[4];        // "WZXP"
+    uint32_t version;     // 1
+    uint32_t counts[3];
+    uint32_t signature;   // scene state the probes were baked from (Renderer::bakeSignature), 0 = unknown
+    float origin[3];
+    float spacing;
+    uint32_t irrW, irrH, distW, distH;
+};
+} // namespace
+
+bool saveBakedProbes(const std::filesystem::path& path, const BakedProbes& p) {
+    if (!p.valid()) return false;
+    std::ofstream f(path, std::ios::binary);
+    if (!f) return false;
+    ProbeFileHeader h = {};
+    std::memcpy(h.magic, "WZXP", 4);
+    h.version = 1;
+    for (int i = 0; i < 3; ++i) h.counts[i] = p.grid.counts[i];
+    h.signature = p.signature;
+    h.origin[0] = p.grid.origin.x; h.origin[1] = p.grid.origin.y; h.origin[2] = p.grid.origin.z;
+    h.spacing = p.grid.spacing;
+    h.irrW = p.grid.irrW(); h.irrH = p.grid.irrH(); h.distW = p.grid.distW(); h.distH = p.grid.distH();
+    f.write(reinterpret_cast<const char*>(&h), sizeof(h));
+    f.write(reinterpret_cast<const char*>(p.irradiance.data()), p.irradiance.size() * sizeof(uint16_t));
+    f.write(reinterpret_cast<const char*>(p.distance.data()), p.distance.size() * sizeof(uint16_t));
+    f.write(reinterpret_cast<const char*>(p.state.data()), p.state.size() * sizeof(uint16_t));
+    return f.good();
+}
+
+bool loadBakedProbes(const std::filesystem::path& path, BakedProbes& p) {
+    p = BakedProbes();
+    std::ifstream f(path, std::ios::binary);
+    if (!f) return false;
+    ProbeFileHeader h = {};
+    f.read(reinterpret_cast<char*>(&h), sizeof(h));
+    if (!f || std::memcmp(h.magic, "WZXP", 4) != 0 || h.version != 1) return false;
+    for (int i = 0; i < 3; ++i) p.grid.counts[i] = h.counts[i];
+    p.grid.origin = float3(h.origin[0], h.origin[1], h.origin[2]);
+    p.grid.spacing = h.spacing;
+    p.signature = h.signature;
+    const uint32_t total = p.grid.total();
+    if (total == 0 || total > 16384 || h.irrW != p.grid.irrW() || h.irrH != p.grid.irrH() || h.distW != p.grid.distW() ||
+        h.distH != p.grid.distH())
+        return false;
+    p.irradiance.resize((size_t)h.irrW * h.irrH * 4);
+    p.distance.resize((size_t)h.distW * h.distH * 4);
+    p.state.resize((size_t)total * 4);
+    f.read(reinterpret_cast<char*>(p.irradiance.data()), p.irradiance.size() * sizeof(uint16_t));
+    f.read(reinterpret_cast<char*>(p.distance.data()), p.distance.size() * sizeof(uint16_t));
+    f.read(reinterpret_cast<char*>(p.state.data()), p.state.size() * sizeof(uint16_t));
+    if (!f) { p = BakedProbes(); return false; }
+    return true;
 }
 
 } // namespace lit

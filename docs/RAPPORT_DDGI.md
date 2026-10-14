@@ -255,3 +255,22 @@ haut des sphères, un halo autour de la sphère émissive et des métaux sans re
 
 Mesures après correction (400 images) : LookDev Metal iOS contre Lit 1,00 (écart 1,9) ; Cornell contre la référence
 ray tracing 1,02 (16,5), indirect seul 0,95 (7,4) ; Lit (Diligent) contre éditeur : LookDev 0,17, Cornell 3,3.
+
+## Sondes cuites (baked probes) dans Lit (14/10/2026)
+
+Le mode Lit peut lire des sondes cuites une fois dans l'éditeur, sans aucun calcul à l'exécution.
+
+- **Éditeur** : onglet Render, mode Lit, case **Baked probes** et bouton **Bake now**. Le bake fait tourner la
+  mise à jour ray tracing des sondes (celle du mode GI, hystérésis 0,95) pendant 120 images sur la scène courante ;
+  la passe raster lit les sondes pendant et après. Il repart tout seul une demi-seconde après un changement de scène
+  (objets, matériaux, lumières, maillages : `Renderer::bakeSignature`). Ligne de commande : `--baked 1`.
+- **Fichier** : `game/probes/<scène>.probes` (cornell, studio, lookdev, ou le nom d'un fichier .v3d.json chargé) :
+  en-tête, atlas d'irradiance, atlas de distance, état des sondes, en RGBA16F tels que sur le GPU (`LitPrep`,
+  `saveBakedProbes` / `loadBakedProbes`). Environ 10 Mo pour 2 300 sondes. Rechargé avec la scène ; s'il ne
+  correspond plus à la scène (signature), il sert quand même en attendant le nouveau bake.
+- **Lecteur** (Windows, iOS) : charge `<data>/game/probes/<scène>.probes` s'il existe (`--baked 0` pour l'ignorer),
+  CMake copie `game/probes/*.probes` à côté de l'exécutable. Lit lit les atlas en lecture seule.
+- Le mode Metal iOS (sondes vivantes) écrase les atlas ; retour en Lit = rechargement du fichier ou nouveau bake.
+
+Mesure Cornell, Lit + sondes cuites contre la référence ray tracing : luminance 1,04, écart RMSE 15,5 (le meilleur
+des modes sans rayons ; contre Metal iOS : 1,02 / 3,4).

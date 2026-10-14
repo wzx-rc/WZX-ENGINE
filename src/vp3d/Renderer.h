@@ -59,6 +59,8 @@ struct RenderSettings {
     // Diagnostic: the viewport is lit by the raster pass reading the probes (as ddgiRaster) while the probes themselves
     // keep their ray traced rays. Separates the capture error from the visibility error.
     bool ddgiRasterView = false;
+    // Lit mode: the main pass reads baked probes (bakeSignature / startBake / setBakedProbes) instead of its ambient.
+    bool bakedProbes = false;
 };
 
 struct ViewRect { int x = 0, y = 0, w = 1, h = 1; };
@@ -100,6 +102,17 @@ public:
     bool readViewport(std::vector<uint8_t>& rgba, uint32_t& w, uint32_t& h);
     // Debug: reads back the probe cube captures of the last frame (raster DDGI), radiance rgb + distance, as floats.
     bool readCapture(std::vector<float>& rgba, uint32_t& w, uint32_t& h);
+
+    // Baked probes (Lit mode). A bake runs the ray traced probe update for `frames` frames on the current scene, the
+    // raster pass reading the probes meanwhile; readBakedProbes then returns the atlases to save them with the scene.
+    // setBakedProbes loads a saved bake. Any live probe update (Metal iOS mode) or grid change invalidates the bake.
+    void startBake(int frames = 120);
+    bool baking() const { return m_bakeFrames > 0; }
+    int bakeFramesLeft() const { return m_bakeFrames; }
+    bool hasBakedProbes() const { return m_bakeValid; }
+    uint32_t bakeSignature(const Scene& scene) const;   // what the bake depends on: geometry, materials, lights, transforms
+    bool readBakedProbes(lit::BakedProbes& out);
+    void setBakedProbes(const lit::BakedProbes& probes);
 
     ID3D12Device5* device() const { return m_device.Get(); }
     ID3D12CommandQueue* queue() const { return m_queue.Get(); }
@@ -149,6 +162,7 @@ private:
     void uploadEnvironment(const EnvImagePtr& img);   // HDRI texture, sampling tables, SH and sun (when the image changes)
     D3D12_GPU_DESCRIPTOR_HANDLE textureTable() const;
     void setupProbeGrid(const RenderSettings& rs);
+    void createProbeTextures(const lit::ProbeGrid& grid);
     void recordDDGI(const RenderSettings& rs, UINT gx, UINT gy, bool shade = true);   // shade: GIShade (ray traced visibility)
     void copyHistory();
     uint32_t sceneSignature(const Scene& scene) const;
@@ -234,6 +248,8 @@ private:
     // Warm-up after a grid change: frames left during which 1024 probes are captured per frame without hysteresis, so
     // the indirect light settles in a fraction of a second instead of several cycles of 32 probes per frame.
     int m_capWarmup = 0;
+    int m_bakeFrames = 0;        // frames left of a probe bake (ray traced probes in Lit mode)
+    bool m_bakeValid = false;    // the atlases hold a bake (finished or loaded) the Lit main pass can read
     static constexpr uint32_t kCaptureMax = 1024;   // probes per capture (16 texel rows each, textures stop at 16384)
     ComPtr<ID3D12PipelineState> m_psoProbe, m_psoProbeBg;
     uint32_t m_giCounts[3] = {0, 0, 0};

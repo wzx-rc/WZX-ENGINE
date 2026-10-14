@@ -4,6 +4,7 @@
 
 #include "imgui.h"
 
+#include <filesystem>
 #include <fstream>
 
 namespace player {
@@ -53,8 +54,14 @@ bool Player::init(Diligent::IRenderDevice* device, Diligent::IDeviceContext* con
     m_settings.ddgiView = options.ddgiView;
     m_settings.ddgiProbeBudget = options.ddgiProbes;
     m_settings.showProbes = options.showProbes;
+    m_settings.bakedProbes = options.bakedProbes;
     m_home = m_scene.camera;
     if (!m_renderer.init(device, context, factory, shaderDirs, outputFormat, error)) return false;
+    if (options.bakedProbes) {   // probes baked by the editor for this scene (after the renderer exists)
+        vp3d::lit::BakedProbes baked;
+        if (vp3d::lit::loadBakedProbes(std::filesystem::path(options.dataDir) / "game" / "probes" / (options.scene + ".probes"), baked))
+            m_renderer.setBakedProbes(baked);
+    }
 
     // Dear ImGui: the HUD of the game
     ImGui::CreateContext();

@@ -1288,6 +1288,17 @@ void App::atlInspectorRender(float x, float y, float w, float) {
         y += 8 * s;
     }
     if (mode == 0) {
+        Label(x, y, "GLOBAL ILLUMINATION");
+        y += 24 * s;
+        check("##bp", "Baked probes", m_rs.bakedProbes, "Indirect light from probes baked once with the ray traced GI (converged), saved with the scene (game/probes) and read as they are by the Windows and iOS builds. The bake restarts by itself half a second after the scene changes. Off: the hemisphere / HDRI ambient of Lit.");
+        if (m_rs.bakedProbes) {
+            if (Button("##bakeNow", R{x, y, 110 * s, 26 * s}, "Bake now", Icon::Sun, false, false, !m_renderer.baking())) m_bakeNow = true;
+            std::string st = m_renderer.baking() ? "Baking, " + std::to_string(m_renderer.bakeFramesLeft()) + " frames left"
+                             : (m_renderer.hasBakedProbes() ? std::to_string(m_renderer.giProbeCount()) + " probes baked" : "No bake yet");
+            Text(x + 120 * s, y + 6 * s, st, P().muted, 11);
+            y += 34 * s;
+        }
+        y += 8 * s;
         Label(x, y, "HDRI (APPROXIMATE)");
         y += 24 * s;
         check("##envsun", "Sun of the HDRI casts shadows", m_rs.rasterEnvSun, "The brightest spot of the image (the sun) becomes a directional light with the shadow map; the rest of the image lights the scene as a soft ambient (SH). Off: all the image is ambient, no shadows. Ignored when the scene has its own sun.");

@@ -21,3 +21,6 @@ vp3d_prefs.txt
 
 # HDRI de test (Poly Haven, CC0) : lourds, gardes hors du suivi
 assets/hdri/
+
+# Sondes cuites (baked probes) ecrites par l editeur (game/probes/<scene>.probes, ~10 Mo par scene) : a versionner a la demande
+game/probes/

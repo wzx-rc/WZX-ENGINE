@@ -3,6 +3,7 @@
 #include "backends/imgui_impl_win32.h"
 #include "vp3d/shaders/Shared.h"
 #include "atelier/material_ui.h"
+#include <filesystem>
 #include <shellapi.h>
 #include <wincodec.h>
 #include <ctime>
@@ -109,6 +110,7 @@ bool App::init(HINSTANCE inst, const Options& opt) {
     m_rs.ddgiRaster = opt.ddgiRaster;
     m_rs.ddgiRasterView = opt.ddgiRasterView;
     m_rs.ddgiShowProbes = opt.showProbes;
+    m_rs.bakedProbes = opt.baked;
     m_rs.ddgiCaptureProbes = opt.ddgiCapture;
     m_rs.ddgiProbeBudget = opt.probes;
     m_rs.ddgiView = opt.ddgiView;
@@ -197,6 +199,67 @@ void App::markDirty() {
     m_interacting = true;
 }
 
+// --------------------------------------------------------------------------- baked probes (Lit mode)
+// The probes are baked by the ray traced probe update (Renderer::startBake) and saved next to the game data:
+// <project>/game/probes/<scene key>.probes (a built game: <exe>/game/probes). The Lit builds load that file as it is.
+
+std::wstring App::probeFile() const {
+    namespace fs = std::filesystem;
+    fs::path exe(m_exeDir);
+    fs::path root = exe;
+    if (!fs::exists(exe / "game.json")) {   // editor: project root = two levels above build\bin when the sources are there
+        fs::path up = exe.parent_path().parent_path();
+        if (fs::exists(up / "src")) root = up;
+    }
+    return (root / "game" / "probes" / (fromUtf8(m_probeKey) + L".probes")).wstring();
+}
+
+void App::loadBakedProbesFile() {
+    m_bakedSig = 0;
+    vp3d::lit::BakedProbes p;
+    if (!vp3d::lit::loadBakedProbes(probeFile(), p)) return;
+    m_renderer.setBakedProbes(p);
+    m_bakedSig = p.signature;
+    m_bakeWantSig = p.signature;
+    log("Baked probes loaded: " + std::to_string(p.grid.total()) + " probes", 1);
+}
+
+bool App::saveBakedProbesFile(const std::wstring& path) {
+    namespace fs = std::filesystem;
+    vp3d::lit::BakedProbes p;
+    if (!m_renderer.readBakedProbes(p)) return false;
+    p.signature = m_bakedSig;
+    std::error_code ec;
+    fs::create_directories(fs::path(path).parent_path(), ec);
+    return vp3d::lit::saveBakedProbes(path, p);
+}
+
+// Each frame in Lit mode with the option on: a changed scene (objects, lights, materials) starts a new bake once it
+// has been still for half a second; a finished bake is saved. Bake now (button) forces it.
+void App::updateBake() {
+    if (!m_rs.raster || !m_rs.bakedProbes) { m_bakeNow = false; return; }
+    const uint64_t now = GetTickCount64();
+    const uint32_t sig = m_renderer.bakeSignature(m_scene);
+    if (m_renderer.baking()) return;
+    if (m_bakeSaveWhenDone && m_renderer.hasBakedProbes()) {
+        m_bakeSaveWhenDone = false;
+        m_bakedSig = m_bakeWantSig;
+        if (saveBakedProbesFile(probeFile())) log("Baked probes saved: " + toUtf8(probeFile()), 1);
+        else log("Baked probes not saved: " + toUtf8(probeFile()), 2);
+    }
+    if (sig != m_bakeWantSig) {
+        m_bakeWantSig = sig;
+        m_bakeChangeTick = now;
+    }
+    const bool stale = sig != m_bakedSig || !m_renderer.hasBakedProbes();
+    if (m_bakeNow || (stale && now - m_bakeChangeTick > 500)) {
+        m_bakeNow = false;
+        m_bakeWantSig = sig;
+        m_renderer.startBake(120);
+        m_bakeSaveWhenDone = true;
+    }
+}
+
 // Modes of the viewport: 0 Lit (real-time raster), 1 Metal iOS (Lit + DDGI probes without ray tracing, what the iOS
 // build renders), 2 progressive path tracing (exact, denoiser optional), 3 GI probes with ray tracing (DDGI).
 void App::setRenderMode(int mode) {
@@ -248,6 +311,7 @@ void App::status(const std::wstring& text, int level) {
 
 void App::loadScene(int id) {
     m_sceneId = id;
+    m_probeKey = id == SCENE_CORNELL ? "cornell" : (id == SCENE_LOOKDEV ? "lookdev" : "studio");
     if (id == SCENE_CORNELL) buildCornellBox(m_scene);
     else if (id == SCENE_LOOKDEV) buildLookDevScene(m_scene);
     else buildStudioScene(m_scene);
@@ -264,6 +328,7 @@ void App::loadScene(int id) {
     m_gz = GizmoDrag();
     if (id == SCENE_LOOKDEV) setHdri(m_lastHdri.empty() ? defaultHdri() : m_lastHdri);
     m_renderer.setScene(m_scene);
+    loadBakedProbesFile();
     clearViews();
     for (auto& v : defaultViews(m_scene, id == SCENE_CORNELL)) m_views.push_back({v.name, v.cam, 0});
     m_activeView = 0;
@@ -351,6 +416,7 @@ void App::frame() {
         m_dt = clampf((now - m_lastTick) * 0.001f, 0.001f, 0.1f);
     }
     m_lastTick = now;
+    updateBake();
 
     if (m_pendingAction) runPendingAction();
     if (m_pendingScene >= 0) {
@@ -886,6 +952,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         else if (a == L"--ddgi-raster") opt.ddgiRaster = _wtoi(next().c_str()) != 0;
         else if (a == L"--ddgi-raster-view") opt.ddgiRasterView = _wtoi(next().c_str()) != 0;
         else if (a == L"--show-probes") opt.showProbes = _wtoi(next().c_str()) != 0;
+        else if (a == L"--baked") opt.baked = _wtoi(next().c_str()) != 0;
         else if (a == L"--sway") opt.sway = (float)_wtof(next().c_str());
         else if (a == L"--anim") opt.anim = _wtoi(next().c_str()) != 0;
         else if (a == L"--stat") opt.statPath = next();

@@ -7,6 +7,7 @@
 #pragma once
 #include "Scene.h"
 #include "shaders/Shared.h"
+#include <filesystem>
 #include <vector>
 
 namespace vp3d {
@@ -147,6 +148,19 @@ struct DDGIFrame {
     uint32_t captureBase = 0, captureSlots = 0, captureSeen = 0;   // see DDGIConstants
 };
 void ddgiConstants(const ProbeGrid& grid, const DDGIFrame& f, Rng& rng, gpu::DDGIConstants& out);
+
+// Baked probes: the DDGI atlases computed once in the editor (ray traced probes, converged) and read as they are by
+// the Lit renderer on every target, no computation at run time. Texels are RGBA16F (halves), as on the GPU.
+struct BakedProbes {
+    ProbeGrid grid;
+    uint32_t signature = 0;              // scene state the probes were baked from (0 = unknown)
+    std::vector<uint16_t> irradiance;    // grid.irrW() x grid.irrH() x 4
+    std::vector<uint16_t> distance;      // grid.distW() x grid.distH() x 4
+    std::vector<uint16_t> state;         // grid.total() x 4 (x = 1 active)
+    bool valid() const { return grid.total() > 0 && irradiance.size() == (size_t)grid.irrW() * grid.irrH() * 4; }
+};
+bool saveBakedProbes(const std::filesystem::path& path, const BakedProbes& p);
+bool loadBakedProbes(const std::filesystem::path& path, BakedProbes& p);
 
 } // namespace lit
 } // namespace vp3d

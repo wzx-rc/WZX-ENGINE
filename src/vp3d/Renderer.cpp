@@ -2,6 +2,7 @@
 #include "shaders/Shared.h"
 #include <cstring>
 #include <fstream>
+#include <functional>
 
 namespace vp3d {
 
@@ -1035,12 +1036,19 @@ void Renderer::setupProbeGrid(const RenderSettings& rs) {
     // The grid itself is placed by the code shared with the Lit renderer (same probes in the editor and the builds).
     lit::ProbeGrid grid;
     lit::placeProbeGrid(mn, mx, m_sceneCenter, m_sceneRadius, budget, grid);
+    m_giBudget = budget;
+    createProbeTextures(grid);
+}
+
+// (Re)creates the DDGI textures for a grid: the atlases, the rays and the probe state, with their views. The probes
+// restart from scratch (first capture or bake writes them without history).
+void Renderer::createProbeTextures(const lit::ProbeGrid& grid) {
     m_giOrigin = grid.origin;
     m_giSpacing = grid.spacing;
     for (int i = 0; i < 3; ++i) m_giCounts[i] = grid.counts[i];
     const uint32_t* n = m_giCounts;
     m_giGridVersion = m_sceneGeometryVersion;
-    m_giBudget = budget;
+    m_bakeValid = false;
     m_giFrame = 0;
     m_capBase = 0;
     m_capSeen = 0;
@@ -1089,6 +1097,120 @@ void Renderer::setupProbeGrid(const RenderSettings& rs) {
         hnd.ptr += (SIZE_T)(kProbeSrvSlot + k) * m_descSize;
         m_device->CreateShaderResourceView(m_giTex[srvOf[k]].Get(), &sv, hnd);
     }
+}
+
+// ---------------------------------------------------------------- baked probes (Lit mode)
+
+void Renderer::startBake(int frames) {
+    m_bakeFrames = std::max(1, frames);
+    m_bakeValid = false;
+    m_giFrame = 0;   // the first bake frame writes the tiles without history
+}
+
+uint32_t Renderer::bakeSignature(const Scene& scene) const {
+    uint32_t h = sceneSignature(scene) ^ (transformSignature(scene) * 2654435761u) ^ (scene.geometryVersion * 40503u);
+    return h ? h : 1u;
+}
+
+namespace {
+
+// Reads a 2D texture (one subresource, 16-bit texels of `channels` components) into `out`.
+bool readTexture16(ID3D12Device* device, ID3D12Resource* tex, std::vector<uint16_t>& out, uint32_t channels,
+                   const std::function<void(ID3D12Resource*, D3D12_PLACED_SUBRESOURCE_FOOTPRINT&, UINT64)>& copy) {
+    D3D12_RESOURCE_DESC d = tex->GetDesc();
+    D3D12_PLACED_SUBRESOURCE_FOOTPRINT fp = {};
+    UINT64 total = 0;
+    device->GetCopyableFootprints(&d, 0, 1, 0, &fp, nullptr, nullptr, &total);
+    D3D12_HEAP_PROPERTIES hp = {};
+    hp.Type = D3D12_HEAP_TYPE_READBACK;
+    D3D12_RESOURCE_DESC bd = {};
+    bd.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+    bd.Width = total;
+    bd.Height = bd.DepthOrArraySize = bd.MipLevels = 1;
+    bd.SampleDesc.Count = 1;
+    bd.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+    ComPtr<ID3D12Resource> rb;
+    if (FAILED(device->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &bd, D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&rb))))
+        return false;
+    copy(rb.Get(), fp, total);
+    void* p = nullptr;
+    D3D12_RANGE r = {0, (SIZE_T)total};
+    if (FAILED(rb->Map(0, &r, &p))) return false;
+    const uint32_t w = (uint32_t)d.Width, h = d.Height;
+    out.resize((size_t)w * h * channels);
+    for (uint32_t y = 0; y < h; ++y)
+        memcpy(&out[(size_t)y * w * channels], (const uint8_t*)p + fp.Offset + (size_t)y * fp.Footprint.RowPitch, (size_t)w * channels * 2);
+    D3D12_RANGE wr = {0, 0};
+    rb->Unmap(0, &wr);
+    return true;
+}
+
+} // namespace
+
+bool Renderer::readBakedProbes(lit::BakedProbes& out) {
+    out = lit::BakedProbes();
+    if (!m_giTex[0] || !m_bakeValid) return false;
+    waitIdle();
+    out.grid.origin = m_giOrigin;
+    out.grid.spacing = m_giSpacing;
+    for (int i = 0; i < 3; ++i) out.grid.counts[i] = m_giCounts[i];
+    std::vector<uint16_t>* dst[3] = {&out.irradiance, &out.distance, &out.state};
+    const int src[3] = {0, 1, 3};
+    for (int k = 0; k < 3; ++k) {
+        ID3D12Resource* tex = m_giTex[src[k]].Get();
+        bool ok = readTexture16(m_device.Get(), tex, *dst[k], 4, [&](ID3D12Resource* rb, D3D12_PLACED_SUBRESOURCE_FOOTPRINT& fp, UINT64) {
+            beginCommands();
+            transition(tex, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_COPY_SOURCE);
+            D3D12_TEXTURE_COPY_LOCATION dl = {}, sl = {};
+            dl.pResource = rb;
+            dl.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
+            dl.PlacedFootprint = fp;
+            sl.pResource = tex;
+            sl.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+            m_cmd->CopyTextureRegion(&dl, 0, 0, 0, &sl, nullptr);
+            transition(tex, D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+            executeAndWait();
+        });
+        if (!ok) { out = lit::BakedProbes(); return false; }
+    }
+    return out.valid();
+}
+
+void Renderer::setBakedProbes(const lit::BakedProbes& probes) {
+    if (!probes.valid()) return;
+    waitIdle();
+    createProbeTextures(probes.grid);
+    // Upload the three atlases through one upload buffer each (textures are in the UNORDERED_ACCESS state).
+    const std::vector<uint16_t>* src[3] = {&probes.irradiance, &probes.distance, &probes.state};
+    const int dst[3] = {0, 1, 3};
+    beginCommands();
+    std::vector<Buffer> uploads;
+    for (int k = 0; k < 3; ++k) {
+        ID3D12Resource* tex = m_giTex[dst[k]].Get();
+        D3D12_RESOURCE_DESC d = tex->GetDesc();
+        D3D12_PLACED_SUBRESOURCE_FOOTPRINT fp = {};
+        UINT64 total = 0;
+        m_device->GetCopyableFootprints(&d, 0, 1, 0, &fp, nullptr, nullptr, &total);
+        Buffer up = createBuffer(total, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ);
+        const uint32_t w = (uint32_t)d.Width, h = d.Height;
+        if (src[k]->size() < (size_t)w * h * 4) continue;
+        for (uint32_t y = 0; y < h; ++y)
+            memcpy((uint8_t*)up.mapped + fp.Offset + (size_t)y * fp.Footprint.RowPitch, &(*src[k])[(size_t)y * w * 4], (size_t)w * 8);
+        transition(tex, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_COPY_DEST);
+        D3D12_TEXTURE_COPY_LOCATION dl = {}, sl = {};
+        dl.pResource = tex;
+        dl.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+        sl.pResource = up.res.Get();
+        sl.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
+        sl.PlacedFootprint = fp;
+        m_cmd->CopyTextureRegion(&dl, 0, 0, 0, &sl, nullptr);
+        transition(tex, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+        uploads.push_back(std::move(up));
+    }
+    executeAndWait();
+    m_bakeFrames = 0;
+    m_bakeValid = true;
+    m_giFrame = 1;   // history exists: a later live update blends into it
 }
 
 // Probe update (trace + blend) then the per-pixel shading into the accumulation texture.
@@ -1316,13 +1438,19 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
         m_sceneSignature = sig;
         m_historyValid = false;
     }
-    // DDGI without ray tracing: probes captured in raster, read by the raster main pass (no TLAS, no history).
-    const bool giRaster = rs.ddgi && (rs.ddgiRaster || rs.ddgiRasterView) && !rs.raster;
+    // The raster main pass reads the probes (no image history) in three cases: live probes (Metal iOS: captured in
+    // raster, or ray traced with --ddgi-raster-view), a probe bake in Lit mode (ray traced probes updated each frame
+    // of the bake), and Lit mode reading a finished or loaded bake (no probe computation at all).
+    const bool liveProbes = rs.ddgi && (rs.ddgiRaster || rs.ddgiRasterView) && !rs.raster;
+    const bool baking = rs.raster && m_bakeFrames > 0;
+    const bool bakedView = rs.raster && rs.bakedProbes && m_bakeValid && !baking;
+    const bool giRaster = liveProbes || baking || bakedView;
     const bool useHistory = rs.ddgi && !rs.raster && !giRaster;
+    const bool needAS = (!rs.raster && !(liveProbes && rs.ddgiRaster)) || baking;
 
     beginCommands();
     m_giTimed = false;
-    buildTLAS(scene, !rs.raster && !(giRaster && rs.ddgiRaster));
+    buildTLAS(scene, needAS);
 
     const Camera& cam = scene.camera;
     float3 right, up, fwd;
@@ -1395,7 +1523,7 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
     ID3D12DescriptorHeap* heaps[] = {m_heap.Get()};
     m_cmd->SetDescriptorHeaps(1, heaps);
     UINT gx = (vp.w + 7) / 8, gy = (vp.h + 7) / 8;
-    if (rs.raster) {
+    if (rs.raster && !giRaster) {
         m_cmd->EndQuery(m_queryHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 0);
         recordRaster(scene, rs, vp);
         m_denoisedSlot = 0xFFFFFFFF;
@@ -1411,8 +1539,8 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
         // Probe captures (raster), probe rays + blend (compute), then the viewport lit by the raster pass reading the
         // probes, and the tonemapper. Nothing here needs ray tracing.
         m_cmd->EndQuery(m_queryHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 0);
-        setupProbeGrid(rs);
-        if (rs.ddgiRaster) {
+        if (!bakedView) setupProbeGrid(rs);
+        if (liveProbes && rs.ddgiRaster) {
             // Warm-up: every probe in a few frames; then the requested batch (at most kCaptureMax per frame).
             const uint32_t slots = m_capWarmup > 0 ? kCaptureMax : (uint32_t)std::max(1, rs.ddgiCaptureProbes);
             ensureCapture(std::min(std::min(giProbeCount(), kCaptureMax), slots));
@@ -1421,7 +1549,7 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
         m_cmd->SetComputeRootSignature(m_rootSig.Get());
         m_cmd->SetComputeRootConstantBufferView(0, m_constants.va());
         // Raster probes have no acceleration structure: the slot gets a valid buffer, unused.
-        m_cmd->SetComputeRootShaderResourceView(2, rs.ddgiRaster ? m_instances.va() : m_tlas.va());
+        m_cmd->SetComputeRootShaderResourceView(2, needAS ? m_tlas.va() : m_instances.va());
         m_cmd->SetComputeRootShaderResourceView(3, m_vb.va());
         m_cmd->SetComputeRootShaderResourceView(4, m_ib.va());
         m_cmd->SetComputeRootShaderResourceView(5, m_instances.va());
@@ -1436,11 +1564,37 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
         envTable.ptr += (UINT64)kEnvHeapSlot * m_descSize;
         m_cmd->SetComputeRootShaderResourceView(13, m_envDist.va());
         m_cmd->SetComputeRootDescriptorTable(14, envTable);
-        recordDDGI(rs, gx, gy, false);
+        if (baking) {
+            // Ray traced probes (as the GI mode), converged over the bake: a longer hysteresis averages the random rays.
+            RenderSettings rb = rs;
+            rb.ddgiRaster = false;
+            rb.ddgiRasterView = false;
+            rb.ddgiHysteresis = 0.95f;
+            rb.ddgiView = 0;
+            rb.ddgiShowProbes = false;
+            recordDDGI(rb, gx, gy, false);
+            if (--m_bakeFrames == 0) m_bakeValid = true;
+        } else if (!bakedView) {
+            recordDDGI(rs, gx, gy, false);
+            m_bakeValid = false;   // live probes overwrite the atlases
+        } else {
+            // Baked probes: only the grid constants for the raster pass (no update).
+            lit::ProbeGrid grid;
+            grid.origin = m_giOrigin;
+            grid.spacing = m_giSpacing;
+            for (int i = 0; i < 3; ++i) grid.counts[i] = m_giCounts[i];
+            lit::DDGIFrame f;
+            f.frame = 1;
+            f.view = rs.ddgiView;
+            f.showProbes = rs.ddgiShowProbes;
+            gpu::DDGIConstants c;
+            lit::ddgiConstants(grid, f, m_giRng, c);
+            memcpy(m_giConstants.mapped, &c, sizeof(c));
+        }
         // The raster pass reads the irradiance, distance and state atlases (SRVs t4..t6).
         ID3D12Resource* atlases[3] = {m_giTex[0].Get(), m_giTex[1].Get(), m_giTex[3].Get()};
         for (ID3D12Resource* r : atlases) transition(r, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
-        recordRaster(scene, rs, vp, false, true, !rs.ddgiRaster);   // the capture pass already drew the shadow map
+        recordRaster(scene, rs, vp, false, true, !(liveProbes && rs.ddgiRaster));   // the capture pass already drew the shadow map
         for (ID3D12Resource* r : atlases) transition(r, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
         m_denoisedSlot = 0xFFFFFFFF;
         ++m_sampleIndex;

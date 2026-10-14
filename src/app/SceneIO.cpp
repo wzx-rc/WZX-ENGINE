@@ -3,6 +3,7 @@
 #include "GameHost.h"
 #include "Json.h"
 #include <commdlg.h>
+#include <filesystem>
 #include <fstream>
 #include <sstream>
 
@@ -108,6 +109,13 @@ bool App::loadSceneFile(const std::wstring& path) {
     wchar_t b[128];
     swprintf(b, 128, L"Scene loaded (%d objects)", count);
     status(b, 1);
+    {   // baked probes of this file: game/probes/<file name without .v3d.json>.probes
+        std::wstring name = std::filesystem::path(path).filename().wstring();
+        size_t dot = name.find(L'.');
+        if (dot != std::wstring::npos) name = name.substr(0, dot);
+        m_probeKey = toUtf8(name);
+        loadBakedProbesFile();
+    }
     markDirty();
     return true;
 }

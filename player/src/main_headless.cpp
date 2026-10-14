@@ -98,6 +98,7 @@ int main(int argc, char** argv) {
         else if (a == "--ddgi-view") opt.ddgiView = std::atoi(next().c_str());
         else if (a == "--probes") opt.ddgiProbes = std::atoi(next().c_str());
         else if (a == "--show-probes") opt.showProbes = std::atoi(next().c_str()) != 0;
+        else if (a == "--baked") opt.bakedProbes = std::atoi(next().c_str()) != 0;
         else if (a == "--click" || a == "--drag" || a == "--key") events.push_back({a, next()});
     }
 

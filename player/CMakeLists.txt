@@ -68,12 +68,18 @@ endif()
 # Game data next to the executable (Windows) or in the app bundle (iOS): the graph and the house model
 set(WZX_GAME_FILES ${WZX_ROOT}/game/main.graph.json)
 file(GLOB WZX_HOUSE_FILES ${WZX_ROOT}/assets/HOUSE/*)
+file(GLOB WZX_PROBE_FILES ${WZX_ROOT}/game/probes/*.probes)   # probes baked by the editor (Lit reads them as they are)
 set(WZX_PLAYER_SOURCES src/Player.cpp src/Game.cpp src/ImGuiDiligent.cpp)
 function(wzx_copy_data target)
     add_custom_command(TARGET ${target} POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:${target}>/game $<TARGET_FILE_DIR:${target}>/assets/HOUSE
         COMMAND ${CMAKE_COMMAND} -E copy_if_different ${WZX_GAME_FILES} $<TARGET_FILE_DIR:${target}>/game
         COMMAND ${CMAKE_COMMAND} -E copy_if_different ${WZX_HOUSE_FILES} $<TARGET_FILE_DIR:${target}>/assets/HOUSE)
+    if(WZX_PROBE_FILES)
+        add_custom_command(TARGET ${target} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:${target}>/game/probes
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different ${WZX_PROBE_FILES} $<TARGET_FILE_DIR:${target}>/game/probes)
+    endif()
 endfunction()
 
 set(WZX_BACKENDS)

@@ -26,6 +26,7 @@ struct Options {
     int ddgiView = 0;
     int ddgiProbes = 2048;
     bool showProbes = false;
+    bool bakedProbes = true;    // read <data>/game/probes/<scene>.probes when it exists (Lit without live probes)
 };
 
 class Player {

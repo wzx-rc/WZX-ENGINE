@@ -73,6 +73,7 @@ struct Options {
     bool ddgiRaster = false;    // probe rays from raster cube captures (no ray tracing for the probes)
     bool ddgiRasterView = false;   // diagnostic: raster viewport reading ray traced probes (--ddgi-raster-view 1)
     bool showProbes = false;       // draw the probes as spheres shaded with their irradiance (--show-probes 1)
+    bool baked = false;            // Lit mode: baked probes (--baked 1)
     // Stability tests: camera yaw oscillation (radians, 2 s period), first object bobbing, and the flicker statistics
     // (per-pixel standard deviation of the luminance over statFrames frames from statFrom, written to statPath).
     float sway = 0.0f;
@@ -116,6 +117,11 @@ public:
 private:
     // core (App.cpp)
     void loadScene(int id);
+    // Baked probes (Lit mode): file next to the game data, automatic bake when the scene changes (see updateBake).
+    std::wstring probeFile() const;
+    void loadBakedProbesFile();
+    bool saveBakedProbesFile(const std::wstring& path);
+    void updateBake();
     void frame();
     void markDirty();
     void cameraChanged();
@@ -244,6 +250,10 @@ private:
     GameHost* m_game = nullptr;   // node graph, Play, builds, command API
     Scene m_scene;
     int m_sceneId = SCENE_CORNELL;
+    std::string m_probeKey = "cornell";      // name of the baked probes file of the current scene
+    uint32_t m_bakedSig = 0, m_bakeWantSig = 0;   // scene signature of the probes in use / of the scene now
+    uint64_t m_bakeChangeTick = 0;
+    bool m_bakeSaveWhenDone = false, m_bakeNow = false;
     int m_pendingScene = -1;
     bool m_viewportVisible = false;
     bool m_viewportRendered = false;

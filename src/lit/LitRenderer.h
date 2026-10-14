@@ -37,6 +37,8 @@ struct Settings {
     float ddgiHysteresis = 0.97f;
     int ddgiView = 0;            // 0 full, 1 indirect only, 2 direct only
     bool showProbes = false;     // the probes as small spheres shaded with their irradiance
+    // Baked probes (setBakedProbes): the main pass reads them when no live DDGI runs. No computation at run time.
+    bool bakedProbes = true;
 };
 
 class LitRenderer {
@@ -53,6 +55,9 @@ public:
                 uint32_t height);
 
     uint32_t msaaSamples() const { return m_msaa; }
+    // Probes baked by the editor (vp3d::lit::loadBakedProbes): read by the main pass as they are (Settings::bakedProbes).
+    void setBakedProbes(const vp3d::lit::BakedProbes& probes);
+    bool hasBakedProbes() const { return m_baked; }
 
 private:
     bool createPipelines(std::string* error);
@@ -107,6 +112,7 @@ private:
     int m_gridBudget = 0;
     uint32_t m_giFrame = 0, m_capBase = 0, m_capSeen = 0, m_capSlots = 0;
     int m_capWarmup = 0;   // frames left of the warm-up after a grid change (1024 probes per frame, no hysteresis)
+    bool m_baked = false;  // the atlases hold baked probes (setBakedProbes)
     static constexpr uint32_t kCaptureMax = 256;   // per frame: each draw of a face maps the dynamic draw constants (256 B each)
     vp3d::Rng m_giRng{12345};
     RefCntAutoPtr<Diligent::ITexture> m_giIrr, m_giDist, m_giRays, m_giProbe;
