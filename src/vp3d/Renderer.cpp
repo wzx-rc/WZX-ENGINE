@@ -845,6 +845,7 @@ uint32_t renderSignature(const RenderSettings& rs) {
     mix(&rs.raster, sizeof(bool));
     mix(&rs.ddgi, sizeof(bool));
     mix(&rs.temporal, sizeof(bool));
+    mix(&rs.historyFixes, sizeof(bool));
     mix(&rs.ddgiView, sizeof(int));
     mix(&rs.ddgiShowProbes, sizeof(bool));
     mix(&rs.ddgiProbeBudget, sizeof(int));
@@ -861,7 +862,7 @@ uint32_t renderSignature(const RenderSettings& rs) {
 
 // Hash of everything that changes the lighting of a frame except the camera and the object transforms, which
 // the reprojection handles. A change here drops the history.
-uint32_t Renderer::sceneSignature(const Scene& s) const {
+uint32_t Renderer::sceneSignature(const Scene& s, bool moves) const {
     uint32_t h = 2166136261u;
     auto mix = [&](const void* p, size_t n) {
         const unsigned char* b = static_cast<const unsigned char*>(p);
@@ -911,14 +912,17 @@ uint32_t Renderer::sceneSignature(const Scene& s) const {
         mix(&o.mesh, sizeof(o.mesh));
         mix(&o.visible, sizeof(bool));
         mix(&o.ghost, sizeof(bool));
+        if (!moves) continue;   // previous behaviour: only the objects themselves, not where they are
         mixQ(o.position.x); mixQ(o.position.y); mixQ(o.position.z);
         mixQ(o.scale.x); mixQ(o.scale.y); mixQ(o.scale.z);
         mixQ(o.rot.x); mixQ(o.rot.y); mixQ(o.rot.z); mixQ(o.rot.w);
         mix(&o.useRot, sizeof(bool));
     }
-    mixQ(s.sun.direction.x); mixQ(s.sun.direction.y); mixQ(s.sun.direction.z);
-    mixQ(s.sun.intensity);
-    mix(&s.sun.enabled, sizeof(bool));
+    if (moves) {
+        mixQ(s.sun.direction.x); mixQ(s.sun.direction.y); mixQ(s.sun.direction.z);
+        mixQ(s.sun.intensity);
+        mix(&s.sun.enabled, sizeof(bool));
+    }
     mix(&s.gridScale, sizeof(float));
     return h;
 }
@@ -935,7 +939,7 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
         createTargets(vp.w, vp.h);
     }
     if (scene.geometryVersion != m_sceneGeometryVersion) setScene(scene);
-    const uint32_t sig = sceneSignature(scene) ^ (renderSignature(rs) * 16777619u);
+    const uint32_t sig = sceneSignature(scene, rs.historyFixes) ^ (renderSignature(rs) * 16777619u);
     if (sig != m_sceneSignature) {
         m_sceneSignature = sig;
         m_historyValid = false;
@@ -966,7 +970,8 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
     fc.samplesPerFrame = (uint32_t)std::max(1, rs.samplesPerFrame);
     fc.flags = (cam.dof ? FRAME_FLAG_DOF : 0) | (rs.bevel ? FRAME_FLAG_BEVEL : 0) | (rs.denoise ? FRAME_FLAG_DENOISE : 0) |
                (scene.env.visibleToCamera ? FRAME_FLAG_ENV_VISIBLE : 0) | (rs.ddgi && !rs.raster ? FRAME_FLAG_ID_EDGES : 0) |
-               (rs.temporal && !rs.raster ? (FRAME_FLAG_CENTRE_VALID | FRAME_FLAG_TEMPORAL) : 0u);
+               ((rs.temporal || rs.ddgi) && !rs.raster && rs.historyFixes ? FRAME_FLAG_CENTRE_VALID : 0u) |
+               (rs.temporal && !rs.raster && rs.historyFixes ? FRAME_FLAG_TEMPORAL : 0u);
     fc.envTop = scene.env.top;
     fc.envIntensity = scene.env.intensity;
     fc.envHorizon = scene.env.horizon;

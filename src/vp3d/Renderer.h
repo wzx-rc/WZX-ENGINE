@@ -37,6 +37,9 @@ struct RenderSettings {
     // Interactive path tracing: one path per pixel per frame, blended into the history of the previous frames.
     // Off = progressive accumulation (reference, reset on every change).
     bool temporal = false;
+    // Stable history (interactive, GI): the history is dropped when an object moves, edges are validated on the
+    // pixel centre, the denoiser strength is bounded. Off = the previous behaviour (marks behind moved objects).
+    bool historyFixes = true;
     // Real-time GI test: DDGI probe volume instead of path tracing (when raster is false).
     bool ddgi = false;
     int ddgiProbeBudget = 2048;   // target probe count over the scene bounds
@@ -127,7 +130,7 @@ private:
     void setupProbeGrid(const RenderSettings& rs);
     void recordDDGI(const RenderSettings& rs, UINT gx, UINT gy);
     void copyHistory();
-    uint32_t sceneSignature(const Scene& scene) const;
+    uint32_t sceneSignature(const Scene& scene, bool moves) const;
     Buffer createBuffer(uint64_t size, D3D12_HEAP_TYPE heap, D3D12_RESOURCE_FLAGS flags, D3D12_RESOURCE_STATES state);
     void ensureUpload(Buffer& b, uint64_t size);
     void buildTLAS(const Scene& scene, bool buildAS);

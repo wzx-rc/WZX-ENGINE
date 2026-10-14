@@ -109,7 +109,7 @@ bool App::init(HINSTANCE inst, const Options& opt) {
     m_rs.ddgiView = opt.ddgiView;
     m_rs.temporalCap = opt.temporalCap;
     m_rs.ddgiHysteresis = opt.hysteresis;
-    if (!opt.raster) setRenderMode(opt.ddgi ? 3 : (opt.temporal ? 1 : 2));
+    if (!opt.raster) setRenderMode(opt.ddgi ? 4 : (opt.temporal ? 1 : 3));
     ShowWindow(m_hwnd, SW_SHOWDEFAULT);
     UpdateWindow(m_hwnd);
 
@@ -191,18 +191,24 @@ void App::markDirty() {
     m_interacting = true;
 }
 
+// Modes of the viewport: 0 real time (raster), 1 interactive (temporal, stable history, denoised), 2 temporal
+// (previous behaviour, kept for comparison), 3 progressive (reference, not denoised), 4 real-time GI probes (DDGI).
 void App::setRenderMode(int mode) {
     m_rs.raster = mode == 0;
-    m_rs.temporal = mode == 1;
-    m_rs.ddgi = mode == 3;
-    m_rs.denoise = mode != 2;   // the reference is the clean progressive image: no denoiser
-    m_quality = mode == 2 ? 1 : 0;
+    m_rs.temporal = mode == 1 || mode == 2;
+    m_rs.historyFixes = mode != 2;
+    m_rs.ddgi = mode == 4;
+    m_rs.denoise = mode != 3;   // the progressive reference is the clean image: no denoiser
+    m_quality = mode == 3 ? 1 : 0;
     applyQuality();
     markDirty();
 }
 
 int App::renderMode() const {
-    return m_rs.raster ? 0 : (m_rs.ddgi ? 3 : (m_rs.temporal ? 1 : 2));
+    if (m_rs.raster) return 0;
+    if (m_rs.ddgi) return 4;
+    if (!m_rs.temporal) return 3;
+    return m_rs.historyFixes ? 1 : 2;
 }
 
 void App::applyQuality() {
@@ -464,7 +470,7 @@ void App::handleShortcuts() {
     if (pressed(ImGuiKey_F2)) m_pendingScene = SCENE_STUDIO;
     if (pressed(ImGuiKey_F12)) saveScreenshot(false);
     if (pressed(ImGuiKey_P)) setRenderMode(m_rs.raster ? 1 : 0);            // viewport <-> interactive path tracing
-    if (pressed(ImGuiKey_L)) setRenderMode(m_rs.ddgi ? 1 : 3);              // real-time probe GI (DDGI) <-> interactive path tracing
+    if (pressed(ImGuiKey_L)) setRenderMode(m_rs.ddgi ? 1 : 4);              // real-time probe GI (DDGI) <-> interactive path tracing
     if (pressed(ImGuiKey_Delete) && !placing) deleteSelected();
     if (io.WantCaptureKeyboard && !ImGui::IsWindowFocused(ImGuiFocusedFlags_AnyWindow)) return;
     if (pressed(ImGuiKey_Q)) m_tool = TOOL_SELECT;

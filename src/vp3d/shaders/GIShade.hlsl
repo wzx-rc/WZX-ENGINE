@@ -156,7 +156,16 @@ void main(uint3 id : SV_DispatchThreadID) {
         bool okc = TraceClosest(F.camPos, dirc, 1e30, 0xFF & ~MASK_LIGHT_HIDDEN, hc);
         float depthC = okc ? hc.t : 1e6;
         float3 geomC = okc ? hc.Ng : -dirc;
-        gTex[SLOT_ACCUM][id.xy] = TemporalAccumulate(L, F.camPos + dirc * depthC, geomC, depthC);
+        float3 Pc = F.camPos + dirc * depthC;
+        // A jittered sample that hit another object than the pixel centre is not averaged in: the history stands.
+        // Otherwise a silhouette pixel alternates between the two objects from one frame to the next (flicker).
+        if (g.id != (okc ? hc.inst + 1 : 0)) {
+            float3 mh;
+            float nh;
+            FetchHistory(Pc, geomC, depthC, mh, nh);
+            if (nh > 0) L = mh;
+        }
+        gTex[SLOT_ACCUM][id.xy] = TemporalAccumulate(L, Pc, geomC, depthC);
         gTex[SLOT_NORMAL][id.xy] = float4(geomC, depthC);
     } else {
         gTex[SLOT_ACCUM][id.xy] = TemporalAccumulate(L, F.camPos + CurPixelDir(float2(id.xy)) * g.depth, g.geom, g.depth);
