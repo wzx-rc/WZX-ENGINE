@@ -1,7 +1,10 @@
 #include "AssetImport.h"
+#include "FilePath.h"
+#ifdef _WIN32
 #include <windows.h>
 #include <wincodec.h>
 #include <wrl/client.h>
+#endif
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
@@ -17,7 +20,7 @@ std::string narrowPath(const std::wstring& w) {
 }
 
 bool readAll(const std::wstring& path, std::vector<char>& data) {
-    std::ifstream f(path, std::ios::binary | std::ios::ate);
+    std::ifstream f(nativePath(path), std::ios::binary | std::ios::ate);
     if (!f) return false;
     data.resize((size_t)f.tellg());
     f.seekg(0);
@@ -206,11 +209,16 @@ bool loadObj(const std::wstring& path, MeshData& out, ObjInfo* info, std::string
 }
 
 bool loadImage(const std::wstring& path, Texture& out, std::string* error, uint32_t maxSize) {
-    using Microsoft::WRL::ComPtr;
     auto fail = [&](const char* what) {
         if (error) *error = std::string(what) + ": " + narrowPath(path);
         return false;
     };
+#ifndef _WIN32
+    (void)out;
+    (void)maxSize;
+    return fail("Image decoding (WIC) is only available on Windows for now");
+#else
+    using Microsoft::WRL::ComPtr;
     ComPtr<IWICImagingFactory> f;
     if (FAILED(CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&f)))) return fail("WIC unavailable");
     ComPtr<IWICBitmapDecoder> dec;
@@ -243,6 +251,7 @@ bool loadImage(const std::wstring& path, Texture& out, std::string* error, uint3
     size_t slash = path.find_last_of(L"\\/");
     out.name = narrowPath(slash == std::wstring::npos ? path : path.substr(slash + 1));
     return true;
+#endif
 }
 
 } // namespace vp3d

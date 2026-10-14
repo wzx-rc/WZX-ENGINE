@@ -332,26 +332,7 @@ bool App::setHdri(const std::wstring& path) {
     m_hdriPath = path;
     m_lastHdri = path;
     // LookDev: the sun of the image is turned behind the camera, on its right, so that the spheres are lit from the front.
-    if (m_sceneId == SCENE_LOOKDEV) {
-        float peak = 0;
-        double mean = 0;
-        uint32_t px = 0;
-        for (uint32_t y = 0; y < img->height; ++y)
-            for (uint32_t x = 0; x < img->width; ++x) {
-                float3 c = img->texel(x, y);
-                float l = 0.2126f * c.x + 0.7152f * c.y + 0.0722f * c.z;
-                mean += l;
-                if (l > peak) { peak = l; px = x; }
-            }
-        mean /= (double)img->width * img->height;
-        if (peak > 30.0f * (float)mean) {
-            float az = ((px + 0.5f) / img->width - 0.5f) * 2.0f * kPi;   // azimuth of the sun in the image
-            float r = radians(145.0f) - az;
-            m_scene.env.hdriRotation = std::atan2(std::sin(r), std::cos(r));
-        } else {
-            m_scene.env.hdriRotation = 0.0f;
-        }
-    }
+    if (m_sceneId == SCENE_LOOKDEV) m_scene.env.hdriRotation = lookDevHdriRotation(*img);
     markDirty();
     return true;
 }

@@ -1,16 +1,15 @@
-# iOS build of an exported WZX game (not the editor).
+# iOS build of the WZX Player (iPhone + iPad, one build), not the editor.
 # Runs on a GitHub macOS runner and produces an unsigned .ipa artifact.
 # Signing happens on the PC with Sideloadly (free Apple ID) or, later, with an Apple Developer account for TestFlight.
-# Status: prepared. It stops with a clear message until the iOS project (ios/) and the Metal renderer exist.
+# Rendering: the Lit renderer (src/lit) on Diligent Engine, Vulkan translated to Metal by MoltenVK.
+# Milestone 1: the player shows the built-in LookDev scene; loading an exported game comes next.
 name: iOS build
 
 on:
   workflow_dispatch:
-    inputs:
-      game_folder:
-        description: "Exported game folder in the repository (builds/<profile>/<Game>)"
-        required: true
-        default: "builds/ios-release/WZX Game"
+
+env:
+  MOLTENVK_VERSION: v1.4.1
 
 jobs:
   build-ipa:
@@ -18,26 +17,31 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Check iOS project
+      - name: MoltenVK (static library for iOS)
         run: |
-          if [ ! -f ios/WZXPlayer.xcodeproj/project.pbxproj ]; then
-            echo "::error::ios/WZXPlayer.xcodeproj is missing: the iOS player (Metal port) is not written yet."
-            exit 1
-          fi
+          curl -sSL -o MoltenVK-ios.tar \
+            "https://github.com/KhronosGroup/MoltenVK/releases/download/${MOLTENVK_VERSION}/MoltenVK-ios.tar"
+          tar xf MoltenVK-ios.tar
+          echo "MOLTENVK_LIBRARY=$PWD/MoltenVK/MoltenVK/static/MoltenVK.xcframework/ios-arm64/libMoltenVK.a" >> "$GITHUB_ENV"
 
-      - name: Copy the exported game into the app bundle
+      - name: Configure (Xcode project)
         run: |
-          mkdir -p ios/WZXPlayer/Game
-          cp -R "${{ inputs.game_folder }}/." ios/WZXPlayer/Game/
+          cmake -S player -B build/ios -G Xcode \
+            -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 \
+            -DMOLTENVK_LIBRARY="$MOLTENVK_LIBRARY"
 
-      - name: Build unsigned .ipa
+      - name: Build unsigned .app
         run: |
-          xcodebuild -project ios/WZXPlayer.xcodeproj -scheme WZXPlayer -configuration Release \
+          xcodebuild -project build/ios/WZXPlayer.xcodeproj -scheme WZXPlayer -configuration Release \
             -sdk iphoneos -destination 'generic/platform=iOS' \
-            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
-            -archivePath build/WZXPlayer.xcarchive archive
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            -derivedDataPath build/dd build
+
+      - name: Package .ipa
+        run: |
+          APP=$(find build/dd/Build/Products/Release-iphoneos -maxdepth 1 -name "*.app" | head -1)
           mkdir -p build/Payload
-          cp -R build/WZXPlayer.xcarchive/Products/Applications/*.app build/Payload/
+          cp -R "$APP" build/Payload/
           (cd build && zip -qr WZXPlayer-unsigned.ipa Payload)
 
       - uses: actions/upload-artifact@v4

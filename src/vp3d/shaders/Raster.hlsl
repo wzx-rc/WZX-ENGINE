@@ -46,10 +46,22 @@ static const float PI = 3.14159265;
 #define DRAW_GHOST 1u
 #define DRAW_LIGHT 2u
 
+// Vertex input semantics. The multi-API Lit renderer (src/lit, Diligent Engine) maps vertex inputs by ATTRIBn
+// semantics and defines VP3D_ATTRIB_SEMANTICS; the DirectX 12 viewport keeps the named ones.
+#ifdef VP3D_ATTRIB_SEMANTICS
+#define SEM_POSITION ATTRIB0
+#define SEM_NORMAL ATTRIB1
+#define SEM_TEXCOORD ATTRIB2
+#else
+#define SEM_POSITION POSITION
+#define SEM_NORMAL NORMAL
+#define SEM_TEXCOORD TEXCOORD
+#endif
+
 struct VSIn {
-    float3 pos : POSITION;
-    float3 nrm : NORMAL;
-    float2 uv : TEXCOORD;
+    float3 pos : SEM_POSITION;
+    float3 nrm : SEM_NORMAL;
+    float2 uv : SEM_TEXCOORD;
 };
 
 struct VSOut {

@@ -1,4 +1,4 @@
-﻿// Structures shared between C++ and HLSL. Layouts are kept 16-byte friendly
+// Structures shared between C++ and HLSL. Layouts are kept 16-byte friendly
 // (float3 always followed by a scalar) so cbuffer and structured buffer
 // packing match the C++ side.
 #ifndef VP3D_SHARED_H

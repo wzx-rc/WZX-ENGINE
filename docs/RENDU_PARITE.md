@@ -27,3 +27,11 @@ Une identité bit à bit est impossible entre deux GPU et deux API (arrondis flo
 
 - La DDGI actuelle lance ses rayons par ray tracing matériel (`TraceClosest` dans `DDGIUpdate.hlsl`). Pour iOS sans ray tracing, il faut remplacer la source des rayons par une capture rasterisée (cubemap par sonde). Cette version devient aussi celle de Windows, pour que l'éditeur et les builds restent identiques.
 - Les directions de rayons sont tirées au hasard à chaque image : les graines doivent être déterministes pour pouvoir comparer deux rendus.
+
+## Mode Lit multi-API (Windows et iOS)
+
+- Le mode Lit des builds passe par `src/lit` (Diligent Engine) : DirectX 12 sur Windows, Metal via MoltenVK sur iOS.
+- Il compile le même `src/vp3d/shaders/Raster.hlsl` que l'éditeur (sémantiques ATTRIBn par la macro `VP3D_ATTRIB_SEMANTICS`) et le même tonemapping (`ToneCurves.hlsli`, partagé avec `Tonemap.hlsl`).
+- Toute la préparation côté CPU (matériaux, lumières, lumière clé et cadrage de l'ombre, HDRI : mips, SH et soleil) est dans `src/vp3d/LitPrep.cpp`. Le viewport DirectX 12 de l'éditeur a encore sa propre copie de ce code dans `Renderer.cpp` et `RendererRaster.cpp` : à remplacer par `LitPrep` une fois la branche DDGI raster fusionnée.
+- Test : `WZXPlayerHeadless --out image.png` (dossier `player/`) rend la scène sans fenêtre, sur DirectX 12 (Windows) ou Vulkan (Linux, sans GPU avec Mesa lavapipe), pour comparer les images.
+- Point d'attention : glslang ignore `row_major` dans les structures de `ConstantBuffer<T>`. Le module Lit compile donc avec l'empaquetage row-major par défaut (`SHADER_COMPILE_FLAG_PACK_MATRIX_ROW_MAJOR`).
