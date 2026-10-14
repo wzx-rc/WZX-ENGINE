@@ -96,9 +96,14 @@ bool DropButton(const char* id, R r, const char* label, Icon icon, bool enabled 
 bool Combo(const char* id, R r, int& value, const char* const* options, int count, Icon icon) {
     bool q = false;
     if (DropButton(id, r, options[std::clamp(value, 0, count - 1)], icon)) ImGui::OpenPopup(id);
+    // the list is as wide as the box and its text as large as the box text (the default popup text was too small)
+    ImGui::SetNextWindowSize(ImVec2(r.w, 0));
     if (ImGui::BeginPopup(id)) {
+        ImGui::SetWindowFontScale(1.4f);
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(8 * s, 6 * s));
         for (int i = 0; i < count; ++i)
             if (ImGui::Selectable(options[i], value == i)) { value = i; q = true; }
+        ImGui::PopStyleVar();
         ImGui::EndPopup();
     }
     return q;
