@@ -1277,9 +1277,9 @@ void App::atlInspectorRender(float x, float y, float w, float) {
             Text(x, y, b, P().muted, 10);
             y += 20 * s;
             sliderF("##hdrInt", "HDRI intensity", m_scene.env.hdriIntensity, 0, 4, "%.2f", "Multiplies the light of the image (light, reflections and background).");
-            float deg = degrees(m_scene.env.hdriRotation);
+            float deg = std::fmod(degrees(m_scene.env.hdriRotation) + 720.0f, 360.0f);
             info("##hdrRot_i", x + w - 18 * s, y, "Turns the image around the vertical axis: moves the sun and the reflections.");
-            if (SliderRow("##hdrRot", "HDRI rotation", x, y, w, &deg, -180, 180, "%.0f deg", act)) {
+            if (SliderRow("##hdrRot", "HDRI rotation", x, y, w, &deg, 0, 360, "%.0f deg", act)) {
                 m_scene.env.hdriRotation = radians(deg);
                 ch = true;
             }
