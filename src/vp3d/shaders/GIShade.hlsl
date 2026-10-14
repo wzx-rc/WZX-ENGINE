@@ -192,7 +192,7 @@ void main(uint3 id : SV_DispatchThreadID) {
     }
 
     // Temporal accumulation with reprojection (Temporal.hlsli). The guides are the current frame's.
-    // Stable edges (flag): the pixel-centre surface validates the history, see PathTraceTemporal.hlsl.
+    // Stable edges (flag): the pixel-centre surface validates the history, see PathTrace.hlsl (main).
     if (F.flags & FRAME_FLAG_CENTRE_VALID) {
         float3 dirc = CurPixelDir(float2(id.xy));
         Hit hc;

@@ -565,10 +565,10 @@ void App::atlViewport(float x, float y, float w, float h) {
     // tools (right to left): shading, view | stats, grid, frame | snapping, axes, scale, rotate, move
     float bx = hr.x + hr.w - 8 * s, by = hr.y + 6 * s;
     auto right = [&](float bw) { bx -= bw; float r0 = bx; bx -= 6 * s; return r0; };
-    static const char* modes[] = {"Lit", "Temporal", "Progressive", "GI"};
+    static const char* modes[] = {"Lit", "Progressive", "GI"};
     int mode = renderMode();
-    if (Combo("atlShading", {right(118 * s), by, 118 * s, 24 * s}, mode, modes, 4, Icon::Sun)) setRenderMode(mode);
-    Tip("Lit: real-time raster · Temporal: path tracing with stable history, denoised · Progressive: reference path tracing, no denoiser · GI: real-time probes (DDGI)");
+    if (Combo("atlShading", {right(118 * s), by, 118 * s, 24 * s}, mode, modes, 3, Icon::Sun)) setRenderMode(mode);
+    Tip("Lit: real-time raster · Progressive: path tracing, exact, denoiser optional · GI: real-time probes (DDGI)");
     if (Combo("atlView", {right(118 * s), by, 118 * s, 24 * s}, m_viewMode, views, 6, Icon::Camera)) setViewAxis(m_viewMode);
     bx -= 6 * s;
     if (Button("atlStats", {right(28 * s), by, 28 * s, 24 * s}, "", Icon::Monitor, m_showStats, true)) m_showStats = !m_showStats;
@@ -680,7 +680,7 @@ void App::atlViewport(float x, float y, float w, float h) {
     Text(fx + 13 * s, fr.y + 6 * s, m_magnet ? "Snapping" : "Free", P().muted, 9);
     std::string info = std::to_string(objs) + " objects  /  " + triText + " triangles";
     Text(fr.x + fr.w - 290 * s, fr.y + 6 * s, info, P().muted, 9);
-    static const char* modeNames[] = {"●  Real time", "●  Temporal PT", "●  Progressive PT", "●  GI probes"};
+    static const char* modeNames[] = {"●  Real time", "●  Progressive PT", "●  GI probes"};
     Text(fr.x + fr.w - 116 * s, fr.y + 6 * s, modeNames[renderMode()], m_rs.raster ? kGreen : P().accent, 9);
 }
 
@@ -1194,10 +1194,10 @@ void App::atlInspectorLighting(float x, float y, float w, float) {
 }
 
 // Options of the render engine in use. Each mode has its own: the viewport mode (raster) has none of the path
-// tracing ones, and the temporal, progressive and GI engines have theirs. Each option has an info icon.
+// tracing ones, and the progressive and GI engines have theirs. Each option has an info icon.
 void App::atlInspectorRender(float x, float y, float w, float) {
     bool ch = false, act = false;
-    static const char* names[] = {"Real time (raster)", "Temporal path tracing", "Progressive path tracing", "GI probes (DDGI)"};
+    static const char* names[] = {"Real time (raster)", "Progressive path tracing", "GI probes (DDGI)"};
     const int mode = renderMode();
     Text(x, y, names[mode], P().text, 14);
     y += 25 * s;
@@ -1296,12 +1296,9 @@ void App::atlInspectorRender(float x, float y, float w, float) {
         Text(x, y, "Emissive objects light as sphere lights (no shadow).", P().muted, 11);
         y += 25 * s;
     } else if (mode == 1) {
-        Label(x, y, "HISTORY");
+        Label(x, y, "SAMPLES");
         y += 24 * s;
-        sliderI("##tcap", "History length", m_rs.temporalCap, 16, 1024, "%.0f frames", "How many frames the image is averaged over. Longer = less noise and less flicker, slower to react to light changes.");
-        check("##fix", "Stable history: stable edges", m_rs.historyFixes, "Edges are validated on the pixel centre: no flicker on silhouettes.");
-        check("##rom", "Reset history when objects move", m_rs.resetOnMove, "When an object moves, its old light and shadows stay in the history. This clears them.");
-        sliderF("##rd", "Fade after a move", m_rs.resetDelay, 0.2f, 2.0f, "%.1f s", "How long the old history fades out after a move. 0.2 s = fast, noisier; 2 s = smooth, slower.");
+        sliderI("##msp", "Max samples", m_rs.maxSamples, 16, 16384, "%.0f", "Samples per pixel of the progressive image before it stops. More = cleaner, slower.");
         y += 8 * s;
         denoiser();
         Label(x, y, "LIGHT");
@@ -1312,21 +1309,6 @@ void App::atlInspectorRender(float x, float y, float w, float) {
         sliderF("##ic", "Indirect clamp", m_rs.indirectClamp, 0, 20, m_rs.indirectClamp > 0 ? "%.1f" : "off", "Caps each light contribution after a rough bounce or through subsurface scattering. Removes the sparkles of rare bright paths; lower = cleaner but the indirect light gets a little darker. 0 = off (exact).");
         Text(x, y, "HDRI and emissive objects are sampled as lights (MIS).", P().muted, 11);
         y += 22 * s;
-    } else if (mode == 2) {
-        Label(x, y, "SAMPLES");
-        y += 24 * s;
-        sliderI("##msp", "Max samples", m_rs.maxSamples, 16, 16384, "%.0f", "Samples per pixel of the progressive image before it stops. More = cleaner, slower.");
-        y += 8 * s;
-        Label(x, y, "LIGHT");
-        y += 24 * s;
-        sliderI("##bnc", "Bounces", m_rs.maxBounces, 1, 16, "%.0f", "Light bounces per path. More = more indirect light, slower.");
-        sliderF("##fl", "Firefly clamp", m_rs.fireflyClamp, 1, 200, "%.0f", "Caps very bright single samples to prevent sparkles.");
-        sliderF("##fg", "Filter glossy (caustics)", m_rs.filterGlossy, 0, 1, "%.2f", "After a rough bounce, mirrors and glass are seen at least this rough. 0 = exact, with the caustics of the chrome and glass balls (sparkles until the image converges). 0.3 to 0.5 = smooth and fast, the caustics are spread (approximate).");
-        sliderF("##ic", "Indirect clamp", m_rs.indirectClamp, 0, 20, m_rs.indirectClamp > 0 ? "%.1f" : "off", "Caps each light contribution after a rough bounce or through subsurface scattering. Removes the sparkles of rare bright paths; lower = cleaner but the indirect light gets a little darker. 0 = off (exact).");
-        Text(x, y, "HDRI and emissive objects are sampled as lights (MIS).", P().muted, 11);
-        y += 22 * s;
-        Text(x, y, "No denoiser: the image converges to the clean result.", P().muted, 11);
-        y += 25 * s;
     } else {
         Label(x, y, "PROBES");
         y += 24 * s;
@@ -1368,9 +1350,9 @@ void App::atlInspectorWorld(float x, float y, float w, float) {
     y += 35 * s;
     Text(x, y, "Rendering", P().muted, 11);
     y += 19 * s;
-    static const char* modes[] = {"Real time", "Temporal", "Progressive (no denoiser)", "GI probes (DDGI)"};
+    static const char* modes[] = {"Real time", "Progressive", "GI probes (DDGI)"};
     int mode = renderMode();
-    if (Combo("worldRender", {x, y, w, 27 * s}, mode, modes, 4, Icon::Sun)) setRenderMode(mode);
+    if (Combo("worldRender", {x, y, w, 27 * s}, mode, modes, 3, Icon::Sun)) setRenderMode(mode);
     y += 43 * s;
     Label(x, y, "SCENE SUMMARY");
     y += 25 * s;

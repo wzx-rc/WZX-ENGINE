@@ -257,8 +257,7 @@ bool Renderer::createPipelines(std::string* error) {
         return true;
     };
     return make(L"PathTrace.cso", m_psoTrace) && make(L"Denoise.cso", m_psoDenoise) && make(L"Tonemap.cso", m_psoTonemap) &&
-           make(L"DDGIUpdate.cso", m_psoGIUpdate) && make(L"DDGIBlend.cso", m_psoGIBlend) && make(L"GIShade.cso", m_psoGIShade) &&
-           make(L"PathTraceTemporal.cso", m_psoTraceTemporal);
+           make(L"DDGIUpdate.cso", m_psoGIUpdate) && make(L"DDGIBlend.cso", m_psoGIBlend) && make(L"GIShade.cso", m_psoGIShade);
 }
 
 void Renderer::createTargets(uint32_t w, uint32_t h) {
@@ -1145,7 +1144,6 @@ uint32_t renderSignature(const RenderSettings& rs) {
     };
     mix(&rs.raster, sizeof(bool));
     mix(&rs.ddgi, sizeof(bool));
-    mix(&rs.temporal, sizeof(bool));
     mix(&rs.historyFixes, sizeof(bool));
     mix(&rs.resetOnMove, sizeof(bool));
     mix(&rs.ddgiView, sizeof(int));
@@ -1278,7 +1276,7 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
         m_sceneSignature = sig;
         m_historyValid = false;
     }
-    const bool useHistory = (rs.temporal || rs.ddgi) && !rs.raster;
+    const bool useHistory = rs.ddgi && !rs.raster;
 
     beginCommands();
     m_giTimed = false;
@@ -1304,8 +1302,7 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
     fc.samplesPerFrame = (uint32_t)std::max(1, rs.samplesPerFrame);
     fc.flags = (cam.dof ? FRAME_FLAG_DOF : 0) | (rs.bevel ? FRAME_FLAG_BEVEL : 0) | (rs.denoise ? FRAME_FLAG_DENOISE : 0) |
                (scene.env.visibleToCamera ? FRAME_FLAG_ENV_VISIBLE : 0) | (rs.ddgi && !rs.raster ? FRAME_FLAG_ID_EDGES : 0) |
-               ((rs.temporal || rs.ddgi) && !rs.raster && rs.historyFixes ? FRAME_FLAG_CENTRE_VALID : 0u) |
-               (rs.temporal && !rs.raster && rs.historyFixes ? FRAME_FLAG_TEMPORAL : 0u) |
+               (rs.ddgi && !rs.raster && rs.historyFixes ? FRAME_FLAG_CENTRE_VALID : 0u) |
                (envMap ? FRAME_FLAG_ENV_MAP : 0u);
     fc.envTop = scene.env.top;
     fc.envIntensity = scene.env.intensity;
@@ -1391,12 +1388,6 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
     m_cmd->EndQuery(m_queryHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 0);
     if (rs.ddgi) {
         recordDDGI(rs, gx, gy);   // never converges: probes and image history keep updating
-        ++m_sampleIndex;
-        traced = true;
-    } else if (rs.temporal) {
-        m_cmd->SetPipelineState(m_psoTraceTemporal.Get());   // no convergence limit: the history keeps refining
-        m_cmd->Dispatch(gx, gy, 1);
-        uavBarrier();
         ++m_sampleIndex;
         traced = true;
     } else if (m_sampleIndex < (uint32_t)rs.maxSamples) {

@@ -31,18 +31,17 @@ Onglet **Render** de l'Inspector, section « HDRI environment » (commune aux qu
 Formats : `.hdr` (RGBE), `.exr` (scanline, sans compression, RLE, ZIP, ZIPS ou PIZ, half ou float), et jpg/png convertis en linéaire (sans vraie dynamique). Au-delà de 4096 de large, l'image est réduite.
 La liste propose les `.hdr`/`.exr` de `01 - INBOX` puis les images de `assets/hdri` (HDRI de test Poly Haven, CC0, hors du suivi git) ; « Load… » ouvre n'importe quel fichier. Le chemin est enregistré dans la scène.
 
-- Path tracing (Temporal et Progressive) : échantillonnage d'importance de l'image (MIS), le soleil de l'HDRI donne des ombres nettes ; les objets émissifs sont aussi échantillonnés comme des lumières ; les ombres traversent le verre (teinte, bord sombre).
-- Temporal : rapide et approximatif, « Filter glossy » et « Indirect clamp » enlèvent les étincelles (caustiques) ; à 0 dans Progressive, qui reste la référence exacte.
+- Path tracing (Progressive) : échantillonnage d'importance de l'image (MIS), le soleil de l'HDRI donne des ombres nettes ; les objets émissifs sont aussi échantillonnés comme des lumières ; les ombres traversent le verre (teinte, bord sombre).
+- Progressive : « Filter glossy » et « Indirect clamp » (à 0 par défaut, donc exact) enlèvent les étincelles (caustiques) au prix d'un léger biais.
 - Real time : ambiance diffuse en harmoniques sphériques, reflets dans les mips flous de l'image, le soleil de l'HDRI devient la lumière principale avec la shadow map.
 - GI probes : l'HDRI éclaire les sondes, reflets et verre approximatifs.
 
 ## Modes de rendu
 
-Quatre modes, choisis dans le menu de rendu en haut du viewport ; leurs réglages sont dans l'onglet **Render** de l'Inspector (icône i sur chaque option).
+Trois modes, choisis dans le menu de rendu en haut du viewport ; leurs réglages sont dans l'onglet **Render** de l'Inspector (icône i sur chaque option).
 
 - **Real time (raster)** par défaut : PBR direct, shadow map PCF, MSAA 4x, ~1 ms GPU.
-- **Temporal path tracing** (touche P depuis le raster) : path tracing avec historique d'image (fondu réglable après un déplacement) et débruiteur à-trous réglable. Remplace les anciens modes Interactive et Temporal.
-- **Progressive path tracing** : le rendu progressif complet, sans débruiteur, qui sert de référence.
+- **Progressive path tracing** (touche P depuis le raster) : rendu progressif exact, avec débruiteur optionnel (option « Denoiser » de l'onglet Render, désactivée par défaut).
 - **GI probes (DDGI)** (touche L) : grille de sondes d'éclairage indirect mise à jour à chaque image, avec historique d'image. Expérimental ; rapport : `docs/RAPPORT_DDGI.md`. Options : `--ddgi 1`, `--probes N`, `--ddgi-view 0|1|2`, `--hysteresis x`.
 
 ## Transformations de vue

@@ -68,7 +68,6 @@ struct Options {
     std::wstring openPath;      // scene file to open at startup
     std::wstring hdri;          // HDRI to load at startup (file, or "sky" for the procedural sky)
     // DDGI probe GI (real-time mode)
-    bool temporal = true;       // temporal path tracing; --temporal 0 = progressive reference
     bool ddgi = false;          // start in the real-time probe GI mode
     int probes = 2048;          // target probe count over the scene bounds
     int ddgiView = 0;           // 0 full, 1 indirect only, 2 direct only
@@ -110,8 +109,8 @@ private:
     void markDirty();
     void cameraChanged();
     void applyQuality();
-    // Render modes of the viewport: 0 real time (raster), 1 temporal path tracing (denoised),
-    // 2 progressive path tracing (reference, not denoised), 3 real-time GI probes (DDGI)
+    // Render modes of the viewport: 0 real time (raster), 1 progressive path tracing (denoiser optional),
+    // 2 real-time GI probes (DDGI)
     void setRenderMode(int mode);
     int renderMode() const;
     void handleShortcuts();

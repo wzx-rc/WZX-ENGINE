@@ -110,7 +110,7 @@ bool App::init(HINSTANCE inst, const Options& opt) {
     m_rs.ddgiView = opt.ddgiView;
     m_rs.temporalCap = opt.temporalCap;
     m_rs.ddgiHysteresis = opt.hysteresis;
-    if (!opt.raster) setRenderMode(opt.ddgi ? 3 : (opt.temporal ? 1 : 2));
+    if (!opt.raster) setRenderMode(opt.ddgi ? 2 : 1);
     ShowWindow(m_hwnd, SW_SHOWDEFAULT);
     UpdateWindow(m_hwnd);
 
@@ -193,25 +193,22 @@ void App::markDirty() {
     m_interacting = true;
 }
 
-// Modes of the viewport: 0 real time (raster), 1 temporal (path tracing, stable history, denoised),
-// 2 progressive (reference, not denoised), 3 real-time GI probes (DDGI).
+// Modes of the viewport: 0 real time (raster), 1 progressive path tracing (exact, denoiser optional),
+// 2 real-time GI probes (DDGI).
 void App::setRenderMode(int mode) {
     m_rs.raster = mode == 0;
-    m_rs.temporal = mode == 1;
     m_rs.historyFixes = true;
-    m_rs.ddgi = mode == 3;
-    m_rs.denoise = mode != 2 && mode != 3;   // progressive: clean reference; GI: off by default (it blurs shadows)
-    m_rs.filterGlossy = mode == 1 ? 0.4f : 0.0f;   // temporal: fast and approximate (no caustic sparkles); progressive: exact
-    m_rs.indirectClamp = mode == 1 ? 3.0f : 0.0f;  // same: the temporal image has no sparkles, the progressive one is unbiased
-    m_quality = mode == 2 ? 1 : 0;
+    m_rs.ddgi = mode == 2;
+    // progressive: exact, no denoiser by default (the option is in the Render tab); GI: off by default (it blurs shadows)
+    m_rs.denoise = false;
+    m_quality = mode == 1 ? 1 : 0;
     applyQuality();
     markDirty();
 }
 
 int App::renderMode() const {
     if (m_rs.raster) return 0;
-    if (m_rs.ddgi) return 3;
-    if (!m_rs.temporal) return 2;
+    if (m_rs.ddgi) return 2;
     return 1;
 }
 
@@ -565,8 +562,8 @@ void App::handleShortcuts() {
     if (pressed(ImGuiKey_F2)) m_pendingScene = SCENE_STUDIO;
     if (pressed(ImGuiKey_F3)) m_pendingScene = SCENE_LOOKDEV;
     if (pressed(ImGuiKey_F12)) saveScreenshot(false);
-    if (pressed(ImGuiKey_P)) setRenderMode(m_rs.raster ? 1 : 0);            // viewport <-> temporal path tracing
-    if (pressed(ImGuiKey_L)) setRenderMode(m_rs.ddgi ? 1 : 3);              // real-time probe GI (DDGI) <-> temporal path tracing
+    if (pressed(ImGuiKey_P)) setRenderMode(m_rs.raster ? 1 : 0);            // viewport <-> progressive path tracing
+    if (pressed(ImGuiKey_L)) setRenderMode(m_rs.ddgi ? 1 : 2);              // real-time probe GI (DDGI) <-> progressive path tracing
     if (pressed(ImGuiKey_Delete) && !placing) deleteSelected();
     if (io.WantCaptureKeyboard && !ImGui::IsWindowFocused(ImGuiFocusedFlags_AnyWindow)) return;
     if (pressed(ImGuiKey_Q)) m_tool = TOOL_SELECT;
@@ -836,7 +833,6 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         else if (a == L"--sizes") swscanf_s(next().c_str(), L"%f,%f,%f", &opt.sizes.x, &opt.sizes.y, &opt.sizes.z);
         else if (a == L"--main-color") swscanf_s(next().c_str(), L"%f,%f,%f", &opt.mainColor.x, &opt.mainColor.y, &opt.mainColor.z);
         else if (a == L"--workspace") { std::wstring w = next(); opt.workspace = w == L"graph" ? 1 : (w == L"material" ? 2 : 0); }
-        else if (a == L"--temporal") opt.temporal = _wtoi(next().c_str()) != 0;
         else if (a == L"--ddgi") opt.ddgi = _wtoi(next().c_str()) != 0;
         else if (a == L"--probes") opt.probes = _wtoi(next().c_str());
         else if (a == L"--ddgi-view") opt.ddgiView = _wtoi(next().c_str());
