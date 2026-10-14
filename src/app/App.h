@@ -73,6 +73,12 @@ struct Options {
     bool ddgiRaster = false;    // probe rays from raster cube captures (no ray tracing for the probes)
     bool ddgiRasterView = false;   // diagnostic: raster viewport reading ray traced probes (--ddgi-raster-view 1)
     bool showProbes = false;       // draw the probes as spheres shaded with their irradiance (--show-probes 1)
+    // Stability tests: camera yaw oscillation (radians, 2 s period), first object bobbing, and the flicker statistics
+    // (per-pixel standard deviation of the luminance over statFrames frames from statFrom, written to statPath).
+    float sway = 0.0f;
+    bool anim = false;
+    std::wstring statPath;
+    int statFrom = 60, statFrames = 120;
     int ddgiCapture = 32;       // probes captured per frame (raster)
     int probes = 2048;          // target probe count over the scene bounds
     int ddgiView = 0;           // 0 full, 1 indirect only, 2 direct only
@@ -170,6 +176,9 @@ private:
     void drawAboutWindow();
     void drawSettingsWindow();
     bool m_showSettings = false;
+    float m_swayBase = 0.0f, m_animBase = 0.0f;   // camera yaw and object height before the stability test moves them
+    std::vector<double> m_statMean, m_statM2;     // flicker statistics (Welford), one per pixel
+    int m_statCount = 0;
     bool m_themeTestOnly = false;   // theme forced from the command line: do not save the settings
 
     // Atelier workspaces: 0 Scene Editor (AtelierUI.cpp), 1 Graph Editor, 2 Material Studio (src/app/atelier)

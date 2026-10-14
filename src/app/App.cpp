@@ -419,8 +419,50 @@ void App::frame() {
         }
     }
 
+    // Stability test (command line): camera and first object moved every frame, flicker statistics of the viewport.
+    ++m_frameCounter;
+    if (m_opt.sway > 0 || m_opt.anim) {
+        const float t = (float)m_frameCounter * (2.0f * kPi / 120.0f);
+        if (m_frameCounter <= 1) {
+            m_swayBase = m_scene.camera.yaw;
+            if (!m_scene.objects.empty()) m_animBase = m_scene.objects[0].position.y;
+        }
+        if (m_opt.sway > 0) m_scene.camera.yaw = m_swayBase + m_opt.sway * std::sin(t);
+        if (m_opt.anim && !m_scene.objects.empty()) {
+            m_scene.objects[0].position.y = m_animBase + 3.0f * (0.5f - 0.5f * std::cos(t));
+            markDirty();
+        }
+    }
+    if (!m_opt.statPath.empty() && m_frameCounter >= m_opt.statFrom) {
+        std::vector<uint8_t> img;
+        uint32_t w, h;
+        if (m_renderer.readViewport(img, w, h)) {
+            const size_t n = (size_t)w * h;
+            if (m_statMean.size() != n) { m_statMean.assign(n, 0.0); m_statM2.assign(n, 0.0); m_statCount = 0; }
+            ++m_statCount;
+            for (size_t i = 0; i < n; ++i) {
+                double l = 0.2126 * img[i * 4] + 0.7152 * img[i * 4 + 1] + 0.0722 * img[i * 4 + 2];
+                double d = l - m_statMean[i];
+                m_statMean[i] += d / m_statCount;
+                m_statM2[i] += d * (l - m_statMean[i]);
+            }
+            if (m_statCount >= std::max(2, m_opt.statFrames)) {
+                double sum = 0, mx = 0;
+                for (size_t i = 0; i < n; ++i) {
+                    double sd = std::sqrt(m_statM2[i] / (m_statCount - 1));
+                    sum += sd;
+                    mx = std::max(mx, sd);
+                }
+                FILE* f = _wfopen(m_opt.statPath.c_str(), L"w");
+                if (f) { fprintf(f, "frames=%d mean_std=%.3f max_std=%.3f (luminance 0-255)\n", m_statCount, sum / n, mx); fclose(f); }
+                m_running = false;
+            }
+        }
+    }
     // Automated capture (command line): window image once the viewport has enough samples.
-    if (!m_opt.shotPath.empty() && ((int)m_renderer.sampleCount() >= m_opt.shotSpp || !m_viewportRendered) && ++m_frameCounter > 6) {
+    // (stability tests reset the accumulation every frame: their capture comes at frame shotSpp)
+    const bool moving = m_opt.sway > 0 || m_opt.anim;
+    if (!m_opt.shotPath.empty() && (moving ? m_frameCounter >= m_opt.shotSpp : ((int)m_renderer.sampleCount() >= m_opt.shotSpp || !m_viewportRendered)) && m_frameCounter > 6) {
         std::vector<uint8_t> img;
         uint32_t w, h;
         bool ok = m_opt.shotViewport ? m_renderer.readViewport(img, w, h) : m_renderer.readBackBuffer(img, w, h);
@@ -844,6 +886,11 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         else if (a == L"--ddgi-raster") opt.ddgiRaster = _wtoi(next().c_str()) != 0;
         else if (a == L"--ddgi-raster-view") opt.ddgiRasterView = _wtoi(next().c_str()) != 0;
         else if (a == L"--show-probes") opt.showProbes = _wtoi(next().c_str()) != 0;
+        else if (a == L"--sway") opt.sway = (float)_wtof(next().c_str());
+        else if (a == L"--anim") opt.anim = _wtoi(next().c_str()) != 0;
+        else if (a == L"--stat") opt.statPath = next();
+        else if (a == L"--stat-from") opt.statFrom = _wtoi(next().c_str());
+        else if (a == L"--stat-frames") opt.statFrames = _wtoi(next().c_str());
         else if (a == L"--ddgi-capture") opt.ddgiCapture = _wtoi(next().c_str());
         else if (a == L"--ddgi-view") opt.ddgiView = _wtoi(next().c_str());
         else if (a == L"--temporal-cap") opt.temporalCap = _wtoi(next().c_str());
