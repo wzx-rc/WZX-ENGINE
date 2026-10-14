@@ -4,6 +4,9 @@
 // the project folder) read again on open. A missing file leaves a red placeholder box that keeps its path.
 // Also the document of the editor: current file, modified state (*), Save / Save As / Open / New and the
 // "Save changes?" prompt.
+// Version 1 reader: unknown keys are ignored and missing keys take their defaults, so fields can be added without
+// a version bump (planned: a top-level "collections" array, and per object / light id, parent, collection, order,
+// group, collapsed: written next to "visible" / "selectable" in wxSceneJson, read in loadWxScene).
 #include "App.h"
 #include "GameHost.h"
 #include "Json.h"
