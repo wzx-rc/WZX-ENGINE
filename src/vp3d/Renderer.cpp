@@ -863,7 +863,7 @@ uint32_t renderSignature(const RenderSettings& rs) {
 
 // Hash of everything that changes the lighting of a frame except the camera and the object transforms, which
 // the reprojection handles. A change here drops the history.
-uint32_t Renderer::sceneSignature(const Scene& s, bool moves) const {
+uint32_t Renderer::sceneSignature(const Scene& s) const {
     uint32_t h = 2166136261u;
     auto mix = [&](const void* p, size_t n) {
         const unsigned char* b = static_cast<const unsigned char*>(p);
@@ -902,29 +902,40 @@ uint32_t Renderer::sceneSignature(const Scene& s, bool moves) const {
     mix(&s.env.horizon, sizeof(s.env.horizon));
     mix(&s.env.bottom, sizeof(s.env.bottom));
     mix(&s.env.intensity, sizeof(float));
-    // Transforms are quantized (1e-4): a settling spring must not change the signature every frame, but a moved
-    // object does, so the history that saw its old place (its light and shadow on the ground) is dropped.
-    auto mixQ = [&](float v) {
-        const int32_t q = (int32_t)std::lround(v * 1e4f);
-        mix(&q, sizeof(q));
-    };
     for (const Object& o : s.objects) {
         mix(&o.material, sizeof(o.material));
         mix(&o.mesh, sizeof(o.mesh));
         mix(&o.visible, sizeof(bool));
         mix(&o.ghost, sizeof(bool));
-        if (!moves) continue;   // previous behaviour: only the objects themselves, not where they are
+    }
+    mix(&s.gridScale, sizeof(float));
+    return h;
+}
+
+// Where the objects are and the sun: a change of these is a move, which fades the history (see render).
+// Quantized (1e-4): a settling spring must not change it every frame.
+uint32_t Renderer::transformSignature(const Scene& s) const {
+    uint32_t h = 2166136261u;
+    auto mix = [&](const void* p, size_t n) {
+        const unsigned char* b = static_cast<const unsigned char*>(p);
+        for (size_t i = 0; i < n; ++i) {
+            h ^= b[i];
+            h *= 16777619u;
+        }
+    };
+    auto mixQ = [&](float v) {
+        const int32_t q = (int32_t)std::lround(v * 1e4f);
+        mix(&q, sizeof(q));
+    };
+    for (const Object& o : s.objects) {
         mixQ(o.position.x); mixQ(o.position.y); mixQ(o.position.z);
         mixQ(o.scale.x); mixQ(o.scale.y); mixQ(o.scale.z);
         mixQ(o.rot.x); mixQ(o.rot.y); mixQ(o.rot.z); mixQ(o.rot.w);
         mix(&o.useRot, sizeof(bool));
     }
-    if (moves) {
-        mixQ(s.sun.direction.x); mixQ(s.sun.direction.y); mixQ(s.sun.direction.z);
-        mixQ(s.sun.intensity);
-        mix(&s.sun.enabled, sizeof(bool));
-    }
-    mix(&s.gridScale, sizeof(float));
+    mixQ(s.sun.direction.x); mixQ(s.sun.direction.y); mixQ(s.sun.direction.z);
+    mixQ(s.sun.intensity);
+    mix(&s.sun.enabled, sizeof(bool));
     return h;
 }
 
@@ -940,7 +951,19 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
         createTargets(vp.w, vp.h);
     }
     if (scene.geometryVersion != m_sceneGeometryVersion) setScene(scene);
-    const uint32_t sig = sceneSignature(scene, rs.historyFixes && rs.resetOnMove) ^ (renderSignature(rs) * 16777619u);
+    // A move (object or sun) does not wipe the history: it fades to new samples over rs.resetDelay seconds, so the
+    // trail of the old place disappears in that time and the noise of the new place is short. Off: nothing happens.
+    if (rs.historyFixes && rs.resetOnMove) {
+        const uint32_t tsig = transformSignature(scene);
+        if (tsig != m_transformSignature) {
+            if (m_transformSignature != 0 && m_historyValid) {
+                m_fadeTotal = std::max(2, (int)std::lround(rs.resetDelay * 60.0f));
+                m_fadeFrames = m_fadeTotal;
+            }
+            m_transformSignature = tsig;
+        }
+    }
+    const uint32_t sig = sceneSignature(scene) ^ (renderSignature(rs) * 16777619u);
     if (sig != m_sceneSignature) {
         m_sceneSignature = sig;
         m_historyValid = false;
@@ -994,7 +1017,14 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
     fc.vignette = rs.vignette;
     fc.bevelSamples = (float)std::max(1, rs.bevelSamples);
     fc.historyValid = (useHistory && m_historyValid && !(rs.ddgi && rs.ddgiShowProbes)) ? 1u : 0u;
-    fc.historyCap = (float)std::max(1, rs.temporalCap);
+    // during a fade the history counts from 2 up to the full length: the old place fades out in resetDelay
+    float histCap = (float)std::max(1, rs.temporalCap);
+    if (m_fadeFrames > 0) {
+        const float t = 1.0f - m_fadeFrames / (float)m_fadeTotal;
+        histCap = std::max(2.0f, histCap * t);
+        --m_fadeFrames;
+    }
+    fc.historyCap = histCap;
     fc.prevCamPos = m_prevCam.pos;
     fc.prevCamRight = m_prevCam.right;
     fc.prevCamUp = m_prevCam.up;

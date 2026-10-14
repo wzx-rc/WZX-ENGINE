@@ -42,6 +42,7 @@ struct RenderSettings {
     bool historyFixes = true;
     // Drop the history when an object moves (and light changes). Off = keep it: less noise, but marks behind moved objects.
     bool resetOnMove = true;
+    float resetDelay = 2.0f;   // seconds: the history fades to new samples over this time after a move
     // Real-time GI test: DDGI probe volume instead of path tracing (when raster is false).
     bool ddgi = false;
     int ddgiProbeBudget = 2048;   // target probe count over the scene bounds
@@ -132,7 +133,10 @@ private:
     void setupProbeGrid(const RenderSettings& rs);
     void recordDDGI(const RenderSettings& rs, UINT gx, UINT gy);
     void copyHistory();
-    uint32_t sceneSignature(const Scene& scene, bool moves) const;
+    uint32_t sceneSignature(const Scene& scene) const;
+    uint32_t transformSignature(const Scene& scene) const;
+    uint32_t m_transformSignature = 0;
+    int m_fadeFrames = 0, m_fadeTotal = 1;   // history fading after an object moved
     Buffer createBuffer(uint64_t size, D3D12_HEAP_TYPE heap, D3D12_RESOURCE_FLAGS flags, D3D12_RESOURCE_STATES state);
     void ensureUpload(Buffer& b, uint64_t size);
     void buildTLAS(const Scene& scene, bool buildAS);

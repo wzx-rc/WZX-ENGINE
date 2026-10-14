@@ -1227,6 +1227,7 @@ void App::atlInspectorRender(float x, float y, float w, float) {
         if (mode == 1) {
             check("##fix", "Stable history: stable edges", m_rs.historyFixes);
             check("##rom", "Reset history when objects move", m_rs.resetOnMove);
+            sliderF("##rd", "Fade after a move", m_rs.resetDelay, 0.2f, 2.0f, "%.1f s");
         }
         else {
             Text(x, y, "Previous behaviour, for comparison: no reset on moves", P().muted, 11);
@@ -1265,6 +1266,8 @@ void App::atlInspectorRender(float x, float y, float w, float) {
         y += 36 * s;
         check("##sp", "Show probes", m_rs.ddgiShowProbes);
         check("##rom", "Reset history when objects move", m_rs.resetOnMove);
+        sliderF("##rd", "Fade after a move", m_rs.resetDelay, 0.2f, 2.0f, "%.1f s");
+
         y += 8 * s;
         Label(x, y, "HISTORY");
         y += 24 * s;
