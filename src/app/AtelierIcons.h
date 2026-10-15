@@ -12,7 +12,7 @@ enum class Icon {
     ArrowLeft, ArrowRight, ChevronDown, ChevronRight, Play, Pause, Step,
     Settings, Sun, Grid, List, Filter, Move, Rotate, Scale, Magnet, Camera,
     Material, Animation, Blueprint, Light, Volume, Info, Check, Link, More,
-    Save, Trash, Undo, Redo, Home, Pin, Person, Monitor, Refresh
+    Save, Trash, Undo, Redo, Home, Pin, Person, Monitor, Refresh, Collection
 };
 
 // Small editor glyphs drawn as vectors: p is the top-left of a size x size square.
@@ -65,6 +65,21 @@ inline void DrawIcon(ImDrawList* dl, Icon icon, ImVec2 p, float size, ImU32 colo
         line(.48f,.37f,.87f,.37f); line(.87f,.37f,.87f,.80f);
         line(.87f,.80f,.13f,.80f); line(.13f,.80f,.13f,.27f);
         break;
+    case Icon::Collection: {   // storage tray (collection-container.svg, 24 x 24 view box)
+        auto q = [&](float x, float y) { return point(x / 24.0f, y / 24.0f); };
+        const float r = 1.5f / 24.0f * size;
+        dl->PathLineTo(q(4, 8.5f)); dl->PathLineTo(q(7, 4)); dl->PathLineTo(q(17, 4)); dl->PathLineTo(q(20, 8.5f));
+        dl->PathLineTo(q(20, 18.5f));
+        dl->PathArcTo(q(18.5f, 18.5f), r, 0.0f, pi * 0.5f, 6);
+        dl->PathLineTo(q(5.5f, 20));
+        dl->PathArcTo(q(5.5f, 18.5f), r, pi * 0.5f, pi, 6);
+        dl->PathStroke(color, ImDrawFlags_Closed, stroke);
+        dl->PathLineTo(q(4, 8.5f)); dl->PathLineTo(q(8.5f, 8.5f)); dl->PathLineTo(q(10, 11.5f)); dl->PathLineTo(q(14, 11.5f));
+        dl->PathLineTo(q(15.5f, 8.5f)); dl->PathLineTo(q(20, 8.5f));
+        dl->PathStroke(color, 0, stroke);
+        line(8 / 24.0f, 16.5f / 24.0f, 16 / 24.0f, 16.5f / 24.0f);
+        break;
+    }
     case Icon::FolderOpen:
         line(.14f,.34f,.14f,.78f); line(.14f,.34f,.37f,.34f);
         line(.37f,.34f,.46f,.43f); line(.46f,.43f,.77f,.43f);

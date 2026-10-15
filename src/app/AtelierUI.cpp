@@ -675,7 +675,7 @@ void App::atlHierarchy(float x, float y, float w, float h) {
             if (ImGui::MenuItem(toUtf8(p.name).c_str())) addPartFromLibrary(p);
         ImGui::EndPopup();
     }
-    if (Button("addCollection", {px + halfW + 6 * s, py, halfW, 23 * s}, "Collection", Icon::Folder)) {
+    if (Button("addCollection", {px + halfW + 6 * s, py, halfW, 23 * s}, "Collection", Icon::Collection)) {
         pushUndo();
         uint32_t c = addCollection("Collection", (int)(m_scene.collections.size() % kCollectionColorCount));
         startRename(c);
@@ -698,6 +698,21 @@ void App::atlHierarchy(float x, float y, float w, float h) {
     struct PendingMove { int mode = -1; uint32_t target = 0; } move;
     static uint32_t ctxId = 0;   // node of the context menu
     bool openCtx = false, openEmpty = false;
+
+    // selection rectangle swept over the rows (Maya Outliner): from the empty area or an unselected row, Ctrl / Shift
+    // add to the selection; the rows crossed vertically are selected. Start kept in content space (the list scrolls).
+    static struct Sweep { bool active = false; float y0 = 0, x0 = 0; std::vector<uint32_t> base, last; } sweep;
+    const float winY = ImGui::GetWindowPos().y, winH = ImGui::GetWindowHeight();
+    bool sweepEnded = false;
+    if (sweep.active && !ImGui::IsMouseDown(0)) { sweep.active = false; sweepEnded = true; }
+    std::vector<std::pair<R, NodeRef>> rowRects;
+    auto startSweep = [&]() {
+        sweep.active = true;
+        sweep.x0 = ImGui::GetIO().MouseClickedPos[0].x;
+        sweep.y0 = ImGui::GetIO().MouseClickedPos[0].y - winY + ImGui::GetScrollY();
+        sweep.base = (ctrl || shift) ? selectedNodeIds() : std::vector<uint32_t>();
+        sweep.last.clear();
+    };
 
     // drop indicator of a row: line before / after, frame when dropped into the row
     auto dropZone = [&](R rr, float indent, NodeRef n, bool open, uint32_t id) {
@@ -737,8 +752,10 @@ void App::atlHierarchy(float x, float y, float w, float h) {
                 ImGui::EndDragDropTarget();
             }
         }
-        Glyph(Icon::Camera, px + 8 * s, yy + 7 * s, 13, P().accent);
-        Text(px + 31 * s, yy + 7 * s, "Scene Camera", P().text, 11);
+        // same left padding as the root rows (fold arrow slot, icon, name), a thin line below
+        Glyph(Icon::Camera, px + 15 * s, yy + (rowH - 2 * s - 13 * s) / 2, 13, P().accent);
+        Text(px + 37 * s, yy + (rowH - 2 * s - 11 * s * ts()) / 2, "Scene Camera", P().text, 11);
+        dl->AddLine(ImVec2(px, yy + rowH - 1.5f * s), ImVec2(px + pw, yy + rowH - 1.5f * s), Fade(P().border, 150), 1.0f);
         Tip("The scene camera: always first (its settings: Render tab)");
         if (q) { select(-1); A.inspectorTab = 2; }
         ImGui::PopID();
@@ -757,12 +774,20 @@ void App::atlHierarchy(float x, float y, float w, float h) {
         char id[32];
         snprintf(id, sizeof(id), "node%u", row.id);
         ImGui::PushID(id);
-        bool q = Hit("node", {rr.x, rr.y, rr.w - 48 * s, rr.h});
+        // left and middle buttons: left click selects, left drag from a selected row or middle drag moves the
+        // nodes (Maya), left drag from an unselected row sweeps a selection rectangle over the rows
+        ImGui::SetCursorScreenPos(rr.min());
+        bool q = ImGui::InvisibleButton("node", ImVec2(std::max(1.0f, rr.w - 48 * s), rr.h), ImGuiButtonFlags_MouseButtonLeft | ImGuiButtonFlags_MouseButtonMiddle);
+        q = q && !ImGui::IsMouseReleased(ImGuiMouseButton_Middle) && !sweepEnded;
         const bool hv = ImGui::IsItemHovered();
         const bool dbl = hv && ImGui::IsMouseDoubleClicked(0);
         if (hv && ImGui::IsMouseReleased(1)) { ctxId = row.id; openCtx = true; }
+        rowRects.push_back({rr, n});
+        const bool middle = ImGui::IsItemActive() && ImGui::GetCurrentContext()->ActiveIdMouseButton == ImGuiMouseButton_Middle;
+        const bool canMove = middle || (sel && ImGui::GetCurrentContext()->ActiveIdMouseButton == ImGuiMouseButton_Left);
+        if (ImGui::IsItemActive() && !canMove && !sweep.active && ImGui::IsMouseDragging(0, 4 * s)) startSweep();
         // drag the selection (or this row alone when it is not selected)
-        if (ImGui::BeginDragDropSource()) {
+        if (canMove && ImGui::BeginDragDropSource()) {
             if (ImGui::GetDragDropPayload() == nullptr || !ImGui::GetDragDropPayload()->IsDataType("WZX_NODE")) {
                 m_outDrag.clear();
                 if (sel) m_outDrag = selectedNodeIds();
@@ -796,13 +821,13 @@ void App::atlHierarchy(float x, float y, float w, float h) {
         std::string sub;
         if (isCol) {
             const Collection& c = m_scene.collections[n.index];
-            icon = row.open ? Icon::FolderOpen : Icon::Folder;
+            icon = Icon::Collection;
             icol = kCollectionColors[std::clamp(c.color, 0, kCollectionColorCount - 1)];
             sub = std::to_string(nodeChildren(0, c.id, false).size());
         } else if (n.kind == NODE_OBJECT) {
             const Object& o = m_scene.objects[n.index];
             if (o.group) { icon = Icon::Folder; icol = IM_COL32(150, 170, 200, 255); }
-            else if (o.material >= 0 && o.material < (int)m_scene.materials.size()) icol = srgbU32(m_scene.materials[o.material].baseColor);
+            else icol = IM_COL32(104, 160, 226, 255);   // every mesh: the same bluish icon
         } else if (n.kind == NODE_LIGHT) { icon = Icon::Light; icol = IM_COL32(242, 201, 76, 255); }
         else if (n.kind == NODE_SUN) { icon = Icon::Sun; icol = IM_COL32(242, 201, 76, 255); }
         const bool dim = !vis;
@@ -874,6 +899,7 @@ void App::atlHierarchy(float x, float y, float w, float h) {
         bool hv = ImGui::IsItemHovered();
         if (hv && ImGui::IsMouseReleased(1)) openEmpty = true;
         if (hv && ImGui::IsMouseClicked(0) && !ctrl && !shift) select(-1);
+        if (ImGui::IsItemActive() && !sweep.active && ImGui::IsMouseDragging(0, 4 * s)) startSweep();
         if (ImGui::BeginDragDropTarget()) {
             if (const ImGuiPayload* pl = ImGui::AcceptDragDropPayload("WZX_NODE", ImGuiDragDropFlags_AcceptBeforeDelivery | ImGuiDragDropFlags_AcceptNoDrawDefaultRect)) {
                 dl->AddLine(ImVec2(px, yy + 1 * s), ImVec2(px + pw, yy + 1 * s), P().accent, 2 * s);
@@ -886,6 +912,36 @@ void App::atlHierarchy(float x, float y, float w, float h) {
     }
     ImGui::SetCursorScreenPos(ImVec2(px, yy));
     ImGui::Dummy(ImVec2(1, 1));
+
+    if (sweep.active) {
+        const ImVec2 m = ImGui::GetMousePos();
+        // scroll while the rectangle goes past the top or the bottom of the list
+        if (m.y > winY + winH - 8 * s) ImGui::SetScrollY(ImGui::GetScrollY() + 8 * s);
+        else if (m.y < winY + 8 * s) ImGui::SetScrollY(std::max(0.0f, ImGui::GetScrollY() - 8 * s));
+        const float ys = sweep.y0 - ImGui::GetScrollY() + winY;
+        const float y0 = std::min(ys, m.y), y1 = std::max(ys, m.y);
+        std::vector<uint32_t> hits;
+        NodeRef primary;
+        for (auto& rn : rowRects) {
+            const R& rr = rn.first;
+            if (rr.y + rr.h < y0 || rr.y > y1) continue;
+            if (rn.second.kind == NODE_COLLECTION || nodeLocked(rn.second)) continue;
+            hits.push_back(nodeId(rn.second));
+            if (!primary.valid()) primary = rn.second;
+        }
+        if (hits != sweep.last) {
+            sweep.last = hits;
+            std::vector<NodeRef> nodes;
+            for (uint32_t id : sweep.base) nodes.push_back(findNode(id));
+            for (uint32_t id : hits) nodes.push_back(findNode(id));
+            if (!primary.valid() && !nodes.empty()) primary = nodes.front();
+            selectNodes(nodes, primary);
+            if (primary.valid()) m_outAnchor = nodeId(primary);
+        }
+        const ImVec2 a(std::min(sweep.x0, m.x), y0), b(std::max(sweep.x0, m.x), y1);
+        dl->AddRectFilled(a, b, Fade(P().accent, 40));
+        dl->AddRect(a, b, Fade(P().accent, 200), 0, 0, 1.0f);
+    }
 
     if (move.mode >= 0 && !m_outDrag.empty()) {
         moveNodes(m_outDrag, move.mode, move.target);
