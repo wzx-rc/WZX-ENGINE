@@ -143,7 +143,7 @@ public:
 
 private:
     // core (App.cpp)
-    void loadScene(int id);
+    void loadScene(int id, bool newScene = false);   // newScene: File > New Scene (the Village stage with an empty graph)
     // Baked probes (Lit mode): file next to the game data, automatic bake when the scene changes (see updateBake).
     std::wstring probeFile() const;
     void loadBakedProbesFile();
@@ -243,6 +243,7 @@ private:
     int m_pendingAction = 0;   // PendingAction, run before the next ImGui frame (file dialogs)
     std::map<int, int> m_placeholderMat;   // red material of a missing mesh placeholder -> material saved in the file
     Json m_pendingVillage;                 // village of a scene opened before the game layer exists
+    Json m_pendingGraph;                   // graph of a scene opened before the game layer exists
 
     // document (SceneWzx.cpp): current file, modified state (* in the title), "Save changes?" before New / Open / closing
     enum DocAction { DOC_OPEN = 1, DOC_NEW, DOC_CLOSE, DOC_SCENE = 100 /* + scene id */ };

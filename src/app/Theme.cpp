@@ -561,6 +561,7 @@ void loadSettings(const std::wstring& file) {
         else if (k == "graphOutline") g_settings.graphOutline = v != "0";
         else if (k == "graphOutlineWeight") g_settings.graphOutlineWeight = std::clamp((float)atof(v.c_str()), 0.1f, 3.0f);
         else if (k == "graphSelectColor") { if (parseVec(v, c, 4)) g_settings.graphSelectColor = ImVec4(c[0], c[1], c[2], 1); }
+        else if (k == "graphOutputHeight") g_settings.graphOutputHeight = std::clamp((float)atof(v.c_str()), 70.0f, 2000.0f);
     }
 }
 

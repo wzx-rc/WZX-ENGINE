@@ -111,7 +111,7 @@ void App::drawShortcutsWindow() {
             {"Double-click", "Pivot + focus"}, {"Click / rectangle (Select tool)", "Select"}, {"Shift+click", "Add to selection"},
             {"Q / W / E", "Select / move / rotate / scale"}, {"Arrows, PgUp / PgDn", "Move by 1 cm"}, {"F", "Frame Selection"},
             {"T", "Auto rotate"}, {"P", "Real time / path tracing"}, {"Ctrl+Z / Ctrl+Y", "Undo / redo"},
-            {"Ctrl+D / Del", "Duplicate / delete"}, {"Ctrl+S / Ctrl+O", "Save / open a scene"}, {"F1 / F2", "Cornell Box / Studio scenes"},
+            {"Ctrl+D / Del", "Duplicate / delete"}, {"Ctrl+S / Ctrl+O", "Save / open a scene"}, {"F1 / F2", "Cornell Box / Village scenes"},
             {"F12", "Viewport Capture"}, {"Drag an asset", "Add to the view / apply a material"}};
         if (ImGui::BeginTable("keys", 2, ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerV)) {
             for (auto& r : rows) {

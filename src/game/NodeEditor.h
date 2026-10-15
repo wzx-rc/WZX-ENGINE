@@ -14,7 +14,18 @@ namespace game {
 
 class NodeEditor {
 public:
-    enum Action { None, TogglePlay, Save, Compile, Close, Build, Arrange };
+    enum Action { None, TogglePlay, Save, Compile, Close, Build, Arrange, Execute };
+
+    // Drag & drop payload of a node type (its id, no terminator) dropped from the node library on the canvas.
+    static constexpr const char* kNodePayload = "WZX_NODEDEF";
+
+    // Colours of the graph (the Interface Theme); the Atelier Blue 01 values until the host sets them.
+    struct Colors {
+        ImU32 bg, panel, raised, hover, bar, border, canvas, node, nodeOff, gridDot, gridLine, overlay, minimap;
+        ImU32 text, muted, accent, select, pinExec, frameHover;
+        bool light = false;
+    };
+    static void setColors(const Colors& c);
 
     // Fonts for the canvas text (regular and bold); the ImGui default font is used when null.
     void setFonts(ImFont* regular, ImFont* bold) { m_font = regular; m_fontBold = bold; }
@@ -31,12 +42,20 @@ public:
     void draw(ImVec2 pos, ImVec2 size, float dpi, Graph& g, const Runtime* rt, bool playing);
     Action takeAction() { Action a = m_action; m_action = None; return a; }
     // Centres the view on all nodes at the next draw.
-    void frameAll(const Graph&) { m_wantFrame = true; }
+    void frameAll(const Graph&) { m_wantFrame = true; m_frameSelection = false; }
+    // Output panel height in DIPs (dragged from its top edge); the host keeps it in the settings.
+    float outputHeight() const { return m_outH; }
+    void setOutputHeight(float h) { m_outH = h; }
+    // Execute: plays the execution path of a dry run (node ids in order) along the wires, and lists it in the trace.
+    void showExecution(const std::vector<int>& trace);
+    bool showingExecution() const { return !m_execTrace.empty(); }
     // Arrange: moves the nodes that overlap down, under the node above them (one undo step). Returns the count moved.
     int arrangeOverlaps(Graph& g);
     // Adds a node of the library at the centre of the view (from the node library panel).
     void addNodeAtView(Graph& g, const NodeDef& d);
     void resetView() { m_pan = ImVec2(-40, -60); m_zoom = 1.0f; }
+    // Another graph is shown (scene change): selection, undo, results and execution path are cleared.
+    void reset();
     bool modified() const { return m_modified; }
     void clearModified() { m_modified = false; }
     std::string status;                   // small message shown in the canvas header
@@ -87,7 +106,7 @@ private:
     void addNodeFromMenu(Graph& g, const NodeDef& d);
 
     void openMenu(ImVec2 screen, PinRef from);
-    void doFrame(const Graph& g);
+    void doFrame(const Graph& g, bool selectionOnly = false);
     void pushUndo(const Graph& g);
     void undo(Graph& g);
     void deleteSelection(Graph& g);
@@ -110,6 +129,18 @@ private:
     Action m_action = None;
     bool m_modified = true;                // not compiled or saved yet
     bool m_wantFrame = false;
+    bool m_frameSelection = false;         // F with a selection: frame the selected nodes only
+    float m_outH = 151;                    // output panel height (DIPs)
+    ImVec2 m_mapMin, m_mapMax;             // overview map (screen)
+    bool m_mapDrag = false;                // the view is dragged from the overview map
+    // Execute: path of the last dry run, played step by step from m_execStart (seconds, ImGui time)
+    std::vector<int> m_execTrace;
+    double m_execStart = 0;
+    float execProgress() const;            // steps reached (fractional), or -1 when no execution is shown
+    std::vector<int> m_execList;           // path of the last Execute (Execution Trace tab)
+    std::vector<int> m_execLinks;          // per step: the exec link that led to it (-1 none), this frame
+    void updateExecution(const Graph& g);
+    int execState(int nodeId, int& step) const;
 
     // interaction
     Drag m_drag = DragNone;
@@ -129,6 +160,8 @@ private:
     ImVec2 m_menuScreen, m_menuGraph;
     PinRef m_menuFrom;
     char m_search[128] = {};
+    int m_menuIndex = 0;                   // highlighted row of the add-node popup (arrow keys)
+    bool m_menuScroll = false;             // bring the highlighted row into view
 
     // output panel
     std::vector<OutputMessage> m_messages;

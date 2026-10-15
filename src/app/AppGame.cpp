@@ -1,7 +1,9 @@
 // Game layer: Play mode, node graph editor hookup, builds, player mode and the local command API.
 #include "App.h"
 #include "GameHost.h"
+#include "atelier/atelier_style.h"
 #include "atelier/ui_icons.h"
+#include <set>
 #include <unordered_map>
 #include <shellapi.h>
 #include <ctime>
@@ -25,6 +27,31 @@ static std::string num(float v) {
 static std::string vec(const float3& v) { return "[" + num(v.x) + ", " + num(v.y) + ", " + num(v.z) + "]"; }
 
 static std::string jstr(const std::string& s) { return "\"" + jsonEscape(s) + "\""; }
+
+// A parsed value written back as compact JSON (the parser keeps no source text).
+static std::string jsonText(const Json& v) {
+    switch (v.type) {
+    case Json::Bool: return v.b ? "true" : "false";
+    case Json::Number: {
+        char b[40];
+        snprintf(b, sizeof b, "%.9g", v.n);
+        return b;
+    }
+    case Json::String: return jstr(v.s);
+    case Json::Array: {
+        std::string s = "[";
+        for (size_t i = 0; i < v.a.size(); ++i) s += (i ? "," : "") + jsonText(v.a[i]);
+        return s + "]";
+    }
+    case Json::Object: {
+        std::string s = "{";
+        bool first = true;
+        for (auto& kv : v.o) { s += (first ? "" : ",") + jstr(kv.first) + ":" + jsonText(kv.second); first = false; }
+        return s + "}";
+    }
+    default: return "null";
+    }
+}
 
 static bool readVec(const Json& j, float3& out) {
     if (j.type != Json::Array || j.a.size() < 3) return false;
@@ -87,7 +114,10 @@ static void drawNodeIcon(ImDrawList* dl, const std::string& id, ImVec2 p, float 
 
 // --------------------------------------------------------------------------- setup
 
-GameHost::~GameHost() { m_server.stop(); }
+GameHost::~GameHost() {
+    persistVillageGraph();   // the Village graph is kept on disk when the editor closes
+    m_server.stop();
+}
 
 void GameHost::init() {
     m_editor.setFonts(m_app.m_gui.fontSmall, m_app.m_gui.fontBold);
@@ -136,10 +166,17 @@ void GameHost::init() {
     m_projectDir = root.wstring();
     m_gameDir = (root / "game").wstring();
     fs::create_directories(m_gameDir, ec);
-    m_graphPath = (fs::path(m_gameDir) / "main.graph.json").wstring();
-    if (!loadGraph()) {
+    m_graphPath = (fs::path(m_gameDir) / "main.graph.json").wstring();   // the graph of the Village scene (RTS)
+    if (!fs::exists(m_graphPath)) {
         defaultGraph();
         saveGraph();
+    }
+    // the graph of the scene shown at startup: Village loads the RTS graph, a scene file brings its own, others start empty
+    if (m_app.m_pendingGraph.type != Json::Null) {
+        loadSceneGraph(m_app.m_pendingGraph);
+        m_app.m_pendingGraph = Json();
+    } else {
+        sceneChanged(m_app.m_docPath.empty() ? m_app.m_sceneId : -2);
     }
     for (int p = kApiPort; p < kApiPort + 10 && !m_server.running(); ++p) m_server.start(p);
     if (m_server.running())
@@ -157,6 +194,60 @@ bool GameHost::loadGraph(std::string* err) {
     return m_graph.load(m_graphPath, err);
 }
 
+
+// --------------------------------------------------------------------------- graph of the scene
+
+// The graph belongs to the scene: the built-in Village scene uses the RTS graph (game/main.graph.json),
+// a scene file (.wzx) carries its own, a new scene and the other test scenes start with an empty graph.
+bool GameHost::villageGraphShown() const { return m_villageGraph && m_app.m_docPath.empty(); }
+
+// The Village graph is kept in game/main.graph.json: written on Execute, Play and when another scene is loaded.
+void GameHost::persistVillageGraph() {
+    if (m_player || !villageGraphShown()) return;
+    std::string err;
+    if (!saveGraph(&err)) m_editor.addMessage(2, "Village graph not saved: " + err);
+}
+
+void GameHost::resetGraphView(const char* what) {
+    m_editor.reset();
+    m_graphFramed = false;   // framed again the next time the Graph tab is shown
+    ++m_graph.version;
+    m_editor.addMessage(0, std::string("Graph of the scene: ") + what);
+}
+
+void GameHost::sceneChanged(int sceneId) {
+    if (m_player) return;
+    if (m_playing) stop();
+    persistVillageGraph();
+    std::string err;
+    if (sceneId == SCENE_STUDIO) {
+        if (!loadGraph(&err)) defaultGraph();
+        m_villageGraph = true;
+        resetGraphView("Village (RTS graph)");
+    } else {
+        m_graph.clear();
+        m_villageGraph = false;
+        resetGraphView(sceneId == -1 ? "new scene, empty graph" : "empty graph");
+    }
+}
+
+void GameHost::loadSceneGraph(const Json& j) {
+    if (m_player) return;
+    if (m_playing) stop();
+    persistVillageGraph();
+    m_graph.clear();
+    m_villageGraph = false;
+    if (j.type == Json::Object) {
+        std::string err;
+        if (!m_graph.fromJson(jsonText(j), &err)) {
+            m_graph.clear();
+            m_editor.addMessage(2, "The graph of the scene could not be read: " + err);
+        }
+    }
+    resetGraphView(m_graph.nodes.empty() ? "empty graph" : "loaded from the scene file");
+}
+
+std::string GameHost::graphJson() const { return m_graph.toJson(); }
 // Example graph: select a unit by clicking it, click the ground to send it to a grid cell,
 // R turns it, C spawns a cube on a free cell.
 void GameHost::defaultGraph() {
@@ -231,6 +322,7 @@ void GameHost::defaultGraph() {
 
 void GameHost::play() {
     if (m_playing) return;
+    persistVillageGraph();
     if (m_placeMode) togglePlacement();   // the village is placed in the editor, not during Play
     m_hudButtons.clear();                 // the graph declares them again when Play starts
     Scene& s = m_app.m_scene;
@@ -531,7 +623,18 @@ void GameHost::drawGraphWorkspace() {
     const ImVec2 canvasPos(vp->WorkPos.x + sideW, top);
     const ImVec2 canvasSize(std::max(1.0f, vp->WorkSize.x - sideW), h);
 
-    // node library: graphs, then the nodes grouped by category (click = add at the centre of the view)
+    // the graph takes the colours of the Interface Theme (Atelier, Ambre, Corail, light mode)
+    const atelier::Palette& pal = atelier::Style();
+    NodeEditor::Colors gc;
+    gc.bg = pal.bg; gc.panel = pal.panel; gc.raised = pal.raised; gc.hover = pal.hover; gc.bar = pal.bar; gc.border = pal.border;
+    gc.canvas = pal.canvas; gc.node = pal.node; gc.nodeOff = pal.nodeOff; gc.gridDot = pal.gridDot; gc.gridLine = pal.gridLine;
+    gc.overlay = pal.overlay; gc.minimap = pal.minimap; gc.text = pal.text; gc.muted = pal.muted; gc.accent = pal.accent;
+    gc.select = pal.select; gc.pinExec = pal.pinExec; gc.frameHover = pal.frameHover; gc.light = pal.light;
+    NodeEditor::setColors(gc);
+
+    // node library: graphs, then the nodes grouped by category (click = add at the centre of the view, drag = drop it on the canvas)
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, pal.panel);
+    ImGui::PushStyleColor(ImGuiCol_Border, pal.border);
     ImGui::SetNextWindowPos(sidePos, ImGuiCond_Always);
     ImGui::SetNextWindowSize(ImVec2(sideW, h), ImGuiCond_Always);
     ImGui::SetNextWindowBgAlpha(1.0f);
@@ -571,21 +674,47 @@ void GameHost::drawGraphWorkspace() {
             ImVec2 rmax = ImGui::GetItemRectMax();
             float cy = (rmin.y + rmax.y) * 0.5f;
             drawNodeIcon(dl, d.id, ImVec2(rmin.x + 6 * s, cy - 7 * s), 14 * s, categoryAccentColor(d.category));
-            dl->AddText(ImGui::GetFont(), 13 * s, ImVec2(rmin.x + 26 * s, cy - 7 * s), IM_COL32(201, 208, 216, 255), d.label.c_str());
-            atelier::DrawIcon(dl, atelier::Icon::Plus, ImVec2(rmax.x - 18 * s, cy - 6 * s), 12 * s, IM_COL32(132, 143, 155, 255));
+            dl->AddText(ImGui::GetFont(), 13 * s, ImVec2(rmin.x + 26 * s, cy - 7 * s), pal.text, d.label.c_str());
+            atelier::DrawIcon(dl, atelier::Icon::Plus, ImVec2(rmax.x - 18 * s, cy - 6 * s), 12 * s, pal.muted);
             if (clicked) m_editor.addNodeAtView(m_graph, d);
-            if (ImGui::IsItemHovered() && !d.help.empty()) ImGui::SetTooltip("%s", d.help.c_str());
+            // drag the row onto the canvas: the node is created where it is dropped
+            if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_SourceNoPreviewTooltip)) {
+                ImGui::SetDragDropPayload(NodeEditor::kNodePayload, d.id.data(), d.id.size());
+                ImDrawList* fg = ImGui::GetForegroundDrawList();
+                ImVec2 m = ImGui::GetIO().MousePos + ImVec2(12 * s, 8 * s);
+                ImVec2 ts = ImGui::CalcTextSize(d.label.c_str());
+                fg->AddRectFilled(m, m + ImVec2(ts.x + 40 * s, 26 * s), pal.raised, 4 * s);
+                fg->AddRect(m, m + ImVec2(ts.x + 40 * s, 26 * s), categoryAccentColor(d.category), 4 * s);
+                drawNodeIcon(fg, d.id, m + ImVec2(7 * s, 6 * s), 14 * s, categoryAccentColor(d.category));
+                fg->AddText(m + ImVec2(28 * s, 13 * s - ts.y * 0.5f), pal.text, d.label.c_str());
+                ImGui::EndDragDropSource();
+            }
+            if (ImGui::IsItemHovered() && !ImGui::GetDragDropPayload() && !d.help.empty())
+                ImGui::SetTooltip("%s\n\nClick: add at the centre of the view.  Drag: drop it on the canvas.", d.help.c_str());
             ImGui::PopID();
         }
     }
     ImGui::End();
+    ImGui::PopStyleColor(2);
 
     if (!m_graphFramed) { m_graphFramed = true; m_editor.frameAll(m_graph); }
     m_editor.setOutline(th::settings().graphOutline, th::settings().graphOutlineWeight, ImGui::ColorConvertFloat4ToU32(th::settings().graphSelectColor));
+    m_editor.setOutputHeight(th::settings().graphOutputHeight);
     m_editor.draw(canvasPos, canvasSize, s, m_graph, m_playing ? &m_rt : nullptr, m_playing);
+    // the Output height follows the drag and is saved in the settings at the release
+    static bool outputResized = false;
+    if (std::fabs(m_editor.outputHeight() - th::settings().graphOutputHeight) > 0.01f) {
+        th::settings().graphOutputHeight = m_editor.outputHeight();
+        outputResized = true;
+    }
+    if (outputResized && !ImGui::IsMouseDown(0)) {
+        outputResized = false;
+        if (!m_app.m_themeTestOnly) th::saveSettings(m_app.m_exeDir + L"\\wzx_settings.ini");
+    }
     switch (m_editor.takeAction()) {
     case NodeEditor::TogglePlay: m_playing ? stop() : play(); break;
     case NodeEditor::Compile: compileGraph(); break;
+    case NodeEditor::Execute: executeGraph(); break;
     case NodeEditor::Arrange: {
         int moved = m_editor.arrangeOverlaps(m_graph);
         m_editor.addMessage(moved ? 3 : 0, moved ? "Arranged " + std::to_string(moved) + " overlapping node(s)" : std::string("No overlapping node"));
@@ -606,10 +735,105 @@ void GameHost::drawGraphWorkspace() {
 bool GameHost::showGraph() const { return m_app.m_workspace == 1 && !m_player; }
 void GameHost::setGraphOpen(bool on) { m_app.m_workspace = on ? 1 : 0; }
 
-// Compile: saves the graph, checks its execution flow and lists the results in the Output panel.
+// --------------------------------------------------------------------------- Execute (dry run in the editor)
+
+namespace {
+
+// World of a dry run: reads the scene of the editor, never changes it. What the graph would do is listed
+// in the Output instead (moves, spawns, houses...), and kept in an overlay so that later reads see it.
+class DryWorld : public World {
+public:
+    DryWorld(const World& real, std::vector<std::string>& out) : m_real(real), m_out(out) {}
+    int objectCount() const override { return m_real.objectCount() + m_spawned; }
+    bool objectAlive(int o) const override { return !m_gone.count(o) && (o >= m_real.objectCount() ? o < objectCount() : m_real.objectAlive(o)); }
+    std::string objectName(int o) const override { return o >= m_real.objectCount() ? "Spawned_" + std::to_string(o) : m_real.objectName(o); }
+    std::string objectPart(int o) const override { auto it = m_parts.find(o); return it != m_parts.end() ? it->second : m_real.objectPart(o); }
+    float3 getPosition(int o) const override { auto it = m_pos.find(o); return it != m_pos.end() ? it->second : m_real.getPosition(o); }
+    void setPosition(int o, float3 p) override { m_pos[o] = p; say("Set Position  " + objectName(o) + " -> " + vec(p)); }
+    void rotateY(int o, float deg) override { say("Rotate  " + objectName(o) + " by " + num(deg) + " deg"); }
+    void setScale(int o, float3 s) override { say("Set Scale  " + objectName(o) + " -> " + vec(s)); }
+    void setColor(int o, float3 c) override { say("Set Color  " + objectName(o) + " -> " + vec(c)); }
+    int spawn(const std::string& part, float3 p, float3) override {
+        int o = objectCount();
+        ++m_spawned;
+        m_parts[o] = part;
+        m_pos[o] = p;
+        say("Spawn  " + part + " at " + vec(p));
+        return o;
+    }
+    void destroy(int o) override { say("Destroy  " + objectName(o)); m_gone.insert(o); }
+    int selected() const override { return m_sel == -2 ? m_real.selected() : m_sel; }
+    void select(int o) override { m_sel = o; say("Select  " + (o >= 0 ? objectName(o) : std::string("nothing"))); }
+    void message(const std::string& t) override { say("Message  \"" + t + "\""); }
+    void setRtsCamera(bool on) override { say(on ? "RTS Camera on" : "RTS Camera off"); }
+    int placeHouse(int type, int cx, int cz, int rot) override {
+        say(std::string("Place House  ") + (type ? "large" : "small") + " at cell " + std::to_string(cx) + ", " + std::to_string(cz) +
+            " (" + std::to_string(rot * 90) + " deg)");
+        return 100000 + m_houses++;
+    }
+    bool removeHouse(int id) override { say("Remove House  #" + std::to_string(id)); return true; }
+    bool turnHouse(int id) override { say("Turn House  #" + std::to_string(id)); return true; }
+    int houseAt(int cx, int cz) const override { return m_real.houseAt(cx, cz); }
+    int houseCount() const override { return m_real.houseCount() + m_houses; }
+    void hudButton(const std::string& id, const std::string& label) override { say("HUD Button  " + id + " \"" + label + "\""); }
+    void setSun(float az, float h) override { say("Set Sun  azimuth " + num(az) + ", height " + num(h)); }
+    void cellAt(float x, float z, int& cx, int& cz) const override { m_real.cellAt(x, z, cx, cz); }
+
+private:
+    void say(const std::string& s) { if (m_out.size() < 200) m_out.push_back(s); }
+    const World& m_real;
+    std::vector<std::string>& m_out;
+    std::map<int, float3> m_pos;
+    std::map<int, std::string> m_parts;
+    std::set<int> m_gone;
+    int m_spawned = 0, m_houses = 0, m_sel = -2;
+};
+
+} // namespace
+
+// Execute: checks the graph, then runs it in the editor against a dry world (the scene is not changed):
+// the Start event, then one frame. The editor plays the execution path; the Output lists the steps and actions.
+void GameHost::executeGraph() {
+    persistVillageGraph();
+    std::vector<Diagnostic> diags = m_graph.validate();
+    int errors = 0, warnings = 0;
+    for (const Diagnostic& d : diags) {
+        errors += d.level == 2;
+        warnings += d.level == 1;
+    }
+    m_editor.setDiagnostics(diags);
+    if (errors) {
+        m_editor.addMessage(2, "Execute stopped: " + std::to_string(errors) + (errors == 1 ? " error" : " errors") +
+                                   " in the graph (see Compiler Results)");
+        return;
+    }
+    std::vector<std::string> actions;
+    DryWorld world(*this, actions);
+    Runtime dry;
+    dry.start(&m_graph, &world);
+    size_t afterStart = dry.trace.size();
+    dry.tick(1.0f / 60.0f);
+    dry.stop();
+    std::vector<int> path(dry.trace.begin(), dry.trace.end());
+
+    std::string head = "Execute  ·  " + std::to_string(afterStart) + (afterStart == 1 ? " step" : " steps") + " on Start";
+    if (path.size() > afterStart) head += ", " + std::to_string(path.size() - afterStart) + " on the first frame";
+    if (warnings) head += "  ·  " + std::to_string(warnings) + (warnings == 1 ? " warning" : " warnings");
+    m_editor.addMessage(path.empty() ? 1 : 3, path.empty() ? std::string("Execute  ·  nothing runs: the graph has no Start or Every Frame event") : head);
+    for (const std::string& line : dry.log) {
+        if (line.rfind("---", 0) == 0) continue;
+        bool err = line.rfind("Error", 0) == 0;
+        m_editor.addMessage(err ? 2 : 0, line);
+    }
+    for (const std::string& a : actions) m_editor.addMessage(0, "  " + a);
+    m_editor.showExecution(path);
+    m_editor.setOutputTab(2);
+}
+
+// Compile (command API): saves the Village graph, checks its execution flow and lists the results in the Output panel.
 void GameHost::compileGraph() {
     std::string err;
-    if (!saveGraph(&err)) {
+    if (villageGraphShown() && !saveGraph(&err)) {
         m_editor.addMessage(2, "Compile failed: the graph could not be saved (" + err + ")");
         return;
     }
@@ -654,26 +878,9 @@ void GameHost::draw() {
             fg->AddText(ImVec2(tl.x + (240 - ts.x) * 0.5f, tl.y + (26 - ts.y) * 0.5f), IM_COL32(8, 19, 11, 255), tag);
         }
         if (placeActive()) drawRtsHud();
-        drawToolbar();
     }
     if (m_showBuild) drawBuildWindow();
     drawToasts();
-}
-
-// Floating bar at the bottom of the view, outside the graph editor.
-void GameHost::drawToolbar() {
-    const ScreenRect& v = m_app.m_rcView;
-    float d = m_app.m_dpi;
-    ImGui::SetNextWindowPos(ImVec2(v.x + v.w * 0.5f, v.y + v.h - 12 * d), ImGuiCond_Always, ImVec2(0.5f, 1.0f));
-    ImGui::SetNextWindowBgAlpha(0.85f);
-    const ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |
-                                   ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_AlwaysAutoResize;
-    if (ImGui::Begin("##gamebar", nullptr, flags)) {
-        if (ImGui::Button(m_playing ? "Stop  F5" : "Play  F5")) m_pendingToolbar = 1;
-        ImGui::SameLine();
-        if (ImGui::Button("Build  F7")) openBuildWindow();
-    }
-    ImGui::End();
 }
 
 void GameHost::drawToasts() {
@@ -989,7 +1196,7 @@ static const char* kHelp =
     "{\"ok\": true, \"usage\": \"POST /cmd avec un objet JSON {\\\"cmd\\\": ..., ...}. GET /scene = scene.get.\", \"commands\": {"
     "\"state\": \"{}\", "
     "\"scene.get\": \"{} -> objets, camera, selection\", "
-    "\"scene.new\": \"{} -> scene Studio vide\", "
+    "\"scene.new\": \"{} -> new scene (empty graph)\", "
     "\"scene.save\": \"{path}\", \"scene.load\": \"{path}\", "
     "\"object.add\": \"{part: CUBE|SPHERE|BALL, pos:[x,y,z], yaw?, color?:[r,g,b] 0-1, name?} -> index\", "
     "\"object.set\": \"{target: index|nom, pos?, yaw?, rotate?, scale?, color?, name?, visible?}\", "
@@ -1007,7 +1214,7 @@ static const char* kHelp =
     "\"graph.disconnect\": \"{id, pin, output}\", \"graph.setInput\": \"{id, pin, value}\", "
     "\"graph.save\": \"{}\", \"graph.load\": \"{}\", \"graph.show\": \"{open: true|false, output?: 0|1|2}\", \"graph.compile\": \"{} -> diagnostics\", \"graph.arrange\": \"{} -> nodes deplaces\", "
     "\"build\": \"{profile?, run?} -> dossier\", \"build.profiles\": \"{}\", "
-    "\"screenshot\": \"{window?: true = fenetre entiere} -> fichier PNG\", \"log\": \"{} -> journal du graphe\"}}";
+    "\"graph.execute\": \"{} -> Execute du Graph (essai a blanc, chemin anime)\", \"screenshot\": \"{window?: true = fenetre entiere} -> fichier PNG\", \"log\": \"{} -> journal du graphe\"}}";
 
 void GameHost::handleRequests() {
     for (int guard = 0; guard < 16; ++guard) {
@@ -1064,7 +1271,7 @@ std::string GameHost::command(const Json& j, int& status) {
     if (cmd == "scene.get") return sceneJson();
     if (cmd == "scene.new") {
         if (m_playing) stop();
-        a.loadScene(SCENE_STUDIO);
+        a.loadScene(SCENE_STUDIO, true);
         return ok();
     }
     if (cmd == "scene.save") {
@@ -1255,25 +1462,7 @@ std::string GameHost::command(const Json& j, int& status) {
             const Json& g = j["graph"];
             if (g.type != Json::Object) return fail("champ graph manquant");
             Graph tmp;
-            std::ostringstream js;
-            std::function<void(const Json&)> write = [&](const Json& v) {
-                switch (v.type) {
-                case Json::Null: js << "null"; break;
-                case Json::Bool: js << (v.b ? "true" : "false"); break;
-                case Json::Number: js << num((float)v.n); break;
-                case Json::String: js << jstr(v.s); break;
-                case Json::Array: { js << "["; for (size_t i = 0; i < v.a.size(); ++i) { if (i) js << ","; write(v.a[i]); } js << "]"; break; }
-                case Json::Object: {
-                    js << "{";
-                    bool f = true;
-                    for (auto& kv : v.o) { if (!f) js << ","; js << jstr(kv.first) << ":"; write(kv.second); f = false; }
-                    js << "}";
-                    break;
-                }
-                }
-            };
-            write(g);
-            if (!tmp.fromJson(js.str(), &err)) return fail(err);
+            if (!tmp.fromJson(jsonText(g), &err)) return fail(err);
             m_graph = tmp;
         }
         m_editor.frameAll(m_graph);
@@ -1351,6 +1540,10 @@ std::string GameHost::command(const Json& j, int& status) {
     if (cmd == "graph.show") {
         setGraphOpen(j["open"].type == Json::Bool ? j["open"].b : true);
         if (j["output"].type == Json::Number) m_editor.setOutputTab((int)j["output"].num());   // 0 Output, 1 Compiler Results, 2 Execution Trace
+        return ok();
+    }
+    if (cmd == "graph.execute") {
+        executeGraph();
         return ok();
     }
     if (cmd == "graph.compile") {

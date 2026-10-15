@@ -391,7 +391,7 @@ void buildCornellBox(Scene& s) {
 
 void buildStudioScene(Scene& s) {
     s = Scene();
-    s.name = "Studio";
+    s.name = "Village";
     s.unitsPerMeter = 100.0f;
     s.gridScale = 1.0f;
     s.env.top = float3(0.030f, 0.032f, 0.038f);

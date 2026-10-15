@@ -53,6 +53,11 @@ public:
     void addHoverOutline(std::vector<int>& objects) const;   // the house under the cursor is outlined (its halo)
     void togglePlacement();                  // village mode of the editor (not during Play)
     void resetVillage();                     // a new scene: no houses
+    // Graph of the scene: a built-in scene (SCENE_STUDIO = Village, the RTS graph of game/main.graph.json), -1 a new
+    // scene, -2 a scene file without graph (both empty); loadSceneGraph: the "graph" of a .wzx scene.
+    void sceneChanged(int sceneId);
+    void loadSceneGraph(const Json& j);
+    std::string graphJson() const;
     std::string villageJson() const;
     void loadVillage(const Json& list);
 
@@ -86,6 +91,11 @@ private:
     void stop();
     bool saveGraph(std::string* err = nullptr);
     void compileGraph();
+    void executeGraph();          // Execute of the graph toolbar: dry run in the editor
+    bool villageGraphShown() const;   // the graph shown is the Village one (built-in scene, not a file)
+    void persistVillageGraph();
+    void resetGraphView(const char* what);
+    bool m_villageGraph = false;      // the graph was loaded for the built-in Village scene
     bool loadGraph(std::string* err = nullptr);
     void defaultGraph();
     std::vector<BuildProfile> loadProfiles();
@@ -105,7 +115,6 @@ private:
     bool m_rmbDrag = false;
     vp3d::float3 m_rmbGrab;
     game::RtsCamera m_cam;
-    void drawToolbar();
     void drawToasts();
     void toast(const std::wstring& s);
 

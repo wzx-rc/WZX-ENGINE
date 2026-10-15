@@ -51,6 +51,7 @@ struct UiSettings {
     bool graphOutline = true;             // Graph tab: outline around each node
     float graphOutlineWeight = 0.5f;      // Graph tab: outline thickness in px (the selected node gets twice this)
     ImVec4 graphSelectColor = ImVec4(0.400f, 0.729f, 0.816f, 1.0f);   // Graph tab: outline of the selected node (cyan)
+    float graphOutputHeight = 151.0f;     // Graph tab: height of the Output panel (DIPs), dragged from its top edge
 };
 
 namespace th {

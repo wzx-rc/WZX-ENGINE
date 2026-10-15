@@ -446,6 +446,9 @@ std::string App::wzxSceneJson(bool withCamera) const {
     village.type = Json::Array;
     if (m_game) Json::parse(m_game->villageJson(), village);
     w.value("village", village);
+    Json graph;
+    if (m_game) Json::parse(m_game->graphJson(), graph);
+    w.value("graph", graph);
     w.str("probes", "game/probes/" + m_probeKey + ".probes");
     w.endObject();
     w.out += '\n';
@@ -769,6 +772,8 @@ void App::loadWzxScene(const Json& j, const std::wstring& path) {
 
     if (m_game) m_game->loadVillage(j["village"]);   // after the objects: the houses go on the grid
     else m_pendingVillage = j["village"];             // opened from the command line, before the game layer
+    if (m_game) m_game->loadSceneGraph(j["graph"]);   // the graph of the scene (none: an empty graph)
+    else m_pendingGraph = j["graph"];
 
     m_renderer.setScene(m_scene);
     // baked probes: the path of the file, else the name of the scene file
@@ -879,7 +884,7 @@ void App::runDocAction(int action) {
         std::wstring p = sceneDialog(m_hwnd, false, m_docPath);
         if (!p.empty()) loadSceneFile(p);
     } else if (action == DOC_NEW) {
-        loadScene(SCENE_STUDIO);
+        loadScene(SCENE_STUDIO, true);
     } else if (action == DOC_CLOSE) {
         m_forceClose = true;
         PostMessageW(m_hwnd, WM_CLOSE, 0, 0);

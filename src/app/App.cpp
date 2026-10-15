@@ -324,7 +324,7 @@ void App::status(const std::wstring& text, int level) {
     log(toUtf8(text), level);
 }
 
-void App::loadScene(int id) {
+void App::loadScene(int id, bool newScene) {
     m_sceneId = id;
     m_probeKey = id == SCENE_CORNELL ? "cornell" : (id == SCENE_LOOKDEV ? "lookdev" : "studio");
     if (id == SCENE_CORNELL) buildCornellBox(m_scene);
@@ -354,6 +354,11 @@ void App::loadScene(int id) {
     m_scene.camera = m_views[0].cam;
     log("Scene loaded: " + m_scene.name, 1);
     m_placeholderMat.clear();
+    if (newScene) {
+        m_sceneId = -1;   // not the Village scene: its own, empty graph
+        m_scene.name = "New Scene";
+    }
+    if (m_game) m_game->sceneChanged(m_sceneId);   // the graph of the scene (before the saved state below)
     m_docPath.clear();   // a built-in scene is a new document, not saved yet
     m_docName = L"Untitled";
     markSaved();
@@ -733,7 +738,7 @@ void App::handleShortcuts() {
         return;
     }
     if (pressed(ImGuiKey_F1)) m_pendingScene = SCENE_CORNELL;
-    // F2: rename the selection in the Scene Manager (the Studio scene when nothing is selected)
+    // F2: rename the selection in the Scene Manager (the Village scene when nothing is selected)
     if (pressed(ImGuiKey_F2)) {
         std::vector<uint32_t> sel = selectedNodeIds();
         uint32_t primary = m_selected >= 0 ? m_scene.objects[m_selected].id : (sel.empty() ? 0 : sel.front());
@@ -1102,7 +1107,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
     for (int i = 1; i < argc; ++i) {
         std::wstring a = argv[i];
         auto next = [&]() -> std::wstring { return i + 1 < argc ? std::wstring(argv[++i]) : std::wstring(); };
-        if (a == L"--scene") { std::wstring sc = next(); opt.scene = sc == L"studio" ? app::SCENE_STUDIO : (sc == L"lookdev" ? app::SCENE_LOOKDEV : app::SCENE_CORNELL); }
+        if (a == L"--scene") { std::wstring sc = next(); opt.scene = (sc == L"studio" || sc == L"village") ? app::SCENE_STUDIO : (sc == L"lookdev" ? app::SCENE_LOOKDEV : app::SCENE_CORNELL); }
         else if (a == L"--hdri") opt.hdri = next();
         else if (a == L"--tab") opt.inspectorTab = _wtoi(next().c_str());
         else if (a == L"--raster") opt.raster = _wtoi(next().c_str()) != 0;

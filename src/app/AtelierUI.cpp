@@ -373,7 +373,7 @@ std::vector<Asset> assetList() {
     for (size_t i = 0; i < parts().size(); ++i) a.push_back({0, (int)i, "SM_" + toUtf8(parts()[i].name), "Static Mesh", "Primitives"});
     for (size_t i = 0; i < presetNames().size(); ++i) a.push_back({1, (int)i, "M_" + toUtf8(presetNames()[i]), "Material", "Materials"});
     a.push_back({2, SCENE_CORNELL, "Cornell Box", "Scene", "Scenes"});
-    a.push_back({2, SCENE_STUDIO, "Studio", "Scene", "Scenes"});
+    a.push_back({2, SCENE_STUDIO, "Village", "Scene", "Scenes"});
     a.push_back({2, SCENE_LOOKDEV, "LookDev", "Scene", "Scenes"});
     return a;
 }
@@ -549,7 +549,7 @@ void App::atlTopBar(float x0, float y0, float width) {
                 if (ImGui::MenuItem("Import OBJ Mesh…")) m_pendingAction = PA_IMPORT_MESH;
                 ImGui::Separator();
                 if (ImGui::MenuItem("Cornell Box Scene", "F1", m_sceneId == SCENE_CORNELL)) m_pendingScene = SCENE_CORNELL;
-                if (ImGui::MenuItem("Studio Scene", "F2", m_sceneId == SCENE_STUDIO)) m_pendingScene = SCENE_STUDIO;
+                if (ImGui::MenuItem("Village Scene", "F2", m_sceneId == SCENE_STUDIO)) m_pendingScene = SCENE_STUDIO;
                 if (ImGui::MenuItem("LookDev Scene", "F3", m_sceneId == SCENE_LOOKDEV)) m_pendingScene = SCENE_LOOKDEV;
                 ImGui::Separator();
                 if (ImGui::MenuItem("Build…", "F7") && m_game) m_game->openBuildWindow();
@@ -627,13 +627,12 @@ void App::atlTopBar(float x0, float y0, float width) {
     // centre: build window and test player
     float cx = x0 + std::max((655 + P().headerShift) * s, width / 2 - 89 * s);
     if (PrimaryButton("buildScene", {cx, y0 + 6 * s, 103 * s, 25 * s}, "Build", Icon::Check, m_game != nullptr)) m_game->openBuildWindow();
-    Tip("Build the game for a platform: Windows now, iOS coming soon (F7)");
+    Tip("Build  (F7)\nOpens the Build window: pick a platform profile, then Build or Build and Run.\nWindows now, iOS coming soon.");
     const bool playing = m_game && m_game->playing();
     if (Button("playScene", {cx + 109 * s, y0 + 6 * s, 71 * s, 25 * s}, playing ? "Stop" : "Play", Icon::Play, playing, false, m_game != nullptr))
         m_game->requestPlay();
-    Tip("Test the game in the editor (F5)");
-    Button("stepScene", {cx + 186 * s, y0 + 6 * s, 27 * s, 25 * s}, "", Icon::Step, false, true, false);
-    Tip("Test player: coming in a next step");
+    Tip(playing ? "Stop  (F5)\nEnds the test: the scene comes back as it was before Play."
+                : "Play  (F5)\nTests the game in the editor viewport with its graph.\nStop restores the scene as it was.");
     // right
     if (Button("saveScene", {x0 + width - 182 * s, y0 + 6 * s, 72 * s, 25 * s}, "Save", Icon::Save)) m_pendingAction = 1;
     Tip("Save the scene (Ctrl+S)");
@@ -667,7 +666,7 @@ void App::atlHierarchy(float x, float y, float w, float h) {
     g_labelRight = px + pw;
     Label(px, py, "SCENES");
     py += 21 * s;
-    const char* scenes[] = {"Cornell Box", "Studio", "LookDev"};
+    const char* scenes[] = {"Cornell Box", "Village", "LookDev"};
     for (int i = 0; i < 3; ++i) {
         char id[16];
         snprintf(id, sizeof(id), "scene%d", i);
@@ -2019,7 +2018,7 @@ void App::atlInspectorWorld(float x, float y, float w, float) {
     Text(x, y, m_scene.name.empty() ? "Scene" : m_scene.name, P().text, 15);
     y += 25 * s;
     Text(x, y, !m_docPath.empty() ? "File · " + toUtf8(m_docName) + (m_docDirty ? " (modified)" : "")
-               : m_sceneId == SCENE_CORNELL ? "Test scene · Cornell Box" : (m_sceneId == SCENE_LOOKDEV ? "Test scene · LookDev" : "Test scene · Studio"), P().muted, 11);
+               : m_sceneId == SCENE_CORNELL ? "Test scene · Cornell Box" : m_sceneId == SCENE_LOOKDEV ? "Test scene · LookDev" : (m_sceneId == SCENE_STUDIO ? "Test scene · Village (RTS)" : "New scene"), P().muted, 11);
     y += 41 * s;
     Label(x, y, "SCENE PROPERTIES");
     y += 24 * s;
