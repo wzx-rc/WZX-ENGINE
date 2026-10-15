@@ -47,7 +47,7 @@ public:
     float outputHeight() const { return m_outH; }
     void setOutputHeight(float h) { m_outH = h; }
     // Execute: plays the execution path of a dry run (node ids in order) along the wires, and lists it in the trace.
-    void showExecution(const std::vector<int>& trace);
+    void showExecution(const std::vector<int>& trace, const Runtime* dry = nullptr);   // dry: its link data (hover info)
     bool showingExecution() const { return !m_execTrace.empty(); }
     // Arrange: moves the nodes that overlap down, under the node above them (one undo step). Returns the count moved.
     int arrangeOverlaps(Graph& g);
@@ -138,6 +138,10 @@ private:
     double m_execStart = 0;
     float execProgress() const;            // steps reached (fractional), or -1 when no execution is shown
     std::vector<int> m_execList;           // path of the last Execute (Execution Trace tab)
+    std::map<std::pair<int, int>, Value> m_dryValues;   // data on the links in the last Execute (hover info)
+    std::map<std::pair<int, int>, int> m_dryFired;
+    bool m_hoverCanvas = false;            // the mouse is over the bare canvas (link hover info)
+    void drawLinkInfo(const Graph& g, const Link& l, const Runtime* rt);
     std::vector<int> m_execLinks;          // per step: the exec link that led to it (-1 none), this frame
     void updateExecution(const Graph& g);
     int execState(int nodeId, int& step) const;

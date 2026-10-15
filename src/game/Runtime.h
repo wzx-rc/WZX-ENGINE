@@ -61,6 +61,10 @@ public:
     std::deque<std::string> log;          // most recent last, capped
     std::deque<int> trace;                // ids of the nodes run since Play, most recent last, capped (Execution Trace)
     std::string lastError;
+    // Data flow on the links since start (hover info of a connection): last value received by an input pin
+    // (key: node, input pin) and the times an exec output fired (key: node, output pin).
+    std::map<std::pair<int, int>, Value> linkValues;
+    std::map<std::pair<int, int>, int> execFired;
 
 private:
     struct Timer { float left; int node; int pin; };

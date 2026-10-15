@@ -32,6 +32,8 @@ void Runtime::start(Graph* g, World* w) {
     m_cache.clear();
     m_lastRun.clear();
     trace.clear();
+    linkValues.clear();
+    execFired.clear();
     m_timers.clear();
     m_movers.clear();
     m_doneOnce.clear();
@@ -164,6 +166,7 @@ void Runtime::execFrom(int nodeId, int outPin) {
         if (l.fromNode != nodeId || l.fromPin != outPin) continue;
         Node* n = m_graph->node(l.toNode);
         if (!n) return;
+        ++execFired[{nodeId, outPin}];
         if (--m_budget < 0) { if (m_budget == -1) error("infinite loop stopped (too many nodes executed)"); return; }
         if (m_depth >= kMaxDepth) { error("execution chain too deep"); return; }
         ++m_depth;
@@ -185,7 +188,9 @@ Value Runtime::input(const Node& n, int pin) {
     if (!l) return n.inputs[pin];
     const Node* src = m_graph->node(l->fromNode);
     if (!src) return n.inputs[pin];
-    return convert(output(*src, l->fromPin), t);
+    Value v = convert(output(*src, l->fromPin), t);
+    linkValues[{n.id, pin}] = v;
+    return v;
 }
 
 Value Runtime::output(const Node& n, int pin) {

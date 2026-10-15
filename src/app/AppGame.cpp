@@ -826,7 +826,7 @@ void GameHost::executeGraph() {
         m_editor.addMessage(err ? 2 : 0, line);
     }
     for (const std::string& a : actions) m_editor.addMessage(0, "  " + a);
-    m_editor.showExecution(path);
+    m_editor.showExecution(path, &dry);
     m_editor.setOutputTab(2);
 }
 

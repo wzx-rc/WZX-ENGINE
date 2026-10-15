@@ -467,6 +467,7 @@ void NodeEditor::draw(ImVec2 pos, ImVec2 size, float dpi, Graph& g, const Runtim
                   !ImGui::IsPopupOpen("##addnode") && !ImGui::IsAnyItemActive() && !(overMap && m_drag == DragNone) && !m_mapDrag;
     bool overWidget = overInlineWidget(g, io.MousePos);
     handleInput(g, inArea, overWidget);
+    m_hoverCanvas = inArea && !overWidget && m_drag == DragNone && !hitNode(g, io.MousePos) && hitPin(g, io.MousePos).pin < 0;
 
     drawCanvas(g, rt);
     drawHint(g);
@@ -580,6 +581,28 @@ void NodeEditor::drawHint(const Graph& g) {
 void NodeEditor::drawLinks(const Graph& g, const Runtime* rt) {
     ImDrawList* dl = ImGui::GetWindowDrawList();
     float z = scale();
+    // the link under the mouse (bare canvas only): highlighted, with the data flowing through it
+    int hovered = -1;
+    if (m_hoverCanvas) {
+        ImVec2 m = ImGui::GetIO().MousePos;
+        float best = std::max(6.0f * z, 5.0f * m_dpi);
+        best *= best;
+        for (size_t k = 0; k < g.links.size(); ++k) {
+            const Link& l = g.links[k];
+            const Node* a = g.node(l.fromNode);
+            const Node* b = g.node(l.toNode);
+            if (!a || !b) continue;
+            ImVec2 p0 = pinPos(*a, l.fromPin, true), p1 = pinPos(*b, l.toPin, false);
+            float d = std::max(65 * z, std::fabs(p1.x - p0.x) * 0.46f);
+            ImVec2 c0(p0.x + d, p0.y), c1(p1.x - d, p1.y);
+            for (int i = 0; i <= 24; ++i) {
+                float t = i / 24.0f, u = 1 - t;
+                ImVec2 q = p0 * (u * u * u) + c0 * (3 * u * u * t) + c1 * (3 * u * t * t) + p1 * (t * t * t);
+                float dx = q.x - m.x, dy = q.y - m.y;
+                if (dx * dx + dy * dy < best) { best = dx * dx + dy * dy; hovered = (int)k; }
+            }
+        }
+    }
     for (const Link& l : g.links) {
         const Node* a = g.node(l.fromNode);
         const Node* b = g.node(l.toNode);
@@ -588,6 +611,7 @@ void NodeEditor::drawLinks(const Graph& g, const Runtime* rt) {
         PinType t = a->def->outs[l.fromPin].type;
         ImU32 c = pinColor(t);
         float w = 2.0f * z;
+        if (hovered >= 0 && &l == &g.links[hovered]) w *= 1.9f;
         if (rt && t == PinType::Exec && rt->running() && rt->time() - rt->lastRun(b->id) < 0.25f) { c = kHot; w *= 1.6f; }
         float d = std::max(65 * z, std::fabs(p1.x - p0.x) * 0.46f);
         dl->AddBezierCubic(p0, ImVec2(p0.x + d, p0.y), ImVec2(p1.x - d, p1.y), p1, withA(c, 55), w + 3 * z);
@@ -627,8 +651,64 @@ void NodeEditor::drawLinks(const Graph& g, const Runtime* rt) {
             }
         }
     }
+    if (hovered >= 0) drawLinkInfo(g, g.links[hovered], rt);
 }
 
+
+// Hover info of a connection: where it goes, its type and the data that went through it
+// (during Play, else in the last Execute); a constant source shows its value at once.
+void NodeEditor::drawLinkInfo(const Graph& g, const Link& l, const Runtime* rt) {
+    const Node* a = g.node(l.fromNode);
+    const Node* b = g.node(l.toNode);
+    if (!a || !b) return;
+    const PinDef& out = a->def->outs[l.fromPin];
+    const PinDef& in = b->def->ins[l.toPin];
+    auto pinName = [](const PinDef& p, const char* dflt) { return p.name.empty() ? std::string(dflt) : p.name; };
+    const bool live = rt && rt->running();
+    const char* when = live ? "during Play" : "in the last Execute";
+    const auto& values = live ? rt->linkValues : m_dryValues;
+    const auto& fired = live ? rt->execFired : m_dryFired;
+    const bool ran = live || !m_execList.empty();
+
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(10 * m_dpi, 8 * m_dpi));
+    ImGui::BeginTooltip();
+    ImGui::TextColored(ImColor(catColor(a->def->category)), "%s", a->def->label.c_str());
+    ImGui::SameLine(0, 4 * m_dpi);
+    ImGui::TextDisabled(".%s   \xE2\x86\x92", pinName(out, "Out").c_str());
+    ImGui::SameLine(0, 6 * m_dpi);
+    ImGui::TextColored(ImColor(catColor(b->def->category)), "%s", b->def->label.c_str());
+    ImGui::SameLine(0, 4 * m_dpi);
+    ImGui::TextDisabled(".%s", pinName(in, "In").c_str());
+    ImGui::Separator();
+    ImGui::TextColored(ImColor(pinColor(out.type)), "\xE2\x97\x8F");
+    ImGui::SameLine();
+    ImGui::Text("%s", out.type == PinType::Exec ? "Execution flow" : pinTypeName(out.type));
+    if (out.type == PinType::Exec) {
+        auto it = fired.find({l.fromNode, l.fromPin});
+        int n = it == fired.end() ? 0 : it->second;
+        if (!ran) ImGui::TextDisabled("Press Execute or Play to see the flow.");
+        else if (n) ImGui::Text("Fired %d time%s %s", n, n > 1 ? "s" : "", when);
+        else ImGui::TextDisabled("Not fired %s", when);
+    } else {
+        auto it = values.find({l.toNode, l.toPin});
+        const Op op = a->def->op;
+        bool constant = (op == Op::ConstFloat || op == Op::ConstBool || op == Op::ConstVec3 || op == Op::ConstString) &&
+                        !a->inputs.empty() && !g.inputLink(a->id, 0);
+        if (it != values.end()) {
+            ImGui::Text("Value %s:", when);
+            ImGui::SameLine();
+            ImGui::TextColored(ImColor(kHot), "%s", it->second.asString().c_str());
+        } else if (constant) {
+            ImGui::Text("Value:");
+            ImGui::SameLine();
+            ImGui::TextColored(ImColor(kHot), "%s", a->inputs[0].asString().c_str());
+        } else {
+            ImGui::TextDisabled(ran ? "No value went through %s" : "Press Execute or Play to see the value.", when);
+        }
+    }
+    ImGui::EndTooltip();
+    ImGui::PopStyleVar();
+}
 // Pin shape as in the Atelier graph: exec = triangle, data = ring with a dot when connected.
 static void drawPinShape(ImDrawList* dl, ImVec2 p, PinType t, bool connected, float z, float dpi) {
     ImU32 c = pinColor(t);
@@ -929,7 +1009,9 @@ void NodeEditor::drawMinimap(const Graph& g) {
 static const float kExecStep = 0.32f;   // seconds per step of the execution path
 static const float kExecHold = 6.0f;    // the path stays shown this long after its last step
 
-void NodeEditor::showExecution(const std::vector<int>& trace) {
+void NodeEditor::showExecution(const std::vector<int>& trace, const Runtime* dry) {
+    m_dryValues = dry ? dry->linkValues : decltype(m_dryValues)();
+    m_dryFired = dry ? dry->execFired : decltype(m_dryFired)();
     m_execTrace = trace;
     m_execList = trace;
     m_execStart = ImGui::GetTime();
