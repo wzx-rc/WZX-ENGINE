@@ -3,6 +3,7 @@
 #pragma once
 #include "Content.h"
 #include "ImGuiLayer.h"
+#include "Json.h"
 #include "Theme.h"
 #include "atelier/material_host.h"
 #include "atelier/material_model.h"
@@ -98,6 +99,9 @@ struct Options {
 void drawPrimitiveIcon(ImDrawList* dl, PartKind kind, ImVec2 a, ImVec2 b, ImU32 col);
 void drawAssetThumb(ImDrawList* dl, int kind, int index, ImVec2 p0, ImVec2 p1, float dpi);   // 0 primitive, 1 material, 2 scene
 
+// Writes a file through a temporary file then replaces it (SceneWzx.cpp).
+bool writeFileSafe(const std::wstring& path, const std::string& text);
+
 // Screen-space rectangle (pixels).
 struct ScreenRect {
     float x = 0, y = 0, w = 1, h = 1;
@@ -159,11 +163,42 @@ private:
     void aabbOf(const Object& o, const float3& pos, const float4& rot, float3& mn, float3& mx);
     std::vector<int> selectionAll() const { std::vector<int> v; if (m_selected >= 0) v.push_back(m_selected); for (int i : m_multi) v.push_back(i); return v; }
 
-    // scene files (SceneIO.cpp)
-    bool saveSceneFile(const std::wstring& path);
-    bool loadSceneFile(const std::wstring& path);
+    // scene files: .wzx (SceneWzx.cpp), the old .v3d.json (SceneIO.cpp: written for the Build and the player, read as an import)
+    bool saveSceneFile(const std::wstring& path);   // by extension (.wzx, else .v3d.json); the document is unchanged
+    bool loadSceneFile(const std::wstring& path);   // .wzx, or an old .v3d.json (import); becomes the document
+    bool saveLegacySceneFile(const std::wstring& path);
+    bool loadLegacySceneFile(const Json& j, const std::wstring& path);
+    std::string wzxSceneJson(bool withCamera) const;
+    void loadWzxScene(const Json& j, const std::wstring& path);
+    void importMeshFile(const std::wstring& path);   // OBJ as a new object, its path kept in the scene
+    std::wstring projectRoot() const;
+    std::string relPath(const std::wstring& path) const;   // path written in a scene file (relative to the project)
+    std::wstring absPath(const std::string& path) const;
     void runPendingAction();
-    int m_pendingAction = 0;   // 1 save dialog, 2 open dialog, 3 HDRI file dialog
+    enum PendingAction { PA_SAVE = 1, PA_OPEN, PA_HDRI, PA_SAVE_AS, PA_NEW, PA_IMPORT_MESH, PA_DOC_NEXT };
+    int m_pendingAction = 0;   // PendingAction, run before the next ImGui frame (file dialogs)
+    std::map<int, int> m_placeholderMat;   // red material of a missing mesh placeholder -> material saved in the file
+    Json m_pendingVillage;                 // village of a scene opened before the game layer exists
+
+    // document (SceneWzx.cpp): current file, modified state (* in the title), "Save changes?" before New / Open / closing
+    enum DocAction { DOC_OPEN = 1, DOC_NEW, DOC_CLOSE, DOC_SCENE = 100 /* + scene id */ };
+    bool saveDocument(bool saveAs);
+    void requestDocAction(int action);
+    void runDocAction(int action);
+    void markSaved();
+    void updateDocState(bool force = false);
+    void updateTitle();
+    void drawSaveChangesPopup();
+    std::wstring m_docPath;                // empty = not saved yet
+    std::wstring m_docName = L"Untitled";
+    std::string m_savedSig;                // the scene as saved (without the camera), compared to know if it is modified
+    bool m_docDirty = false;
+    uint64_t m_docCheckTick = 0;
+    std::wstring m_title;
+    int m_confirmAction = 0;               // DocAction waiting for the "Save changes?" answer
+    int m_docNext = 0;
+    bool m_docSaveFirst = false;
+    bool m_forceClose = false;
 
     // HDRI environment (App.cpp): files of 01 - INBOX and assets/hdri, loaded once and kept in a cache
     bool setHdri(const std::wstring& path);   // empty = gradient sky, L"sky" = procedural sky
