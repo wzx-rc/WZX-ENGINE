@@ -261,6 +261,45 @@ int NodeEditor::hitGroupTitle(const Graph& g, ImVec2 p) const {
     return -1;
 }
 
+// Resize corner of a backdrop: the bottom right square (14 px on screen).
+int NodeEditor::hitGroupGrip(const Graph& g, ImVec2 p) const {
+    const float r = 14 * m_dpi;
+    for (int i = (int)g.groups.size() - 1; i >= 0; --i) {
+        const Group& gr = g.groups[i];
+        ImVec2 b = toScreen(ImVec2(gr.x + gr.w, gr.y + gr.h));
+        if (p.x >= b.x - r && p.x <= b.x + 2 && p.y >= b.y - r && p.y <= b.y + 2) return i;
+    }
+    return -1;
+}
+
+void NodeEditor::addBackdrop(Graph& g) {
+    pushUndo(g);
+    Group gr;
+    gr.title = "BACKDROP";
+    gr.category = "Neutral";
+    if (!m_sel.empty()) {
+        float x0 = 1e9f, y0 = 1e9f, x1 = -1e9f, y1 = -1e9f;
+        for (int id : m_sel)
+            if (const Node* n = g.node(id)) {
+                ImVec2 a = toGraph(nodeMin(*n)), b = toGraph(nodeMax(*n));
+                x0 = std::min(x0, a.x); y0 = std::min(y0, a.y); x1 = std::max(x1, b.x); y1 = std::max(y1, b.y);
+            }
+        const float pad = 24;
+        gr.x = std::floor((x0 - pad) / 8) * 8;
+        gr.y = std::floor((y0 - pad - kGroupTitle) / 8) * 8;
+        gr.w = std::ceil((x1 + pad - gr.x) / 8) * 8;
+        gr.h = std::ceil((y1 + pad - gr.y) / 8) * 8;
+    } else {
+        ImVec2 c = toGraph(m_origin + m_canvas * 0.5f);
+        gr.x = std::round((c.x - gr.w * 0.5f) / 8) * 8;
+        gr.y = std::round((c.y - gr.h * 0.5f) / 8) * 8;
+    }
+    // behind the other backdrops it encloses: drawn first
+    g.groups.insert(g.groups.begin(), gr);
+    m_selGroup = 0;
+    m_modified = true;
+}
+
 bool NodeEditor::selected(int id) const { return std::find(m_sel.begin(), m_sel.end(), id) != m_sel.end(); }
 
 // --------------------------------------------------------------------------- undo / edit helpers
@@ -514,11 +553,34 @@ void NodeEditor::drawGroups(const Graph& g) {
     for (size_t i = 0; i < g.groups.size(); ++i) {
         const Group& gr = g.groups[i];
         ImVec2 a = toScreen(ImVec2(gr.x, gr.y)), b = toScreen(ImVec2(gr.x + gr.w, gr.y + gr.h));
-        ImU32 c = catColor(gr.category);
-        dl->AddRectFilled(a, b, withA(c, 9), 5 * z);
-        dl->AddRect(a, b, withA(c, (int)i == m_selGroup ? 130 : 45), 5 * z);
-        dl->AddRectFilled(a, ImVec2(b.x, a.y + kGroupTitle * z), withA(c, 15), 5 * z, ImDrawFlags_RoundCornersTop);
-        canvasText(dl, m_font, 10 * z, a + ImVec2(13 * z, kGroupTitle * z * 0.5f), withA(c, 210), gr.title);
+        ImU32 c = gr.category == "Neutral" ? kMuted : catColor(gr.category);
+        const bool sel = (int)i == m_selGroup;
+        dl->AddRectFilled(a, b, withA(c, 22), 5 * z);
+        dl->AddRect(a, b, sel ? kCyan : withA(c, 70), 5 * z, 0, sel ? 1.5f : 1.0f);
+        dl->AddRectFilled(a, ImVec2(b.x, a.y + kGroupTitle * z), withA(c, 48), 5 * z, ImDrawFlags_RoundCornersTop);
+        if ((int)i != m_renameGroup)
+            canvasText(dl, m_fontBold ? m_fontBold : m_font, 13 * z, a + ImVec2(12 * z, kGroupTitle * z * 0.5f), withA(c, 235), gr.title);
+        // resize grip (bottom right corner)
+        const float r = 10 * m_dpi;
+        bool gripHot = sel || ImGui::IsMouseHoveringRect(ImVec2(b.x - r - 4, b.y - r - 4), b);
+        if (gripHot)
+            for (int k = 1; k <= 3; ++k)
+                dl->AddLine(ImVec2(b.x - 3 - k * r / 3, b.y - 3), ImVec2(b.x - 3, b.y - 3 - k * r / 3), withA(c, 200), 1.2f);
+    }
+    // title edited in place (double click on the title bar)
+    if (m_renameGroup >= 0 && m_renameGroup < (int)g.groups.size()) {
+        const Group& gr = g.groups[m_renameGroup];
+        ImVec2 a = toScreen(ImVec2(gr.x, gr.y)), b = toScreen(ImVec2(gr.x + gr.w, gr.y + kGroupTitle));
+        ImGui::SetCursorScreenPos(ImVec2(a.x + 6 * z, a.y + 2 * z));
+        ImGui::SetNextItemWidth(std::max(60.0f, b.x - a.x - 12 * z));
+        ImGui::SetKeyboardFocusHere();
+        bool done = ImGui::InputText("##grename", m_renameBuf, sizeof m_renameBuf, ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_AutoSelectAll);
+        if (done || (!ImGui::IsItemActive() && ImGui::IsMouseClicked(0) && !ImGui::IsItemHovered())) {
+            Graph& gm = const_cast<Graph&>(g);
+            if (gm.groups[m_renameGroup].title != m_renameBuf) { pushUndo(gm); gm.groups[m_renameGroup].title = m_renameBuf; m_modified = true; }
+            m_renameGroup = -1;
+        }
+        if (ImGui::IsKeyPressed(ImGuiKey_Escape)) m_renameGroup = -1;
     }
 }
 
@@ -844,7 +906,7 @@ void NodeEditor::drawInspector(ImVec2 pos, ImVec2 size, Graph& g, const Runtime*
 
 void NodeEditor::drawInspectorGroup(Graph& g, float w) {
     Group& gr = g.groups[m_selGroup];
-    ImGui::TextColored(ImColor(catColor(gr.category)), "Group");
+    ImGui::TextColored(ImColor(gr.category == "Neutral" ? kText : catColor(gr.category)), "Backdrop");
     ImGui::TextDisabled("Title");
     char buf[160] = {};
     std::strncpy(buf, gr.title.c_str(), sizeof buf - 1);
@@ -862,17 +924,20 @@ void NodeEditor::drawInspectorGroup(Graph& g, float w) {
 
     ImGui::Spacing();
     ImGui::TextDisabled("Colour");
-    static const char* cats[] = {"Events", "Input", "Flow Control", "Scene", "Data", "Math", "RTS"};
-    for (const char* c : cats) {
+    std::vector<std::string> cats = {"Neutral"};   // the node families of the library, plus a neutral grey
+    for (const NodeDef& nd : nodeDefs())
+        if (std::find(cats.begin(), cats.end(), nd.category) == cats.end()) cats.push_back(nd.category);
+    for (const std::string& cs : cats) {
+        const char* c = cs.c_str();
         ImGui::PushID(c);
-        ImGui::PushStyleColor(ImGuiCol_Text, catColor(c));
+        ImGui::PushStyleColor(ImGuiCol_Text, cs == "Neutral" ? kText : catColor(c));
         bool picked = ImGui::Selectable(c, gr.category == c);
         ImGui::PopStyleColor();
         if (picked && gr.category != c) { pushUndo(g); gr.category = c; }
         ImGui::PopID();
     }
     ImGui::Spacing();
-    if (ImGui::Button("Remove group", ImVec2(w, 0))) {
+    if (ImGui::Button("Remove backdrop", ImVec2(w, 0))) {
         pushUndo(g);
         g.groups.erase(g.groups.begin() + m_selGroup);
         m_selGroup = -1;
@@ -997,7 +1062,7 @@ void NodeEditor::drawInspectorGraph(Graph& g, const Runtime* rt, float w) {
     ImGui::TextDisabled("Wheel to zoom, middle drag to pan");
     ImGui::TextDisabled("Right click to add a node");
     ImGui::TextDisabled("Drag pins to connect, drag a linked input to detach it, Alt+click to detach");
-    ImGui::TextDisabled("Click a group title to move it with its nodes");
+    ImGui::TextDisabled("Backdrops: Ctrl+G around the selection, drag the title to move, double click to rename, drag the corner to resize");
 
     ImGui::Spacing();
     ImGui::TextDisabled("NODE FAMILIES");
@@ -1186,13 +1251,19 @@ void NodeEditor::drawMenu(Graph& g) {
         ImGui::BeginChild("##nodelist", ImVec2(0, 0));
         if (q.empty() && !fromNode) {
             // adds a group frame at the popup position (Atelier "Add comment group")
-            if (ImGui::Selectable("+ Add group", false, 0, ImVec2(0, 22 * d))) {
+            if (!m_sel.empty() && ImGui::Selectable("+ Backdrop around selection  (Ctrl+G)", false, 0, ImVec2(0, 22 * d))) {
+                addBackdrop(g);
+                ImGui::CloseCurrentPopup();
+            }
+            if (ImGui::Selectable("+ Add backdrop", false, 0, ImVec2(0, 22 * d))) {
                 pushUndo(g);
                 Group gr;
+                gr.title = "BACKDROP";
+                gr.category = "Neutral";
                 gr.x = std::round(m_menuGraph.x / 8) * 8;
                 gr.y = std::round(m_menuGraph.y / 8) * 8;
-                g.groups.push_back(gr);
-                m_selGroup = (int)g.groups.size() - 1;
+                g.groups.insert(g.groups.begin(), gr);
+                m_selGroup = 0;
                 m_sel.clear();
                 ImGui::CloseCurrentPopup();
             }
@@ -1257,6 +1328,7 @@ void NodeEditor::handleInput(Graph& g, bool inArea, bool overWidget) {
             }
         }
         if (ctrl && ImGui::IsKeyPressed(ImGuiKey_D)) duplicateSelection(g);
+        if (ctrl && ImGui::IsKeyPressed(ImGuiKey_G)) addBackdrop(g);
         if (ctrl && ImGui::IsKeyPressed(ImGuiKey_Z)) undo(g);
         if (ctrl && ImGui::IsKeyPressed(ImGuiKey_A)) { m_sel.clear(); m_selGroup = -1; for (const Node& n : g.nodes) m_sel.push_back(n.id); }
         if (ImGui::IsKeyPressed(ImGuiKey_Escape)) { m_sel.clear(); m_selGroup = -1; }
@@ -1300,7 +1372,16 @@ void NodeEditor::handleInput(Graph& g, bool inArea, bool overWidget) {
             if (selected(id)) m_drag = DragNodes;
         } else {
             int gi = hitGroupTitle(g, mouse);
-            if (gi >= 0) {
+            int grip = hitGroupGrip(g, mouse);
+            if (grip >= 0) {
+                m_sel.clear();
+                m_selGroup = grip;
+                m_drag = DragGroupResize;
+            } else if (gi >= 0 && ImGui::IsMouseDoubleClicked(0)) {
+                m_selGroup = gi;
+                m_renameGroup = gi;
+                strncpy_s(m_renameBuf, g.groups[gi].title.c_str(), _TRUNCATE);
+            } else if (gi >= 0) {
                 // a group moves with the nodes whose corner is inside its frame
                 m_sel.clear();
                 m_selGroup = gi;
@@ -1349,6 +1430,23 @@ void NodeEditor::handleInput(Graph& g, bool inArea, bool overWidget) {
             }
             for (int id : m_groupNodes)
                 if (Node* n = g.node(id)) n->pos = n->pos + dg;
+            m_modified = true;
+        }
+        break;
+    case DragGroupResize:
+        if (!io.MouseDown[0]) {
+            if (m_selGroup >= 0 && m_selGroup < (int)g.groups.size()) {
+                Group& gr = g.groups[m_selGroup];
+                gr.w = std::round(gr.w / 8) * 8;
+                gr.h = std::round(gr.h / 8) * 8;
+            }
+            m_drag = DragNone;
+        } else if ((delta.x != 0 || delta.y != 0) && m_selGroup >= 0 && m_selGroup < (int)g.groups.size()) {
+            if (!m_dragMoved) { pushUndo(g); m_dragMoved = true; }
+            Group& gr = g.groups[m_selGroup];
+            ImVec2 gp = toGraph(mouse);
+            gr.w = std::max(120.0f, gp.x - gr.x);
+            gr.h = std::max(kGroupTitle + 40.0f, gp.y - gr.y);
             m_modified = true;
         }
         break;

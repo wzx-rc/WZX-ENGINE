@@ -36,6 +36,8 @@ public:
     int arrangeOverlaps(Graph& g);
     // Adds a node of the library at the centre of the view (from the node library panel).
     void addNodeAtView(Graph& g, const NodeDef& d);
+    // Backdrop (group frame): around the selected nodes, or at the centre of the view when nothing is selected (Ctrl+G).
+    void addBackdrop(Graph& g);
     void resetView() { m_pan = ImVec2(-40, -60); m_zoom = 1.0f; }
     bool modified() const { return m_modified; }
     void clearModified() { m_modified = false; }
@@ -63,7 +65,7 @@ public:
 private:
     struct PinRef { int node = 0, pin = -1; bool output = false; };
     struct OutputMessage { int level = 0; std::string text; int node = 0; };
-    enum Drag { DragNone, DragNodes, DragLink, DragPan, DragMarquee, DragGroup };
+    enum Drag { DragNone, DragNodes, DragLink, DragPan, DragMarquee, DragGroup, DragGroupResize };
 
     float scale() const { return m_zoom * m_dpi; }     // graph units -> ImGui pixels
     ImVec2 toScreen(ImVec2 g) const { return m_origin + (g - m_pan) * scale(); }
@@ -78,6 +80,7 @@ private:
     PinRef hitPin(const Graph& g, ImVec2 p) const;
     int hitNode(const Graph& g, ImVec2 p) const;
     int hitGroupTitle(const Graph& g, ImVec2 p) const;   // index of the group whose title bar is under p, or -1
+    int hitGroupGrip(const Graph& g, ImVec2 p) const;    // index of the group whose resize corner is under p, or -1
     bool selected(int id) const;
 
     void handleInput(Graph& g, bool inArea, bool overWidget);
@@ -133,6 +136,8 @@ private:
     bool m_dragMoved = false;
     int m_rightButton = 0;
     std::vector<int> m_groupNodes;         // nodes inside the group being moved
+    int m_renameGroup = -1;                // backdrop whose title is edited in place (double click)
+    char m_renameBuf[160] = {};
 
     // add-node popup
     bool m_menuRequest = false;            // open the popup at the next draw

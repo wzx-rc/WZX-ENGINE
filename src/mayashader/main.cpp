@@ -334,6 +334,10 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
                 if (ImGui::IsItemHovered() && !d.help.empty()) ImGui::SetTooltip("%s", d.help.c_str());
                 ImGui::PopID();
             }
+            ImGui::Spacing();
+            ImGui::TextColored(ImColor(app::th::dim()), "Layout");
+            if (ImGui::Button("+ Backdrop  (Ctrl+G)", ImVec2(-FLT_MIN, 0))) editor.addBackdrop(graph);
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Frame around the selected nodes (or in the middle of the view)");
         }
         ImGui::End();
 
