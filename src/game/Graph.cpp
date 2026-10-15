@@ -173,6 +173,7 @@ bool Graph::compatible(PinType out, PinType in) {
     if (out == PinType::Exec || in == PinType::Exec) return false;
     if (in == PinType::Object || out == PinType::Object) return in == PinType::Bool && out == PinType::Object;
     if (in == PinType::String) return true;                               // anything prints
+    if (in == PinType::Float && out == PinType::Vec3) return true;           // colour to a value (Maya shader graph)
     if (in == PinType::Float || in == PinType::Bool) return out == PinType::Float || out == PinType::Bool;
     if (in == PinType::Vec3) return out == PinType::Float;
     return false;

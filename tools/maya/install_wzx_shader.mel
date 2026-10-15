@@ -1,0 +1,12 @@
+// Drag and drop this file into the Maya viewport: adds the "WZX Shader Graph" button to a WZX shelf.
+// The button runs tools/maya/scripts/wzx_shader_panel.py from this folder (build the exe first:
+// build.bat, then tools/maya/build_shader_graph.bat).
+global proc wzxShaderInstallLocator() {}
+
+{
+    string $where = `whatIs wzxShaderInstallLocator`;
+    string $file = `substitute "Mel procedure found in: " $where ""`;
+    string $dir = dirname($file);
+    python("import sys\np = r'" + $dir + "/scripts'\nif p not in sys.path: sys.path.insert(0, p)\nimport wzx_shader_panel\nwzx_shader_panel.install_shelf()");
+    print("WZX Shader Graph: button added to the WZX shelf\n");
+}

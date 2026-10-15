@@ -41,6 +41,19 @@ public:
     void clearModified() { m_modified = false; }
     std::string status;                   // small message shown in the canvas header
 
+    // Panel sizes (DIPs) and the space kept free above the Inspector (ImGui pixels, e.g. a preview drawn by the host).
+    float inspectorPx = 284, outputPx = 151, inspectorTop = 0;
+
+    // Texts of the canvas header and footer (the Maya shader graph renames the buttons; run empty = Run / Stop).
+    struct Labels {
+        std::string title = "Game Graph", subtitle = "Event Graph";
+        std::string compile = "Compile", run, build = "Build";
+        uint32_t compileIcon = 0xE73E, runIcon = 0xE768, buildIcon = 0xE7B8;
+        const char* vectorPin = "Vector";
+        const char* objectPin = "Entity";
+        const char* cleanState = "\xE2\x97\x8F  Compiled";
+    } labels;
+
     // Output panel: a message (0 info, 1 warning, 2 error, 3 success) and the node it concerns (0 = none).
     void addMessage(int level, const std::string& text, int node = 0);
     // Results of the last Compile (shown in the "Compiler Results" tab).

@@ -76,6 +76,12 @@ static ImU32 catColor(const std::string& c) {
     if (c == "Math") return IM_COL32(134, 189, 144, 255);
     if (c == "RTS") return IM_COL32(178, 146, 223, 255);
     if (c == "Native C++") return IM_COL32(255, 190, 40, 255);   // gold: the C++ node stands out
+    // Maya shader graph (WzxShaderGraph)
+    if (c == "Output") return IM_COL32(218, 106, 128, 255);
+    if (c == "Shaders") return IM_COL32(117, 159, 229, 255);
+    if (c == "Textures") return IM_COL32(219, 166, 100, 255);
+    if (c == "Utilities") return IM_COL32(134, 189, 144, 255);
+    if (c == "Constants") return IM_COL32(186, 132, 203, 255);
     return IM_COL32(150, 156, 166, 255);
 }
 
@@ -104,6 +110,11 @@ static uint32_t levelIcon(int level) {
     if (level == 2) return 0xE783;   // error badge
     if (level == 3) return 0xE73E;   // check
     return 0xE946;                   // info
+}
+
+// Vec3 pins named "...Color...", "Input" or "A" / "B" are edited as colours (Maya shader graph).
+static bool isColorPin(const PinDef& p) {
+    return p.type == PinType::Vec3 && (p.name.find("Color") != std::string::npos || p.name == "Input" || p.name == "A" || p.name == "B");
 }
 
 static bool hasVec3Input(const Node& n) {
@@ -418,7 +429,7 @@ void NodeEditor::draw(ImVec2 pos, ImVec2 size, float dpi, Graph& g, const Runtim
     ImGui::Begin("##nodegraph", nullptr, winFlags);
 
     const float d = m_dpi;
-    const float inspW = kInspectorPx * d, outH = kOutputPx * d, headH = kHeaderPx * d, footH = kFooterPx * d;
+    const float inspW = inspectorPx * d, outH = outputPx * d, headH = kHeaderPx * d, footH = kFooterPx * d;
     const float cw = std::max(1.0f, size.x - inspW);     // canvas column: canvas, footer and output
     drawToolbar(pos, cw, playing);                        // canvas header: breadcrumb and Compile / Run / Build
 
@@ -443,7 +454,7 @@ void NodeEditor::draw(ImVec2 pos, ImVec2 size, float dpi, Graph& g, const Runtim
     drawMinimap(g);
     drawFooter(ImVec2(pos.x, footY), cw, g);
     drawOutput(ImVec2(pos.x, outY), ImVec2(cw, outH), g, rt);
-    drawInspector(ImVec2(pos.x + cw, pos.y), ImVec2(inspW, size.y), g, rt);
+    drawInspector(ImVec2(pos.x + cw, pos.y + inspectorTop), ImVec2(inspW, std::max(1.0f, size.y - inspectorTop)), g, rt);
     drawMenu(g);
     ImGui::End();
     ImGui::PopStyleColor();
@@ -661,6 +672,21 @@ void NodeEditor::drawNode(Graph& g, Node& n, const Runtime* rt) {
             break;
         }
         case PinType::Vec3: {
+            if (isColorPin(p)) {   // colour swatch, click: colour picker (Maya shader graph)
+                Hit h = hitArea("##c", a, b);
+                dl->AddRectFilled(a, b, ImGui::ColorConvertFloat4ToU32(ImVec4(v.v.x, v.v.y, v.v.z, 1)), 3 * s);
+                dl->AddRect(a, b, h.hovered ? kCyan : kBorderC, 3 * s);
+                if (h.pressed) { ImGui::OpenPopup("##cpick"); m_snap = g.toJson(); m_editChanged = false; }
+                if (ImGui::BeginPopup("##cpick")) {
+                    if (ImGui::ColorPicker3("##picker", &v.v.x, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_NoSidePreview)) {
+                        m_editChanged = true;
+                        m_modified = true;
+                    }
+                    ImGui::EndPopup();
+                    if (!ImGui::IsPopupOpen("##cpick") && m_editChanged) trackEdit(g, false, false, true);
+                }
+                break;
+            }
             static const char* axes[3] = {"X", "Y", "Z"};
             static const ImU32 axc[3] = {kRed, kGreen, kCyan};
             float cw = (b.x - a.x - 4 * s) / 3;
@@ -730,8 +756,8 @@ void NodeEditor::drawToolbar(ImVec2 pos, float width, bool playing) {
     float cy = (a.y + b.y) * 0.5f;
     std::string gi = glyph(0xE8A1);
     dl->AddText(f, 13 * d, ImVec2(a.x + 12 * d, cy - 7 * d), kCyan, gi.c_str());
-    canvasText(dl, m_fontBold, 12 * d, ImVec2(a.x + 34 * d, cy), kText, "Game Graph");
-    canvasText(dl, m_font, 11 * d, ImVec2(a.x + 172 * d, cy), kMuted, "Event Graph");
+    canvasText(dl, m_fontBold, 12 * d, ImVec2(a.x + 34 * d, cy), kText, labels.title);
+    canvasText(dl, m_font, 11 * d, ImVec2(a.x + 172 * d, cy), kMuted, labels.subtitle);
     if (!status.empty()) canvasText(dl, m_font, 11 * d, ImVec2(a.x + 290 * d, cy), kMuted, status);
 
     float x = b.x - (84 + 103 + 71 + 72 + 28 + 5 * 6 + 12) * d, y0 = a.y + 6 * d, h = 25 * d;
@@ -741,9 +767,9 @@ void NodeEditor::drawToolbar(ImVec2 pos, float width, bool playing) {
         return pressed;
     };
     if (btn("##tb_arrange", 84, 0xE8CB, "Arrange", false)) m_action = Arrange;
-    if (btn("##tb_compile", 103, 0xE73E, "Compile", false)) m_action = Compile;
-    if (btn("##tb_play", 71, playing ? 0xE71A : 0xE768, playing ? "Stop" : "Run", playing)) m_action = TogglePlay;
-    if (btn("##tb_build", 72, 0xE7B8, "Build", false)) m_action = Build;
+    if (btn("##tb_compile", 103, labels.compileIcon, labels.compile.c_str(), false)) m_action = Compile;
+    if (!labels.run.empty() ? btn("##tb_play", 71, labels.runIcon, labels.run.c_str(), false) : btn("##tb_play", 71, playing ? 0xE71A : 0xE768, playing ? "Stop" : "Run", playing)) m_action = TogglePlay;
+    if (btn("##tb_build", 72, labels.buildIcon, labels.build.c_str(), false)) m_action = Build;
     if (btn("##tb_frame", 28, 0xE9A6, "", false)) m_wantFrame = true;
 }
 
@@ -753,7 +779,7 @@ void NodeEditor::drawFooter(ImVec2 pos, float width, const Graph& g) {
     const float d = m_dpi;
     ImVec2 a = pos, b(pos.x + width, pos.y + kFooterPx * d);
     dl->AddRectFilled(a, b, kBg);
-    static const char* names[] = {"Exec", "Float", "Bool", "Vector", "Entity", "String"};
+    const char* names[] = {"Exec", "Float", "Bool", labels.vectorPin, labels.objectPin, "String"};
     static const PinType types[] = {PinType::Exec, PinType::Float, PinType::Bool, PinType::Vec3, PinType::Object, PinType::String};
     float x = a.x + 9 * d;
     for (int i = 0; i < 6; ++i) {
@@ -764,7 +790,7 @@ void NodeEditor::drawFooter(ImVec2 pos, float width, const Graph& g) {
     std::string counts = std::to_string(g.nodes.size()) + " nodes  /  " + std::to_string(g.links.size()) + " links";
     canvasText(dl, m_font, 9 * d, ImVec2(b.x - 272 * d, a.y + 12 * d), kMuted, counts);
     canvasText(dl, m_font, 9 * d, ImVec2(b.x - 116 * d, a.y + 12 * d), m_modified ? kAmber : kGreen,
-               m_modified ? "\xE2\x97\x8F  Modified" : "\xE2\x97\x8F  Compiled");
+               m_modified ? "\xE2\x97\x8F  Modified" : labels.cleanState);
 }
 
 // Overview of the graph in the corner (Atelier): tiles coloured by category.
@@ -898,7 +924,8 @@ void NodeEditor::drawInspectorNode(Graph& g, Node& n, float w) {
             done = ImGui::IsItemDeactivatedAfterEdit();
             break;
         case PinType::Vec3:
-            changed = ImGui::DragFloat3("##v", &v.v.x, 0.05f, 0, 0, "%.2f");
+            if (isColorPin(p2)) changed = ImGui::ColorEdit3("##v", &v.v.x, ImGuiColorEditFlags_Float);
+            else changed = ImGui::DragFloat3("##v", &v.v.x, 0.05f, 0, 0, "%.2f");
             done = ImGui::IsItemDeactivatedAfterEdit();
             break;
         case PinType::String: {
