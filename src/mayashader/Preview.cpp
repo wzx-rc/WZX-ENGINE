@@ -1,4 +1,6 @@
 #include "Preview.h"
+#include "app/Theme.h"
+#include "imgui_internal.h"
 #include "vp3d/EnvImage.h"
 #include "vp3d/shaders/Shared.h"
 #include <wincodec.h>
@@ -406,14 +408,14 @@ void Preview::applyGraph(const Graph& g) {
 }
 
 bool Preview::draw(const Graph& g, ImVec2 pos, ImVec2 size, float dpi) {
-    // the graph changed: re-evaluate the material
+    // the graph changed: re-evaluate the material (kept for later while paused)
     std::string key = g.toJson();
-    if (key != m_graphKey) {
+    if (key != m_graphKey && !m_paused) {
         m_graphKey = key;
         applyGraph(g);
     }
 
-    const float barH = 30 * dpi;
+    const float topH = 28 * dpi, barH = 30 * dpi;
     ImGui::SetNextWindowPos(pos, ImGuiCond_Always);
     ImGui::SetNextWindowSize(size, ImGuiCond_Always);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
@@ -421,22 +423,39 @@ bool Preview::draw(const Graph& g, ImVec2 pos, ImVec2 size, float dpi) {
                                    ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoScrollbar;
     ImGui::Begin("##preview", nullptr, flags);
     ImGui::PopStyleVar();
-    ImVec2 img(size.x, std::max(16.0f, size.y - barH));
+    // the graph window covers the whole workspace: the preview stays in front of it (a click on the graph raised it)
+    ImGui::BringWindowToDisplayFront(ImGui::GetCurrentWindow());
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    const ImVec2 imgPos(pos.x, pos.y + topH);
+    ImVec2 img(size.x, std::max(16.0f, size.y - barH - topH));
     int w = std::max(16, (int)img.x), h = std::max(16, (int)img.y);
 
-    // camera: drag to turn, wheel to zoom
-    ImGui::SetCursorScreenPos(pos);
-    ImGui::InvisibleButton("##pvdrag", img, ImGuiButtonFlags_MouseButtonLeft | ImGuiButtonFlags_MouseButtonRight);
+    // top bar: play / pause of the rendering, sample count, reset of the lighting rotation
+    dl->AddRectFilled(pos, ImVec2(pos.x + size.x, pos.y + topH), app::th::bar());
+    dl->AddLine(ImVec2(pos.x, pos.y + topH - 0.5f), ImVec2(pos.x + size.x, pos.y + topH - 0.5f), app::th::border());
+    ImGui::SetCursorScreenPos(ImVec2(pos.x + 5 * dpi, pos.y + 3 * dpi));
+    if (ImGui::Button(m_paused ? "\xEE\x9D\xA8##pvplay" : "\xEE\x9D\xA9##pvplay", ImVec2(26 * dpi, topH - 6 * dpi))) m_paused = !m_paused;   // play / pause glyphs
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip(m_paused ? "Resume the preview" : "Pause the preview (frees the GPU for Maya)");
+    ImGui::SameLine();
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted("Material Preview");
+    char info[64];
+    snprintf(info, sizeof info, m_paused ? "paused  %u spp" : "%u spp", m_r->sampleCount());
+    ImVec2 ts = ImGui::CalcTextSize(info);
+    ImGui::SameLine(size.x - ts.x - 40 * dpi);
+    ImGui::TextColored(app::th::dimV(), "%s", info);
+    ImGui::SameLine(size.x - 31 * dpi);
+    if (ImGui::Button("\xEE\x9C\xAC##pvreset", ImVec2(26 * dpi, topH - 6 * dpi))) m_envRot = 0;   // refresh glyph
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Reset the lighting rotation");
+
+    // left drag: turns the HDRI and the lights 360 degrees around the sphere (Substance Painter style); the camera stays
+    ImGui::SetCursorScreenPos(imgPos);
+    ImGui::InvisibleButton("##pvdrag", img, ImGuiButtonFlags_MouseButtonLeft);
     if (ImGui::IsItemActive()) {
-        ImVec2 d = ImGui::GetIO().MouseDelta;
-        if (ImGui::IsMouseDown(ImGuiMouseButton_Right)) m_envRot += d.x * 0.01f;   // right drag: turn the lighting
-        else {
-            m_yaw -= d.x * 0.01f;
-            m_pitch = std::min(1.4f, std::max(-1.4f, m_pitch + d.y * 0.01f));
-        }
+        m_envRot += ImGui::GetIO().MouseDelta.x * (2.0f * kPi / std::max(1.0f, img.x));   // the width of the image = one turn
+        m_envRot = std::fmod(m_envRot, 2.0f * kPi);
     }
-    if (ImGui::IsItemHovered() && ImGui::GetIO().MouseWheel != 0)
-        m_dist = std::min(12.0f, std::max(2.2f, m_dist * (1.0f - ImGui::GetIO().MouseWheel * 0.1f)));
+    if (ImGui::IsItemHovered()) ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
 
     Scene& s = m_scene;
     Camera& c = s.camera;
@@ -471,29 +490,32 @@ bool Preview::draw(const Graph& g, ImVec2 pos, ImVec2 size, float dpi) {
     // -0.6 EV: measured against Arnold (Maya ACES 1.0 SDR view, same HDRI), so EV 0 matches a Maya render
     m_rs.exposure = std::pow(2.0f, m_exposure - 0.6f);
 
-    if (m_sceneDirty) {
-        m_r->setScene(s);   // also uploads the baked texture
-        m_r->resetAccumulation();
-        m_sceneDirty = false;
-    }
     std::ostringstream vk;
     vk << m_yaw << ' ' << m_pitch << ' ' << m_dist << ' ' << m_envRot << ' ' << m_exposure << ' ' << m_lights << m_background << ' ' << m_hdri << ' ' << w << 'x' << h;
-    if (vk.str() != m_viewKey) {
-        m_viewKey = vk.str();
-        m_r->resetAccumulation();
+    if (!m_paused) {
+        if (m_sceneDirty) {
+            m_r->setScene(s);   // also uploads the baked texture
+            m_r->resetAccumulation();
+            m_sceneDirty = false;
+        }
+        if (vk.str() != m_viewKey) {
+            m_viewKey = vk.str();
+            m_r->resetAccumulation();
+        }
     }
+    // paused: no new samples (the image is only tonemapped again), changes wait for Play
+    m_rs.maxSamples = m_paused ? std::max(1u, m_r->sampleCount()) : 1024;
     ViewRect v;
     v.w = w;
     v.h = h;
+    if (m_paused) v = m_lastView;   // same size as the image kept
+    m_lastView = v;
     m_r->renderToTexture(s, m_rs, v, -1);
-    m_busy = !m_r->converged(m_rs);
-    ImGui::GetWindowDrawList()->AddImage(m_gui->viewportTexture(), pos, ImVec2(pos.x + img.x, pos.y + img.y));
-    char info[64];
-    snprintf(info, sizeof info, "%u spp", m_r->sampleCount());
-    ImGui::GetWindowDrawList()->AddText(ImVec2(pos.x + 8 * dpi, pos.y + 6 * dpi), IM_COL32(220, 225, 230, 160), info);
+    m_busy = !m_paused && !m_r->converged(m_rs);
+    dl->AddImage(m_gui->viewportTexture(), imgPos, ImVec2(imgPos.x + img.x, imgPos.y + img.y));
 
-    // bar: HDRI, lights, background, exposure
-    ImGui::SetCursorScreenPos(ImVec2(pos.x + 6 * dpi, pos.y + img.y + 4 * dpi));
+    // bottom bar: HDRI, lights, background, exposure
+    ImGui::SetCursorScreenPos(ImVec2(pos.x + 6 * dpi, imgPos.y + img.y + 4 * dpi));
     ImGui::SetNextItemWidth(size.x * 0.36f);
     std::string cur = m_hdri >= 0 ? std::filesystem::path(m_hdris[m_hdri]).stem().string() : std::string("Gradient");
     if (ImGui::BeginCombo("##hdri", cur.c_str())) {
@@ -502,7 +524,7 @@ bool Preview::draw(const Graph& g, ImVec2 pos, ImVec2 size, float dpi) {
             if (ImGui::Selectable(std::filesystem::path(m_hdris[i]).stem().string().c_str(), m_hdri == i)) setHdri(i);
         ImGui::EndCombo();
     }
-    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Environment (HDRI). Right drag on the preview turns the lighting.");
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Environment (HDRI). Drag left / right on the preview to turn it.");
     ImGui::SameLine();
     ImGui::Checkbox("3pt", &m_lights);
     if (ImGui::IsItemHovered()) ImGui::SetTooltip("Key / fill / rim area lights");

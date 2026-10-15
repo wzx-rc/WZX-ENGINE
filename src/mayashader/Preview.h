@@ -35,6 +35,8 @@ private:
     bool m_lights = true, m_background = true, m_acescg = true;
     bool m_busy = true;
     bool m_sceneDirty = true;
+    bool m_paused = false;
+    vp3d::ViewRect m_lastView;
 };
 
 } // namespace mayashader

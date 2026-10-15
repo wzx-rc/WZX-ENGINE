@@ -25,7 +25,7 @@ matériaux Arnold. Chaque nœud du graph pilote un nœud Maya / Arnold existant 
 - Chaque modification du graph est répercutée dans Maya (création, valeurs, connexions, suppression) ; Hypershade montre le réseau.
 - **Assign** : assigne le matériau aux objets sélectionnés. **Graph** : ouvre Hypershade sur le matériau. **Sync Maya** : resynchronise.
 - Le graph est enregistré dans la scène (nœud `network` `<nom>_wzxGraph`), donc sauvé avec le .ma / .mb.
-- Aperçu à droite : sphère en path tracing (vp3d), HDRI (`assets/hdri`) + 3 lumières. Glisser = tourner, clic droit glissé = tourner l'éclairage, molette = zoom.
+- Aperçu à droite : sphère en path tracing (vp3d), HDRI (`assets/hdri`) + 3 lumières. Barre du haut : lecture / pause du rendu, remise à zéro de la rotation. Caméra fixe : glisser gauche / droite fait tourner l.HDRI et les lumières sur 360° (comme Substance Painter).
   Les couleurs sont lues dans l'espace de rendu de Maya (ACEScg par défaut) ; l'exposition est calée sur un rendu Arnold avec le même HDRI.
 
 ## Fonctionnement
