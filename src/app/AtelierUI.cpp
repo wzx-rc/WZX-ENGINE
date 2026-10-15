@@ -784,8 +784,13 @@ void App::atlHierarchy(float x, float y, float w, float h) {
         if (hv && ImGui::IsMouseReleased(1)) { ctxId = row.id; openCtx = true; }
         rowRects.push_back({rr, n});
         const bool middle = ImGui::IsItemActive() && ImGui::GetCurrentContext()->ActiveIdMouseButton == ImGuiMouseButton_Middle;
-        const bool canMove = middle || (sel && ImGui::GetCurrentContext()->ActiveIdMouseButton == ImGuiMouseButton_Left);
-        if (ImGui::IsItemActive() && !canMove && !sweep.active && ImGui::IsMouseDragging(0, 4 * s)) startSweep();
+        // the gesture is chosen at the press: a row selected at that moment (or the middle button) moves, an unselected
+        // row sweeps a selection rectangle; the rows the rectangle selects never turn it into a drag & drop
+        static uint32_t pressId = 0;
+        static bool pressSel = false;
+        if (ImGui::IsItemActivated()) { pressId = row.id; pressSel = sel; }
+        const bool canMove = ImGui::IsItemActive() && !sweep.active && (middle || (pressId == row.id && pressSel && ImGui::GetCurrentContext()->ActiveIdMouseButton == ImGuiMouseButton_Left));
+        if (ImGui::IsItemActive() && !canMove && !middle && !sweep.active && ImGui::IsMouseDragging(0, 4 * s)) startSweep();
         // drag the selection (or this row alone when it is not selected)
         if (canMove && ImGui::BeginDragDropSource()) {
             if (ImGui::GetDragDropPayload() == nullptr || !ImGui::GetDragDropPayload()->IsDataType("WZX_NODE")) {
@@ -847,8 +852,11 @@ void App::atlHierarchy(float x, float y, float w, float h) {
             }
         } else {
             dl->PushClipRect(ImVec2(px, yy), ImVec2(px + pw - 52 * s - (sub.empty() ? 0 : 18 * s), yy + hh), true);
-            if (isCol) TextBold(nx, yy + (hh - 2 * s - 12 * s * ts()) / 2, nodeName(n), dim ? P().muted : P().text, 12);
-            else Text(nx, yy + (hh - 2 * s - 11 * s * ts()) / 2, nodeName(n), dim ? P().muted : P().text, 11);
+            // name colour: normal, locked (amber tint, darker on light themes), hidden (muted), locked and hidden (faded tint)
+            const ImU32 lockCol = Family(IM_COL32(214, 160, 104, 255));
+            const ImU32 nameCol = locked ? (dim ? Fade(lockCol, 130) : lockCol) : (dim ? P().muted : P().text);
+            if (isCol) TextBold(nx, yy + (hh - 2 * s - 12 * s * ts()) / 2, nodeName(n), nameCol, 12);
+            else Text(nx, yy + (hh - 2 * s - 11 * s * ts()) / 2, nodeName(n), nameCol, 11);
             dl->PopClipRect();
             if (!sub.empty()) Text(px + pw - 52 * s - TextSize(sub, 9).x - 4 * s, yy + (hh - 2 * s - 9 * s * ts()) / 2, sub, P().muted, 9);
         }
