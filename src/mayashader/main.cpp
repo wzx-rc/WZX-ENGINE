@@ -8,6 +8,8 @@
 #include "app/ImGuiLayer.h"
 #include "app/Theme.h"
 #include "app/AtelierIcons.h"
+#include "app/Icons.h"
+#include "SettingsWindow.h"
 #include "game/NodeEditor.h"
 #include "backends/imgui_impl_win32.h"
 #include <windows.h>
@@ -31,6 +33,7 @@ struct Options {
     std::wstring hdri;
     DWORD mayaPid = 0;
     std::wstring shotPath;
+    bool openSettings = false;
     int shotFrames = 120;
     bool shotPreview = false;    // --shot-preview: the preview image only
     int previewLights = 1;
@@ -109,6 +112,7 @@ Options parseArgs() {
         else if (a == L"--hdri") o.hdri = next();
         else if (a == L"--maya-pid") o.mayaPid = (DWORD)_wtoi(next().c_str());
         else if (a == L"--shot") o.shotPath = next();
+        else if (a == L"--open-settings") o.openSettings = true;
         else if (a == L"--frames") o.shotFrames = _wtoi(next().c_str());
         else if (a == L"--shot-preview") { o.shotPath = next(); o.shotPreview = true; }
         else if (a == L"--preview-lights") o.previewLights = _wtoi(next().c_str());
@@ -189,7 +193,9 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
     if (!g_gui.init(hwnd, g_renderer, dpi)) return 1;
     ImGui::GetIO().IniFilename = nullptr;
     app::th::loadThemes(exeDir + L"\\assets\\themes");
-    app::th::loadSettings(opt.settingsPath.empty() ? exeDir + L"\\wzx_settings.ini" : opt.settingsPath);
+    // own settings file next to the exe; the first time, the settings of the WZX editor (--settings) are taken over
+    const std::wstring settingsFile = exeDir + L"\wzx_settings.ini";
+    app::th::loadSettings(GetFileAttributesW(settingsFile.c_str()) == INVALID_FILE_ATTRIBUTES && !opt.settingsPath.empty() ? opt.settingsPath : settingsFile);
     app::th::apply(dpi);
     if (!opt.embed) ShowWindow(hwnd, SW_SHOWDEFAULT);
 
@@ -231,6 +237,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
     bool pendingSync = true;
     bool wasConnected = false;
     int frameCount = 0;
+    bool showSettings = opt.openSettings;
     bool wasParented = false;
 
     MSG msg;
@@ -250,7 +257,8 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         if (g_minimized || !IsWindowVisible(hwnd)) { Sleep(50); maya.poll(); continue; }
 
         g_gui.newFrame();
-        const float s = dpi;
+        ImGui::GetStyle().FontScaleMain = app::th::textSize();
+        const float s = dpi * app::th::layoutSize();
         ImGuiViewport* vp = ImGui::GetMainViewport();
         const float sideW = 190 * s;
         const ImVec2 full = vp->WorkSize;
@@ -262,7 +270,11 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         const ImGuiWindowFlags fixed = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
                                        ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings;
         if (ImGui::Begin("##library", nullptr, fixed)) {
+            ImGui::AlignTextToFramePadding();
             ImGui::TextUnformatted("Material");
+            ImGui::SameLine(ImGui::GetContentRegionAvail().x + ImGui::GetCursorPosX() - 30 * s);
+            if (ImGui::Button(ICON_SETTINGS "##settings", ImVec2(28 * s, 0))) showSettings = !showSettings;
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Settings: theme, colours, sizes, graph");
             char name[128] = {};
             strncpy_s(name, graph.name.c_str(), _TRUNCATE);
             ImGui::SetNextItemWidth(-FLT_MIN);
@@ -316,6 +328,12 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         // preview (top of the right column)
         ImVec2 pvPos(edPos.x + edSize.x - editor.inspectorPx * s, edPos.y);
         bool rendered = preview.draw(graph, pvPos, ImVec2(editor.inspectorPx * s, previewH), s);
+
+        // WZX settings window (theme, colours, sizes, graph outlines), saved next to the exe
+        if (showSettings && mayashader::drawSettingsWindow(&showSettings, dpi)) {
+            app::th::apply(dpi);
+            app::th::saveSettings(settingsFile);
+        }
 
         switch (editor.takeAction()) {
         case NodeEditor::Compile: pendingSync = true; lastJson.clear(); break;

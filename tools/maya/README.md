@@ -20,6 +20,7 @@ matériaux Arnold. Chaque nœud du graph pilote un nœud Maya / Arnold existant 
 ## Utiliser
 
 - Le bouton ouvre le panneau : liste des graphs de la scène, **New**, **Restart**, puis l'éditeur.
+- Engrenage (en haut à gauche) : le panneau Settings de WZX Engine (thème, mode, couleurs, tailles, contours du graph). Au premier lancement les réglages du moteur (`build/bin/wzx_settings.ini`) sont repris, ensuite ils sont gardés dans `build/mayashader/wzx_settings.ini`.
 - Chaque modification du graph est répercutée dans Maya (création, valeurs, connexions, suppression) ; Hypershade montre le réseau.
 - **Assign** : assigne le matériau aux objets sélectionnés. **Graph** : ouvre Hypershade sur le matériau. **Sync Maya** : resynchronise.
 - Le graph est enregistré dans la scène (nœud `network` `<nom>_wzxGraph`), donc sauvé avec le .ma / .mb.
