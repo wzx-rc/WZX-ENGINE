@@ -383,6 +383,8 @@ float4 PSMain(VSOut i) : SV_Target {
 }
 float4 PSGhost(VSOut i) : SV_Target { return Shade(i, true, 0.0015, false); }
 float4 PSId(VSOut i) : SV_Target { return float4(0, 0, 0, (float)D.id); }
+// Editor wireframe display: flat lines, grey level in D.alpha (blended, no depth write).
+float4 PSWire(VSOut i) : SV_Target { return float4(D.alpha.xxx, 0.75); }
 
 // ---------------------------------------------------------------- DDGI probe capture
 // One 90-degree cube face per draw: the view-projection of the face and the probe position (32-bit root constants b3).

@@ -58,6 +58,13 @@ int partMesh(Scene& s, const PartDef& p);
 // Creates an object of the given part with its own material.
 int addPart(Scene& s, const std::string& partId, int colorId, int preset, float3 pos, float yawDeg);
 
+// Parametric primitives (Create > Mesh): cube, sphere, plane, cylinder, torus, disk, 1 RTS cell large, neutral matte grey.
+const char* primitiveName(int type);
+int addPrimitive(Scene& s, int type, float3 pos);
+// Points the object at a mesh built from its parameters: rewritten in place when no other object uses it, else a new
+// one. Returns true when the mesh changed. Call after editing Object::prim, and after undo / redo.
+bool syncPrimitiveMesh(Scene& s, int object);
+
 void buildCornellBox(Scene& s);
 // Ground grid + soft studio lights, no objects.
 void buildStudioScene(Scene& s);

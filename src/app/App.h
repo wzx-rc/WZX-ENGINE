@@ -146,6 +146,8 @@ private:
     void redo();
     void select(int idx);
     void addPartFromLibrary(const PartDef& p, const float3* at = nullptr);
+    void addPrimitive(int type);   // Create > Mesh
+    void syncPrimitives();         // rebuilds primitive meshes whose parameters changed (undo / redo)
     void duplicateSelected();
     void deleteSelected();
     void rotateSelected(float deg);
