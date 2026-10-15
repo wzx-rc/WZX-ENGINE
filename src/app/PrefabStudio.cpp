@@ -57,6 +57,14 @@ void App::prefabInit() {
     if (m_opt.prefabTime >= 0) P.time = m_opt.prefabTime;
     if (m_opt.prefabBottom >= 0) P.bottomTab = m_opt.prefabBottom;
     if (m_opt.prefabLight >= 0) P.lightPreset = m_opt.prefabLight;
+    if (!m_opt.prefabSave.empty() && writeFileSafe(m_opt.prefabSave, prefabToJson(P.asset))) {
+        P.path = m_opt.prefabSave;
+        P.savedJson = prefabToJson(P.asset);
+    }
+    if (m_opt.prefabPlace) {
+        prefabAddToScene();
+        m_workspace = 0;
+    }
 }
 
 void App::prefabNew(bool demo) {
@@ -465,8 +473,8 @@ void App::prefabLighting() {
         break;
     case 3:   // night: moonlight, the emissive parts carry the scene
         e.top = lin(0.05f, 0.07f, 0.14f); e.horizon = lin(0.08f, 0.1f, 0.16f); e.bottom = lin(0.02f, 0.02f, 0.03f);
-        e.intensity = 1.0f * k; e.ambient = lin(0.12f, 0.15f, 0.25f) * 0.25f * k;
-        s.sun.enabled = true; s.sun.color = float3(0.55f, 0.65f, 1.0f); s.sun.intensity = 0.5f * P.keyIntensity;
+        e.intensity = 1.0f * k; e.ambient = lin(0.3f, 0.36f, 0.55f) * 0.3f * k;
+        s.sun.enabled = true; s.sun.color = float3(0.55f, 0.65f, 1.0f); s.sun.intensity = 1.1f * P.keyIntensity;
         break;
     case 4: {   // HDRI: the image of the scene settings (lighting, reflections, background)
         std::wstring path = P.hdri.empty() ? defaultHdri() : P.hdri;

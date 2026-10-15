@@ -1139,6 +1139,8 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         else if (a == L"--prefab-time") opt.prefabTime = (float)_wtof(next().c_str());
         else if (a == L"--prefab-open") opt.prefabOpen = next();
         else if (a == L"--prefab-bottom") opt.prefabBottom = _wtoi(next().c_str());
+        else if (a == L"--prefab-save") opt.prefabSave = next();
+        else if (a == L"--prefab-place") opt.prefabPlace = true;
         else if (a == L"--prefab-light") opt.prefabLight = _wtoi(next().c_str());
         else if (a == L"--ddgi") opt.ddgi = _wtoi(next().c_str()) != 0;
         else if (a == L"--probes") opt.probes = _wtoi(next().c_str());

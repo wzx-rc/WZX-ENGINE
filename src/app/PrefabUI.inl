@@ -946,7 +946,7 @@ void App::pfTimeline(float x, float y, float w, float h) {
     PrefabStudio& F = m_pf;
     PrefabAsset& A = F.asset;
     R r = {x, y, w, h};
-    Panel(r, Icon::Animation, "Timeline", "ANIMATION", P().accent);
+    Panel(r, Icon::Animation, "Timeline", "", P().accent);
     // tabs: Timeline / UV Layout (top right of the panel)
     {
         float tx = r.x + r.w - 12 * s - 2 * 104 * s;
@@ -1233,7 +1233,7 @@ void App::pfUvLayout(float x, float y, float w, float h) {
     PrefabStudio& F = m_pf;
     PrefabAsset& A = F.asset;
     R r = {x, y, w, h};
-    Panel(r, Icon::Grid, "UV Layout", "INSPECTION", P().accent);
+    Panel(r, Icon::Grid, "UV Layout", "", P().accent);
     {
         float tx = r.x + r.w - 12 * s - 2 * 104 * s;
         if (TabButton("pfBottomTl2", {tx, r.y + 6 * s, 100 * s, 24 * s}, "Timeline", Icon::Animation, F.bottomTab == 0)) F.bottomTab = 0;

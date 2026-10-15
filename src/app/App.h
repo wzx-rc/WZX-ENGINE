@@ -117,6 +117,8 @@ struct Options {
     int prefabView = -1, prefabSelect = -1, prefabTab = -1, prefabClip = -1, prefabBottom = -1, prefabLight = -1;
     float prefabTime = -1;
     std::wstring prefabOpen;
+    bool prefabPlace = false;   // test: places the prefab in the scene at startup and shows the Scene workspace (--prefab-place)
+    std::wstring prefabSave;    // test: writes the prefab of the studio to this file at startup (--prefab-save)
     int inspectorTab = -1;      // test: inspector tab at startup (0 actor, 1 light, 2 render, 3 world)
     ImVec4 mainColor = ImVec4(-1, -1, -1, 1);   // test: main colour for this run (--main-color r,g,b)
     ImVec4 sizes = ImVec4(-1, -1, -1, 0);       // test: text, icon and layout size for this run (--sizes t,i,l)
