@@ -26,11 +26,21 @@ struct FbxCluster {
     Affine bindMesh;           // world transform of the mesh at bind time (Transform), for information
 };
 
+// An animation stack, sampled per frame: the local transform of every joint (as FbxJoint) at each frame.
+struct FbxClip {
+    std::string name;
+    float fps = 30.0f;
+    int frames = 0;
+    std::vector<std::vector<float3>> translation, scale;   // [joint][frame]
+    std::vector<std::vector<float4>> rotation;
+};
+
 struct FbxScene {
     MeshData mesh;
     std::vector<UvSet> uvSets;
     std::vector<FbxJoint> joints;
     std::vector<FbxCluster> clusters;   // one per joint with weights (all the meshes merged)
+    std::vector<FbxClip> clips;
     int meshes = 0, version = 0;
 };
 

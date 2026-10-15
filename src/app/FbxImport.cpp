@@ -509,6 +509,121 @@ bool loadFbx(const std::wstring& path, FbxScene& out, std::string* error) {
     };
     for (auto& kv : isJoint) addJoint(kv.first);
 
+    // animation stacks: curve nodes (T / R / S of a model) and their curves (X / Y / Z), sampled at 30 frames per second
+    {
+        struct Curve { std::vector<double> t; std::vector<double> v; double def = 0; };
+        std::map<int64_t, Curve> curves;
+        std::map<int64_t, std::string> stackNames;
+        std::map<int64_t, std::pair<double, double>> stackRange;
+        std::map<int64_t, bool> curveNodes, layers;
+        for (const Node& o : objects->kids) {
+            if (o.props.empty()) continue;
+            int64_t id = o.props[0].i;
+            if (o.name == "AnimationCurve") {
+                Curve c;
+                const Prop* kt = firstArray(o.child("KeyTime"));
+                const Prop* kv = firstArray(o.child("KeyValueFloat"));
+                if (kt) for (int64_t x : kt->ai) c.t.push_back((double)x / 46186158000.0);
+                if (kv) c.v = kv->ad;
+                if (const Node* d = o.child("Default")) if (!d->props.empty()) c.def = d->props[0].d;
+                curves[id] = c;
+            } else if (o.name == "AnimationCurveNode") curveNodes[id] = true;
+            else if (o.name == "AnimationLayer") layers[id] = true;
+            else if (o.name == "AnimationStack" && o.props.size() > 1) {
+                stackNames[id] = objName(o.props[1].s);
+                double a = 0, b = -1;
+                if (const Node* p70 = o.child("Properties70"))
+                    for (const Node& p : p70->kids)
+                        if (p.props.size() > 4 && (p.props[0].s == "LocalStart" || p.props[0].s == "ReferenceStart")) a = (double)p.props[4].i / 46186158000.0;
+                        else if (p.props.size() > 4 && (p.props[0].s == "LocalStop" || p.props[0].s == "ReferenceStop")) b = std::max(b, (double)p.props[4].i / 46186158000.0);
+                stackRange[id] = {a, b};
+            }
+        }
+        // connections with a property: curve -> curve node (d|X), curve node -> model (Lcl Translation ...)
+        struct NodeTarget { int64_t model = 0; int channel = -1; int64_t curve[3] = {0, 0, 0}; int64_t layer = 0; };
+        std::map<int64_t, NodeTarget> nodes;
+        std::map<int64_t, int64_t> layerStack;
+        if (connections)
+            for (const Node& c : connections->kids) {
+                if (c.name != "C" || c.props.size() < 3) continue;
+                int64_t child = c.props[1].i, parent = c.props[2].i;
+                if (c.props[0].s == "OP" && c.props.size() >= 4) {
+                    const std::string& prop = c.props[3].s;
+                    if (curves.count(child) && curveNodes.count(parent)) {
+                        int axis = prop == "d|X" ? 0 : prop == "d|Y" ? 1 : prop == "d|Z" ? 2 : -1;
+                        if (axis >= 0) nodes[parent].curve[axis] = child;
+                    } else if (curveNodes.count(child) && models.count(parent)) {
+                        int ch = prop == "Lcl Translation" ? 0 : prop == "Lcl Rotation" ? 1 : prop == "Lcl Scaling" ? 2 : -1;
+                        if (ch >= 0) { nodes[child].model = parent; nodes[child].channel = ch; }
+                    }
+                } else if (c.props[0].s == "OO") {
+                    if (curveNodes.count(child) && layers.count(parent)) nodes[child].layer = parent;
+                    else if (layers.count(child) && stackNames.count(parent)) layerStack[child] = parent;
+                }
+            }
+        auto sample = [](const Curve& c, double t) {
+            if (c.t.empty() || c.v.empty()) return c.def;
+            if (t <= c.t.front()) return c.v.front();
+            size_t n = std::min(c.t.size(), c.v.size());
+            if (t >= c.t[n - 1]) return c.v[n - 1];
+            size_t i = (size_t)(std::upper_bound(c.t.begin(), c.t.begin() + n, t) - c.t.begin());
+            double u = (t - c.t[i - 1]) / std::max(1e-9, c.t[i] - c.t[i - 1]);
+            return c.v[i - 1] + (c.v[i] - c.v[i - 1]) * u;
+        };
+        std::vector<int64_t> jointModel(out.joints.size());
+        for (auto& kv : jointIndex) jointModel[kv.second] = kv.first;
+        for (auto& st : stackNames) {
+            // the curve nodes of this stack, by model
+            std::map<int64_t, std::vector<const NodeTarget*>> byModel;
+            double t0 = 1e30, t1 = -1e30;
+            for (auto& n : nodes) {
+                const NodeTarget& nt = n.second;
+                auto ls = layerStack.find(nt.layer);
+                if (!nt.model || nt.channel < 0 || ls == layerStack.end() || ls->second != st.first) continue;
+                byModel[nt.model].push_back(&nt);
+                for (int a = 0; a < 3; ++a)
+                    if (nt.curve[a] && !curves[nt.curve[a]].t.empty()) { t0 = std::min(t0, curves[nt.curve[a]].t.front()); t1 = std::max(t1, curves[nt.curve[a]].t.back()); }
+            }
+            if (byModel.empty() || t1 <= t0) continue;
+            auto range = stackRange[st.first];
+            if (range.second > range.first) { t0 = range.first; t1 = range.second; }
+            FbxClip clip;
+            clip.name = st.second;
+            clip.frames = std::clamp((int)std::lround((t1 - t0) * clip.fps) + 1, 2, 3000);
+            const size_t J = out.joints.size();
+            clip.translation.assign(J, std::vector<float3>(clip.frames));
+            clip.rotation.assign(J, std::vector<float4>(clip.frames));
+            clip.scale.assign(J, std::vector<float3>(clip.frames));
+            for (int f = 0; f < clip.frames; ++f) {
+                const double t = t0 + f / (double)clip.fps;
+                // animated locals of this frame, then the globals (cached per frame)
+                std::map<int64_t, M4> g;
+                std::function<M4(int64_t, int)> gl = [&](int64_t id, int depth) -> M4 {
+                    auto it = g.find(id);
+                    if (it != g.end()) return it->second;
+                    Model m = models[id];
+                    auto bm = byModel.find(id);
+                    if (bm != byModel.end())
+                        for (const NodeTarget* nt : bm->second) {
+                            double* dst = nt->channel == 0 ? m.t : nt->channel == 1 ? m.r : m.s;
+                            for (int a = 0; a < 3; ++a)
+                                if (nt->curve[a]) dst[a] = sample(curves[nt->curve[a]], t);
+                        }
+                    M4 r = m.local();
+                    if (m.parent && depth < 256) r = gl(m.parent, depth + 1) * r;
+                    g[id] = r;
+                    return r;
+                };
+                for (size_t j = 0; j < J; ++j) {
+                    const int pj = out.joints[j].parent;
+                    M4 local = pj >= 0 ? gl(jointModel[pj], 0).inverse() * gl(jointModel[j], 0) : gl(jointModel[j], 0);
+                    decompose(local, clip.translation[j][f], clip.rotation[j][f], clip.scale[j][f]);
+                }
+            }
+            out.clips.push_back(std::move(clip));
+        }
+    }
+
     // meshes: geometry + its model, baked at the bind pose
     std::map<int, size_t> clusterOfJoint;   // joint -> out.clusters index
     std::vector<std::vector<float2>> extraUv;
@@ -658,6 +773,13 @@ bool loadFbx(const std::wstring& path, FbxScene& out, std::string* error) {
         for (Vertex& v : out.mesh.vertices) { v.pos = conv(v.pos); v.nrm = conv(v.nrm); }
         for (FbxJoint& j : out.joints)
             if (j.parent < 0) { j.translation = conv(j.translation); j.rotation = qNormalize(qMul(qc, j.rotation)); }
+        for (FbxClip& c : out.clips)
+            for (size_t j = 0; j < out.joints.size(); ++j)
+                if (out.joints[j].parent < 0)
+                    for (int f = 0; f < c.frames; ++f) {
+                        c.translation[j][f] = conv(c.translation[j][f]);
+                        c.rotation[j][f] = qNormalize(qMul(qc, c.rotation[j][f]));
+                    }
         Affine C = Affine::trsQuat(float3(0), qc, float3(1));
         auto mulA = [](const Affine& a, const Affine& b) {
             Affine r;

@@ -274,6 +274,51 @@ bool App::rigImportFile(const std::wstring& path) {
         bound = (int)s.joints.size();
         if (bound) A.skins.push_back(std::move(s));
     }
+    // animation stacks -> clips: one key per frame (linear), only the channels that move; Euler angles unwrapped
+    const float scaleF = f;
+    int clipsAdded = 0;
+    for (const FbxClip& fc : fbx.clips) {
+        PrefabClip clip;
+        clip.name = fc.name.empty() ? "FBX Clip" : fc.name;
+        clip.fps = fc.fps;
+        clip.length = std::max(0.05f, (fc.frames - 1) / fc.fps);
+        clip.loop = true;
+        for (size_t j = 0; j < fbx.joints.size(); ++j) {
+            if (!jointId.count((int)j)) continue;
+            for (int ch = 0; ch < CH_COUNT; ++ch) {
+                std::vector<float3> v(fc.frames);
+                for (int f = 0; f < fc.frames; ++f) {
+                    if (ch == CH_POSITION) v[f] = fc.translation[j][f] * scaleF;
+                    else if (ch == CH_ROTATION) v[f] = quatToEuler(fc.rotation[j][f]);
+                    else v[f] = fc.scale[j][f];
+                }
+                if (ch == CH_ROTATION)
+                    for (int f = 1; f < fc.frames; ++f)
+                        for (int a = 0; a < 3; ++a) {
+                            while (v[f][a] - v[f - 1][a] > 180.0f) v[f][a] -= 360.0f;
+                            while (v[f][a] - v[f - 1][a] < -180.0f) v[f][a] += 360.0f;
+                        }
+                float spread = 0;
+                for (int f = 1; f < fc.frames; ++f) spread = std::max(spread, length(v[f] - v[0]));
+                const float eps = ch == CH_ROTATION ? 0.05f : ch == CH_POSITION ? 1e-4f : 1e-4f;
+                if (spread < eps) continue;   // still channel: no track
+                PrefabTrack t;
+                t.part = jointId[(int)j];
+                t.joint = true;
+                t.channel = ch;
+                for (int f = 0; f < fc.frames; ++f) {
+                    PrefabKey k;
+                    k.time = f / fc.fps;
+                    k.value = v[f];
+                    k.interp = INTERP_LINEAR;
+                    t.keys.push_back(k);
+                }
+                clip.tracks.push_back(std::move(t));
+            }
+        }
+        if (!clip.tracks.empty()) { A.clips.push_back(std::move(clip)); ++clipsAdded; }
+    }
+    if (clipsAdded) { P.clip = (int)A.clips.size() - clipsAdded; P.time = 0; }
     P.sel = A.findPart(partId);
     P.skinPart = P.sel;
     P.selJoint = A.joints.empty() ? -1 : (int)A.joints.size() - (int)fbx.joints.size();
@@ -281,8 +326,8 @@ bool App::rigImportFile(const std::wstring& path) {
     P.weightsVersion++;
     P.rebuild = true;
     char b[256];
-    snprintf(b, sizeof(b), "FBX imported: %zu vertices, %zu triangles, %zu joints, %d skin influences, %d UV sets (scale %.4g)",
-             fbx.mesh.vertices.size(), fbx.mesh.triangleCount(), fbx.joints.size(), bound, (int)fbx.uvSets.size(), f);
+    snprintf(b, sizeof(b), "FBX imported: %zu vertices, %zu triangles, %zu joints, %d skin influences, %d UV sets, %d clips (scale %.4g)",
+             fbx.mesh.vertices.size(), fbx.mesh.triangleCount(), fbx.joints.size(), bound, (int)fbx.uvSets.size(), clipsAdded, f);
     P.rigStatus = b;
     log(b, 1);
     status(fromUtf8(b), 1);

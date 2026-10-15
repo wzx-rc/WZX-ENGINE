@@ -35,5 +35,10 @@ int wmain(int argc, wchar_t** argv) {
         printf("%-28s scene (%8.3f %8.3f %8.3f) s %.3f  bind (%8.3f %8.3f %8.3f)\n", s.joints[cl.joint].name.c_str(), g.position.x, g.position.y, g.position.z, g.scale.x,
                cl.bindJoint.m[0][3], cl.bindJoint.m[1][3], cl.bindJoint.m[2][3]);
     }
+    for (const FbxClip& c : s.clips) {
+        printf("clip %s frames %d\n", c.name.c_str(), c.frames);
+        for (size_t j = 0; j < s.joints.size() && j < 6; ++j)
+            printf("  %-20s rest t (%g %g %g) s (%g %g %g) | f0 t (%g %g %g) s (%g %g %g)\n", s.joints[j].name.c_str(), s.joints[j].translation.x, s.joints[j].translation.y, s.joints[j].translation.z, s.joints[j].scale.x, s.joints[j].scale.y, s.joints[j].scale.z, c.translation[j][0].x, c.translation[j][0].y, c.translation[j][0].z, c.scale[j][0].x, c.scale[j][0].y, c.scale[j][0].z);
+    }
     return 0;
 }
