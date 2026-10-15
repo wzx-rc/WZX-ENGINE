@@ -7,6 +7,38 @@ void MeshData::append(const MeshData& o, const Affine& xf) {
     for (const Vertex& v : o.vertices)
         vertices.push_back({xf.point(v.pos), normalize(xf.vector(v.nrm))});
     for (uint32_t i : o.indices) indices.push_back(base + i);
+    for (uint32_t i : o.edges) edges.push_back(base + i);
+}
+
+void MeshData::quadEdges() {
+    edges.clear();
+    std::vector<uint64_t> seen;
+    auto add = [&](uint32_t a, uint32_t b) {
+        if (a == b) return;
+        if (a > b) std::swap(a, b);
+        seen.push_back((uint64_t)a << 32 | b);
+    };
+    auto shares = [](const uint32_t* t, uint32_t a, uint32_t b) {
+        bool ha = t[0] == a || t[1] == a || t[2] == a, hb = t[0] == b || t[1] == b || t[2] == b;
+        return ha && hb;
+    };
+    size_t triCount = indices.size() / 3;
+    for (size_t t = 0; t < triCount; t += 2) {
+        const uint32_t* A = &indices[t * 3];
+        if (t + 1 >= triCount) { add(A[0], A[1]); add(A[1], A[2]); add(A[2], A[0]); break; }
+        const uint32_t* B = &indices[t * 3 + 3];
+        for (const uint32_t* T : {A, B}) {
+            const uint32_t* O = T == A ? B : A;
+            for (int k = 0; k < 3; ++k) {
+                uint32_t a = T[k], b = T[(k + 1) % 3];
+                if (!shares(O, a, b)) add(a, b);   // the shared edge is the diagonal of the quad
+            }
+        }
+    }
+    std::sort(seen.begin(), seen.end());
+    seen.erase(std::unique(seen.begin(), seen.end()), seen.end());
+    edges.reserve(seen.size() * 2);
+    for (uint64_t e : seen) { edges.push_back((uint32_t)(e >> 32)); edges.push_back((uint32_t)e); }
 }
 
 void MeshData::addQuad(const float3& a, const float3& b, const float3& c, const float3& d, const float3& n) {
@@ -36,6 +68,7 @@ MeshData makeBox(const float3& a, const float3& b) {
     // -Z / +Z
     m.addQuad({b.x, a.y, a.z}, {a.x, a.y, a.z}, {a.x, b.y, a.z}, {b.x, b.y, a.z}, {0, 0, -1});
     m.addQuad({a.x, a.y, b.z}, {b.x, a.y, b.z}, {b.x, b.y, b.z}, {a.x, b.y, b.z}, {0, 0, 1});
+    m.quadEdges();
     return m;
 }
 
@@ -49,6 +82,7 @@ MeshData makePlane(float s) {
     MeshData m;
     float h = s * 0.5f;
     m.addQuad({-h, 0, h}, {h, 0, h}, {h, 0, -h}, {-h, 0, -h}, {0, 1, 0});
+    m.quadEdges();
     return m;
 }
 
@@ -70,6 +104,7 @@ MeshData makeSphere(float r, int segU, int segV) {
             m.addTri(a, b, a + 1);
             m.addTri(a + 1, b, b + 1);
         }
+    m.quadEdges();
     return m;
 }
 
@@ -138,6 +173,7 @@ MeshData makeLathe(const std::vector<LathePoint>& prof, int seg, float smoothDeg
             m.addTri(a0, b1, b0);
         }
     }
+    m.quadEdges();
     return m;
 }
 
@@ -248,6 +284,7 @@ MeshData makePrimitive(const PrimitiveParams& p) {
         break;
     }
     }
+    m.quadEdges();   // every primitive is built as triangle pairs: the wireframe shows its quads
     return m;
 }
 

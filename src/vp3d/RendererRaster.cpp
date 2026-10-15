@@ -159,8 +159,8 @@ bool Renderer::createRasterPipelines(std::string* error) {
         }
         return false;
     };
-    std::vector<char> vsMain, vsShadow, vsBg, vsProbe, psMain, psGhost, psId, psWire, psBg, psProbe, psProbeBg;
-    if (!load(L"Raster_VSMain.cso", vsMain) || !load(L"Raster_VSShadow.cso", vsShadow) || !load(L"Raster_VSBackground.cso", vsBg) ||
+    std::vector<char> vsMain, vsWire, vsShadow, vsBg, vsProbe, psMain, psGhost, psId, psWire, psBg, psProbe, psProbeBg;
+    if (!load(L"Raster_VSMain.cso", vsMain) || !load(L"Raster_VSWire.cso", vsWire) || !load(L"Raster_VSShadow.cso", vsShadow) || !load(L"Raster_VSBackground.cso", vsBg) ||
         !load(L"Raster_VSProbe.cso", vsProbe) || !load(L"Raster_PSMain.cso", psMain) || !load(L"Raster_PSGhost.cso", psGhost) ||
         !load(L"Raster_PSId.cso", psId) || !load(L"Raster_PSWire.cso", psWire) || !load(L"Raster_PSBackground.cso", psBg) || !load(L"Raster_PSProbe.cso", psProbe) ||
         !load(L"Raster_PSProbeBackground.cso", psProbeBg))
@@ -241,11 +241,12 @@ bool Renderer::createRasterPipelines(std::string* error) {
     if (!make(d, m_psoTrans, "transparent")) return false;
     d.PS = {psGhost.data(), psGhost.size()};
     if (!make(d, m_psoGhost, "ghost")) return false;
-    // Wireframe display: lines blended over the view, pulled slightly towards the camera to win over their own faces
+    // Wireframe display: polygon edges as lines blended over the view; VSWire pulls them slightly towards the camera
+    // so that they win over their own faces (a depth bias also let the hidden back edges through)
+    d.VS = {vsWire.data(), vsWire.size()};
     d.PS = {psWire.data(), psWire.size()};
-    d.RasterizerState.FillMode = D3D12_FILL_MODE_WIREFRAME;
-    d.RasterizerState.DepthBias = -2000;
-    d.RasterizerState.SlopeScaledDepthBias = -1.0f;
+    d.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_LINE;
+    d.RasterizerState.AntialiasedLineEnable = TRUE;
     if (!make(d, m_psoWire, "wireframe")) return false;
 
     // Object id pass (single sample) into the albedo texture (w = id)
@@ -626,12 +627,20 @@ void Renderer::recordRaster(const Scene& scene, const RenderSettings& rs, const 
     }
     if (rs.wireframe) {   // light lines alone, dark lines over the shaded view
         m_cmd->SetPipelineState(m_psoWire.Get());
+        m_cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_LINELIST);
         for (const Draw& d : m_draws) {
             if ((d.flags & 5u) || isGround(d)) continue;
-            Draw w = d;
-            w.alpha = rs.wireframe == 1 ? 0.75f : 0.02f;
-            drawOne(w);
+            const MeshGpu& g = m_meshes[d.mesh];
+            DrawConstants dc = {};
+            memcpy(dc.rows, d.xf.m, sizeof(dc.rows));
+            dc.materialId = d.material;
+            dc.id = d.id;
+            dc.alpha = rs.wireframe == 1 ? 0.75f : 0.02f;   // line grey level
+            dc.flags = d.flags;
+            m_cmd->SetGraphicsRoot32BitConstants(1, 16, &dc, 0);
+            m_cmd->DrawIndexedInstanced(g.lineCount, 1, g.lineOffset, (INT)g.vertexOffset, 0);
         }
+        m_cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
     }
 
     // 3) resolve into the HDR slot read by the tonemapper

@@ -59,6 +59,7 @@ bool loadObj(const std::wstring& path, MeshData& out, ObjInfo* info, std::string
     std::vector<float3> pos, nrm;
     std::vector<float2> uv;
     std::vector<Corner> corners;   // 3 per triangle
+    std::vector<uint32_t> outline;  // polygon edges for the wireframe, as pairs of indices in `corners`
     std::string mtlFile;
 
     const char* p = data.data();
@@ -102,9 +103,14 @@ bool loadObj(const std::wstring& path, MeshData& out, ObjInfo* info, std::string
                 poly.push_back(c);
             }
             for (size_t i = 2; i < poly.size(); ++i) {
+                const uint32_t c0 = (uint32_t)corners.size();
                 corners.push_back(poly[0]);
                 corners.push_back(poly[i - 1]);
                 corners.push_back(poly[i]);
+                // the fan diagonals stay hidden: only the sides of the polygon are outlined
+                if (i == 2) { outline.push_back(c0); outline.push_back(c0 + 1); }
+                outline.push_back(c0 + 1); outline.push_back(c0 + 2);
+                if (i + 1 == poly.size()) { outline.push_back(c0 + 2); outline.push_back(c0); }
             }
         } else if (strncmp(p, "mtllib", 6) == 0) {
             const char* q = skipSpaces(p + 6);
@@ -182,6 +188,9 @@ bool loadObj(const std::wstring& path, MeshData& out, ObjInfo* info, std::string
         }
         out.indices.push_back((uint32_t)found);
     }
+    out.edges.clear();
+    out.edges.reserve(outline.size());
+    for (uint32_t c : outline) out.edges.push_back(out.indices[c]);
 
     if (info) {
         info->positions = pos.size();

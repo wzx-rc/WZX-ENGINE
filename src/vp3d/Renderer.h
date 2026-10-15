@@ -134,6 +134,7 @@ private:
     };
     struct MeshGpu {
         uint32_t indexOffset, vertexOffset, indexCount, vertexCount;
+        uint32_t lineOffset = 0, lineCount = 0;   // wireframe line list, stored in m_ib after the triangles
         Buffer blas;
         float3 bmin, bmax;
         float3 center; float radius = 0;   // bounding sphere (emissive objects: light sampling cone)

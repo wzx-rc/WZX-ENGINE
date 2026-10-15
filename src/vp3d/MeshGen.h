@@ -2,6 +2,7 @@
 #pragma once
 #include "Math.h"
 #include <vector>
+#include <cstdint>
 
 namespace vp3d {
 
@@ -14,12 +15,17 @@ struct Vertex {
 struct MeshData {
     std::vector<Vertex> vertices;
     std::vector<uint32_t> indices;
+    // Wireframe display: polygon edges as a line list (vertex index pairs). Empty = every triangle edge.
+    std::vector<uint32_t> edges;
 
     void append(const MeshData& o, const Affine& xf = Affine());
     void addTri(uint32_t a, uint32_t b, uint32_t c) { indices.push_back(a); indices.push_back(b); indices.push_back(c); }
     // Quad with a flat normal, corners in CCW order seen from outside.
     void addQuad(const float3& a, const float3& b, const float3& c, const float3& d, const float3& n);
     void bounds(float3& mn, float3& mx) const;
+    // Fills `edges` with the quad outlines of a mesh built as consecutive triangle pairs (two triangles per quad):
+    // the edge shared by the two triangles of a pair is the hidden diagonal.
+    void quadEdges();
     size_t triangleCount() const { return indices.size() / 3; }
 };
 

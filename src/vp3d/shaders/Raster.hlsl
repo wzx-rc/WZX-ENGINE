@@ -104,6 +104,14 @@ VSOut VSMain(VSIn i) {
     return o;
 }
 
+// Wireframe display: the edge moved 0.2 % of its distance towards the camera, in front of its own faces.
+VSOut VSWire(VSIn i) {
+    VSOut o = VSMain(i);
+    o.wpos += (R.camPos - o.wpos) * 0.002;
+    o.pos = mul(R.viewProj, float4(o.wpos, 1));
+    return o;
+}
+
 float4 VSShadow(VSIn i) : SV_Position {
     return mul(R.lightViewProj, float4(ToWorld(i.pos), 1));
 }

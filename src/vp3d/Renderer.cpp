@@ -410,6 +410,13 @@ void Renderer::setScene(const Scene& scene) {
         for (auto& v : m.vertices) g.radius = std::max(g.radius, length(v.pos - g.center));
         for (auto& v : m.vertices) verts.push_back({v.pos, v.nrm, v.uv});
         inds.insert(inds.end(), m.indices.begin(), m.indices.end());
+        // wireframe display: the polygon edges of the mesh, else every triangle edge
+        g.lineOffset = (uint32_t)inds.size();
+        if (!m.edges.empty()) inds.insert(inds.end(), m.edges.begin(), m.edges.end());
+        else
+            for (size_t t = 0; t + 2 < m.indices.size(); t += 3)
+                for (int k = 0; k < 3; ++k) { inds.push_back(m.indices[t + k]); inds.push_back(m.indices[t + (k + 1) % 3]); }
+        g.lineCount = (uint32_t)inds.size() - g.lineOffset;
         m_meshes.push_back(g);
     };
     for (auto& m : scene.meshes) addMesh(m);
