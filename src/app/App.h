@@ -4,7 +4,9 @@
 #include "Content.h"
 #include "ImGuiLayer.h"
 #include "Json.h"
+#include "MeshFile.h"
 #include "Prefab.h"
+#include "UvCheck.h"
 #include "Theme.h"
 #include "atelier/material_host.h"
 #include "atelier/material_model.h"
@@ -117,6 +119,7 @@ struct Options {
     int prefabView = -1, prefabSelect = -1, prefabTab = -1, prefabClip = -1, prefabBottom = -1, prefabLight = -1;
     float prefabTime = -1;
     std::wstring prefabOpen;
+    std::wstring prefabUv;      // test: opens the UV Editor: "setA,setB,compare,display,background" (--prefab-uv)
     bool prefabPlace = false;   // test: places the prefab in the scene at startup and shows the Scene workspace (--prefab-place)
     std::wstring prefabSave;    // test: writes the prefab of the studio to this file at startup (--prefab-save)
     int inspectorTab = -1;      // test: inspector tab at startup (0 actor, 1 light, 2 render, 3 world)
@@ -386,6 +389,20 @@ private:
         // layout
         float leftW = 250, rightW = 300, bottomH = 236;
         int inspectorTab = 0;              // 0 part, 1 lighting, 2 debug, 3 asset
+        // UV Editor (centre tab 1): UV sets of the meshes, view, checks
+        std::map<std::string, std::vector<UvSet>> uvCache;   // mesh file key -> its UV sets
+        std::vector<std::vector<UvSet>> partUv;              // part index -> UV sets of its mesh (scene build)
+        int centerTab = 0;                 // 0 3D view, 1 UV Editor
+        int uvSetA = 0, uvSetB = 1;
+        int uvCompare = 0;                 // 0 one set, 1 overlay, 2 side by side
+        int uvFill = 0;                    // 0 wireframe, 1 islands, 2 overlap, 3 flipped, 4 texel density, 5 stretch
+        int uvBackground = 1;              // 0 none, 1 checker, 2 texture
+        float uvZoom = 0;                  // pixels per UV unit (0 = frame at the next draw)
+        float2 uvPan{0.5f, 0.5f};          // UV at the centre of the canvas
+        int uvFrame = 2;                   // frame at the next draw: 1 the 0-1 square, 2 all the UVs
+        bool uvPanning = false;
+        std::map<std::string, ImTextureID> uvTextures;      // texture path -> ImGui texture (background)
+        std::map<uint64_t, UvAnalysis> uvAnalysis;          // (part id, set, build) -> checks
         int bottomTab = 0;                 // 0 timeline, 1 UV layout
         char search[96] = {};
     } m_pf;
@@ -420,7 +437,11 @@ private:
     void pfViewport(float x, float y, float w, float h);
     void pfInspector(float x, float y, float w, float h);
     void pfTimeline(float x, float y, float w, float h);
-    void pfUvLayout(float x, float y, float w, float h);
+    void pfUvEditor(float x, float y, float w, float h);
+    void pfUvCanvas(float x, float y, float w, float h, int part, int set, int other, const char* id);
+    void pfUvSidebar(float x, float y, float w, float h, int part);
+    const UvAnalysis& prefabUvAnalysis(int part, int set);   // checks of a UV set of a part (cached until the next scene build)
+    ImTextureID prefabUvTexture(const std::string& path);     // background image of the UV Editor
 
     // Atelier layout (AtelierUI.cpp): fixed concept layout with the Atelier components
     void drawAtelier();

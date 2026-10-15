@@ -657,7 +657,7 @@ void App::loadWzxScene(const Json& j, const std::wstring& path) {
         if (it != meshes.end()) return it->second;
         MeshData mesh;
         std::string err;
-        bool ok = loadObj(absPath(rel), mesh, nullptr, &err);
+        bool ok = loadMeshFile(absPath(rel), mesh, nullptr, &err);   // OBJ or glTF
         if (!ok) {
             log("Mesh file not found: " + rel + " (red placeholder, the path is kept)", 2);
             ++warnings;
@@ -795,7 +795,7 @@ void App::loadWzxScene(const Json& j, const std::wstring& path) {
 void App::importMeshFile(const std::wstring& path) {
     MeshData mesh;
     std::string err;
-    if (!loadObj(path, mesh, nullptr, &err)) {
+    if (!loadMeshFile(path, mesh, nullptr, &err)) {
         status(L"Mesh not imported: " + fromUtf8(err), 2);
         return;
     }

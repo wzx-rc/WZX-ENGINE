@@ -57,6 +57,10 @@ void App::prefabInit() {
     if (m_opt.prefabTime >= 0) P.time = m_opt.prefabTime;
     if (m_opt.prefabBottom >= 0) P.bottomTab = m_opt.prefabBottom;
     if (m_opt.prefabLight >= 0) P.lightPreset = m_opt.prefabLight;
+    if (!m_opt.prefabUv.empty()) {
+        P.centerTab = 1;
+        swscanf_s(m_opt.prefabUv.c_str(), L"%d,%d,%d,%d,%d", &P.uvSetA, &P.uvSetB, &P.uvCompare, &P.uvFill, &P.uvBackground);
+    }
     if (!m_opt.prefabSave.empty() && writeFileSafe(m_opt.prefabSave, prefabToJson(P.asset))) {
         P.path = m_opt.prefabSave;
         P.savedJson = prefabToJson(P.asset);
@@ -186,7 +190,7 @@ void App::prefabAddPart(int kind) {
     PrefabStudio& P = m_pf;
     PrefabPart p;
     if (kind == 100) {
-        std::wstring path = pickFileDialog(m_hwnd, false, L"Meshes (*.obj)\0*.obj\0All files\0*.*\0", L"obj", projectRoot() + L"\\assets", L"");
+        std::wstring path = pickFileDialog(m_hwnd, false, L"Meshes (*.obj;*.gltf;*.glb)\0*.obj;*.gltf;*.glb\0All files\0*.*\0", L"obj", projectRoot() + L"\\assets", L"");
         if (path.empty()) return;
         p.meshPath = relPath(path);
         p.name = toUtf8(fs::path(path).stem().wstring());
@@ -201,7 +205,8 @@ void App::prefabAddPart(int kind) {
         // its base colour image: the .mtl map, or a *basecolor* image next to it
         ObjInfo info;
         MeshData tmp;
-        if (loadObj(path, tmp, &info, nullptr)) {
+        if (!isMeshFile(path) || fs::path(path).extension() != L".obj") {
+        } else if (loadObj(path, tmp, &info, nullptr)) {
             fs::path dir = fs::path(path).parent_path();
             if (!info.diffuseMap.empty() && fs::exists(dir / fromUtf8(info.diffuseMap))) p.texture = relPath((dir / fromUtf8(info.diffuseMap)).wstring());
             else {
@@ -345,7 +350,8 @@ bool App::prefabMeshFor(const PrefabPart& p, MeshData& out, std::string* err) {
     if (e != P.meshErrors.end()) { if (err) *err = e->second; return false; }
     MeshData m;
     std::string error;
-    if (!loadObj(absPath(p.meshPath), m, nullptr, &error)) {
+    std::vector<UvSet> sets;
+    if (!loadMeshFile(absPath(p.meshPath), m, &sets, &error)) {
         P.meshErrors[p.meshPath] = error;
         if (err) *err = error;
         log("Prefab mesh not loaded: " + p.meshPath + " (" + error + ")", 2);
@@ -360,6 +366,7 @@ bool App::prefabMeshFor(const PrefabPart& p, MeshData& out, std::string* err) {
     }
     P.meshShift[key] = shift;
     P.meshCache[key] = m;
+    P.uvCache[key] = std::move(sets);
     out = std::move(m);
     return true;
 }
@@ -388,6 +395,8 @@ void App::prefabBuildScene() {
     }
     std::map<std::string, int> textures;
     P.partObject.assign(P.asset.parts.size(), -1);
+    P.partUv.assign(P.asset.parts.size(), {});
+    P.uvAnalysis.clear();
     for (size_t i = 0; i < P.asset.parts.size(); ++i) {
         const PrefabPart& p = P.asset.parts[i];
         if (p.isPivot()) continue;
@@ -395,6 +404,15 @@ void App::prefabBuildScene() {
         std::string err;
         bool ok = prefabMeshFor(p, m, &err);
         if (!ok) m = makeBox({-0.5f, 0, -0.5f}, {0.5f, 1, 0.5f});   // missing file: a placeholder box (red)
+        // UV sets: those of the file (glTF can have several), else the one of the vertices
+        auto uvs = ok && !p.meshPath.empty() ? P.uvCache.find(p.meshPath + (p.recenter ? "|c" : "")) : P.uvCache.end();
+        if (uvs != P.uvCache.end() && !uvs->second.empty() && uvs->second[0].uv.size() == m.vertices.size()) P.partUv[i] = uvs->second;
+        else {
+            UvSet s0;
+            s0.name = "UV0";
+            for (const Vertex& v : m.vertices) s0.uv.push_back(float2(v.uv.x, 1.0f - v.uv.y));   // UV-editor convention (v up)
+            P.partUv[i].push_back(std::move(s0));
+        }
         Object o;
         o.name = p.name;
         o.part = "PREFAB_PART";
@@ -611,6 +629,47 @@ void App::prefabFrameAll() {
     P.camera.distance = r / std::tan(P.camera.fovY * 0.5f) * 1.15f;
 }
 
+// --------------------------------------------------------------------------- UV Editor data
+
+const UvAnalysis& App::prefabUvAnalysis(int part, int set) {
+    static const UvAnalysis none;
+    PrefabStudio& P = m_pf;
+    if (part < 0 || part >= (int)P.partUv.size() || set < 0 || set >= (int)P.partUv[part].size()) return none;
+    int oi = part < (int)P.partObject.size() ? P.partObject[part] : -1;
+    if (oi < 0 || oi >= (int)P.scene.objects.size()) return none;
+    const uint64_t key = ((uint64_t)P.asset.parts[part].id << 40) | ((uint64_t)set << 32) | P.buildSerial;
+    auto it = P.uvAnalysis.find(key);
+    if (it != P.uvAnalysis.end()) return it->second;
+    float3 scale(1);
+    if (part < (int)P.world.size()) {
+        const float3& w = P.world[part].scale;
+        scale = float3(std::max(1e-4f, std::fabs(w.x)), std::max(1e-4f, std::fabs(w.y)), std::max(1e-4f, std::fabs(w.z)));
+    }
+    UvAnalysis& a = P.uvAnalysis[key];
+    analyzeUv(P.scene.meshes[P.scene.objects[oi].mesh], P.partUv[part][set].uv, scale, a);
+    return a;
+}
+
+ImTextureID App::prefabUvTexture(const std::string& path) {
+    PrefabStudio& P = m_pf;
+    auto it = P.uvTextures.find(path);
+    if (it != P.uvTextures.end()) return it->second;
+    ImTextureID id = 0;
+    auto t = P.texCache.find(path);
+    if (t != P.texCache.end() && t->second.width) {
+        // at most 1024 px: a background only
+        const Texture& tx = t->second;
+        uint32_t step = std::max(1u, std::max(tx.width, tx.height) / 1024);
+        uint32_t w = tx.width / step, h = tx.height / step;
+        std::vector<uint8_t> px((size_t)w * h * 4);
+        for (uint32_t y = 0; y < h; ++y)
+            for (uint32_t x = 0; x < w; ++x) memcpy(&px[((size_t)y * w + x) * 4], &tx.rgba[((size_t)y * step * tx.width + x * step) * 4], 4);
+        id = m_gui.createTexture(px.data(), w, h);
+    }
+    P.uvTextures[path] = id;
+    return id;
+}
+
 // --------------------------------------------------------------------------- viewport input
 
 void App::prefabViewInput(bool hovered) {
@@ -724,12 +783,15 @@ void App::prefabShortcuts() {
         if (c && !P.playing && !c->loop && P.time >= c->length - 1e-4f) P.time = 0;
         P.playing = !P.playing;
     }
-    if (ImGui::IsKeyPressed(ImGuiKey_Home, false)) prefabSetTime(0);
+    if (P.centerTab == 1) {   // UV Editor: F frames the UVs, Home the 0-1 square
+        if (ImGui::IsKeyPressed(ImGuiKey_F, false)) P.uvFrame = 2;
+        if (ImGui::IsKeyPressed(ImGuiKey_Home, false)) P.uvFrame = 1;
+    } else if (ImGui::IsKeyPressed(ImGuiKey_Home, false)) prefabSetTime(0);
     if (ImGui::IsKeyPressed(ImGuiKey_End, false) && c) prefabSetTime(c->length);
     if (c && ImGui::IsKeyPressed(ImGuiKey_LeftArrow)) prefabSetTime(std::round(P.time * c->fps - 1) / c->fps);
     if (c && ImGui::IsKeyPressed(ImGuiKey_RightArrow)) prefabSetTime(std::round(P.time * c->fps + 1) / c->fps);
     if (ImGui::IsKeyPressed(ImGuiKey_K, false)) prefabKeySelected();
-    if (ImGui::IsKeyPressed(ImGuiKey_F, false)) prefabFrameAll();
+    if (P.centerTab == 0 && ImGui::IsKeyPressed(ImGuiKey_F, false)) prefabFrameAll();
     if (ImGui::IsKeyPressed(ImGuiKey_F2, false) && P.sel >= 0 && P.sel < (int)P.asset.parts.size()) {
         P.renameId = P.asset.parts[P.sel].id;
         snprintf(P.renameBuf, sizeof(P.renameBuf), "%s", P.asset.parts[P.sel].name.c_str());
@@ -788,7 +850,7 @@ void App::prefabAddToScene() {
         if (!p.meshPath.empty()) {
             MeshData mesh;
             std::string err;
-            if (!loadObj(absPath(p.meshPath), mesh, nullptr, &err)) continue;
+            if (!loadMeshFile(absPath(p.meshPath), mesh, nullptr, &err)) continue;
             const std::string name = "file:" + p.meshPath;
             int mi = m_scene.findMesh(name);
             if (mi < 0) mi = m_scene.addMesh(name, std::move(mesh));

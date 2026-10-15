@@ -6,6 +6,7 @@
 
 #include <filesystem>
 #include <functional>
+#include <sstream>
 
 namespace app {
 
@@ -45,16 +46,18 @@ const char* kDebugTips[] = {"Final look: materials, textures and the studio ligh
 const char* kLightPresets[] = {"Studio", "Daylight", "Sunset", "Night", "HDRI"};
 const char* kCategories[] = {"Building", "Unit", "Prop", "Resource", "Effect"};
 
-// UV layout of the selected part: rasterised on the CPU once (wireframe over the texture, coverage and overlap)
-struct UvCache {
-    uint32_t part = 0, serial = 0;
-    ImTextureID tex = 0;
-    int size = 0;
-    int tris = 0, outside = 0, degenerate = 0;
-    float coverage = 0, overlap = 0;
-    bool hasUv = false;
-    float2 uvMin, uvMax;
-} g_uv;
+// centre column tabs of the studio: 3D View | UV Editor (left of the view and UV Editor toolbars)
+void pfCenterTabs(int& tab, float& bx, float by) {
+    if (TabButton("pfCenter3d", {bx, by, 96 * s, 24 * s}, "3D View", Icon::Cube, tab == 0)) tab = 0;
+    Tip("3D view of the prefab");
+    bx += 99 * s;
+    if (TabButton("pfCenterUv", {bx, by, 108 * s, 24 * s}, "UV Editor", Icon::Grid, tab == 1)) tab = 1;
+    Tip("UVs of the selected part, large: UDIM tiles, checks, UV set comparison");
+    bx += 116 * s;
+    dl->AddLine(ImVec2(bx - 4 * s, by + 3 * s), ImVec2(bx - 4 * s, by + 21 * s), P().border);
+    bx += 6 * s;
+}
+
 
 } // namespace
 
@@ -71,14 +74,16 @@ void App::drawPrefabStudio(float X, float Y, float W, float H) {
     float lw = F.leftW * s, rw = F.rightW * s, bh = F.bottomH * s;
     float cx = X + lw + 12 * s, cw = W - lw - 12 * s - rw - 12 * s;
     pfParts(X + 5 * s, Y, lw, H - 10 * s);
-    pfViewport(cx, Y, cw, H - bh - 18 * s);
-    if (F.bottomTab == 1) pfUvLayout(cx, Y + H - bh - 8 * s, cw, bh);
-    else pfTimeline(cx, Y + H - bh - 8 * s, cw, bh);
+    if (F.centerTab == 1) pfUvEditor(cx, Y, cw, H - 10 * s);   // the UV Editor takes the whole centre column
+    else {
+        pfViewport(cx, Y, cw, H - bh - 18 * s);
+        pfTimeline(cx, Y + H - bh - 8 * s, cw, bh);
+    }
     pfInspector(X + W - rw - 6 * s, Y, rw, H - 10 * s);
     dl = ImGui::GetWindowDrawList();
     Splitter("pfSplitLeft", {X + lw + 5 * s, Y, 7 * s, H - 10 * s}, F.leftW, 200, maxL, true);
     Splitter("pfSplitRight", {X + W - rw - 12 * s, Y, 6 * s, H - 10 * s}, F.rightW, 270, maxR, true, true);
-    Splitter("pfSplitBottom", {cx, Y + H - bh - 13 * s, cw, 5 * s}, F.bottomH, 150, maxB, false, true);
+    if (F.centerTab == 0) Splitter("pfSplitBottom", {cx, Y + H - bh - 13 * s, cw, 5 * s}, F.bottomH, 150, maxB, false, true);
 }
 
 // --------------------------------------------------------------------------- parts (hierarchy)
@@ -282,6 +287,7 @@ void App::pfViewport(float x, float y, float w, float h) {
     const float tbH = 34 * s;
     Box({x, y, w, tbH}, P().panel, 4, true);
     float bx = x + 6 * s, by = y + 5 * s;
+    pfCenterTabs(F.centerTab, bx, by);
     for (int i = 0; i < 6; ++i) {
         float bw = TextSize(kDebugViews[i], 11).x + 13 * s * P().iconScale + 30 * s;
         char id[24];
@@ -568,7 +574,7 @@ void App::pfInspector(float x, float y, float w, float h) {
                     Text(bx + 8 * s, yy + 6 * s, p.meshPath, missing ? IM_COL32(240, 100, 90, 255) : P().text, 10);
                     dl->PopClipRect();
                     if (Button("pfMeshBrowse", {bx + bw - 64 * s, yy + 1 * s, 64 * s, 24 * s}, "Browse", Icon::FolderOpen)) {
-                        std::wstring path = pickFileDialog(m_hwnd, false, L"Meshes (*.obj)\0*.obj\0All files\0*.*\0", L"obj", projectRoot() + L"\\assets", L"");
+                        std::wstring path = pickFileDialog(m_hwnd, false, L"Meshes (*.obj;*.gltf;*.glb)\0*.obj;*.gltf;*.glb\0All files\0*.*\0", L"obj", projectRoot() + L"\\assets", L"");
                         if (!path.empty()) { prefabPushUndo(); p.meshPath = relPath(path); m_pf.meshErrors.erase(p.meshPath); F.rebuild = true; }
                     }
                     yy += 34 * s;
@@ -815,7 +821,7 @@ void App::pfInspector(float x, float y, float w, float h) {
             snprintf(b, sizeof(b), zeroNormal ? "%zu vertices without normal" : "Normals OK", zeroNormal);
             line(zeroNormal == 0, b);
             yy += 4 * s;
-            if (Button("pfOpenUv", {bx, yy, bw, 26 * s}, "Open UV Layout", Icon::Grid, F.bottomTab == 1)) F.bottomTab = 1;
+            if (Button("pfOpenUv", {bx, yy, bw, 26 * s}, "Open UV Editor", Icon::Grid, F.centerTab == 1)) F.centerTab = 1;
             yy += 36 * s;
         }
     } else {
@@ -947,12 +953,6 @@ void App::pfTimeline(float x, float y, float w, float h) {
     PrefabAsset& A = F.asset;
     R r = {x, y, w, h};
     Panel(r, Icon::Animation, "Timeline", "", P().accent);
-    // tabs: Timeline / UV Layout (top right of the panel)
-    {
-        float tx = r.x + r.w - 12 * s - 2 * 104 * s;
-        if (TabButton("pfBottomTl", {tx, r.y + 6 * s, 100 * s, 24 * s}, "Timeline", Icon::Animation, F.bottomTab == 0)) F.bottomTab = 0;
-        if (TabButton("pfBottomUv", {tx + 104 * s, r.y + 6 * s, 100 * s, 24 * s}, "UV Layout", Icon::Grid, F.bottomTab == 1)) F.bottomTab = 1;
-    }
     PrefabClip* clip = prefabClip();
     float px = r.x + 10 * s, py = r.y + 40 * s, pw = r.w - 20 * s;
     // toolbar
@@ -1227,162 +1227,391 @@ void App::pfTimeline(float x, float y, float w, float h) {
     }
 }
 
-// --------------------------------------------------------------------------- UV layout
+// --------------------------------------------------------------------------- UV Editor (view only)
+// The UVs of the selected part, large: UDIM tiles (0-1 = 1001, the other valid tiles greyed, outside the UDIM range
+// hatched), checks of the set (fills), a second set in overlay or side by side, and the check table on the right.
+// Pan: right / middle drag, zoom: wheel, F: frame the UVs, Home: frame the 0-1 square.
 
-void App::pfUvLayout(float x, float y, float w, float h) {
+namespace {
+const char* kUvCompare[] = {"One Set", "Overlay", "Side by Side"};
+const char* kUvFill[] = {"Wireframe", "Islands", "Overlap", "Flipped", "Texel Density", "Stretch"};
+const char* kUvFillTips[] = {"Edges of the UV triangles (seams once per side)",
+                             "One colour per UV island (a connected shell)",
+                             "Red: triangles that share texels with another one (normal for mirrored or stacked shells)",
+                             "Red: mirrored triangles (wound the other way), orange: zero-area triangles",
+                             "Texels per scene unit compared with the median: blue = less, green = even, red = more",
+                             "Distortion of the mapping: green = none, yellow = 1.5x, red = 3x and more"};
+const char* kUvBackground[] = {"No Background", "Checker", "Texture"};
+const ImU32 kSetB = IM_COL32(255, 150, 60, 230);
+
+ImU32 ramp(float t, int alpha) {   // 0 blue, 0.5 green, 1 red
+    t = clampf(t, 0, 1);
+    float r = t < 0.5f ? 0.15f : (t - 0.5f) * 2.0f, g = t < 0.5f ? 0.3f + t * 1.3f : 0.95f - (t - 0.5f) * 1.5f, b = t < 0.5f ? 1.0f - t * 1.8f : 0.1f;
+    return IM_COL32((int)(clampf(r, 0, 1) * 255), (int)(clampf(g, 0, 1) * 255), (int)(clampf(b, 0, 1) * 255), alpha);
+}
+}
+
+void App::pfUvEditor(float x, float y, float w, float h) {
     PrefabStudio& F = m_pf;
-    PrefabAsset& A = F.asset;
-    R r = {x, y, w, h};
-    Panel(r, Icon::Grid, "UV Layout", "", P().accent);
+    const float tbH = 34 * s;
+    Box({x, y, w, tbH}, P().panel, 4, true);
+    float bx = x + 6 * s, by = y + 5 * s;
+    pfCenterTabs(F.centerTab, bx, by);
+    const int part = F.sel >= 0 && F.sel < (int)F.partUv.size() && !F.partUv[F.sel].empty() ? F.sel : -1;
+    const int nsets = part >= 0 ? (int)F.partUv[part].size() : 0;
+    if (nsets) {   // (no clamp before the scene exists: the sets of the command line stay)
+        F.uvSetA = std::clamp(F.uvSetA, 0, nsets - 1);
+        F.uvSetB = std::clamp(F.uvSetB, 0, nsets - 1);
+    }
+    std::vector<std::string> names;
+    for (int i = 0; i < nsets; ++i) names.push_back(std::to_string(i) + "  " + F.partUv[part][i].name);
+    std::vector<const char*> opts;
+    for (auto& n : names) opts.push_back(n.c_str());
+    if (nsets) {
+        Combo("uvSetA", {bx, by, 150 * s, 24 * s}, F.uvSetA, opts.data(), nsets, Icon::Grid);
+        Tip("UV set shown (A)");
+        bx += 154 * s;
+        Combo("uvCompare", {bx, by, 132 * s, 24 * s}, F.uvCompare, kUvCompare, 3, Icon::Link);
+        Tip("Compare with a second UV set (B, orange): drawn over A, or in a second view");
+        bx += 136 * s;
+        if (F.uvCompare) {
+            Combo("uvSetB", {bx, by, 150 * s, 24 * s}, F.uvSetB, opts.data(), nsets, Icon::Grid);
+            Tip("Second UV set (B)");
+            bx += 154 * s;
+        }
+    }
+    Combo("uvFill", {bx, by, 136 * s, 24 * s}, F.uvFill, kUvFill, 6, Icon::Filter);
+    Tip(kUvFillTips[F.uvFill]);
+    bx += 140 * s;
+    Combo("uvBg", {bx, by, 136 * s, 24 * s}, F.uvBackground, kUvBackground, 3, Icon::Material);
+    Tip("Background of the 0-1 square: none, checker or the base color texture of the part");
+    float rx = x + w - 6 * s - 60 * s;
+    if (Button("uvFrameAll", {rx, by, 60 * s, 24 * s}, "All", Icon::Home)) F.uvFrame = 2;
+    Tip("Frame all the UVs (F)");
+    rx -= 64 * s;
+    if (Button("uvFrame01", {rx, by, 60 * s, 24 * s}, "0-1", Icon::Grid)) F.uvFrame = 1;
+    Tip("Frame the 0-1 square (Home)");
+
+    const float side = std::min(300 * s, w * 0.36f);
+    const float cy = y + tbH + 4 * s, ch = h - tbH - 4 * s, cw = w - side - 6 * s;
+    if (part < 0) {
+        Box({x, cy, cw, ch}, P().canvas, 4, true);
+        Center({x, cy, cw, ch}, "Select a part with a mesh (Parts list or 3D view) to see its UVs.", P().muted, 12);
+    } else if (F.uvCompare == 2) {
+        const float half = (cw - 6 * s) / 2;
+        pfUvCanvas(x, cy, half, ch, part, F.uvSetA, -1, "uvCanvasA");
+        pfUvCanvas(x + half + 6 * s, cy, half, ch, part, F.uvSetB, -2, "uvCanvasB");
+    } else {
+        pfUvCanvas(x, cy, cw, ch, part, F.uvSetA, F.uvCompare == 1 ? F.uvSetB : -1, "uvCanvas");
+    }
+    pfUvSidebar(x + cw + 6 * s, cy, side, ch, part);
+}
+
+// other: -1 none, >= 0 a second set drawn over (overlay), -2 this canvas shows the set B (side by side: orange wire)
+void App::pfUvCanvas(float x, float y, float w, float h, int part, int set, int other, const char* id) {
+    PrefabStudio& F = m_pf;
+    const PrefabPart& pp = F.asset.parts[part];
+    const UvAnalysis& an = prefabUvAnalysis(part, set);
+    const std::vector<float2>& uv = F.partUv[part][set].uv;
+    const MeshData& mesh = F.scene.meshes[F.scene.objects[F.partObject[part]].mesh];
+    Box({x, y, w, h}, P().canvas, 4, true);
+    ImGui::SetCursorScreenPos(ImVec2(x, y));
+    ImGui::InvisibleButton(id, ImVec2(w, h), ImGuiButtonFlags_MouseButtonLeft | ImGuiButtonFlags_MouseButtonRight | ImGuiButtonFlags_MouseButtonMiddle);
+    const bool hovered = ImGui::IsItemHovered();
+    ImGuiIO& io = ImGui::GetIO();
+    const float cx = x + w / 2, cyy = y + h / 2;
+    // framing (first draw, buttons, F / Home)
+    if (F.uvFrame || F.uvZoom <= 0) {
+        float2 mn(0, 0), mx(1, 1);
+        if (F.uvFrame == 2 && an.valid) {
+            mn = float2(std::min(0.0f, an.uvMin.x), std::min(0.0f, an.uvMin.y));
+            mx = float2(std::max(1.0f, an.uvMax.x), std::max(1.0f, an.uvMax.y));
+        }
+        float zx = w * 0.84f / std::max(1e-3f, mx.x - mn.x), zy = h * 0.84f / std::max(1e-3f, mx.y - mn.y);
+        F.uvZoom = std::min(zx, zy);
+        F.uvPan = float2((mn.x + mx.x) * 0.5f, (mn.y + mx.y) * 0.5f);
+        F.uvFrame = 0;
+    }
+    auto toS = [&](float u, float v) { return ImVec2(cx + (u - F.uvPan.x) * F.uvZoom, cyy - (v - F.uvPan.y) * F.uvZoom); };
+    auto toUv = [&](float sx, float sy) { return float2(F.uvPan.x + (sx - cx) / F.uvZoom, F.uvPan.y - (sy - cyy) / F.uvZoom); };
+    if (hovered && io.MouseWheel != 0) {
+        float2 before = toUv(io.MousePos.x, io.MousePos.y);
+        F.uvZoom = clampf(F.uvZoom * std::pow(1.18f, io.MouseWheel), 8.0f, 400000.0f);
+        float2 after = toUv(io.MousePos.x, io.MousePos.y);
+        F.uvPan = float2(F.uvPan.x + before.x - after.x, F.uvPan.y + before.y - after.y);
+    }
+    if (hovered && (ImGui::IsMouseClicked(1) || ImGui::IsMouseClicked(2) || (io.KeyAlt && ImGui::IsMouseClicked(0)))) F.uvPanning = true;
+    if (F.uvPanning) {
+        if (!(io.MouseDown[1] || io.MouseDown[2] || io.MouseDown[0])) F.uvPanning = false;
+        else F.uvPan = float2(F.uvPan.x - io.MouseDelta.x / F.uvZoom, F.uvPan.y + io.MouseDelta.y / F.uvZoom);
+    }
+    dl->PushClipRect(ImVec2(x + 1, y + 1), ImVec2(x + w - 1, y + h - 1), true);
+
+    // UDIM tiles: 1001 (the 0-1 square) lighter, the other valid tiles greyed, outside the UDIM range hatched
+    const float2 lo = toUv(x, y + h), hi = toUv(x + w, y);
+    const int tu0 = std::max(-12, (int)std::floor(lo.x)), tu1 = std::min(22, (int)std::floor(hi.x));
+    const int tv0 = std::max(-12, (int)std::floor(lo.y)), tv1 = std::min(22, (int)std::floor(hi.y));
+    const float tilePx = F.uvZoom;
+    for (int tv = tv0; tv <= tv1; ++tv)
+        for (int tu = tu0; tu <= tu1; ++tu) {
+            ImVec2 a = toS((float)tu, (float)tv + 1), b = toS((float)tu + 1, (float)tv);
+            int udim = udimTile(tu + 0.5f, tv + 0.5f);
+            auto used = an.tiles.find(udim);
+            const bool isUsed = udim > 0 && used != an.tiles.end();
+            if (udim == 1001) dl->AddRectFilled(a, b, Fade(P().text, 30));
+            else if (udim > 0) dl->AddRectFilled(a, b, Fade(P().text, 13));
+            else if (tilePx > 18) {   // outside the UDIM range: hatching
+                dl->PushClipRect(ImVec2(std::max(a.x, x), std::max(a.y, y)), ImVec2(std::min(b.x, x + w), std::min(b.y, y + h)), true);
+                const float step = 14 * s;
+                for (float d = -(b.y - a.y); d < (b.x - a.x); d += step) dl->AddLine(ImVec2(a.x + d, b.y), ImVec2(a.x + d + (b.y - a.y), a.y), Fade(P().border, 90), 1.0f);
+                dl->PopClipRect();
+            }
+            if (isUsed && udim != 1001) dl->AddRectFilled(a, b, Fade(P().accent, 16));
+            dl->AddRect(a, b, udim > 0 ? Fade(P().text, 55) : Fade(P().border, 160), 0, 0, 1.0f);
+            if (tilePx > 46 && udim > 0) {
+                char t[16];
+                snprintf(t, sizeof(t), "%d", udim);
+                Text(a.x + 5 * s, b.y - 17 * s, t, isUsed ? P().accent : Fade(P().muted, 200), 10);
+                if (isUsed && tilePx > 130) {
+                    char c[32];
+                    snprintf(c, sizeof(c), "%d tris", used->second);
+                    Text(a.x + 5 * s, b.y - 31 * s, c, Fade(P().accent, 170), 9);
+                }
+            }
+        }
+    // sub-grid (tenths) when zoomed in
+    if (tilePx > 280) {
+        int k0 = (int)std::floor(lo.x * 10), k1 = (int)std::ceil(hi.x * 10);
+        for (int k = k0; k <= k1 && k1 - k0 < 400; ++k) if (k % 10) { ImVec2 a = toS(k / 10.0f, lo.y); dl->AddLine(ImVec2(a.x, y), ImVec2(a.x, y + h), Fade(P().text, 14)); }
+        k0 = (int)std::floor(lo.y * 10); k1 = (int)std::ceil(hi.y * 10);
+        for (int k = k0; k <= k1 && k1 - k0 < 400; ++k) if (k % 10) { ImVec2 a = toS(lo.x, k / 10.0f); dl->AddLine(ImVec2(x, a.y), ImVec2(x + w, a.y), Fade(P().text, 14)); }
+    }
+    // background of the 0-1 square
     {
-        float tx = r.x + r.w - 12 * s - 2 * 104 * s;
-        if (TabButton("pfBottomTl2", {tx, r.y + 6 * s, 100 * s, 24 * s}, "Timeline", Icon::Animation, F.bottomTab == 0)) F.bottomTab = 0;
-        if (TabButton("pfBottomUv2", {tx + 104 * s, r.y + 6 * s, 100 * s, 24 * s}, "UV Layout", Icon::Grid, F.bottomTab == 1)) F.bottomTab = 1;
+        ImVec2 a = toS(0, 1), b = toS(1, 0);
+        if (F.uvBackground == 1) {
+            for (int j = 0; j < 8; ++j)
+                for (int i = 0; i < 8; ++i)
+                    if ((i + j) & 1) dl->AddRectFilled(toS(i / 8.0f, (j + 1) / 8.0f), toS((i + 1) / 8.0f, j / 8.0f), Fade(P().text, 22));
+        } else if (F.uvBackground == 2 && !pp.texture.empty()) {
+            if (ImTextureID t = prefabUvTexture(pp.texture)) dl->AddImage(t, a, b, ImVec2(0, 0), ImVec2(1, 1), IM_COL32(255, 255, 255, 170));
+        }
+        // the 0-1 square
+        dl->AddRect(ImVec2(a.x - 1, a.y - 1), ImVec2(b.x + 1, b.y + 1), P().accent, 0, 0, 2.0f * s);
+        TextBold(b.x - TextSize("0-1", 10.5f).x - 2 * s, a.y - 18 * s, "0-1", P().accent, 10.5f);
     }
-    float px = r.x + 10 * s, py = r.y + 40 * s, ph = r.h - 50 * s;
-    int oi = F.sel >= 0 && F.sel < (int)F.partObject.size() ? F.partObject[F.sel] : -1;
-    if (oi < 0 || oi >= (int)F.scene.objects.size()) {
-        Text(px, py + 6 * s, "Select a part with a mesh to see its UVs.", P().muted, 11);
-        return;
+    // axis values (tile borders) along the bottom and the left edge
+    {
+        int step = tilePx > 60 ? 1 : tilePx > 25 ? 2 : 5;
+        for (int u = (int)std::ceil(lo.x); u <= (int)std::floor(hi.x); ++u)
+            if (u % step == 0) { ImVec2 p = toS((float)u, 0); Text(p.x + 3 * s, y + h - 16 * s, std::to_string(u), P().muted, 9); }
+        for (int v = (int)std::ceil(lo.y); v <= (int)std::floor(hi.y); ++v)
+            if (v % step == 0) { ImVec2 p = toS(0, (float)v); Text(x + 5 * s, p.y - 13 * s, std::to_string(v), P().muted, 9); }
     }
-    const PrefabPart& part = A.parts[F.sel];
-    const MeshData& m = F.scene.meshes[F.scene.objects[oi].mesh];
-    // CPU raster of the layout (once per part and scene build): texture (dimmed) or checker, the triangle edges, coverage
-    if (g_uv.part != part.id || g_uv.serial != F.buildSerial || !g_uv.tex) {
-        if (g_uv.tex) m_gui.releaseTexture(g_uv.tex);
-        const int N = 1024;
-        std::vector<uint8_t> img((size_t)N * N * 4);
-        std::vector<uint8_t> cover((size_t)N * N, 0);
-        auto tc = F.texCache.find(part.texture);
-        const Texture* tex = tc != F.texCache.end() && tc->second.width ? &tc->second : nullptr;
-        for (int yy = 0; yy < N; ++yy)
-            for (int xx = 0; xx < N; ++xx) {
-                uint8_t* d = &img[((size_t)yy * N + xx) * 4];
-                if (tex) {
-                    uint32_t tx = std::min(tex->width - 1, (uint32_t)((float)xx / N * tex->width));
-                    uint32_t ty = std::min(tex->height - 1, (uint32_t)((float)yy / N * tex->height));
-                    const uint8_t* sp = &tex->rgba[((size_t)ty * tex->width + tx) * 4];
-                    for (int c = 0; c < 3; ++c) d[c] = (uint8_t)(sp[c] * 0.45f);
-                } else {
-                    bool chk = ((xx / (N / 8)) + (yy / (N / 8))) & 1;
-                    d[0] = d[1] = d[2] = chk ? 46 : 34;
-                }
-                d[3] = 255;
-            }
-        // filled triangles: coverage count (overlap = texels covered twice or more)
-        g_uv = UvCache();
-        g_uv.part = part.id;
-        g_uv.serial = F.buildSerial;
-        g_uv.size = N;
-        g_uv.tris = (int)m.triangleCount();
-        g_uv.uvMin = float2(1e30f, 1e30f);
-        g_uv.uvMax = float2(-1e30f, -1e30f);
-        for (const Vertex& v : m.vertices) {
-            g_uv.hasUv |= v.uv.x != 0 || v.uv.y != 0;
-            g_uv.uvMin = float2(std::min(g_uv.uvMin.x, v.uv.x), std::min(g_uv.uvMin.y, v.uv.y));
-            g_uv.uvMax = float2(std::max(g_uv.uvMax.x, v.uv.x), std::max(g_uv.uvMax.y, v.uv.y));
-        }
-        auto toPx = [&](float2 uv) { return float2((uv.x - std::floor(uv.x)) * N, (uv.y - std::floor(uv.y)) * N); };
-        const size_t triCount = m.triangleCount();
-        for (size_t t = 0; t < triCount; ++t) {
-            float2 a = m.vertices[m.indices[t * 3]].uv, b = m.vertices[m.indices[t * 3 + 1]].uv, c = m.vertices[m.indices[t * 3 + 2]].uv;
-            // a triangle crossing a tile border is drawn in the tile of its first vertex
-            float2 o(std::floor(a.x), std::floor(a.y));
-            a = (a - o) * (float)N; b = (b - o) * (float)N; c = (c - o) * (float)N;
-            float area = (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
-            if (std::fabs(area) < 1e-6f) { ++g_uv.degenerate; continue; }
-            int x0 = std::max(0, (int)std::floor(std::min(a.x, std::min(b.x, c.x)))), x1 = std::min(N - 1, (int)std::ceil(std::max(a.x, std::max(b.x, c.x))));
-            int y0 = std::max(0, (int)std::floor(std::min(a.y, std::min(b.y, c.y)))), y1 = std::min(N - 1, (int)std::ceil(std::max(a.y, std::max(b.y, c.y))));
-            if ((size_t)(x1 - x0 + 1) * (y1 - y0 + 1) > (size_t)N * N / 2) continue;   // broken UVs: skip huge triangles
-            for (int yy = y0; yy <= y1; ++yy)
-                for (int xx = x0; xx <= x1; ++xx) {
-                    float qx = xx + 0.5f, qy = yy + 0.5f;
-                    float w0 = (b.x - a.x) * (qy - a.y) - (b.y - a.y) * (qx - a.x);
-                    float w1 = (c.x - b.x) * (qy - b.y) - (c.y - b.y) * (qx - b.x);
-                    float w2 = (a.x - c.x) * (qy - c.y) - (a.y - c.y) * (qx - c.x);
-                    if ((w0 >= 0 && w1 >= 0 && w2 >= 0) || (w0 <= 0 && w1 <= 0 && w2 <= 0)) {
-                        uint8_t& cv = cover[(size_t)yy * N + xx];
-                        if (cv < 255) ++cv;
-                    }
-                }
-        }
-        (void)toPx;
-        size_t covered = 0, over = 0;
-        for (size_t i = 0; i < cover.size(); ++i) {
-            if (!cover[i]) continue;
-            ++covered;
-            uint8_t* d = &img[i * 4];
-            if (cover[i] > 1) { ++over; d[0] = (uint8_t)std::min(255, d[0] + 90); d[1] = (uint8_t)(d[1] * 0.7f); d[2] = (uint8_t)std::min(255, d[2] + 60); }
-            else { d[0] = (uint8_t)std::min(255, d[0] + 22); d[1] = (uint8_t)std::min(255, d[1] + 34); d[2] = (uint8_t)std::min(255, d[2] + 44); }
-        }
-        g_uv.coverage = (float)covered / (N * N);
-        g_uv.overlap = covered ? (float)over / covered : 0.0f;
-        // edges (Bresenham), light lines
-        auto plot = [&](int xx, int yy) {
-            if (xx < 0 || yy < 0 || xx >= N || yy >= N) return;
-            uint8_t* d = &img[((size_t)yy * N + xx) * 4];
-            d[0] = (uint8_t)std::min(255, d[0] / 2 + 105); d[1] = (uint8_t)std::min(255, d[1] / 2 + 120); d[2] = (uint8_t)std::min(255, d[2] / 2 + 130);
-        };
-        auto lineTo = [&](float2 a, float2 b) {
-            int x0 = (int)a.x, y0 = (int)a.y, x1 = (int)b.x, y1 = (int)b.y;
-            int dx = std::abs(x1 - x0), sx = x0 < x1 ? 1 : -1, dy = -std::abs(y1 - y0), sy = y0 < y1 ? 1 : -1, err = dx + dy;
-            for (int guard = 0; guard < 4 * N; ++guard) {
-                plot(x0, y0);
-                if (x0 == x1 && y0 == y1) break;
-                int e2 = 2 * err;
-                if (e2 >= dy) { err += dy; x0 += sx; }
-                if (e2 <= dx) { err += dx; y0 += sy; }
-            }
-        };
-        const bool quads = !m.edges.empty();
-        if (quads) {
-            for (size_t e = 0; e + 1 < m.edges.size(); e += 2) {
-                float2 a = m.vertices[m.edges[e]].uv, b = m.vertices[m.edges[e + 1]].uv;
-                float2 o(std::floor(a.x), std::floor(a.y));
-                lineTo((a - o) * (float)N, (b - o) * (float)N);
-            }
-        } else {
-            for (size_t t = 0; t < triCount; ++t) {
-                float2 a = m.vertices[m.indices[t * 3]].uv, b = m.vertices[m.indices[t * 3 + 1]].uv, c = m.vertices[m.indices[t * 3 + 2]].uv;
-                float2 o(std::floor(a.x), std::floor(a.y));
-                a = (a - o) * (float)N; b = (b - o) * (float)N; c = (c - o) * (float)N;
-                lineTo(a, b); lineTo(b, c); lineTo(c, a);
-            }
-        }
-        g_uv.tex = m_gui.createTexture(img.data(), N, N);
-    }
-    // the square (v up = image top, as the texture) and the statistics on its right
-    float side = std::max(40.0f, ph);
-    R sq = {px, py, side, side};
-    Box({sq.x - 1, sq.y - 1, sq.w + 2, sq.h + 2}, P().border, 0);
-    if (g_uv.tex) dl->AddImage(g_uv.tex, sq.min(), sq.max());
-    float tx = px + side + 16 * s, ty = py + 2 * s;
-    TextBold(tx, ty, part.name, P().text, 13);
-    ty += 22 * s;
-    auto line = [&](bool ok, const std::string& t) {
-        Glyph(ok ? Icon::Check : Icon::Info, tx, ty + 1 * s, 12, ok ? kGreen : kAmber);
-        Text(tx + 20 * s, ty, t, ok ? P().text : kAmber, 10.5f);
-        ty += 20 * s;
+
+    // fills (checks)
+    const ImDrawListFlags oldFlags = dl->Flags;
+    dl->Flags &= ~(ImDrawListFlags_AntiAliasedFill | (an.edges.size() > 20000 ? ImDrawListFlags_AntiAliasedLines : 0));
+    const size_t T = an.valid ? (size_t)an.tris : 0;
+    auto visible = [&](const ImVec2& a, const ImVec2& b, const ImVec2& c) {
+        return !((a.x < x && b.x < x && c.x < x) || (a.x > x + w && b.x > x + w && c.x > x + w) || (a.y < y && b.y < y && c.y < y) || (a.y > y + h && b.y > y + h && c.y > y + h));
     };
-    char b[128];
-    snprintf(b, sizeof(b), "%d triangles", g_uv.tris);
-    line(true, b);
-    line(g_uv.hasUv, g_uv.hasUv ? "UVs present" : "No UVs");
-    if (g_uv.hasUv) {
-        snprintf(b, sizeof(b), "UV range %.2f..%.2f  x  %.2f..%.2f", g_uv.uvMin.x, g_uv.uvMax.x, g_uv.uvMin.y, g_uv.uvMax.y);
-        bool inside = g_uv.uvMin.x >= -0.001f && g_uv.uvMin.y >= -0.001f && g_uv.uvMax.x <= 1.001f && g_uv.uvMax.y <= 1.001f;
-        line(inside, b);
-        snprintf(b, sizeof(b), "Coverage %.0f %% of the square", g_uv.coverage * 100.0f);
-        line(g_uv.coverage > 0.35f, b);
-        snprintf(b, sizeof(b), "Overlap %.1f %% (pink)", g_uv.overlap * 100.0f);
-        line(g_uv.overlap < 0.02f, b);
-        snprintf(b, sizeof(b), g_uv.degenerate ? "%d zero-area UV triangles" : "No zero-area UV triangle", g_uv.degenerate);
-        line(g_uv.degenerate == 0, b);
+    for (size_t t = 0; t < T; ++t) {
+        ImU32 col = 0;
+        switch (F.uvFill) {
+        case 0: col = Fade(P().text, 18); break;
+        case 1: { float hue = std::fmod(an.island[t] * 0.61803f, 1.0f); ImVec4 c; ImGui::ColorConvertHSVtoRGB(hue, 0.55f, 0.95f, c.x, c.y, c.z); col = IM_COL32((int)(c.x * 255), (int)(c.y * 255), (int)(c.z * 255), 120); break; }
+        case 2: col = (an.flags[t] & UVF_OVERLAP) ? IM_COL32(235, 60, 60, 150) : Fade(P().text, 14); break;
+        case 3: col = (an.flags[t] & UVF_FLIPPED) ? IM_COL32(235, 60, 60, 160) : (an.flags[t] & UVF_ZERO) ? IM_COL32(240, 150, 40, 200) : IM_COL32(90, 190, 110, 50); break;
+        case 4: col = ramp(an.densityLog[t] * 0.25f + 0.5f, 140); break;
+        case 5: col = ramp(0.5f + clampf((an.stretch[t] - 1.0f) / 4.0f, 0, 0.5f), 140); break;
+        }
+        if (!col) continue;
+        const float2 &a = uv[mesh.indices[t * 3]], &b = uv[mesh.indices[t * 3 + 1]], &c = uv[mesh.indices[t * 3 + 2]];
+        ImVec2 sa = toS(a.x, a.y), sb = toS(b.x, b.y), sc = toS(c.x, c.y);
+        if (visible(sa, sb, sc)) dl->AddTriangleFilled(sa, sb, sc, col);
     }
-    ty += 6 * s;
-    Text(tx, ty, part.texture.empty() ? "Background: checker (no texture)" : "Background: the base color texture", P().muted, 9.5f);
-    ty += 16 * s;
-    Text(tx, ty, "Overlap is normal for mirrored or tiled parts.", P().muted, 9.5f);
+    // wireframe: the set (B in orange when this canvas shows it), then the overlay set in orange
+    auto wire = [&](const UvAnalysis& A, const std::vector<float2>& U, ImU32 col) {
+        for (size_t e = 0; e + 1 < A.edges.size(); e += 2) {
+            const float2 &a = U[A.edges[e]], &b = U[A.edges[e + 1]];
+            ImVec2 sa = toS(a.x, a.y), sb = toS(b.x, b.y);
+            if ((sa.x < x && sb.x < x) || (sa.x > x + w && sb.x > x + w) || (sa.y < y && sb.y < y) || (sa.y > y + h && sb.y > y + h)) continue;
+            dl->AddLine(sa, sb, col, 1.0f);
+        }
+    };
+    wire(an, uv, other == -2 ? kSetB : Fade(P().text, 215));
+    if (other >= 0 && other < (int)F.partUv[part].size()) wire(prefabUvAnalysis(part, other), F.partUv[part][other].uv, kSetB);
+    dl->Flags = oldFlags;
+
+    // labels: the set(s) shown, the UV under the mouse
+    {
+        std::string label = (other == -2 ? "B  " : "A  ") + F.partUv[part][set].name;
+        if (other >= 0) label += "   +   B  " + F.partUv[part][other].name;
+        R lr = {x + 8 * s, y + 8 * s, TextSize(label, 10.5f).x + 18 * s, 22 * s};
+        Box(lr, P().overlay, 4);
+        Text(lr.x + 9 * s, lr.y + 5 * s, label, other == -2 ? kSetB : P().text, 10.5f);
+        if (hovered) {
+            float2 m = toUv(io.MousePos.x, io.MousePos.y);
+            int tile = udimTile(m.x, m.y);
+            char t[96];
+            if (tile > 0) snprintf(t, sizeof(t), "U %.3f   V %.3f   ·   tile %d", m.x, m.y, tile);
+            else snprintf(t, sizeof(t), "U %.3f   V %.3f   ·   outside the UDIM range", m.x, m.y);
+            R mr = {x + 8 * s, y + h - 30 * s, TextSize(t, 10).x + 18 * s, 22 * s};
+            Box(mr, P().overlay, 4);
+            Text(mr.x + 9 * s, mr.y + 5 * s, t, P().text, 10);
+        }
+    }
+    dl->PopClipRect();
+}
+
+void App::pfUvSidebar(float x, float y, float w, float h, int part) {
+    PrefabStudio& F = m_pf;
+    R r = {x, y, w, h};
+    Panel(r, Icon::Check, "UV Check", "", P().accent);
+    if (part < 0) { Text(r.x + 14 * s, r.y + 48 * s, "No part selected.", P().muted, 11); return; }
+    const PrefabPart& pp = F.asset.parts[part];
+    float px = r.x + 12 * s, pw = r.w - 24 * s;
+    g_labelRight = px + pw - 8 * s;
+    ImGui::SetCursorScreenPos(ImVec2(px, r.y + 40 * s));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+    ImGui::BeginChild("uvSide", ImVec2(pw, r.h - 48 * s), ImGuiChildFlags_None, ImGuiWindowFlags_NoBackground);
+    ImGui::SetWindowFontScale(atelier::Style().layoutScale);
+    ImGui::PopStyleVar();
+    dl = ImGui::GetWindowDrawList();
+    float yy = ImGui::GetCursorScreenPos().y;
+    const float bw = pw - 10 * s;
+    TextBold(px, yy, pp.name, P().text, 13);
+    yy += 19 * s;
+    Text(px, yy, Fit(pp.meshPath.empty() ? std::string("Primitive · ") + primitiveName(pp.prim.type) : pp.meshPath, bw, 9.5f), P().muted, 9.5f);
+    yy += 24 * s;
+    // UV sets: click = A, the B pill = second set
+    const int nsets = (int)F.partUv[part].size();
+    Label(px, yy, "UV SETS");
+    yy += 22 * s;
+    for (int i = 0; i < nsets; ++i) {
+        ImGui::PushID(i);
+        R row = {px, yy, bw, 24 * s};
+        if (Hit("set", row)) F.uvSetA = i;
+        if (i == F.uvSetA) SelectedRow(row);
+        else if (ImGui::IsItemHovered()) Box(row, P().hover, 3);
+        Text(px + 8 * s, yy + 5 * s, std::to_string(i) + "   " + F.partUv[part][i].name, P().text, 11);
+        R pb = {px + bw - 26 * s, yy + 3 * s, 22 * s, 18 * s};
+        const bool isB = F.uvCompare && i == F.uvSetB;
+        if (Hit("b", pb)) { F.uvSetB = i; if (!F.uvCompare) F.uvCompare = 1; }
+        Tip("Compare with this set (B)");
+        Box(pb, isB ? kSetB : P().raised, 3, !isB);
+        Center(pb, "B", isB ? IM_COL32(30, 20, 10, 255) : P().muted, 9.5f);
+        if (i == F.uvSetA) { R pa = {pb.x - 26 * s, pb.y, 22 * s, 18 * s}; Box(pa, P().accent, 3); Center(pa, "A", IM_COL32(20, 20, 24, 255), 9.5f); }
+        ImGui::PopID();
+        yy += 27 * s;
+    }
+    if (nsets < 2) { Text(px, yy, "One UV set (OBJ files and primitives have one;", P().muted, 9.5f); yy += 15 * s; Text(px, yy, "glTF files can carry several).", P().muted, 9.5f); yy += 18 * s; }
+    yy += 8 * s;
+    // checks: A, and B in a second column when comparing
+    const bool cmp = F.uvCompare != 0 && nsets > 1;
+    const UvAnalysis& A = prefabUvAnalysis(part, F.uvSetA);
+    const UvAnalysis* B = cmp ? &prefabUvAnalysis(part, F.uvSetB) : nullptr;
+    Label(px, yy, "CHECKS");
+    yy += 22 * s;
+    const float colA = px + bw * (cmp ? 0.52f : 0.62f), colB = px + bw * 0.78f;
+    if (cmp) {
+        Text(colA, yy, "A", P().accent, 10);
+        Text(colB, yy, "B", kSetB, 10);
+        yy += 17 * s;
+    }
+    auto row = [&](const char* label, const std::function<std::string(const UvAnalysis&)>& value, const std::function<bool(const UvAnalysis&)>& ok, const char* tip) {
+        R rr = {px, yy - 2 * s, bw, 20 * s};
+        Hit(label, rr);
+        Tip(tip);
+        Text(px, yy, label, P().muted, 10.5f);
+        Text(colA, yy, value(A), ok(A) ? P().text : kAmber, 10.5f);
+        if (B) Text(colB, yy, value(*B), ok(*B) ? P().text : kAmber, 10.5f);
+        yy += 20 * s;
+    };
+    auto num = [](int v) { return std::to_string(v); };
+    auto pct = [](float v) { char b[16]; snprintf(b, sizeof(b), "%.1f %%", v * 100.0f); return std::string(b); };
+    auto yes = [](const UvAnalysis&) { return true; };
+    row("Triangles", [&](const UvAnalysis& a) { return num(a.tris); }, yes, "Triangles of the mesh");
+    row("Islands", [&](const UvAnalysis& a) { return num(a.islands); }, yes, "UV shells (connected pieces)");
+    row("UDIM tiles", [&](const UvAnalysis& a) { return num((int)a.tiles.size() - (a.tiles.count(-1) ? 1 : 0)); }, [](const UvAnalysis& a) { return !a.tiles.count(-1); }, "Tiles used (tile of each triangle centre)");
+    row("Outside 0-1", [&](const UvAnalysis& a) { return num(a.outside01); }, yes, "Triangles with a vertex outside the 0-1 square (tiling or UDIM)");
+    row("Out of UDIM", [&](const UvAnalysis& a) { return num(a.badTile); }, [](const UvAnalysis& a) { return a.badTile == 0; }, "Triangles in negative tiles or beyond u = 10: no UDIM tile can hold them");
+    row("Flipped", [&](const UvAnalysis& a) { return num(a.flipped); }, [](const UvAnalysis& a) { return a.flipped == 0; }, "Mirrored triangles (wound the other way): wrong normal maps");
+    row("Zero area", [&](const UvAnalysis& a) { return num(a.zeroArea); }, [](const UvAnalysis& a) { return a.zeroArea == 0; }, "Triangles collapsed in UV: no texel");
+    row("Overlap", [&](const UvAnalysis& a) { return pct(a.overlap); }, [](const UvAnalysis& a) { return a.overlap < 0.02f; }, "Texels used by two triangles or more (fine for tiling, a problem for lightmaps and bakes)");
+    row("Coverage 0-1", [&](const UvAnalysis& a) { return pct(a.coverage01); }, [](const UvAnalysis& a) { return a.coverage01 > 0.4f || a.coverage01 == 0; }, "Part of the 0-1 square covered by the UVs");
+    row("Texel density", [&](const UvAnalysis& a) { char b[24]; snprintf(b, sizeof(b), "%.0f px", a.density); return std::string(b); }, yes, "Median pixels per scene unit (1 cell) with a 1024 texture");
+    row("Density spread", [&](const UvAnalysis& a) { char b[24]; snprintf(b, sizeof(b), "x %.2f", a.densitySpread); return std::string(b); }, [](const UvAnalysis& a) { return a.densitySpread < 2.0f; }, "90th / 10th percentile of the density: 1 = even texel size everywhere");
+    row("Stretch avg", [&](const UvAnalysis& a) { char b[24]; snprintf(b, sizeof(b), "%.2f", a.stretchAvg); return std::string(b); }, [](const UvAnalysis& a) { return a.stretchAvg < 1.25f; }, "Mean distortion (area weighted): 1 = none");
+    row("Stretch max", [&](const UvAnalysis& a) { char b[24]; snprintf(b, sizeof(b), "%.2f", a.stretchMax); return std::string(b); }, [](const UvAnalysis& a) { return a.stretchMax < 3.0f; }, "Worst triangle distortion");
+    // difference between the two sets
+    if (B) {
+        const std::vector<float2>& ua = F.partUv[part][F.uvSetA].uv;
+        const std::vector<float2>& ub = F.partUv[part][F.uvSetB].uv;
+        size_t diff = 0;
+        for (size_t i = 0; i < ua.size() && i < ub.size(); ++i) diff += std::fabs(ua[i].x - ub[i].x) > 1e-5f || std::fabs(ua[i].y - ub[i].y) > 1e-5f;
+        yy += 6 * s;
+        Label(px, yy, "A / B");
+        yy += 22 * s;
+        if (F.uvSetA == F.uvSetB) Text(px, yy, "Same set selected twice.", P().muted, 10.5f);
+        else if (!diff) { Glyph(Icon::Check, px, yy + 1 * s, 12, kGreen); Text(px + 18 * s, yy, "Identical layouts", P().text, 10.5f); }
+        else {
+            char t[96];
+            snprintf(t, sizeof(t), "%zu of %zu vertices differ (%.0f %%)", diff, ua.size(), 100.0 * diff / std::max<size_t>(1, ua.size()));
+            Text(px, yy, t, P().text, 10.5f);
+        }
+        yy += 22 * s;
+    }
+    // tiles used
+    yy += 6 * s;
+    Label(px, yy, "TILES");
+    yy += 22 * s;
+    auto tiles = [&](const UvAnalysis& a, ImU32 col, float tx) {
+        float ty = yy;
+        for (auto& kv : a.tiles) {
+            char t[48];
+            if (kv.first > 0) snprintf(t, sizeof(t), "%d  ·  %d tris", kv.first, kv.second);
+            else snprintf(t, sizeof(t), "outside  ·  %d", kv.second);
+            Text(tx, ty, t, kv.first > 0 ? col : kAmber, 10.5f);
+            ty += 17 * s;
+        }
+        return ty;
+    };
+    float endA = tiles(A, P().text, px);
+    float endB = B ? tiles(*B, kSetB, px + bw * 0.52f) : endA;
+    yy = std::max(endA, endB) + 8 * s;
+    // legend of the display
+    Label(px, yy, "DISPLAY");
+    yy += 22 * s;
+    Text(px, yy, kUvFill[F.uvFill], P().text, 11);
+    yy += 18 * s;
+    {
+        // the tip, wrapped on the width
+        std::string line, word;
+        std::istringstream ss(kUvFillTips[F.uvFill]);
+        while (ss >> word) {
+            std::string test = line.empty() ? word : line + " " + word;
+            if (TextSize(test, 9.5f).x > bw && !line.empty()) { Text(px, yy, line, P().muted, 9.5f); yy += 14 * s; line = word; }
+            else line = test;
+        }
+        if (!line.empty()) { Text(px, yy, line, P().muted, 9.5f); yy += 14 * s; }
+    }
+    if (F.uvFill == 4 || F.uvFill == 5) {
+        yy += 4 * s;
+        for (int i = 0; i < 40; ++i) dl->AddRectFilled(ImVec2(px + i * bw / 40, yy), ImVec2(px + (i + 1) * bw / 40 + 1, yy + 10 * s), ramp(F.uvFill == 4 ? i / 39.0f : 0.5f + i / 78.0f, 255));
+        yy += 13 * s;
+        Text(px, yy, F.uvFill == 4 ? "x0.25" : "1.0", P().muted, 9);
+        const char* mid = F.uvFill == 4 ? "median" : "2.0";
+        Text(px + bw / 2 - TextSize(mid, 9).x / 2, yy, mid, P().muted, 9);
+        const char* end = F.uvFill == 4 ? "x4" : "3.0+";
+        Text(px + bw - TextSize(end, 9).x, yy, end, P().muted, 9);
+        yy += 16 * s;
+    }
+    ImGui::SetCursorScreenPos(ImVec2(px, yy));
+    ImGui::Dummy(ImVec2(1, 6 * s));
+    ImGui::EndChild();
+    dl = ImGui::GetWindowDrawList();
 }
 
 } // namespace app

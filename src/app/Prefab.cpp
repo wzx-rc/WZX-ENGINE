@@ -496,8 +496,7 @@ PrefabAsset makeDemoPrefab() {
 
     PrefabPart crate;
     crate.name = "Crate";
-    crate.prim = prim(PRIM_CUBE);
-    crate.prim.size = float3(0.36f);
+    crate.meshPath = "assets/PROPS/Crate_UVSets.gltf";   // three UV sets: Tiling, Lightmap, UDIM (tools/make_uvset_crate.ps1)
     crate.material = mat("Wood", float3(0.55f, 0.38f, 0.22f), 0.85f);
     crate.position = float3(-1.08f, 0, 0.62f);
     crate.rotation = float3(0, 18, 0);
@@ -506,7 +505,7 @@ PrefabAsset makeDemoPrefab() {
     PrefabPart crate2 = crate;
     crate2.name = "Crate Small";
     crate2.parent = crateId;
-    crate2.prim.size = float3(0.24f);
+    crate2.scale = float3(0.6f);
     crate2.position = float3(0.02f, 0.36f, 0);
     crate2.rotation = float3(0, -27, 0);
     uint32_t crate2Id = a.addPart(crate2);
@@ -532,7 +531,7 @@ PrefabAsset makeDemoPrefab() {
     keys(build, houseId, CH_SCALE, {{0.0f, float3(0.034f, 0.0f, 0.034f)}, {0.9f, float3(0.034f, 0.037f, 0.034f)}, {1.1f, float3(0.034f)}});
     keys(build, poleId, CH_POSITION, {{0.0f, float3(1.12f, -2.9f, -0.55f)}, {0.6f, float3(1.12f, -2.9f, -0.55f)}, {1.2f, float3(1.12f, 0, -0.55f)}});
     keys(build, crateId, CH_SCALE, {{0.0f, float3(0)}, {1.1f, float3(0)}, {1.4f, float3(1.15f)}, {1.6f, float3(1)}});
-    keys(build, crate2Id, CH_SCALE, {{0.0f, float3(0)}, {1.25f, float3(0)}, {1.6f, float3(1)}});
+    keys(build, crate2Id, CH_SCALE, {{0.0f, float3(0)}, {1.25f, float3(0)}, {1.6f, float3(0.6f)}});
     a.clips.push_back(build);
     return a;
 }

@@ -154,15 +154,8 @@
       "id": 6,
       "parent": 0,
       "name": "Crate",
-      "shape": {
-        "primitive": "Cube",
-        "size": [0.36, 0.36, 0.36],
-        "radius": 0.5,
-        "radius2": 0.15,
-        "segments": 32,
-        "rings": 16,
-        "subdiv": 1
-      },
+      "mesh": "assets/PROPS/Crate_UVSets.gltf",
+      "recenter": true,
       "position": [-1.08, 0, 0.62],
       "rotation": [0, 18, 0],
       "scale": [1, 1, 1],
@@ -188,18 +181,11 @@
       "id": 7,
       "parent": 6,
       "name": "Crate Small",
-      "shape": {
-        "primitive": "Cube",
-        "size": [0.24, 0.24, 0.24],
-        "radius": 0.5,
-        "radius2": 0.15,
-        "segments": 32,
-        "rings": 16,
-        "subdiv": 1
-      },
+      "mesh": "assets/PROPS/Crate_UVSets.gltf",
+      "recenter": true,
       "position": [0.02, 0.36, 0],
       "rotation": [0, -27, 0],
-      "scale": [1, 1, 1],
+      "scale": [0.6, 0.6, 0.6],
       "visible": true,
       "collapsed": false,
       "material": {
@@ -297,7 +283,7 @@
           "keys": [
             {"t": 0, "v": [0, 0, 0], "interp": "Smooth"},
             {"t": 1.25, "v": [0, 0, 0], "interp": "Smooth"},
-            {"t": 1.6, "v": [1, 1, 1], "interp": "Smooth"}
+            {"t": 1.6, "v": [0.6, 0.6, 0.6], "interp": "Smooth"}
           ]
         }
       ]
