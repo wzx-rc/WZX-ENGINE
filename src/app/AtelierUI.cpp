@@ -463,7 +463,7 @@ void App::drawAtelier() {
     syncAtelierStyle(m_gui.fontBold);
     if (m_workspace == 2) {
         int target = atelier::material::Draw();
-        if (target) m_workspace = target == 1 ? 0 : 1;
+        if (target) m_workspace = target == 1 ? 0 : (target == 3 ? 3 : 1);
         return;
     }
     ImGuiViewport* vp = ImGui::GetMainViewport();
@@ -503,6 +503,7 @@ void App::drawAtelier() {
         Splitter("splitRight", {X + W - rw - 12 * s, top, 6 * s, H - 52 * s}, A.rightW, 248, maxR, true, true);
         Splitter("splitBottom", {cx, Y + H - bh - 13 * s, cw, 5 * s}, A.bottomH, 140, maxB, false, true);
     }
+    if (m_workspace == 3) drawPrefabStudio(X, top, W, H - 42 * s);   // Prefab studio panels (PrefabUI.inl)
 
     // toast (status messages), as in archive/atelier-graph/former Atelier graph.cpp
     if (!m_status.empty() && GetTickCount64() - m_statusTime < 3500) {
@@ -624,8 +625,10 @@ void App::atlTopBar(float x0, float y0, float width) {
     if (Button("workspaceScene", {wx + 339 * s, ty, 79 * s, 24 * s}, "Scene", Icon::Scene, m_workspace == 0)) m_workspace = 0;
     if (Button("workspaceGraph", {wx + 422 * s, ty, 96 * s, 24 * s}, "Graph", Icon::Blueprint, m_workspace == 1)) m_workspace = 1;
     if (Button("workspaceMaterials", {wx + 522 * s, ty, 117 * s, 24 * s}, "Materials", Icon::Material, m_workspace == 2)) m_workspace = 2;
+    if (Button("workspacePrefab", {wx + 643 * s, ty, 92 * s, 24 * s}, kPrefabNoun, Icon::Cube, m_workspace == 3)) m_workspace = 3;
+    Tip("Prefab studio: assemble meshes, materials and animations into one asset");
     // centre: build window and test player
-    float cx = x0 + std::max((655 + P().headerShift) * s, width / 2 - 89 * s);
+    float cx = x0 + std::max((749 + P().headerShift) * s, width / 2 - 89 * s);
     if (PrimaryButton("buildScene", {cx, y0 + 6 * s, 103 * s, 25 * s}, "Build", Icon::Check, m_game != nullptr)) m_game->openBuildWindow();
     Tip("Build the game for a platform: Windows now, iOS coming soon (F7)");
     const bool playing = m_game && m_game->playing();
@@ -2063,3 +2066,6 @@ void App::atlInspectorWorld(float x, float y, float w, float) {
 }
 
 } // namespace app
+
+// Prefab studio panels (workspace 3): they use the Atelier helpers above
+#include "PrefabUI.inl"

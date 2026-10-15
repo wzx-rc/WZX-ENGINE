@@ -439,6 +439,7 @@ void computeFrame(const Scene& scene, const SceneData& data, const Environment* 
     rc.envVisible = scene.env.visibleToCamera ? 1.0f : 0.0f;
     rc.sunLight = data.sunLight;
     rc.giMode = fs.ddgi ? 1.0f : 0.0f;
+    rc.pad3 = 0.0f;   // debug view of Raster.hlsl (editor Prefab studio only): off
     castShadows = key >= 0 || sun || envSun;
 }
 

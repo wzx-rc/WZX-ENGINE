@@ -19,7 +19,7 @@ struct RasterConstants {
     float3 sunRadiance; float sunFromEnv;   // sunFromEnv: the key is the sun of the HDRI (its highlight is in the reflections)
     float4 shIrr[9];                     // HDRI irradiance (cosine-convolved SH, without the sun), image space
     float envMapOn; float envRotation; float envMapIntensity; float envMips;
-    float envVisible; uint sunLight; float giMode; float pad3;   // sunLight: index of the path tracer's sun quad (skipped here); giMode: DDGI probes (see Shade)
+    float envVisible; uint sunLight; float giMode; float debugView;   // sunLight: index of the path tracer's sun quad (skipped here); giMode: DDGI probes (see Shade); debugView: see Shade
 };
 ConstantBuffer<RasterConstants> R : register(b0);
 
@@ -251,6 +251,37 @@ float4 Shade(VSOut i, bool ghost, float shadowBias, bool capture) {
     if (m.baseColorTex != NO_TEXTURE) base *= gTextures[NonUniformResourceIndex(m.baseColorTex)].Sample(gLinearWrap, i.uv).rgb;
     if (m.flags & MAT_FLAG_GRID) base = GridColor(base, i.wpos, emission);
     if (D.flags & DRAW_LIGHT) return float4(m.emission * R.lightScale, 1);
+    // Debug views of the Prefab studio (R.debugView, shown with the Standard view transform): the floor (grid) keeps
+    // its look so the asset stays grounded. 4 = clay: a neutral grey material under the same lights.
+    const uint dbg = capture ? 0u : (uint)(R.debugView + 0.5);
+    if (dbg != 0 && !(m.flags & MAT_FLAG_GRID)) {
+        float form = 0.35 + 0.65 * saturate(dot(N, normalize(float3(0.45, 0.8, 0.35))) * 0.8 + 0.2);
+        if (dbg == 1) return float4(base, 1);
+        if (dbg == 2) return float4(pow(N * 0.5 + 0.5, 2.2), 1);
+        if (dbg == 3) {
+            // 8 x 8 checker over the 0..1 UV square, tinted by u (red) and v (green); out of the square = magenta
+            float2 uv = i.uv;
+            float2 c = floor(uv * 8);
+            float chk = fmod(abs(c.x + c.y), 2);
+            float3 tint = float3(0.35 + 0.65 * frac(uv.x), 0.35 + 0.65 * frac(uv.y), 0.55);
+            float3 col = lerp(0.18, 0.92, chk) * tint;
+            if (any(uv < -0.001) || any(uv > 1.001)) col = lerp(col, float3(0.95, 0.1, 0.8), 0.6);
+            float2 g = abs(frac(uv * 8 + 0.5) - 0.5) / max(fwidth(uv * 8), 1e-4);
+            col = lerp(col, 0.05, 1 - saturate(min(g.x, g.y) - 0.5));
+            return float4(pow(col * form, 2.2), 1);
+        }
+        if (dbg == 5) {
+            uint h = D.id * 2654435761u;
+            float3 col = float3((h >> 8) & 255, (h >> 16) & 255, (h >> 24) & 255) / 255.0;
+            col = 0.25 + 0.7 * col;
+            return float4(pow(col * form, 2.2), 1);
+        }
+        if (dbg == 4) {
+            base = 0.5;
+            emission = 0;
+            m.roughness = 0.65; m.metallic = 0; m.transmission = 0; m.coat = 0; m.specular = 0.5;
+        }
+    }
 
     float rough = max(m.roughness, 0.04);
     float a = rough * rough;

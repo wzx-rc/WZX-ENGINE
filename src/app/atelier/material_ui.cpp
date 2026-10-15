@@ -71,8 +71,8 @@ void Header(float width){
    if(i==3){if(ImGui::MenuItem("Apply material","Ctrl+Enter"))Apply();if(ImGui::MenuItem("Export preview PNG"))SavePreview();if(ImGui::MenuItem("Import texture map"))ChooseTexture(textureSlot);if(ImGui::MenuItem("Copy shader source"))ImGui::SetClipboardText(GetShaderSource().c_str());}
    if(i==4){if(ImGui::MenuItem("Controls & preview details","F1"))help=true;ImGui::TextDisabled("WZX Engine · Dear ImGui · DirectX 12");}ImGui::EndPopup();}x+=Style().menuW*ui;
  }
- if(Button("materialWorkspaceScene",{shift+339*ui,7*ui,79*ui,24*ui},"Scene",Icon::Scene))workspaceRequest=1;if(Button("materialWorkspaceGraph",{shift+422*ui,7*ui,96*ui,24*ui},"Graph",Icon::Blueprint))workspaceRequest=2;Button("materialWorkspace",{shift+522*ui,7*ui,117*ui,24*ui},"Materials",Icon::Material,true);
- float mid=width/2-34*ui;if(Button("applyMaterial",{mid,6*ui,87*ui,25*ui},"Apply",Icon::Check))Apply();Tip("Validate and publish this material to the engine callback");
+ if(Button("materialWorkspaceScene",{shift+339*ui,7*ui,79*ui,24*ui},"Scene",Icon::Scene))workspaceRequest=1;if(Button("materialWorkspaceGraph",{shift+422*ui,7*ui,96*ui,24*ui},"Graph",Icon::Blueprint))workspaceRequest=2;Button("materialWorkspace",{shift+522*ui,7*ui,117*ui,24*ui},"Materials",Icon::Material,true);if(Button("materialWorkspacePrefab",{shift+643*ui,7*ui,92*ui,24*ui},"Prefab",Icon::Cube))workspaceRequest=3;
+ float mid=std::max(width/2-34*ui,shift+749*ui);if(Button("applyMaterial",{mid,6*ui,87*ui,25*ui},"Apply",Icon::Check))Apply();Tip("Validate and publish this material to the engine callback");
  if(Button("toggleLive",{mid+94*ui,6*ui,108*ui,25*ui},"Live Preview",live?Icon::Play:Icon::Pause,live))live=!live;
  if(Button("saveMaterials",{width-179*ui,6*ui,74*ui,25*ui},"Save",Icon::Save))Save();if(Button("exportMaterialTop",{width-99*ui,6*ui,28*ui,25*ui},"",Icon::Camera,false,true))SavePreview();Tip("Export the actual GPU preview as PNG");IconAt(Icon::Person,width-46*ui,12*ui,TEXT,13);IconAt(Icon::ChevronDown,width-23*ui,15*ui,MUTED,9);
 }

@@ -4,6 +4,7 @@
 #include "Content.h"
 #include "ImGuiLayer.h"
 #include "Json.h"
+#include "Prefab.h"
 #include "Theme.h"
 #include "atelier/material_host.h"
 #include "atelier/material_model.h"
@@ -111,7 +112,11 @@ struct Options {
     int light = -1;             // test: 1 light mode, 0 dark mode
     bool openSettings = false;  // test: open the settings window at startup
     std::string theme;          // test: start with this theme ("Atelier" or "Ambre"), not saved
-    int workspace = 0;          // Atelier workspace at startup: 0 scene, 1 graph, 2 material
+    int workspace = 0;          // Atelier workspace at startup: 0 scene, 1 graph, 2 material, 3 prefab
+    // test: Prefab studio state at startup (--prefab-view, --prefab-select, --prefab-time, --prefab-tab, --prefab-clip)
+    int prefabView = -1, prefabSelect = -1, prefabTab = -1, prefabClip = -1, prefabBottom = -1, prefabLight = -1;
+    float prefabTime = -1;
+    std::wstring prefabOpen;
     int inspectorTab = -1;      // test: inspector tab at startup (0 actor, 1 light, 2 render, 3 world)
     ImVec4 mainColor = ImVec4(-1, -1, -1, 1);   // test: main colour for this run (--main-color r,g,b)
     ImVec4 sizes = ImVec4(-1, -1, -1, 0);       // test: text, icon and layout size for this run (--sizes t,i,l)
@@ -123,6 +128,10 @@ void drawAssetThumb(ImDrawList* dl, int kind, int index, ImVec2 p0, ImVec2 p1, f
 
 // Writes a file through a temporary file then replaces it (SceneWzx.cpp).
 bool writeFileSafe(const std::wstring& path, const std::string& text);
+
+// Open / save file dialog (PrefabStudio.cpp). Empty = cancelled.
+std::wstring pickFileDialog(HWND hwnd, bool save, const wchar_t* filter, const wchar_t* defExt, const std::wstring& initialDir,
+                           const std::wstring& initialName);
 
 // Screen-space rectangle (pixels).
 struct ScreenRect {
@@ -312,6 +321,104 @@ private:
     void renderMaterialPreview();
     void buildPreviewScene(int shape);
     void leavePreview();
+
+    // Prefab studio (workspace 3): assembles parts (mesh + material + transform) into an asset with animation clips,
+    // in its own scene and lighting. Logic in PrefabStudio.cpp, panels in PrefabUI.inl (included by AtelierUI.cpp).
+    struct PrefabStudio {
+        PrefabAsset asset;
+        std::wstring path;                 // file of the asset (empty = not saved yet)
+        std::string savedJson;             // the asset as saved: modified test
+        bool initialised = false;
+        Scene scene;                       // the studio world: floor, lights, the parts
+        bool active = false;               // the renderer holds the studio scene
+        bool rebuild = true;               // parts structure, meshes or textures changed: rebuild the scene
+        uint32_t buildSerial = 0;          // counts the rebuilds (UV layout cache)
+        std::vector<int> partObject;       // part index -> object of the studio scene (-1 = pivot)
+        int floorObject = -1, footprintObject = -1;
+        std::map<std::string, MeshData> meshCache;   // mesh files read once (path -> mesh, pivot recentred)
+        std::map<std::string, std::string> meshErrors;
+        std::map<std::string, float3> meshShift;     // offset removed from the vertices of a recentred mesh file
+        std::map<std::string, Texture> texCache;
+        std::vector<float3> meshMin, meshMax;        // bounds of the studio scene meshes (by mesh index)
+        // move gizmo on the selected part (world axes)
+        int gizmoAxis = -1, gizmoHover = -1;
+        float gizmoT0 = 0;
+        float3 gizmoStart, gizmoDir, gizmoOrigin;
+        std::vector<PartPose> pose;
+        std::vector<PartWorld> world;
+        // selection and editing
+        int sel = -1;                      // selected part index
+        std::vector<PrefabAsset> undo, redo;
+        bool editing = false;              // a field drag is in progress (one undo step per drag)
+        uint32_t renameId = 0;
+        char renameBuf[96] = {};
+        bool renameFocus = false;
+        uint32_t dragPart = 0;             // part dragged in the list (re-parenting)
+        // animation
+        int clip = 0;
+        float time = 0;
+        bool playing = false;
+        float speed = 1.0f;
+        bool autoKey = false;
+        int keyTrack = -1, keyIndex = -1;  // selected key (track index in the clip, key index)
+        bool keyDrag = false, scrubbing = false;
+        float keyDragStart = 0;
+        float timelineZoom = 1.0f;         // pixels per second factor
+        // view
+        Camera camera;
+        bool orbiting = false, panning = false;
+        float lastX = 0, lastY = 0;
+        ScreenRect rcView;
+        ViewRect vpPx;
+        int debugView = 0;                 // 0 lit, 1 albedo, 2 normals, 3 UV checker, 4 clay, 5 part colours
+        int wireframe = 0;                 // 0 off, 1 wire, 2 overlay
+        bool showGrid = true, showBounds = true, showFootprint = true, showPivots = true, showSelection = true;
+        bool turntable = false;
+        // lighting of the studio world
+        int lightPreset = 0;               // 0 studio, 1 daylight, 2 sunset, 3 night, 4 HDRI
+        float keyIntensity = 1.0f, fillIntensity = 1.0f, rimIntensity = 1.0f, envIntensity = 1.0f;
+        float sunAzimuth = 35.0f, sunElevation = 48.0f;
+        float exposure = 0.0f;
+        int floorStyle = 0;                // 0 grid, 1 plain, 2 none
+        std::wstring hdri;
+        // layout
+        float leftW = 250, rightW = 300, bottomH = 236;
+        int inspectorTab = 0;              // 0 part, 1 lighting, 2 debug, 3 asset
+        int bottomTab = 0;                 // 0 timeline, 1 UV layout
+        char search[96] = {};
+    } m_pf;
+    void prefabInit();
+    void prefabNew(bool demo);
+    bool prefabSave(bool saveAs);
+    bool prefabOpen(const std::wstring& path);
+    void prefabOpenDialog();
+    bool prefabDirty() const;
+    void prefabPushUndo();
+    void prefabUndo();
+    void prefabRedo();
+    void prefabBuildScene();             // full rebuild (structure, meshes, textures)
+    void prefabSyncScene();              // every frame: pose, materials, lights
+    void prefabLighting();
+    void renderPrefab();
+    void prefabFrameAll();
+    void prefabViewInput(bool hovered);
+    void prefabShortcuts();
+    void prefabAddPart(int kind);        // 0 pivot, 1.. PRIM_*, 100 mesh file (dialog)
+    void prefabDuplicate();
+    void prefabDelete();
+    void prefabKeySelected(int channel = -1);   // key the selected part at the current time (-1 = all channels)
+    void prefabSetTime(float t);
+    void prefabAddToScene();             // place the prefab (current pose) in the main scene as a group
+    bool prefabMeshFor(const PrefabPart& p, MeshData& out, std::string* err);
+    PrefabClip* prefabClip();
+    void prefabStep(float dt);
+    // panels (PrefabUI.inl)
+    void drawPrefabStudio(float X, float Y, float W, float H);
+    void pfParts(float x, float y, float w, float h);
+    void pfViewport(float x, float y, float w, float h);
+    void pfInspector(float x, float y, float w, float h);
+    void pfTimeline(float x, float y, float w, float h);
+    void pfUvLayout(float x, float y, float w, float h);
 
     // Atelier layout (AtelierUI.cpp): fixed concept layout with the Atelier components
     void drawAtelier();

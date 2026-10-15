@@ -63,6 +63,9 @@ struct RenderSettings {
     bool bakedProbes = false;
     // Raster modes (Lit, Metal iOS): 0 shaded, 1 wireframe only, 2 wireframe over the shaded view (override).
     int wireframe = 0;
+    // Raster debug views (Prefab studio): 0 lit, 1 albedo, 2 world normals, 3 UV checker, 4 clay (lighting only),
+    // 5 part colours. Use the Standard tonemapper (3) and exposure 1 so the debug colours are shown as they are.
+    int debugView = 0;
 };
 
 struct ViewRect { int x = 0, y = 0, w = 1, h = 1; };

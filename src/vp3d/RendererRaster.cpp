@@ -27,7 +27,7 @@ struct RasterConstants {
     float3 sunRadiance; float sunFromEnv;
     float shIrr[9][4];
     float envMapOn; float envRotation; float envMapIntensity; float envMips;
-    float envVisible; uint32_t sunLight; float giMode, pad3;   // giMode: DDGI probes read by Shade (Raster.hlsl)
+    float envVisible; uint32_t sunLight; float giMode, debugView;   // giMode: DDGI probes read by Shade (Raster.hlsl); debugView: RenderSettings::debugView
 };
 
 struct DrawConstants {
@@ -487,6 +487,7 @@ void Renderer::recordRaster(const Scene& scene, const RenderSettings& rs, const 
     rc.envVisible = scene.env.visibleToCamera ? 1.0f : 0.0f;
     rc.sunLight = m_sunLight;
     rc.giMode = (probes || probeCapture) ? 1.0f : 0.0f;   // probes read by the main pass; the capture drops its ambient
+    rc.debugView = probeCapture ? 0.0f : (float)rs.debugView;
     memcpy(m_rasterCB.mapped, &rc, sizeof(rc));
 
     m_cmd->SetGraphicsRootSignature(m_rasterRoot.Get());

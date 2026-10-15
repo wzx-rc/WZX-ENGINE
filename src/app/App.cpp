@@ -253,6 +253,7 @@ bool App::saveBakedProbesFile(const std::wstring& path) {
 // has been still for half a second; a finished bake is saved. Bake now (button) forces it.
 void App::updateBake() {
     if (!m_rs.raster || !m_rs.bakedProbes) { m_bakeNow = false; return; }
+    if (m_pf.active) return;   // the renderer holds the Prefab studio scene
     const uint64_t now = GetTickCount64();
     const uint32_t sig = m_renderer.bakeSignature(m_scene);
     if (m_renderer.baking()) return;
@@ -452,6 +453,7 @@ void App::frame() {
     // game layer first: it owns the keys and the graph overlay (drawn after the editor, below)
     bool gameKeys = m_game && m_game->beginFrame();
     if (!gameKeys && m_workspace == 0) handleShortcuts();   // Graph / Material Studio have their own shortcuts
+    if (!gameKeys && m_workspace == 3) prefabShortcuts();
     if (!m_game || !m_game->playerMode()) {
         drawEditor();
         drawSaveChangesPopup();
@@ -481,7 +483,15 @@ void App::frame() {
     }
     outlinerSync();   // Scene Manager: ids, the children follow their parent (before the render)
     m_viewportRendered = false;
-    if (m_workspace == 2 && m_matHost.want) {
+    if (m_workspace != 3 && m_pf.active) {   // leaving the Prefab studio: the renderer gets the main scene back
+        m_pf.active = false;
+        m_renderer.setScene(m_scene);
+        markDirty();
+    }
+    if (m_workspace == 3) {
+        renderPrefab();
+        m_viewportRendered = true;
+    } else if (m_workspace == 2 && m_matHost.want) {
         m_matHost.want = false;
         renderMaterialPreview();
         m_viewportRendered = true;
@@ -1121,7 +1131,15 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         else if (a == L"--theme") { std::wstring t = next(); opt.theme = _wcsicmp(t.c_str(), L"ambre") == 0 ? "Ambre" : _wcsicmp(t.c_str(), L"corail") == 0 ? "Corail" : "Atelier"; }
         else if (a == L"--sizes") swscanf_s(next().c_str(), L"%f,%f,%f", &opt.sizes.x, &opt.sizes.y, &opt.sizes.z);
         else if (a == L"--main-color") swscanf_s(next().c_str(), L"%f,%f,%f", &opt.mainColor.x, &opt.mainColor.y, &opt.mainColor.z);
-        else if (a == L"--workspace") { std::wstring w = next(); opt.workspace = w == L"graph" ? 1 : (w == L"material" ? 2 : 0); }
+        else if (a == L"--workspace") { std::wstring w = next(); opt.workspace = w == L"graph" ? 1 : (w == L"material" ? 2 : (w == L"prefab" ? 3 : 0)); }
+        else if (a == L"--prefab-view") opt.prefabView = _wtoi(next().c_str());
+        else if (a == L"--prefab-select") opt.prefabSelect = _wtoi(next().c_str());
+        else if (a == L"--prefab-tab") opt.prefabTab = _wtoi(next().c_str());
+        else if (a == L"--prefab-clip") opt.prefabClip = _wtoi(next().c_str());
+        else if (a == L"--prefab-time") opt.prefabTime = (float)_wtof(next().c_str());
+        else if (a == L"--prefab-open") opt.prefabOpen = next();
+        else if (a == L"--prefab-bottom") opt.prefabBottom = _wtoi(next().c_str());
+        else if (a == L"--prefab-light") opt.prefabLight = _wtoi(next().c_str());
         else if (a == L"--ddgi") opt.ddgi = _wtoi(next().c_str()) != 0;
         else if (a == L"--probes") opt.probes = _wtoi(next().c_str());
         else if (a == L"--ddgi-raster") opt.ddgiRaster = _wtoi(next().c_str()) != 0;
