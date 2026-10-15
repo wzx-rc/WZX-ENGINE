@@ -678,9 +678,16 @@ void App::atlHierarchy(float x, float y, float w, float h) {
     if (Button("addCollection", {px + halfW + 6 * s, py, halfW, 23 * s}, "Collection", Icon::Collection)) {
         pushUndo();
         uint32_t c = addCollection("Collection", (int)(m_scene.collections.size() % kCollectionColorCount));
+        // with a selection: the new collection takes it (one undo step)
+        std::vector<uint32_t> sel = selectedNodeIds();
+        if (!sel.empty()) {
+            size_t depth = m_undo.size();
+            moveNodes(sel, 2, c);
+            if (m_undo.size() > depth) m_undo.pop_back();
+        }
         startRename(c);
     }
-    Tip("New collection: a folder of the Scene Manager (no effect on the scene)");
+    Tip("New collection (holds the selection if there is one): a folder of the Scene Manager, no effect on the scene");
     py += 33 * s;
 
     ImGui::SetCursorScreenPos(ImVec2(px, py));
@@ -852,8 +859,8 @@ void App::atlHierarchy(float x, float y, float w, float h) {
             }
         } else {
             dl->PushClipRect(ImVec2(px, yy), ImVec2(px + pw - 52 * s - (sub.empty() ? 0 : 18 * s), yy + hh), true);
-            // name colour: normal, locked (amber tint, darker on light themes), hidden (muted), locked and hidden (faded tint)
-            const ImU32 lockCol = Family(IM_COL32(214, 160, 104, 255));
+            // name colour: normal, locked (pale green tint, darker on light themes), hidden (muted), locked and hidden (faded tint)
+            const ImU32 lockCol = Family(IM_COL32(150, 204, 156, 255));
             const ImU32 nameCol = locked ? (dim ? Fade(lockCol, 130) : lockCol) : (dim ? P().muted : P().text);
             if (isCol) TextBold(nx, yy + (hh - 2 * s - 12 * s * ts()) / 2, nodeName(n), nameCol, 12);
             else Text(nx, yy + (hh - 2 * s - 11 * s * ts()) / 2, nodeName(n), nameCol, 11);
@@ -1024,7 +1031,10 @@ void App::atlHierarchy(float x, float y, float w, float h) {
     if (ImGui::BeginPopup("outlinerEmptyCtx")) {
         if (ImGui::MenuItem("New Collection")) {
             pushUndo();
-            startRename(addCollection("Collection", (int)(m_scene.collections.size() % kCollectionColorCount)));
+            uint32_t c = addCollection("Collection", (int)(m_scene.collections.size() % kCollectionColorCount));
+            std::vector<uint32_t> sel = selectedNodeIds();   // the selection goes in it (one undo step)
+            if (!sel.empty()) { size_t depth = m_undo.size(); moveNodes(sel, 2, c); if (m_undo.size() > depth) m_undo.pop_back(); }
+            startRename(c);
         }
         if (ImGui::MenuItem("Group Selection", "Ctrl+G", false, !selectedNodeIds().empty())) groupSelection();
         if (ImGui::BeginMenu("Add Object")) {
