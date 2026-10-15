@@ -137,6 +137,26 @@ void defaultGraph(Graph& g, const std::string& name) {
     g.connect(sh, pin(sh, "Shader", true), out, pin(out, "Surface", false));
 }
 
+// The graph surfaces follow the UI theme (panels, cards, text, accent), as one coherent interface.
+void applyGraphTheme() {
+    const app::ThemePalette& p = app::th::P();
+    auto mix = [](ImVec4 a, ImVec4 b, float t) { return ImVec4(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, a.z + (b.z - a.z) * t, 1); };
+    GraphPalette g;
+    g.canvas = app::th::u32(p.bg0);
+    g.bar = app::th::u32(p.bar);
+    g.panel = app::th::u32(p.bg1);
+    g.node = app::th::u32(p.bg2);
+    g.raised = app::th::u32(mix(p.bg2, p.hover, 0.5f));
+    g.hover = app::th::u32(p.hover);
+    g.border = app::th::u32(p.border);
+    g.grid = app::th::u32(mix(p.border, p.dim, 0.25f));
+    g.text = app::th::u32(p.text);
+    g.muted = app::th::u32(p.dim);
+    g.accent = app::th::u32(p.accent);
+    g.select = app::th::u32(p.select);
+    setGraphPalette(g);
+}
+
 atl::Icon nodeIcon(const NodeDef& d) {
     if (d.category == "Output") return atl::Icon::Check;
     if (d.category == "Shaders") return atl::Icon::Material;
@@ -197,6 +217,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
     const std::wstring settingsFile = exeDir + L"\wzx_settings.ini";
     app::th::loadSettings(GetFileAttributesW(settingsFile.c_str()) == INVALID_FILE_ATTRIBUTES && !opt.settingsPath.empty() ? opt.settingsPath : settingsFile);
     app::th::apply(dpi);
+    applyGraphTheme();
     if (!opt.embed) ShowWindow(hwnd, SW_SHOWDEFAULT);
 
     Graph graph;
@@ -332,6 +353,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         // WZX settings window (theme, colours, sizes, graph outlines), saved next to the exe
         if (showSettings && mayashader::drawSettingsWindow(&showSettings, dpi)) {
             app::th::apply(dpi);
+            applyGraphTheme();
             app::th::saveSettings(settingsFile);
         }
 

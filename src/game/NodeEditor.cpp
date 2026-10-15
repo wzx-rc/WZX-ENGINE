@@ -15,8 +15,8 @@ static const float kCardW = 224, kTitle = 35, kPinTop = 58, kRow = 25, kFooter =
 static const float kHeaderPx = 37, kFooterPx = 24, kInspectorPx = 284, kOutputPx = 151;   // DIPs
 static const float kGroupTitle = 25;                                                       // graph units
 
-// Atelier palette (Blue 01 defaults, atelier_style.h).
-static const ImU32 kBg = IM_COL32(23, 28, 32, 255), kPanel = IM_COL32(28, 33, 38, 255), kRaised = IM_COL32(37, 43, 49, 255),
+// Atelier palette (Blue 01 defaults, atelier_style.h); setGraphPalette replaces the surfaces with the UI theme.
+static ImU32 kBg = IM_COL32(23, 28, 32, 255), kPanel = IM_COL32(28, 33, 38, 255), kRaised = IM_COL32(37, 43, 49, 255),
                    kHover = IM_COL32(48, 58, 66, 255), kBar = IM_COL32(21, 26, 30, 255), kBorderC = IM_COL32(49, 57, 64, 255),
                    kCanvas = IM_COL32(22, 27, 31, 255), kNode = IM_COL32(34, 40, 46, 255), kNodeOff = IM_COL32(29, 34, 39, 255),
                    kGridDot = IM_COL32(62, 71, 78, 150), kGridLine = IM_COL32(43, 51, 58, 95), kOverlay = IM_COL32(35, 43, 50, 220),
@@ -1407,5 +1407,30 @@ void NodeEditor::addNodeAtView(Graph& g, const NodeDef& d) {
 }
 
 ImU32 categoryAccentColor(const std::string& category) { return catColor(category); }
+
+} // namespace game
+
+namespace game {
+
+void setGraphPalette(const GraphPalette& p) {
+    kCanvas = p.canvas;
+    kBg = p.canvas;
+    kBar = p.bar;
+    kPanel = p.panel;
+    kNode = p.node;
+    kNodeOff = p.panel;
+    kRaised = p.raised;
+    kHover = p.hover;
+    kBorderC = p.border;
+    kText = p.text;
+    kMuted = p.muted;
+    kCyan = p.accent;
+    kSelect = p.select;
+    kGridDot = withA(p.grid, 150);
+    kGridLine = withA(p.grid, 95);
+    kOverlay = withA(p.node, 220);
+    kMinimap = withA(p.panel, 240);
+    kPinExec = p.text;
+}
 
 } // namespace game

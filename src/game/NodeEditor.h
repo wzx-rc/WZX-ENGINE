@@ -155,3 +155,12 @@ private:
 ImU32 categoryAccentColor(const std::string& category);
 
 } // namespace game
+
+namespace game {
+// Colours of the graph surfaces (canvas, cards, panels, text, accent), e.g. taken from the UI theme. Category and pin
+// colours are kept. Without a call the Blue 01 colours of the Atelier graph are used.
+struct GraphPalette {
+    ImU32 canvas, bar, panel, node, raised, hover, border, grid, text, muted, accent, select;
+};
+void setGraphPalette(const GraphPalette& p);
+} // namespace game
