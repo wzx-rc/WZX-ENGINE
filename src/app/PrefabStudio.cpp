@@ -67,6 +67,9 @@ void App::prefabInit() {
         if (m_opt.prefabJoint >= 0 && m_opt.prefabJoint < (int)P.asset.joints.size()) P.selJoint = m_opt.prefabJoint;
         if (m_opt.prefabTime >= 0) P.time = m_opt.prefabTime;
     }
+    if (m_opt.prefabDq) for (PrefabSkin& sk : P.asset.skins) sk.dualQuaternion = true;
+    for (size_t c = 0; c < P.asset.clips.size(); ++c)
+        if (!m_opt.prefabClipName.empty() && fromUtf8(P.asset.clips[c].name) == m_opt.prefabClipName) P.clip = (int)c;
     if (!m_opt.prefabUv.empty()) {
         P.centerTab = 1;
         swscanf_s(m_opt.prefabUv.c_str(), L"%d,%d,%d,%d,%d", &P.uvSetA, &P.uvSetB, &P.uvCompare, &P.uvFill, &P.uvBackground);

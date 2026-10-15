@@ -106,6 +106,7 @@ struct PrefabSkin {
     uint32_t vertexCount = 0;
     std::vector<float> weights;        // vertexCount x joints.size()
     int maxInfluences = 4;
+    bool dualQuaternion = false;       // dual quaternion skinning (keeps the volume at twisted joints) instead of linear
     float& w(size_t v, size_t j) { return weights[v * joints.size() + j]; }
     float w(size_t v, size_t j) const { return weights[v * joints.size() + j]; }
     int influence(uint32_t joint) const;   // column of a joint, -1 when it is not an influence

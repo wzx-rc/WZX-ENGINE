@@ -121,6 +121,8 @@ struct Options {
     float prefabTime = -1;
     std::wstring prefabOpen;
     int prefabRig = -1, prefabJoint = -1;   // test: Rig module mode (0..3; loads the rig sample when the prefab has no joint), joint
+    std::wstring prefabClipName;   // test: clip shown, by name (--prefab-clip-name)
+    bool prefabDq = false;      // test: dual quaternion skinning on every skin (--prefab-dq)
     std::wstring prefabRigFbx;  // test: imports this FBX in a new prefab and opens the Rig module
     std::wstring prefabUv;      // test: opens the UV Editor: "setA,setB,compare,display,background" (--prefab-uv)
     bool prefabPlace = false;   // test: places the prefab in the scene at startup and shows the Scene workspace (--prefab-place)
@@ -475,6 +477,8 @@ private:
     void rigAddJoint(bool child);        // at the selected joint (child) or at the origin
     void rigAddChain(int count, float length);
     void rigDeleteJoint();
+    void rigOrientJoint();             // the selected joint aims +Y at its first child (children keep their place)
+    void rigMirrorJoints();            // creates the right side of the left joints (and the reverse), mirrored on X
     void rigBind(int partIndex);         // bind the part to every joint (bind options of the studio)
     void rigUnbind(int partIndex);
     void rigJointPose(int joint, PartPose& local) const;   // local pose shown (override, clip, rest)

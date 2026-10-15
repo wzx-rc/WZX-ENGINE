@@ -1144,6 +1144,8 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         else if (a == L"--prefab-rig") opt.prefabRig = _wtoi(next().c_str());
         else if (a == L"--prefab-joint") opt.prefabJoint = _wtoi(next().c_str());
         else if (a == L"--prefab-fbx") opt.prefabRigFbx = next();
+        else if (a == L"--prefab-dq") opt.prefabDq = true;
+        else if (a == L"--prefab-clip-name") opt.prefabClipName = next();
         else if (a == L"--prefab-place") opt.prefabPlace = true;
         else if (a == L"--prefab-light") opt.prefabLight = _wtoi(next().c_str());
         else if (a == L"--ddgi") opt.ddgi = _wtoi(next().c_str()) != 0;

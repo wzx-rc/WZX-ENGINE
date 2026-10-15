@@ -454,7 +454,29 @@ void App::pfRigOverlay(float x, float y, float w, float h) {
             dl->AddPolyline(pts, 41, IM_COL32(0, 0, 0, 120), 0, 0.8f * s);
         }
         ImVec2 cp;
-        if (pfProject(cam, rc, F.brushHit, cp)) dl->AddCircleFilled(cp, 2.5f * s, IM_COL32(255, 255, 255, 230));
+        if (pfProject(cam, rc, F.brushHit, cp)) {
+            dl->AddCircleFilled(cp, 2.5f * s, IM_COL32(255, 255, 255, 230));
+            // weight of the painted joint at the closest vertex
+            const PrefabSkin* sk = F.skinPart >= 0 && F.skinPart < (int)A.parts.size() ? A.skinOf(A.parts[F.skinPart].id) : nullptr;
+            const int inf = sk && F.selJoint >= 0 && F.selJoint < (int)A.joints.size() ? sk->influence(A.joints[F.selJoint].id) : -1;
+            if (inf >= 0 && F.partObject[F.skinPart] >= 0) {
+                const MeshData& m = F.scene.meshes[F.scene.objects[F.partObject[F.skinPart]].mesh];
+                size_t best = 0;
+                float bd = 1e30f;
+                for (size_t v = 0; v < m.vertices.size(); ++v) {
+                    float3 d = m.vertices[v].pos - F.brushHit;
+                    float dd = dot(d, d);
+                    if (dd < bd) { bd = dd; best = v; }
+                }
+                if (best < sk->vertexCount) {
+                    char t[32];
+                    snprintf(t, sizeof(t), "%.2f", sk->w(best, (size_t)inf));
+                    R wr = {cp.x + 10 * s, cp.y - 24 * s, TextSize(t, 10).x + 12 * s, 18 * s};
+                    Box(wr, P().overlay, 3);
+                    Text(wr.x + 6 * s, wr.y + 3 * s, t, P().text, 10);
+                }
+            }
+        }
     }
     // mode / joint label (top left), status of the last bind / import
     {
@@ -611,6 +633,12 @@ void App::pfRigInspector(float x, float y, float w, float h) {
                 bool a = false;
                 SliderRow("##jRadius", "Display radius", bx, yy, bw, &j.radius, 0.005f, 0.5f, "%.3f", a);
                 if (a) prefabPushUndo();
+                float b2 = (bw - 5 * s) / 2;
+                if (Button("jOrient", {bx, yy, b2, 26 * s}, "Orient to Child", Icon::Rotate, false, false, !A.jointChildren(j.id).empty())) rigOrientJoint();
+                Tip("The joint aims +Y at its first child; the children keep their place (rest pose)");
+                if (Button("jMirror", {bx + b2 + 5 * s, yy, b2, 26 * s}, "Mirror Joints", Icon::Link)) rigMirrorJoints();
+                Tip("Creates the other side of the joints named Left / _L / l_ (or Right / _R / r_), mirrored on X");
+                yy += 36 * s;
             }
             // pose (clip value, override): keys with the diamond, else a pose override
             Label(bx, yy, "POSE");
@@ -708,10 +736,30 @@ void App::pfRigInspector(float x, float y, float w, float h) {
         Tip("Binds the part to every joint at the rest pose (weights from the bones, see the method)");
         yy += 36 * s;
         if (sk) {
+            if (Button("bindPoseBtn", {bx, yy, bw, 26 * s}, "Update Bind Pose (keep weights)", Icon::Refresh)) {
+                prefabPushUndo();
+                std::vector<PartWorld> rest;
+                restJointWorld(A, rest);
+                for (size_t k = 0; k < sk->joints.size(); ++k) {
+                    int ji = A.findJoint(sk->joints[k]);
+                    if (ji >= 0) sk->bindJoint[k] = toAffine(rest[ji]);
+                }
+                F.weightsVersion++;
+                status(L"Bind pose updated: the joints at rest no longer deform the skin", 1);
+            }
+            Tip("After moving joints in Skeleton mode: their rest pose becomes the bind pose again, the weights stay");
+            yy += 32 * s;
             if (Button("unbindBtn", {bx, yy, bw, 26 * s}, "Unbind (remove the skin)", Icon::Trash)) { rigUnbind(F.skinPart); sk = nullptr; }
             yy += 36 * s;
         }
         if (sk) {
+            static const char* deformers[] = {"Linear (classic)", "Dual Quaternion"};
+            int dm = sk->dualQuaternion ? 1 : 0;
+            Text(bx, yy, "Deformation", P().muted, 11);
+            yy += 19 * s;
+            if (Combo("skinDeform", {bx, yy, bw, 26 * s}, dm, deformers, 2, Icon::Rotate)) { prefabPushUndo(); sk->dualQuaternion = dm == 1; F.weightsVersion++; }
+            Tip("Linear blend skinning (classic, the volume shrinks at twisted joints) or dual quaternion (keeps the volume)");
+            yy += 36 * s;
             Label(bx, yy, "WEIGHTS");
             yy += 24 * s;
             {

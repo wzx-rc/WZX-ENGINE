@@ -47,5 +47,7 @@ void paintWeights(PrefabSkin& s, const WeldGraph& g, int influence, int mode, fl
 // Copies the weights from one side to the other (mirror on X of the rest mesh): for each vertex on the target side,
 // the closest vertex on the mirrored side gives its weights, the influences swapped by name (Left/Right, _L/_R, l_/r_).
 int mirrorWeights(PrefabSkin& s, const PrefabAsset& a, const MeshData& mesh, bool positiveToNegative);
+// Left / Right, _L / _R, l_ / r_, .L / .R swapped (the name itself when there is no side)
+std::string mirrorJointName(const std::string& name);
 
 } // namespace app

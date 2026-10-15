@@ -151,6 +151,51 @@ void deformSkin(const PrefabSkin& s, const PrefabAsset& a, const MeshData& rest,
         M[k] = mul(mul(now, s.bindJoint[k].inverse()), s.bindMesh);
     }
     const bool ok = s.vertexCount == rest.vertices.size();
+    if (s.dualQuaternion && ok) {
+        // D_k = J_k(t) * bind_k^-1 (rigid: rotation + translation) as unit dual quaternions, blended per vertex;
+        // the mesh is first placed by bindMesh (its scale stays out of the blend)
+        struct DQ { float4 r, d; };
+        std::vector<DQ> dq(J);
+        for (size_t k = 0; k < J; ++k) {
+            int ji = a.findJoint(s.joints[k]);
+            Affine now = ji >= 0 && ji < (int)jointNow.size() ? toAffine(jointNow[ji]) : s.bindJoint[k];
+            Affine D = mul(now, s.bindJoint[k].inverse());
+            float3 X(D.m[0][0], D.m[1][0], D.m[2][0]), Y(D.m[0][1], D.m[1][1], D.m[2][1]), Z(D.m[0][2], D.m[1][2], D.m[2][2]);
+            float4 q = qFromBasis(normalize(X), normalize(Y), normalize(Z));
+            float3 t(D.m[0][3], D.m[1][3], D.m[2][3]);
+            // d = 0.5 * (t, 0) * q
+            float4 tq(t.x, t.y, t.z, 0);
+            float4 d = qMul(tq, q);
+            dq[k] = {q, float4(d.x * 0.5f, d.y * 0.5f, d.z * 0.5f, d.w * 0.5f)};
+        }
+        for (size_t v = 0; v < rest.vertices.size(); ++v) {
+            const Vertex& src = rest.vertices[v];
+            float4 br(0, 0, 0, 0), bd(0, 0, 0, 0);
+            float sum = 0;
+            int first = -1;
+            for (size_t k = 0; k < J; ++k) {
+                float w = s.w(v, k);
+                if (w <= 0) continue;
+                if (first < 0) first = (int)k;
+                const float4& r0 = dq[(size_t)first].r;
+                const float sign = dq[k].r.x * r0.x + dq[k].r.y * r0.y + dq[k].r.z * r0.z + dq[k].r.w * r0.w < 0 ? -1.0f : 1.0f;
+                float ws = w * sign;
+                br = float4(br.x + dq[k].r.x * ws, br.y + dq[k].r.y * ws, br.z + dq[k].r.z * ws, br.w + dq[k].r.w * ws);
+                bd = float4(bd.x + dq[k].d.x * ws, bd.y + dq[k].d.y * ws, bd.z + dq[k].d.z * ws, bd.w + dq[k].d.w * ws);
+                sum += w;
+            }
+            float3 p0 = s.bindMesh.point(src.pos), n0 = s.bindMesh.vector(src.nrm);
+            float len = std::sqrt(br.x * br.x + br.y * br.y + br.z * br.z + br.w * br.w);
+            if (sum < 1e-6f || len < 1e-8f) { out.vertices[v].pos = p0; out.vertices[v].nrm = normalize(n0); continue; }
+            br = float4(br.x / len, br.y / len, br.z / len, br.w / len);
+            bd = float4(bd.x / len, bd.y / len, bd.z / len, bd.w / len);
+            float3 rv(br.x, br.y, br.z), dv(bd.x, bd.y, bd.z);
+            float3 tr = (dv * br.w - rv * bd.w + cross(rv, dv)) * 2.0f;
+            out.vertices[v].pos = qRot(br, p0) + tr;
+            out.vertices[v].nrm = normalize(qRot(br, n0));
+        }
+        return;
+    }
     for (size_t v = 0; v < rest.vertices.size(); ++v) {
         const Vertex& src = rest.vertices[v];
         float3 p(0), n(0);
@@ -285,8 +330,7 @@ void paintWeights(PrefabSkin& s, const WeldGraph& g, int influence, int mode, fl
     }
 }
 
-namespace {
-std::string mirrorName(const std::string& n) {
+std::string mirrorJointName(const std::string& n) {
     static const std::pair<const char*, const char*> pairs[] = {
         {"Left", "Right"}, {"left", "right"}, {"_L", "_R"}, {"_l", "_r"}, {"L_", "R_"}, {"l_", "r_"}, {".L", ".R"}, {".l", ".r"}};
     for (auto& p : pairs) {
@@ -298,7 +342,6 @@ std::string mirrorName(const std::string& n) {
     }
     return n;
 }
-} // namespace
 
 int mirrorWeights(PrefabSkin& s, const PrefabAsset& a, const MeshData& mesh, bool positiveToNegative) {
     const size_t J = s.joints.size();
@@ -309,7 +352,7 @@ int mirrorWeights(PrefabSkin& s, const PrefabAsset& a, const MeshData& mesh, boo
         swap[k] = (int)k;
         int ji = a.findJoint(s.joints[k]);
         if (ji < 0) continue;
-        std::string m = mirrorName(a.joints[ji].name);
+        std::string m = mirrorJointName(a.joints[ji].name);
         for (size_t q = 0; q < J; ++q) {
             int qi = a.findJoint(s.joints[q]);
             if (qi >= 0 && a.joints[qi].name == m) swap[k] = (int)q;

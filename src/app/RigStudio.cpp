@@ -3,6 +3,7 @@
 #include "App.h"
 #include "FbxImport.h"
 #include <filesystem>
+#include <functional>
 
 namespace app {
 
@@ -79,6 +80,96 @@ void App::rigDeleteJoint() {
     P.weightsVersion++;
     P.rebuild = true;
     status(fromUtf8("Joint deleted: " + name));
+}
+
+namespace {
+// local transform of a joint for a wanted world transform (parent world given, identity for a root)
+void worldToLocal(const PartWorld* parent, const float3& pos, const float4& rot, float3& lpos, float3& lrotDeg) {
+    if (!parent) { lpos = pos; lrotDeg = quatToEuler(rot); return; }
+    float4 inv(-parent->rot.x, -parent->rot.y, -parent->rot.z, parent->rot.w);
+    float3 p = qRot(inv, pos - parent->position);
+    lpos = float3(p.x / std::max(1e-6f, parent->scale.x), p.y / std::max(1e-6f, parent->scale.y), p.z / std::max(1e-6f, parent->scale.z));
+    lrotDeg = quatToEuler(qNormalize(qMul(inv, rot)));
+}
+}
+
+void App::rigOrientJoint() {
+    PrefabStudio& P = m_pf;
+    PrefabAsset& A = P.asset;
+    if (P.selJoint < 0 || P.selJoint >= (int)A.joints.size()) return;
+    std::vector<int> kids = A.jointChildren(A.joints[P.selJoint].id);
+    if (kids.empty()) { status(L"Orient: the joint has no child to aim at", 2); return; }
+    prefabPushUndo();
+    std::vector<PartWorld> rw;
+    restJointWorld(A, rw);
+    const PartWorld me = rw[P.selJoint];
+    float3 Y = rw[kids[0]].position - me.position;
+    if (length(Y) < 1e-6f) return;
+    Y = normalize(Y);
+    float3 zOld = qRot(me.rot, float3(0, 0, 1)), xOld = qRot(me.rot, float3(1, 0, 0));
+    float3 X = cross(Y, zOld);
+    if (length(X) < 1e-4f) X = xOld - Y * dot(xOld, Y);
+    X = normalize(X);
+    float3 Z = cross(X, Y);
+    PartWorld nw = me;
+    nw.rot = qFromBasis(X, Y, Z);
+    int pj = A.joints[P.selJoint].parent ? A.findJoint(A.joints[P.selJoint].parent) : -1;
+    worldToLocal(pj >= 0 ? &rw[pj] : nullptr, nw.position, nw.rot, A.joints[P.selJoint].position, A.joints[P.selJoint].rotation);
+    for (int c : kids) worldToLocal(&nw, rw[c].position, rw[c].rot, A.joints[c].position, A.joints[c].rotation);
+    P.weightsVersion++;
+    status(fromUtf8("Joint oriented: " + A.joints[P.selJoint].name + " aims +Y at " + A.joints[kids[0]].name), 1);
+}
+
+void App::rigMirrorJoints() {
+    PrefabStudio& P = m_pf;
+    PrefabAsset& A = P.asset;
+    std::vector<PartWorld> rw;
+    restJointWorld(A, rw);
+    // joints with a side whose other side is missing, parents first
+    std::vector<int> todo;
+    std::function<void(uint32_t)> walk = [&](uint32_t parent) {
+        for (int i : A.jointChildren(parent)) {
+            std::string m = mirrorJointName(A.joints[i].name);
+            bool exists = false;
+            for (const PrefabJoint& q : A.joints) exists |= q.name == m;
+            if (m != A.joints[i].name && !exists) todo.push_back(i);
+            walk(A.joints[i].id);
+        }
+    };
+    walk(0);
+    if (todo.empty()) { status(L"Mirror: no joint named Left / _L / l_ without its other side", 2); return; }
+    prefabPushUndo();
+    std::map<uint32_t, uint32_t> created;          // source joint id -> its mirror
+    std::map<uint32_t, PartWorld> createdWorld;    // mirror id -> world
+    for (int i : todo) {
+        const PrefabJoint src = A.joints[i];
+        const PartWorld w = rw[i];
+        PartWorld mw;
+        mw.position = float3(-w.position.x, w.position.y, w.position.z);
+        mw.rot = qNormalize(float4(w.rot.x, -w.rot.y, -w.rot.z, w.rot.w));   // reflection across the YZ plane (behaviour mirror)
+        mw.scale = w.scale;
+        PrefabJoint j = src;
+        j.name = mirrorJointName(src.name);
+        // parent: the mirror of the source's parent when it was just made or exists, else the same parent
+        uint32_t parent = src.parent;
+        const PartWorld* pw = nullptr;
+        if (src.parent && created.count(src.parent)) { parent = created[src.parent]; pw = &createdWorld[parent]; }
+        else if (src.parent) {
+            int pi = A.findJoint(src.parent);
+            std::string pm = pi >= 0 ? mirrorJointName(A.joints[pi].name) : std::string();
+            int other = -1;
+            for (size_t q = 0; q < A.joints.size(); ++q) if (A.joints[q].name == pm && (int)q != pi) other = (int)q;
+            if (other >= 0 && other < (int)rw.size()) { parent = A.joints[other].id; pw = &rw[other]; }
+            else if (pi >= 0) pw = &rw[pi];
+        }
+        j.parent = parent;
+        worldToLocal(pw, mw.position, mw.rot, j.position, j.rotation);
+        uint32_t id = A.addJoint(j);
+        created[src.id] = id;
+        createdWorld[id] = mw;
+    }
+    P.weightsVersion++;
+    status(fromUtf8("Mirrored " + std::to_string(created.size()) + " joints on X"), 1);
 }
 
 void App::rigBind(int part) {

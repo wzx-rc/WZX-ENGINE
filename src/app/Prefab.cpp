@@ -500,6 +500,7 @@ std::string prefabToJson(const PrefabAsset& a) {
         w.integer("part", (int)s.part);
         w.integer("vertexCount", (int)s.vertexCount);
         w.integer("maxInfluences", s.maxInfluences);
+        w.str("method", s.dualQuaternion ? "dualQuaternion" : "linear");
         w.raw("bindMesh", affine(s.bindMesh));
         w.beginArray("influences");
         for (size_t k = 0; k < s.joints.size(); ++k) {
@@ -641,6 +642,7 @@ bool prefabFromJson(const Json& j, PrefabAsset& a, std::string* error) {
         s.part = (uint32_t)js["part"].num(0);
         s.vertexCount = (uint32_t)std::max(0.0, js["vertexCount"].num(0));
         s.maxInfluences = std::clamp((int)js["maxInfluences"].num(4), 1, 8);
+        s.dualQuaternion = js["method"].str("linear") == "dualQuaternion";
         s.bindMesh = affine(js["bindMesh"]);
         for (const Json& ji : js["influences"].a) {
             if (a.findJoint((uint32_t)ji["joint"].num(0)) < 0) continue;
@@ -857,6 +859,13 @@ PrefabAsset makeRigSample() {
     keys(bend, endId, CH_ROTATION, {{0.0f, float3(0)}, {0.5f, float3(0, 0, 35)}, {1.0f, float3(0)}, {1.5f, float3(0, 0, -35)}, {2.0f, float3(0)}});
     keys(bend, rootId, CH_ROTATION, {{0.0f, float3(0)}, {1.0f, float3(0, 30, 0)}, {2.0f, float3(0)}});
     a.clips.push_back(bend);
+    // Twist: the end joint turns on its axis (Y), a test for the skinning (linear shrinks, dual quaternion keeps the volume)
+    PrefabClip twist;
+    twist.name = "Twist";
+    twist.length = 2.0f;
+    keys(twist, endId, CH_ROTATION, {{0.0f, float3(0)}, {1.0f, float3(0, 150, 0)}, {2.0f, float3(0)}});
+    keys(twist, midId, CH_ROTATION, {{0.0f, float3(0)}, {1.0f, float3(0, 30, 0)}, {2.0f, float3(0)}});
+    a.clips.push_back(twist);
     return a;
 }
 
