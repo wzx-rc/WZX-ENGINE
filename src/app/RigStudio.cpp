@@ -289,7 +289,7 @@ void App::rigLoadSample() {
 // --------------------------------------------------------------------------- FBX import
 
 void App::rigImportFbx() {
-    std::wstring path = pickFileDialog(m_hwnd, false, L"FBX (*.fbx)\0*.fbx\0All files\0*.*\0", L"fbx", projectRoot() + L"\\assets", L"");
+    std::wstring path = pickFileDialog(m_hwnd, false, L"Rigged meshes (*.fbx;*.gltf;*.glb)\0*.fbx;*.gltf;*.glb\0All files\0*.*\0", L"fbx", projectRoot() + L"\\assets", L"");
     if (!path.empty()) rigImportFile(path);
 }
 
@@ -300,8 +300,11 @@ bool App::rigImportFile(const std::wstring& path) {
     PrefabAsset& A = P.asset;
     FbxScene fbx;
     std::string err;
-    if (!loadFbx(path, fbx, &err)) {
-        P.rigStatus = "FBX not imported: " + err;
+    std::wstring fext = fs::path(path).extension().wstring();
+    for (auto& c : fext) c = (wchar_t)towlower(c);
+    const bool gltf = fext == L".gltf" || fext == L".glb";
+    if (!(gltf ? loadGltfRig(path, fbx, &err) : loadFbx(path, fbx, &err))) {
+        P.rigStatus = "Rig not imported: " + err;
         status(fromUtf8(P.rigStatus), 2);
         return false;
     }
@@ -417,12 +420,180 @@ bool App::rigImportFile(const std::wstring& path) {
     P.weightsVersion++;
     P.rebuild = true;
     char b[256];
-    snprintf(b, sizeof(b), "FBX imported: %zu vertices, %zu triangles, %zu joints, %d skin influences, %d UV sets, %d clips (scale %.4g)",
+    snprintf(b, sizeof(b), "Rig imported: %zu vertices, %zu triangles, %zu joints, %d skin influences, %d UV sets, %d clips (scale %.4g)",
              fbx.mesh.vertices.size(), fbx.mesh.triangleCount(), fbx.joints.size(), bound, (int)fbx.uvSets.size(), clipsAdded, f);
     P.rigStatus = b;
     log(b, 1);
     status(fromUtf8(b), 1);
     prefabFrameAll();
+    return true;
+}
+
+// --------------------------------------------------------------------------- glTF export (skinned part)
+
+// The skinned part at its bind pose (vertices in the bind world space), the whole skeleton as nodes (rest pose), the
+// skin (inverse bind matrices, 4 strongest influences per vertex) and every clip's joint tracks as animations.
+bool App::rigExportGltf(int partIndex, const std::wstring& path) {
+    PrefabStudio& P = m_pf;
+    const PrefabAsset& A = P.asset;
+    if (partIndex < 0 || partIndex >= (int)A.parts.size()) return false;
+    const PrefabSkin* sk = A.skinOf(A.parts[partIndex].id);
+    MeshData mesh;
+    std::string err;
+    if (!sk || !prefabMeshFor(A.parts[partIndex], mesh, &err) || mesh.vertices.size() != sk->vertexCount) {
+        status(L"glTF export: the part has no valid skin", 2);
+        return false;
+    }
+    std::vector<uint8_t> bin;
+    auto align = [&]() { while (bin.size() % 4) bin.push_back(0); };
+    auto put = [&](const void* p, size_t n) { const uint8_t* b = (const uint8_t*)p; bin.insert(bin.end(), b, b + n); };
+    std::string views, accessors;
+    int nViews = 0, nAcc = 0;
+    auto addView = [&](size_t offset, size_t length, int target) {
+        char b[160];
+        snprintf(b, sizeof(b), "%s{\"buffer\": 0, \"byteOffset\": %zu, \"byteLength\": %zu%s}", nViews ? ", " : "", offset, length,
+                 target ? (target == 1 ? ", \"target\": 34962" : ", \"target\": 34963") : "");
+        views += b;
+        return nViews++;
+    };
+    auto addAccessor = [&](int view, int compType, size_t count, const char* type, const std::string& extra) {
+        char b[256];
+        snprintf(b, sizeof(b), "%s{\"bufferView\": %d, \"componentType\": %d, \"count\": %zu, \"type\": \"%s\"%s}", nAcc ? ", " : "", view, compType, count, type, extra.c_str());
+        accessors += b;
+        return nAcc++;
+    };
+    auto floats = [&](const std::vector<float>& v, int comps, const char* type, int target, bool minmax) {
+        align();
+        size_t off = bin.size();
+        put(v.data(), v.size() * 4);
+        std::string extra;
+        if (minmax && comps == 3) {
+            float mn[3] = {1e30f, 1e30f, 1e30f}, mx[3] = {-1e30f, -1e30f, -1e30f};
+            for (size_t i = 0; i < v.size(); i += 3)
+                for (int c = 0; c < 3; ++c) { mn[c] = std::min(mn[c], v[i + c]); mx[c] = std::max(mx[c], v[i + c]); }
+            char b[200];
+            snprintf(b, sizeof(b), ", \"min\": [%g, %g, %g], \"max\": [%g, %g, %g]", mn[0], mn[1], mn[2], mx[0], mx[1], mx[2]);
+            extra = b;
+        }
+        if (minmax && comps == 1 && !v.empty()) {
+            char b[96];
+            snprintf(b, sizeof(b), ", \"min\": [%g], \"max\": [%g]", *std::min_element(v.begin(), v.end()), *std::max_element(v.begin(), v.end()));
+            extra = b;
+        }
+        return addAccessor(addView(off, v.size() * 4, target), 5126, v.size() / comps, type, extra);
+    };
+    // mesh in bind space
+    std::vector<float> pos, nrm, uv, wts;
+    std::vector<uint16_t> jts;
+    const size_t J = sk->joints.size();
+    for (size_t v = 0; v < mesh.vertices.size(); ++v) {
+        float3 p = sk->bindMesh.point(mesh.vertices[v].pos), n = normalize(sk->bindMesh.vector(mesh.vertices[v].nrm));
+        pos.insert(pos.end(), {p.x, p.y, p.z});
+        nrm.insert(nrm.end(), {n.x, n.y, n.z});
+        uv.insert(uv.end(), {mesh.vertices[v].uv.x, mesh.vertices[v].uv.y});
+        std::vector<std::pair<float, uint16_t>> top;
+        for (size_t k = 0; k < J; ++k) if (sk->w(v, k) > 0) top.push_back({sk->w(v, k), (uint16_t)k});
+        std::sort(top.begin(), top.end(), [](auto& a, auto& b) { return a.first > b.first; });
+        top.resize(std::min<size_t>(top.size(), 4));
+        float sum = 0;
+        for (auto& t : top) sum += t.first;
+        for (int c = 0; c < 4; ++c) {
+            jts.push_back(c < (int)top.size() ? top[c].second : 0);
+            wts.push_back(c < (int)top.size() && sum > 0 ? top[c].first / sum : (c == 0 && top.empty() ? 1.0f : 0.0f));
+        }
+    }
+    const int aPos = floats(pos, 3, "VEC3", 1, true), aNrm = floats(nrm, 3, "VEC3", 1, false), aUv = floats(uv, 2, "VEC2", 1, false);
+    align();
+    size_t jOff = bin.size();
+    put(jts.data(), jts.size() * 2);
+    const int aJts = addAccessor(addView(jOff, jts.size() * 2, 1), 5123, jts.size() / 4, "VEC4", "");
+    const int aWts = floats(wts, 4, "VEC4", 1, false);
+    align();
+    size_t iOff = bin.size();
+    put(mesh.indices.data(), mesh.indices.size() * 4);
+    const int aIdx = addAccessor(addView(iOff, mesh.indices.size() * 4, 2), 5125, mesh.indices.size(), "SCALAR", "");
+    // inverse bind matrices (column-major)
+    std::vector<float> ibm;
+    for (size_t k = 0; k < J; ++k) {
+        Affine inv = sk->bindJoint[k].inverse();
+        for (int c = 0; c < 4; ++c)
+            for (int r = 0; r < 4; ++r) ibm.push_back(r < 3 ? inv.m[r][c] : (c == 3 ? 1.0f : 0.0f));
+    }
+    const int aIbm = floats(ibm, 16, "MAT4", 0, false);
+    // nodes: 0 = the mesh, then one per joint (index + 1)
+    auto jnode = [&](uint32_t id) { return A.findJoint(id) + 1; };
+    std::string nodes = "{\"name\": \"" + jsonEscape(A.parts[partIndex].name) + "\", \"mesh\": 0, \"skin\": 0}";
+    std::string roots = "0";
+    for (size_t i = 0; i < A.joints.size(); ++i) {
+        const PrefabJoint& jn = A.joints[i];
+        float4 q = eulerToQuat(jn.rotation);
+        char b[512];
+        snprintf(b, sizeof(b), ", {\"name\": \"%s\", \"translation\": [%g, %g, %g], \"rotation\": [%g, %g, %g, %g], \"scale\": [%g, %g, %g]", jsonEscape(jn.name).c_str(),
+                 jn.position.x, jn.position.y, jn.position.z, q.x, q.y, q.z, q.w, jn.scale.x, jn.scale.y, jn.scale.z);
+        nodes += b;
+        std::vector<int> kids = A.jointChildren(jn.id);
+        std::vector<int> direct;
+        for (int k : kids) if (A.joints[k].parent == jn.id) direct.push_back(k + 1);
+        if (!direct.empty()) {
+            nodes += ", \"children\": [";
+            for (size_t k = 0; k < direct.size(); ++k) nodes += (k ? ", " : "") + std::to_string(direct[k]);
+            nodes += "]";
+        }
+        nodes += "}";
+        if (!jn.parent || A.findJoint(jn.parent) < 0) roots += ", " + std::to_string(i + 1);
+    }
+    std::string skinJoints;
+    for (size_t k = 0; k < J; ++k) skinJoints += (k ? ", " : "") + std::to_string(jnode(sk->joints[k]));
+    // animations: joint tracks
+    std::string anims;
+    for (const PrefabClip& c : A.clips) {
+        std::string chans, samplers;
+        int ns = 0;
+        for (const PrefabTrack& t : c.tracks) {
+            if (!t.joint || t.keys.empty() || A.findJoint(t.part) < 0) continue;
+            std::vector<float> times, vals;
+            for (const PrefabKey& k : t.keys) {
+                times.push_back(k.time);
+                if (t.channel == CH_ROTATION) { float4 q = eulerToQuat(k.value); vals.insert(vals.end(), {q.x, q.y, q.z, q.w}); }
+                else vals.insert(vals.end(), {k.value.x, k.value.y, k.value.z});
+            }
+            int ain = floats(times, 1, "SCALAR", 0, true);
+            int aout = floats(vals, t.channel == CH_ROTATION ? 4 : 3, t.channel == CH_ROTATION ? "VEC4" : "VEC3", 0, false);
+            char b[256];
+            snprintf(b, sizeof(b), "%s{\"input\": %d, \"output\": %d, \"interpolation\": \"%s\"}", ns ? ", " : "", ain, aout, t.keys[0].interp == INTERP_STEP ? "STEP" : "LINEAR");
+            samplers += b;
+            snprintf(b, sizeof(b), "%s{\"sampler\": %d, \"target\": {\"node\": %d, \"path\": \"%s\"}}", ns ? ", " : "", ns, jnode(t.part),
+                     t.channel == CH_POSITION ? "translation" : t.channel == CH_ROTATION ? "rotation" : "scale");
+            chans += b;
+            ++ns;
+        }
+        if (!ns) continue;
+        anims += (anims.empty() ? "" : ", ") + std::string("{\"name\": \"") + jsonEscape(c.name) + "\", \"channels\": [" + chans + "], \"samplers\": [" + samplers + "]}";
+    }
+    // base64 buffer
+    static const char* b64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    std::string enc;
+    enc.reserve(bin.size() * 4 / 3 + 4);
+    for (size_t i = 0; i < bin.size(); i += 3) {
+        uint32_t v = (uint32_t)bin[i] << 16 | (i + 1 < bin.size() ? (uint32_t)bin[i + 1] << 8 : 0) | (i + 2 < bin.size() ? bin[i + 2] : 0);
+        enc += b64[(v >> 18) & 63];
+        enc += b64[(v >> 12) & 63];
+        enc += i + 1 < bin.size() ? b64[(v >> 6) & 63] : '=';
+        enc += i + 2 < bin.size() ? b64[v & 63] : '=';
+    }
+    std::string json = "{\n  \"asset\": {\"version\": \"2.0\", \"generator\": \"WZX Engine Rig module\"},\n  \"scene\": 0,\n  \"scenes\": [{\"nodes\": [" + roots + "]}],\n";
+    json += "  \"nodes\": [" + nodes + "],\n";
+    json += "  \"meshes\": [{\"name\": \"" + jsonEscape(A.parts[partIndex].name) + "\", \"primitives\": [{\"attributes\": {\"POSITION\": " + std::to_string(aPos) +
+            ", \"NORMAL\": " + std::to_string(aNrm) + ", \"TEXCOORD_0\": " + std::to_string(aUv) + ", \"JOINTS_0\": " + std::to_string(aJts) +
+            ", \"WEIGHTS_0\": " + std::to_string(aWts) + "}, \"indices\": " + std::to_string(aIdx) + "}]}],\n";
+    json += "  \"skins\": [{\"inverseBindMatrices\": " + std::to_string(aIbm) + ", \"joints\": [" + skinJoints + "]}],\n";
+    if (!anims.empty()) json += "  \"animations\": [" + anims + "],\n";
+    json += "  \"buffers\": [{\"byteLength\": " + std::to_string(bin.size()) + ", \"uri\": \"data:application/octet-stream;base64," + enc + "\"}],\n";
+    json += "  \"bufferViews\": [" + views + "],\n";
+    json += "  \"accessors\": [" + accessors + "]\n}\n";
+    if (!writeFileSafe(path, json)) { status(L"glTF not written: " + path, 2); return false; }
+    status(L"glTF exported: " + fs::path(path).filename().wstring(), 1);
+    log("Rig exported as glTF: " + toUtf8(path), 1);
     return true;
 }
 

@@ -749,6 +749,12 @@ void App::pfRigInspector(float x, float y, float w, float h) {
             }
             Tip("After moving joints in Skeleton mode: their rest pose becomes the bind pose again, the weights stay");
             yy += 32 * s;
+            if (Button("exportGltfBtn", {bx, yy, bw, 26 * s}, "Export glTF (mesh, skeleton, skin, clips)", Icon::Save)) {
+                std::wstring p = pickFileDialog(m_hwnd, true, L"glTF (*.gltf)\0*.gltf\0", L"gltf", projectRoot() + L"\assets", fromUtf8(A.parts[F.skinPart].name) + L".gltf");
+                if (!p.empty()) rigExportGltf(F.skinPart, p);
+            }
+            Tip("Writes a .gltf (one file, embedded data) that other tools (Blender, Unity, Godot) read with the rig and the animations");
+            yy += 32 * s;
             if (Button("unbindBtn", {bx, yy, bw, 26 * s}, "Unbind (remove the skin)", Icon::Trash)) { rigUnbind(F.skinPart); sk = nullptr; }
             yy += 36 * s;
         }

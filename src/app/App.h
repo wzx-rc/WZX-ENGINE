@@ -123,6 +123,7 @@ struct Options {
     int prefabRig = -1, prefabJoint = -1;   // test: Rig module mode (0..3; loads the rig sample when the prefab has no joint), joint
     std::wstring prefabClipName;   // test: clip shown, by name (--prefab-clip-name)
     bool prefabDq = false;      // test: dual quaternion skinning on every skin (--prefab-dq)
+    std::wstring prefabExportGltf;   // test: exports the first skinned part as glTF at startup (--prefab-export-gltf)
     std::wstring prefabRigFbx;  // test: imports this FBX in a new prefab and opens the Rig module
     std::wstring prefabUv;      // test: opens the UV Editor: "setA,setB,compare,display,background" (--prefab-uv)
     bool prefabPlace = false;   // test: places the prefab in the scene at startup and shows the Scene workspace (--prefab-place)
@@ -486,6 +487,7 @@ private:
     void prefabKeyJoint(int channel = -1);
     void rigLoadSample();
     void rigImportFbx();
+    bool rigExportGltf(int partIndex, const std::wstring& path);   // skinned part + skeleton + clips as a .gltf (embedded buffer)
     bool rigImportFile(const std::wstring& path);
     void rigViewInput(bool hovered);
     void rigPaintStamp(bool first);

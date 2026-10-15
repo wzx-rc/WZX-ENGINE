@@ -3,6 +3,7 @@
 #include "FbxImport.h"
 #include "Json.h"
 #include "vp3d/AssetImport.h"
+#include <algorithm>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -63,6 +64,16 @@ struct Mat4 {
     }
     float3 point(const float3& p) const { return {m[0] * p.x + m[4] * p.y + m[8] * p.z + m[12], m[1] * p.x + m[5] * p.y + m[9] * p.z + m[13], m[2] * p.x + m[6] * p.y + m[10] * p.z + m[14]}; }
     float3 vec(const float3& p) const { return {m[0] * p.x + m[4] * p.y + m[8] * p.z, m[1] * p.x + m[5] * p.y + m[9] * p.z, m[2] * p.x + m[6] * p.y + m[10] * p.z}; }
+    Mat4 inverse() const {   // affine inverse
+        Affine a;
+        for (int r = 0; r < 3; ++r)
+            for (int c = 0; c < 4; ++c) a.m[r][c] = m[c * 4 + r];
+        Affine i = a.inverse();
+        Mat4 o;
+        for (int r = 0; r < 3; ++r)
+            for (int c = 0; c < 4; ++c) o.m[c * 4 + r] = i.m[r][c];
+        return o;
+    }
 };
 
 Mat4 nodeMatrix(const Json& n) {
@@ -90,48 +101,51 @@ Mat4 nodeMatrix(const Json& n) {
 
 } // namespace
 
-bool loadGltf(const std::wstring& path, MeshData& out, std::vector<UvSet>* sets, std::string* error) {
-    auto fail = [&](const std::string& e) { if (error) *error = e; return false; };
-    std::vector<uint8_t> file;
-    if (!readBytes(path, file)) return fail("file not found");
-    std::string jsonText;
-    std::vector<uint8_t> glbBin;
-    if (file.size() >= 12 && memcmp(file.data(), "glTF", 4) == 0) {   // binary container: JSON chunk, then BIN chunk
-        size_t off = 12;
-        while (off + 8 <= file.size()) {
-            uint32_t len, type;
-            memcpy(&len, &file[off], 4);
-            memcpy(&type, &file[off + 4], 4);
-            if (off + 8 + len > file.size()) break;
-            if (type == 0x4E4F534A) jsonText.assign((const char*)&file[off + 8], len);
-            else if (type == 0x004E4942) glbBin.assign(file.begin() + off + 8, file.begin() + off + 8 + len);
-            off += 8 + ((len + 3) & ~3u);
-        }
-    } else {
-        jsonText.assign((const char*)file.data(), file.size());
-    }
+// glTF document: JSON and buffers (.gltf with data URIs or .bin files, .glb), accessors read as floats
+struct GltfDoc {
     Json j;
-    if (!Json::parse(jsonText, j) || j.type != Json::Object) return fail("not a glTF file");
-    // buffers
     std::vector<std::vector<uint8_t>> buffers;
-    for (size_t i = 0; i < j["buffers"].a.size(); ++i) {
-        const Json& b = j["buffers"][i];
-        std::vector<uint8_t> data;
-        std::string uri = b["uri"].str();
-        if (uri.empty()) data = glbBin;
-        else if (uri.rfind("data:", 0) == 0) {
-            size_t comma = uri.find(',');
-            if (comma == std::string::npos) return fail("bad data uri");
-            base64(uri, comma + 1, data);
-        } else if (!readBytes(fs::path(path).parent_path() / fs::u8path(uri), data)) return fail("buffer not found: " + uri);
-        buffers.push_back(std::move(data));
+    std::string error;
+    bool load(const std::wstring& path) {
+        std::vector<uint8_t> file;
+        if (!readBytes(path, file)) { error = "file not found"; return false; }
+        std::string jsonText;
+        std::vector<uint8_t> glbBin;
+        if (file.size() >= 12 && memcmp(file.data(), "glTF", 4) == 0) {   // binary container: JSON chunk, then BIN chunk
+            size_t off = 12;
+            while (off + 8 <= file.size()) {
+                uint32_t len, type;
+                memcpy(&len, &file[off], 4);
+                memcpy(&type, &file[off + 4], 4);
+                if (off + 8 + len > file.size()) break;
+                if (type == 0x4E4F534A) jsonText.assign((const char*)&file[off + 8], len);
+                else if (type == 0x004E4942) glbBin.assign(file.begin() + off + 8, file.begin() + off + 8 + len);
+                off += 8 + ((len + 3) & ~3u);
+            }
+        } else {
+            jsonText.assign((const char*)file.data(), file.size());
+        }
+        if (!Json::parse(jsonText, j) || j.type != Json::Object) { error = "not a glTF file"; return false; }
+        for (size_t i = 0; i < j["buffers"].a.size(); ++i) {
+            const Json& b = j["buffers"][i];
+            std::vector<uint8_t> data;
+            std::string uri = b["uri"].str();
+            if (uri.empty()) data = glbBin;
+            else if (uri.rfind("data:", 0) == 0) {
+                size_t comma = uri.find(',');
+                if (comma == std::string::npos) { error = "bad data uri"; return false; }
+                base64(uri, comma + 1, data);
+            } else if (!readBytes(fs::path(path).parent_path() / fs::u8path(uri), data)) { error = "buffer not found: " + uri; return false; }
+            buffers.push_back(std::move(data));
+        }
+        return true;
     }
     // accessor -> floats (count x components)
-    auto accessor = [&](int index, std::vector<float>& outv, int& comps) -> bool {
+    bool accessor(int index, std::vector<float>& outv, int& comps) const {
         const Json& a = j["accessors"][(size_t)index];
         if (a.type != Json::Object) return false;
         std::string type = a["type"].str();
-        comps = type == "SCALAR" ? 1 : type == "VEC2" ? 2 : type == "VEC3" ? 3 : type == "VEC4" ? 4 : 0;
+        comps = type == "SCALAR" ? 1 : type == "VEC2" ? 2 : type == "VEC3" ? 3 : type == "VEC4" ? 4 : type == "MAT4" ? 16 : 0;
         if (!comps) return false;
         size_t count = (size_t)a["count"].num(0);
         int ct = (int)a["componentType"].num(5126);
@@ -162,9 +176,18 @@ bool loadGltf(const std::wstring& path, MeshData& out, std::vector<UvSet>* sets,
                 outv[e * comps + c] = v;
             }
         return true;
-    };
+    }
+};
+
+bool loadGltf(const std::wstring& path, MeshData& out, std::vector<UvSet>* sets, std::string* error) {
+    auto fail = [&](const std::string& e) { if (error) *error = e; return false; };
+    GltfDoc doc;
+    if (!doc.load(path)) return fail(doc.error);
+    const Json& j = doc.j;
+    auto accessor = [&](int index, std::vector<float>& outv, int& comps) { return doc.accessor(index, outv, comps); };
 
     out = MeshData();
+
     std::vector<std::vector<float2>> extra;   // sets 1..n
     std::vector<std::string> names;
     bool missingNormals = false;
@@ -263,6 +286,207 @@ bool loadGltf(const std::wstring& path, MeshData& out, std::vector<UvSet>* sets,
             e.uv = std::move(extra[s]);
             sets->push_back(std::move(e));
         }
+    }
+    return true;
+}
+
+// glTF skin (Rig module): the mesh (as loadGltf), the joints of the first skin (scene pose), their bind matrices
+// (inverse of inverseBindMatrices), the JOINTS_0 / WEIGHTS_0 weights and the animations sampled at 30 frames per second.
+bool loadGltfRig(const std::wstring& path, FbxScene& out, std::string* error) {
+    auto fail = [&](const std::string& e) { if (error) *error = e; return false; };
+    out = FbxScene();
+    if (!loadGltf(path, out.mesh, &out.uvSets, error)) return false;
+    GltfDoc doc;
+    if (!doc.load(path)) return fail(doc.error);
+    const Json& j = doc.j;
+    const size_t N = j["nodes"].a.size();
+    std::vector<int> parent(N, -1);
+    for (size_t n = 0; n < N; ++n)
+        for (const Json& c : j["nodes"][n]["children"].a)
+            if ((size_t)c.num(0) < N) parent[(size_t)c.num(0)] = (int)n;
+    struct TRS { float3 t{0, 0, 0}; float4 r{0, 0, 0, 1}; float3 s{1, 1, 1}; };
+    std::vector<TRS> rest(N);
+    for (size_t n = 0; n < N; ++n) {
+        const Json& nd = j["nodes"][n];
+        Mat4 m = nodeMatrix(nd);
+        float3 X(m.m[0], m.m[1], m.m[2]), Y(m.m[4], m.m[5], m.m[6]), Z(m.m[8], m.m[9], m.m[10]);
+        rest[n].t = float3(m.m[12], m.m[13], m.m[14]);
+        rest[n].s = float3(length(X), length(Y), length(Z));
+        rest[n].r = qFromBasis(normalize(X), normalize(Y), normalize(Z));
+    }
+    auto toMat = [](const TRS& x) {
+        Mat4 m;
+        float3 X = qRot(x.r, float3(1, 0, 0)) * x.s.x, Y = qRot(x.r, float3(0, 1, 0)) * x.s.y, Z = qRot(x.r, float3(0, 0, 1)) * x.s.z;
+        m.m[0] = X.x; m.m[1] = X.y; m.m[2] = X.z; m.m[4] = Y.x; m.m[5] = Y.y; m.m[6] = Y.z; m.m[8] = Z.x; m.m[9] = Z.y; m.m[10] = Z.z;
+        m.m[12] = x.t.x; m.m[13] = x.t.y; m.m[14] = x.t.z;
+        return m;
+    };
+    auto globals = [&](const std::vector<TRS>& local, std::vector<Mat4>& g) {
+        g.assign(N, Mat4());
+        std::vector<char> done(N, 0);
+        std::function<void(size_t, int)> solve = [&](size_t n, int depth) {
+            if (done[n]) return;
+            Mat4 l = toMat(local[n]);
+            if (parent[n] >= 0 && depth < 256) { solve((size_t)parent[n], depth + 1); g[n] = g[(size_t)parent[n]] * l; }
+            else g[n] = l;
+            done[n] = 1;
+        };
+        for (size_t n = 0; n < N; ++n) solve(n, 0);
+    };
+    auto toAffineM = [](const Mat4& m) {
+        Affine a;
+        for (int r = 0; r < 3; ++r)
+            for (int c = 0; c < 4; ++c) a.m[r][c] = m.m[c * 4 + r];
+        return a;
+    };
+    const Json& skin = j["skins"][0];
+    if (skin.type != Json::Object) return true;   // a mesh without skin
+    std::vector<int> joints;
+    for (const Json& jn : skin["joints"].a) joints.push_back((int)jn.num(0));
+    std::vector<int> jointOf(N, -1);
+    for (size_t k = 0; k < joints.size(); ++k) if ((size_t)joints[k] < N) jointOf[joints[k]] = (int)k;
+    // joints in parent-first order
+    std::vector<Mat4> g;
+    globals(rest, g);
+    std::vector<int> order;
+    std::vector<char> added(joints.size(), 0);
+    std::function<void(int)> add = [&](int k) {
+        if (added[k]) return;
+        int p = parent[joints[k]];
+        while (p >= 0 && jointOf[p] < 0) p = parent[p];
+        if (p >= 0) add(jointOf[p]);
+        added[k] = 1;
+        order.push_back(k);
+    };
+    for (size_t k = 0; k < joints.size(); ++k) add((int)k);
+    std::vector<int> outIndex(joints.size(), -1);
+    std::vector<int> jointParentNode(joints.size(), -1);
+    for (int k : order) {
+        int p = parent[joints[k]];
+        while (p >= 0 && jointOf[p] < 0) p = parent[p];
+        jointParentNode[k] = p;
+        FbxJoint fj;
+        const Json& nd = j["nodes"][(size_t)joints[k]];
+        fj.name = nd["name"].str("joint" + std::to_string(k));
+        fj.parent = p >= 0 ? outIndex[jointOf[p]] : -1;
+        Mat4 local = p >= 0 ? g[(size_t)p].inverse() * g[(size_t)joints[k]] : g[(size_t)joints[k]];
+        float3 X(local.m[0], local.m[1], local.m[2]), Y(local.m[4], local.m[5], local.m[6]), Z(local.m[8], local.m[9], local.m[10]);
+        fj.translation = float3(local.m[12], local.m[13], local.m[14]);
+        fj.scale = float3(length(X), length(Y), length(Z));
+        fj.rotation = qFromBasis(normalize(X), normalize(Y), normalize(Z));
+        outIndex[k] = (int)out.joints.size();
+        out.joints.push_back(fj);
+    }
+    // bind matrices
+    std::vector<float> ibm;
+    int comps = 0;
+    const bool hasIbm = skin["inverseBindMatrices"].type == Json::Number && doc.accessor((int)skin["inverseBindMatrices"].num(0), ibm, comps) && comps == 16;
+    out.clusters.resize(joints.size());
+    for (size_t k = 0; k < joints.size(); ++k) {
+        out.clusters[k].joint = outIndex[k];
+        Mat4 inv;
+        if (hasIbm && ibm.size() >= (k + 1) * 16) for (int e = 0; e < 16; ++e) inv.m[e] = ibm[k * 16 + e];
+        out.clusters[k].bindJoint = hasIbm ? toAffineM(inv).inverse() : toAffineM(g[(size_t)joints[k]]);
+    }
+    // weights, in the vertex order of loadGltf (scene nodes depth first, primitives in order)
+    uint32_t base = 0;
+    bool any = false;
+    auto addMesh = [&](int meshIndex, bool skinned) {
+        for (const Json& prim : j["meshes"][(size_t)meshIndex]["primitives"].a) {
+            if ((int)prim["mode"].num(4) != 4) continue;
+            const Json& at = prim["attributes"];
+            if (at["POSITION"].type != Json::Number) continue;
+            std::vector<float> pos, jw, ww;
+            int pc = 0, jc = 0, wc = 0;
+            if (!doc.accessor((int)at["POSITION"].num(0), pos, pc)) continue;
+            size_t n = pos.size() / 3;
+            if (skinned && at["JOINTS_0"].type == Json::Number && at["WEIGHTS_0"].type == Json::Number && doc.accessor((int)at["JOINTS_0"].num(0), jw, jc) &&
+                doc.accessor((int)at["WEIGHTS_0"].num(0), ww, wc) && jc == 4 && wc == 4)
+                for (size_t v = 0; v < n; ++v)
+                    for (int c = 0; c < 4; ++c) {
+                        float w = ww[v * 4 + c];
+                        size_t k = (size_t)jw[v * 4 + c];
+                        if (w <= 0 || k >= joints.size()) continue;
+                        out.clusters[k].vertices.push_back(base + (uint32_t)v);
+                        out.clusters[k].weights.push_back(w);
+                    }
+            base += (uint32_t)n;
+        }
+    };
+    std::function<void(int, int)> walk = [&](int node, int depth) {
+        if (depth > 64 || (size_t)node >= N) return;
+        const Json& nd = j["nodes"][(size_t)node];
+        if (nd["mesh"].type == Json::Number) { addMesh((int)nd["mesh"].num(0), nd["skin"].type == Json::Number); any = true; }
+        for (const Json& c : nd["children"].a) walk((int)c.num(0), depth + 1);
+    };
+    const Json& scenes = j["scenes"];
+    if (scenes.type == Json::Array && !scenes.a.empty())
+        for (const Json& n : scenes[(size_t)j["scene"].num(0)]["nodes"].a) walk((int)n.num(0), 0);
+    if (!any)
+        for (size_t m = 0; m < j["meshes"].a.size(); ++m) addMesh((int)m, true);
+    // animations: node channels sampled per frame, the joint locals rebuilt from the globals
+    for (const Json& an : j["animations"].a) {
+        struct Ch { int node; int path; std::vector<float> t, v; bool step = false, cubic = false; };
+        std::vector<Ch> chans;
+        float t0 = 1e30f, t1 = -1e30f;
+        for (const Json& c : an["channels"].a) {
+            const Json& sm = an["samplers"][(size_t)c["sampler"].num(0)];
+            std::string p = c["target"]["path"].str();
+            Ch ch;
+            ch.node = (int)c["target"]["node"].num(-1);
+            ch.path = p == "translation" ? 0 : p == "rotation" ? 1 : p == "scale" ? 2 : -1;
+            if (ch.node < 0 || (size_t)ch.node >= N || ch.path < 0) continue;
+            int ic = 0, oc = 0;
+            if (!doc.accessor((int)sm["input"].num(0), ch.t, ic) || !doc.accessor((int)sm["output"].num(0), ch.v, oc) || ch.t.empty()) continue;
+            std::string in = sm["interpolation"].str("LINEAR");
+            ch.step = in == "STEP";
+            ch.cubic = in == "CUBICSPLINE";
+            t0 = std::min(t0, ch.t.front());
+            t1 = std::max(t1, ch.t.back());
+            chans.push_back(std::move(ch));
+        }
+        if (chans.empty() || t1 <= t0) continue;
+        FbxClip clip;
+        clip.name = an["name"].str("Animation " + std::to_string(out.clips.size() + 1));
+        clip.frames = std::clamp((int)std::lround((t1 - t0) * clip.fps) + 1, 2, 3000);
+        const size_t J = out.joints.size();
+        clip.translation.assign(J, std::vector<float3>(clip.frames));
+        clip.rotation.assign(J, std::vector<float4>(clip.frames));
+        clip.scale.assign(J, std::vector<float3>(clip.frames));
+        for (int f = 0; f < clip.frames; ++f) {
+            const float t = t0 + f / clip.fps;
+            std::vector<TRS> local = rest;
+            for (const Ch& ch : chans) {
+                const int comp = ch.path == 1 ? 4 : 3;
+                const size_t stride = ch.cubic ? 3 : 1;   // cubic spline: in-tangent, value, out-tangent
+                const size_t K = ch.t.size();
+                size_t i = (size_t)(std::upper_bound(ch.t.begin(), ch.t.end(), t) - ch.t.begin());
+                size_t a = i == 0 ? 0 : i - 1, b = std::min(i, K - 1);
+                float u = b == a ? 0.0f : clampf((t - ch.t[a]) / std::max(1e-6f, ch.t[b] - ch.t[a]), 0, 1);
+                if (ch.step) u = 0;
+                auto val = [&](size_t k, int c) { size_t at = (k * stride + (ch.cubic ? 1 : 0)) * comp + c; return at < ch.v.size() ? ch.v[at] : 0.0f; };
+                TRS& L = local[(size_t)ch.node];
+                if (ch.path == 1) {
+                    float4 qa(val(a, 0), val(a, 1), val(a, 2), val(a, 3)), qb(val(b, 0), val(b, 1), val(b, 2), val(b, 3));
+                    L.r = qNormalize(qSlerp(qa, qb, u));
+                } else {
+                    float3 va(val(a, 0), val(a, 1), val(a, 2)), vb(val(b, 0), val(b, 1), val(b, 2));
+                    (ch.path == 0 ? L.t : L.s) = lerp(va, vb, u);
+                }
+            }
+            std::vector<Mat4> gf;
+            globals(local, gf);
+            for (size_t k = 0; k < joints.size(); ++k) {
+                int p = jointParentNode[k];
+                Mat4 l = p >= 0 ? gf[(size_t)p].inverse() * gf[(size_t)joints[k]] : gf[(size_t)joints[k]];
+                float3 X(l.m[0], l.m[1], l.m[2]), Y(l.m[4], l.m[5], l.m[6]), Z(l.m[8], l.m[9], l.m[10]);
+                int o = outIndex[k];
+                clip.translation[o][f] = float3(l.m[12], l.m[13], l.m[14]);
+                clip.scale[o][f] = float3(length(X), length(Y), length(Z));
+                clip.rotation[o][f] = qFromBasis(normalize(X), normalize(Y), normalize(Z));
+            }
+        }
+        out.clips.push_back(std::move(clip));
     }
     return true;
 }

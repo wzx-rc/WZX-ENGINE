@@ -45,6 +45,8 @@ struct FbxScene {
 };
 
 bool loadFbx(const std::wstring& path, FbxScene& out, std::string* error);
+// The same for a glTF file (.gltf / .glb): first skin, JOINTS_0 / WEIGHTS_0, animations (MeshFile.cpp)
+bool loadGltfRig(const std::wstring& path, FbxScene& out, std::string* error);
 
 // raw zlib stream (2-byte header, deflate blocks, adler-32 ignored) -> bytes
 bool zlibInflate(const uint8_t* src, size_t size, std::vector<uint8_t>& out, size_t expected);

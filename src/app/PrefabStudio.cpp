@@ -68,6 +68,7 @@ void App::prefabInit() {
         if (m_opt.prefabTime >= 0) P.time = m_opt.prefabTime;
     }
     if (m_opt.prefabDq) for (PrefabSkin& sk : P.asset.skins) sk.dualQuaternion = true;
+    if (!m_opt.prefabExportGltf.empty() && !P.asset.skins.empty()) rigExportGltf(P.asset.findPart(P.asset.skins[0].part), m_opt.prefabExportGltf);
     for (size_t c = 0; c < P.asset.clips.size(); ++c)
         if (!m_opt.prefabClipName.empty() && fromUtf8(P.asset.clips[c].name) == m_opt.prefabClipName) P.clip = (int)c;
     if (!m_opt.prefabUv.empty()) {
