@@ -39,14 +39,15 @@ MeshData makeTorusProfile(float R, float r, int segProfile, std::vector<LathePoi
 MeshData makeShaderBall(float radius);
 
 // Parametric primitives (editor Create > Mesh). Pivot at the centre of the base (y = 0), sizes in scene units.
-enum PrimType { PRIM_NONE = 0, PRIM_CUBE, PRIM_SPHERE, PRIM_PLANE, PRIM_CYLINDER };
+enum PrimType { PRIM_NONE = 0, PRIM_CUBE, PRIM_SPHERE, PRIM_PLANE, PRIM_CYLINDER, PRIM_TORUS, PRIM_DISK };
 struct PrimitiveParams {
     int type = PRIM_NONE;
     float3 size{1, 1, 1};   // cube: width x height x depth; plane: width (x) x depth (z); cylinder: height (y)
-    float radius = 0.5f;    // sphere, cylinder
-    int segments = 32;      // around the axis: sphere, cylinder
-    int rings = 16;         // sphere, pole to pole
-    int subdiv = 1;         // cube / plane: cuts per side; cylinder: cuts along the height
+    float radius = 0.5f;    // sphere, cylinder, disk; torus: ring radius (centre of the tube)
+    float radius2 = 0.15f;  // torus: tube radius
+    int segments = 32;      // around the axis: sphere, cylinder, torus, disk
+    int rings = 16;         // sphere: pole to pole; torus: around the tube
+    int subdiv = 1;         // cube / plane: cuts per side; cylinder: cuts along the height; disk: concentric rings
 };
 MeshData makePrimitive(const PrimitiveParams& p);
 

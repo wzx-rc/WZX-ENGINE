@@ -221,6 +221,32 @@ MeshData makePrimitive(const PrimitiveParams& p) {
         m = makeLathe(prof, std::clamp(p.segments, 3, 256), 30.0f);
         break;
     }
+    case PRIM_TORUS: {
+        // lying flat (axis Y), resting on y = 0
+        const float R = r, t = std::max(p.radius2, 1e-3f);
+        const int nu = std::clamp(p.segments, 3, 256), nv = std::clamp(p.rings, 3, 128);
+        for (int i = 0; i <= nu; ++i) {
+            float a = 2.0f * kPi * i / nu, ca = std::cos(a), sa = std::sin(a);
+            for (int j = 0; j <= nv; ++j) {
+                float b = 2.0f * kPi * j / nv, cb = std::cos(b), sb = std::sin(b);
+                float3 n(cb * ca, sb, cb * sa);
+                m.vertices.push_back({float3(R * ca, t, R * sa) + n * t, n, float2((float)i / nu, (float)j / nv)});
+            }
+        }
+        for (int i = 0; i < nu; ++i)
+            for (int j = 0; j < nv; ++j) {
+                uint32_t a = i * (nv + 1) + j, b = a + nv + 1;
+                m.addTri(a, a + 1, b + 1);
+                m.addTri(a, b + 1, b);
+            }
+        break;
+    }
+    case PRIM_DISK: {
+        std::vector<LathePoint> prof;   // outside in: the lathe then faces up
+        for (int k = cuts; k >= 0; --k) prof.push_back({r * k / cuts, 0});
+        m = makeLathe(prof, std::clamp(p.segments, 3, 256), 30.0f);
+        break;
+    }
     }
     return m;
 }

@@ -538,6 +538,9 @@ void App::atlTopBar(float x0, float y0, float width) {
         if (ImGui::IsItemHovered()) Box(r, P().raised);
         Center(r, menus[mi], P().text, 11);
         if (ImGui::BeginPopup(id.c_str())) {
+            // menu text as large as the top bar labels (the default popup text was too small), same for the sub-menus
+            const float menuScale = 1.4f * ts();
+            ImGui::SetWindowFontScale(menuScale);
             if (mi == 0) {
                 if (ImGui::MenuItem("Open Scene…", "Ctrl+O")) m_pendingAction = 2;
                 if (ImGui::MenuItem("Save Scene…", "Ctrl+S")) m_pendingAction = 1;
@@ -561,13 +564,15 @@ void App::atlTopBar(float x0, float y0, float width) {
                 if (ImGui::MenuItem("Delete", "Del", false, m_selected >= 0)) deleteSelected();
                 ImGui::Separator();
                 if (ImGui::BeginMenu("Add Object")) {
+                    ImGui::SetWindowFontScale(menuScale);
                     for (const PartDef& p : parts())
                         if (ImGui::MenuItem(toUtf8(p.name).c_str())) addPartFromLibrary(p);
                     ImGui::EndMenu();
                 }
             }
             if (mi == 2 && ImGui::BeginMenu("Mesh")) {
-                for (int t : {PRIM_CUBE, PRIM_SPHERE, PRIM_PLANE, PRIM_CYLINDER})
+                ImGui::SetWindowFontScale(menuScale);
+                for (int t : {PRIM_CUBE, PRIM_SPHERE, PRIM_PLANE, PRIM_CYLINDER, PRIM_TORUS, PRIM_DISK})
                     if (ImGui::MenuItem(primitiveName(t))) addPrimitive(t);
                 ImGui::EndMenu();
             }
@@ -575,10 +580,15 @@ void App::atlTopBar(float x0, float y0, float width) {
                 if (ImGui::MenuItem("Frame Selection", "F")) frameSelection();
                 ImGui::MenuItem("Viewport Statistics", nullptr, &m_showStats);
                 ImGui::MenuItem("Transform Gizmo", nullptr, &m_showGizmo);
+                ImGui::Separator();
+                if (ImGui::MenuItem("Wireframe", nullptr, m_rs.wireframe == 1)) { m_rs.wireframe = m_rs.wireframe == 1 ? 0 : 1; markDirty(); }
+                if (ImGui::MenuItem("Wireframe Override", nullptr, m_rs.wireframe == 2)) { m_rs.wireframe = m_rs.wireframe == 2 ? 0 : 2; markDirty(); }
+                ImGui::Separator();
                 if (ImGui::MenuItem("Restore Panel Layout")) { m_atl.leftW = 222; m_atl.rightW = 284; m_atl.bottomH = 190; }
                 ImGui::Separator();
                 if (ImGui::MenuItem("Light Mode", nullptr, th::settings().light && !th::styled(), !th::styled())) { th::settings().light = !th::settings().light; th::apply(m_dpi); save(); }
                 if (ImGui::BeginMenu("Theme")) {
+                    ImGui::SetWindowFontScale(menuScale);
                     const char* names[] = {"Atelier", "Ambre", "Anthracite-Corail"}, *ids[] = {"Atelier", "Ambre", "Corail"};
                     for (int i = 0; i < 3; ++i)
                         if (ImGui::MenuItem(names[i], nullptr, th::skin() == i)) { th::settings().theme = ids[i]; th::apply(m_dpi); save(); }
@@ -808,6 +818,11 @@ void App::atlViewport(float x, float y, float w, float h) {
     int mode = renderMode();
     if (Combo("atlShading", {right(118 * s), by, 118 * s, 24 * s}, mode, modes, 4, Icon::Sun)) setRenderMode(mode);
     Tip("Lit: real-time raster · Metal iOS: Lit + GI probes without ray tracing, as the iOS build · Progressive: path tracing, exact, denoiser optional · GI: real-time probes (DDGI, ray traced)");
+    {
+        static const char* displays[] = {"Shaded", "Wireframe", "Wireframe Override"};
+        if (Combo("atlDisplay", {right(150 * s), by, 150 * s, 24 * s}, m_rs.wireframe, displays, 3, Icon::Cube)) markDirty();
+        Tip("Display: Shaded · Wireframe (edges only) · Wireframe Override (edges over the shaded view). Lit and Metal iOS modes");
+    }
     if (Combo("atlView", {right(118 * s), by, 118 * s, 24 * s}, m_viewMode, views, 6, Icon::Camera)) setViewAxis(m_viewMode);
     bx -= 6 * s;
     if (Button("atlStats", {right(28 * s), by, 28 * s, 24 * s}, "", Icon::Monitor, m_showStats, true)) m_showStats = !m_showStats;
@@ -1227,7 +1242,7 @@ void App::atlInspectorActor(float x, float y, float w, float) {
     }
     Material& mat = m_scene.materials[o->material];
     const PartDef* pd = findPart(o->part);
-    const PartKind kind = o->prim.type == PRIM_SPHERE ? K_SPHERE : pd ? pd->kind : K_CUBE;
+    const PartKind kind = o->prim.type == PRIM_SPHERE || o->prim.type == PRIM_TORUS ? K_SPHERE : pd ? pd->kind : K_CUBE;
     ImU32 col = srgbU32(mat.baseColor);
     // header card (graph inspector node card)
     Box({x, y, w, 56 * s}, Fade(P().accent, 30), 4, true);
@@ -1268,7 +1283,7 @@ void App::atlInspectorActor(float x, float y, float w, float) {
         if (AxisFields("scl", x, y, w, &o->scale.x, 0.01f, "%.2f", act)) { o->scale = maxv(o->scale, float3(0.01f)); markDirty(); }
         y += 41 * s;
     }
-    if (o->prim.type != PRIM_NONE && show("Primitive Mesh Dimensions Size Width Height Depth Radius Segmentation Segments Rings Subdivisions")) {
+    if (o->prim.type != PRIM_NONE && show("Primitive Mesh Dimensions Size Width Height Depth Attributes Radius Tube Segmentation Segments Rings Sides Subdivisions")) {
         // parameters of a Create > Mesh primitive: the mesh is rebuilt from them
         PrimitiveParams& pp = o->prim;
         bool ch = false;
@@ -1283,8 +1298,10 @@ void App::atlInspectorActor(float x, float y, float w, float) {
                 if (n != v) { v = n; ch = true; }
             }
         };
-        Label(x, y, "DIMENSIONS");
-        y += 24 * s;
+        if (pp.type == PRIM_CUBE || pp.type == PRIM_PLANE || pp.type == PRIM_CYLINDER) {
+            Label(x, y, "DIMENSIONS");
+            y += 24 * s;
+        }
         if (pp.type == PRIM_CUBE) {
             float v[3] = {pp.size.x, pp.size.y, pp.size.z};
             Text(x, y, "Size", P().muted, 11);
@@ -1297,10 +1314,11 @@ void App::atlInspectorActor(float x, float y, float w, float) {
         } else if (pp.type == PRIM_CYLINDER) {
             length("##primH", "Height", pp.size.y);
         }
-        if (pp.type == PRIM_SPHERE || pp.type == PRIM_CYLINDER) {
+        if (pp.type == PRIM_SPHERE || pp.type == PRIM_CYLINDER || pp.type == PRIM_DISK || pp.type == PRIM_TORUS) {
             Label(x, y, "ATTRIBUTES");
             y += 24 * s;
             length("##primR", "Radius", pp.radius);
+            if (pp.type == PRIM_TORUS) length("##primR2", "Tube Radius", pp.radius2);
         }
         Label(x, y, "SEGMENTATION");
         y += 24 * s;
@@ -1310,6 +1328,12 @@ void App::atlInspectorActor(float x, float y, float w, float) {
         } else if (pp.type == PRIM_CYLINDER) {
             count("##primSeg", "Segments", pp.segments, 3, 128);
             count("##primCuts", "Height Cuts", pp.subdiv, 1, 32);
+        } else if (pp.type == PRIM_TORUS) {
+            count("##primSeg", "Segments", pp.segments, 3, 128);
+            count("##primRings", "Tube Sides", pp.rings, 3, 64);
+        } else if (pp.type == PRIM_DISK) {
+            count("##primSeg", "Segments", pp.segments, 3, 128);
+            count("##primCuts", "Rings", pp.subdiv, 1, 32);
         } else {
             count("##primCuts", "Subdivisions", pp.subdiv, 1, 32);
         }
