@@ -23,6 +23,7 @@ struct FbxCluster {
     std::vector<uint32_t> vertices;   // vertices of FbxScene::mesh
     std::vector<double> weights;
     Affine bindJoint;          // world transform of the joint at bind time (TransformLink)
+    Affine bindMesh;           // world transform of the mesh at bind time (Transform), for information
 };
 
 struct FbxScene {

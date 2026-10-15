@@ -524,7 +524,17 @@ bool loadFbx(const std::wstring& path, FbxScene& out, std::string* error) {
         const Prop* ip = firstArray(geo.child("PolygonVertexIndex"));
         if (!vp || !ip || vp->ad.size() < 3 || ip->ai.empty()) continue;
         const auto& clusters = clustersOfGeometry[g.first];
-        M4 bake = clusters.empty() ? globalOf(modelId, 0) * models[modelId].geometric() : clusters[0].transform * models[modelId].geometric();
+        // mesh at bind time: the cluster's Transform is the mesh global matrix for the FBX SDK, but many files store
+        // it relative to the joint (Transform = TransformLink^-1 * mesh global). The reading closest to the mesh
+        // model's own global transform wins.
+        M4 meshGlobal = globalOf(modelId, 0);
+        M4 bindGlobal = meshGlobal;
+        if (!clusters.empty()) {
+            M4 a = clusters[0].transform, b = clusters[0].link * clusters[0].transform;
+            auto diff = [&](const M4& m) { double d = 0; for (int k = 0; k < 16; ++k) d += std::fabs(m.m[k] - meshGlobal.m[k]); return d; };
+            bindGlobal = diff(b) < diff(a) ? b : a;
+        }
+        M4 bake = bindGlobal * models[modelId].geometric();
         // layers: normals and UV sets
         struct Layer { std::vector<double> data; std::vector<int64_t> index; bool byPolyVertex = true; bool indexed = false; int comps = 3; std::string name; };
         auto layer = [&](const Node* ln, const char* dataName, const char* indexName, int comps) {
@@ -621,6 +631,7 @@ bool loadFbx(const std::wstring& path, FbxScene& out, std::string* error) {
                 FbxCluster fc;
                 fc.joint = j;
                 fc.bindJoint = c.link.affine();
+                fc.bindMesh = c.transform.affine();
                 ci = clusterOfJoint.emplace(j, out.clusters.size()).first;
                 out.clusters.push_back(fc);
             }
@@ -633,6 +644,31 @@ bool loadFbx(const std::wstring& path, FbxScene& out, std::string* error) {
         }
     }
     if (out.mesh.indices.empty()) return fail("no mesh in the file");
+    // Z-up files (Blender, 3ds Max): turned to Y-up (-90 degrees around X) - mesh, root joints, bind matrices
+    int upAxis = 1, upSign = 1;
+    if (const Node* gs = root.child("GlobalSettings"))
+        if (const Node* p70 = gs->child("Properties70"))
+            for (const Node& p : p70->kids)
+                if (p.props.size() > 4 && p.props[0].s == "UpAxis") upAxis = (int)p.props[4].i;
+                else if (p.props.size() > 4 && p.props[0].s == "UpAxisSign") upSign = (int)p.props[4].i;
+    if (upAxis == 2) {
+        const float sg = upSign < 0 ? -1.0f : 1.0f;
+        auto conv = [&](const float3& v) { return float3(v.x, v.z * sg, -v.y * sg); };
+        const float4 qc = qAxisAngle(float3(1, 0, 0), sg * -kPi * 0.5f);
+        for (Vertex& v : out.mesh.vertices) { v.pos = conv(v.pos); v.nrm = conv(v.nrm); }
+        for (FbxJoint& j : out.joints)
+            if (j.parent < 0) { j.translation = conv(j.translation); j.rotation = qNormalize(qMul(qc, j.rotation)); }
+        Affine C = Affine::trsQuat(float3(0), qc, float3(1));
+        auto mulA = [](const Affine& a, const Affine& b) {
+            Affine r;
+            for (int i = 0; i < 3; ++i) {
+                for (int j = 0; j < 3; ++j) r.m[i][j] = a.m[i][0] * b.m[0][j] + a.m[i][1] * b.m[1][j] + a.m[i][2] * b.m[2][j];
+                r.m[i][3] = a.m[i][0] * b.m[0][3] + a.m[i][1] * b.m[1][3] + a.m[i][2] * b.m[2][3] + a.m[i][3];
+            }
+            return r;
+        };
+        for (FbxCluster& c : out.clusters) { c.bindJoint = mulA(C, c.bindJoint); c.bindMesh = mulA(C, c.bindMesh); }
+    }
     // UV sets (v up)
     {
         UvSet s0;
