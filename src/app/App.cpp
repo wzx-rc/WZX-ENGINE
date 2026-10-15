@@ -135,6 +135,12 @@ bool App::init(HINSTANCE inst, const Options& opt) {
     if (opt.tool >= 0 && opt.tool <= TOOL_ROTATE) m_tool = (Tool)opt.tool;
     m_game = new GameHost(*this);   // node graph, Play, builds, command API
     m_game->init();
+    if (m_pendingVillage.type == Json::Array) {   // the scene opened from the command line has a village
+        m_game->loadVillage(m_pendingVillage);
+        m_pendingVillage = Json();
+        if (!m_docPath.empty()) markSaved();
+    }
+    updateDocState(true);
     markDirty();
     return true;
 }
@@ -163,7 +169,14 @@ int App::run() {
 LRESULT App::wndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     if (ImGui::GetCurrentContext() && ImGui_ImplWin32_WndProcHandler(hwnd, msg, wp, lp)) return 1;
     switch (msg) {
-    case WM_CLOSE: m_running = false; DestroyWindow(hwnd); return 0;
+    case WM_CLOSE:
+        if (!m_forceClose && m_game && !m_game->playerMode()) {   // a modified scene: "Save changes?" first
+            updateDocState(true);
+            if (m_docDirty) { m_confirmAction = DOC_CLOSE; return 0; }
+        }
+        m_running = false;
+        DestroyWindow(hwnd);
+        return 0;
     case WM_DESTROY: PostQuitMessage(0); return 0;
     case WM_SIZE:
         m_minimized = wp == SIZE_MINIMIZED;
@@ -340,6 +353,10 @@ void App::loadScene(int id) {
     generateThumbnails();
     m_scene.camera = m_views[0].cam;
     log("Scene loaded: " + m_scene.name, 1);
+    m_placeholderMat.clear();
+    m_docPath.clear();   // a built-in scene is a new document, not saved yet
+    m_docName = L"Untitled";
+    markSaved();
     markDirty();
 }
 
@@ -427,7 +444,7 @@ void App::frame() {
     if (m_pendingScene >= 0) {
         int s = m_pendingScene;
         m_pendingScene = -1;
-        loadScene(s);
+        requestDocAction(DOC_SCENE + s);
     }
 
     m_gui.newFrame();
@@ -435,8 +452,12 @@ void App::frame() {
     // game layer first: it owns the keys and the graph overlay (drawn after the editor, below)
     bool gameKeys = m_game && m_game->beginFrame();
     if (!gameKeys && m_workspace == 0) handleShortcuts();   // Graph / Material Studio have their own shortcuts
-    if (!m_game || !m_game->playerMode()) drawEditor();
+    if (!m_game || !m_game->playerMode()) {
+        drawEditor();
+        drawSaveChangesPopup();
+    }
     if (m_game) m_game->update(m_dt);
+    updateDocState();
     if (m_turntable) {
         m_scene.camera.yaw += 0.006f;
         cameraChanged();
@@ -702,8 +723,9 @@ void App::handleShortcuts() {
     bool ctrl = io.KeyCtrl;
     auto pressed = [](ImGuiKey k) { return ImGui::IsKeyPressed(k, false); };
     if (ctrl) {
-        if (pressed(ImGuiKey_S)) m_pendingAction = 1;
-        if (pressed(ImGuiKey_O)) m_pendingAction = 2;
+        if (pressed(ImGuiKey_S)) m_pendingAction = io.KeyShift ? PA_SAVE_AS : PA_SAVE;
+        if (pressed(ImGuiKey_O)) m_pendingAction = PA_OPEN;
+        if (pressed(ImGuiKey_N)) m_pendingAction = PA_NEW;
         if (ImGui::IsKeyPressed(ImGuiKey_Z)) undo();
         if (ImGui::IsKeyPressed(ImGuiKey_Y)) redo();
         if (pressed(ImGuiKey_D) && !placing) duplicateSelected();
@@ -788,6 +810,7 @@ void App::undo() {
     m_multi.clear();
     m_outSel.clear();
     m_renameId = 0;
+    syncPrimitives();
     markDirty();
 }
 
@@ -801,6 +824,7 @@ void App::redo() {
     m_multi.clear();
     m_outSel.clear();
     m_renameId = 0;
+    syncPrimitives();
     markDirty();
 }
 
@@ -833,6 +857,30 @@ void App::addPartFromLibrary(const PartDef& p, const float3* at) {
     if (m_tool == TOOL_SELECT) m_tool = TOOL_MOVE;
     status(L"Object added: " + std::wstring(p.name));
     markDirty();
+}
+
+void App::addPrimitive(int type) {
+    pushUndo();
+    // On top of the selection, else at the world origin.
+    float3 pos(0, 0, 0);
+    if (m_selected >= 0) {
+        const Object& s = m_scene.objects[m_selected];
+        float3 a, b;
+        aabbOf(s, s.position, objRot(s), a, b);   // (a group: its pivot)
+        pos = s.position;
+        pos.y = b.y;
+    }
+    int idx = app::addPrimitive(m_scene, type, pos);
+    if (idx < 0) return;
+    m_selected = idx;
+    m_multi.clear();
+    if (m_tool == TOOL_SELECT) m_tool = TOOL_MOVE;
+    status(L"Object added: " + fromUtf8(primitiveName(type)));
+    markDirty();
+}
+
+void App::syncPrimitives() {
+    for (size_t i = 0; i < m_scene.objects.size(); ++i) syncPrimitiveMesh(m_scene, (int)i);
 }
 
 // Duplicates the selected objects with their children (groups and parents copy their whole hierarchy).
@@ -1060,6 +1108,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         else if (a == L"--raster") opt.raster = _wtoi(next().c_str()) != 0;
         else if (a == L"--open") opt.openPath = next();
         else if (a.size() > 5 && a.find(L".json") != std::wstring::npos) opt.openPath = a;
+        else if (a.size() > 4 && _wcsicmp(a.c_str() + a.size() - 4, L".wzx") == 0) opt.openPath = a;
         else if (a == L"--shot") opt.shotPath = next();
         else if (a == L"--shot-viewport") { opt.shotPath = next(); opt.shotViewport = true; }
         else if (a == L"--spp") opt.shotSpp = _wtoi(next().c_str());

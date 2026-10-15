@@ -409,7 +409,7 @@ static void syncAtelierStyle(ImFont* bold) {
         a.overlay = rgb(0x1D2024, 225); a.minimap = rgb(0x181A1E, 240); a.headerBar = rgb(0x1D2024); a.popupHeader = rgb(0x25282B);
         a.track = border; a.frameHover = rgb(0x4A5058); a.checkerA = rgb(0x3A3E44); a.checkerB = rgb(0x6E737A);
         a.toast = rgb(0x2A2117, 245); a.knob = thumb; a.pinExec = rgb(0xE0E1E4);
-        a.menuX = 168; a.menuW = 46; a.headerShift = 65;   // room for the WZX ENGINE brand
+        a.menuX = 168; a.menuW = 46; a.headerShift = 111;   // room for the WZX ENGINE brand
         return;
     }
     if (a.skin == 2) {
@@ -429,10 +429,10 @@ static void syncAtelierStyle(ImFont* bold) {
         a.overlay = rgb(0x181A1C, 230); a.minimap = rgb(0x181A1C, 240); a.headerBar = card; a.popupHeader = rgb(0x24272B);
         a.track = fill; a.frameHover = borderStrong; a.checkerA = rgb(0x3F4248); a.checkerB = rgb(0x2A2E33);
         a.toast = rgb(0x24201E, 245); a.knob = thumb; a.pinExec = rgb(0xE2E4E7);
-        a.menuX = 168; a.menuW = 46; a.headerShift = 65;   // room for the WZX Engine brand
+        a.menuX = 168; a.menuW = 46; a.headerShift = 111;   // room for the WZX Engine brand
         return;
     }
-    a.menuX = 53; a.menuW = 53; a.headerShift = 0;
+    a.menuX = 53; a.menuW = 53; a.headerShift = 53;
     a.light = th::settings().light;
     a.accent = u(a.light ? th::accentTextV() : p.accent);
     a.select = u(p.select);
@@ -528,19 +528,25 @@ void App::atlTopBar(float x0, float y0, float width) {
     }
     const float sep = P().menuX - 10;
     dl->AddLine(ImVec2(x0 + sep * s, y0 + 7 * s), ImVec2(x0 + sep * s, y0 + 30 * s), P().border);
-    const char* menus[] = {"Project", "Edit", "View", "Tools", "Help"};
+    const char* menus[] = {"File", "Edit", "Create", "View", "Tools", "Help"};
     float x = x0 + P().menuX * s;
     auto save = [&] { if (!m_themeTestOnly) th::saveSettings(m_exeDir + L"\\wzx_settings.ini"); };
-    for (int mi = 0; mi < 5; ++mi) {
+    for (int mi = 0; mi < 6; ++mi) {
         std::string id = "atlmenu" + std::to_string(mi);
         R r = {x, y0 + 6 * s, P().menuW * s, 24 * s};
         if (Hit(id.c_str(), r)) ImGui::OpenPopup(id.c_str());
         if (ImGui::IsItemHovered()) Box(r, P().raised);
         Center(r, menus[mi], P().text, 11);
         if (ImGui::BeginPopup(id.c_str())) {
+            // menu text as large as the top bar labels (the default popup text was too small), same for the sub-menus
+            const float menuScale = 1.4f * ts();
+            ImGui::SetWindowFontScale(menuScale);
             if (mi == 0) {
-                if (ImGui::MenuItem("Open Scene…", "Ctrl+O")) m_pendingAction = 2;
-                if (ImGui::MenuItem("Save Scene…", "Ctrl+S")) m_pendingAction = 1;
+                if (ImGui::MenuItem("New Scene", "Ctrl+N")) m_pendingAction = PA_NEW;
+                if (ImGui::MenuItem("Open Scene…", "Ctrl+O")) m_pendingAction = PA_OPEN;
+                if (ImGui::MenuItem("Save Scene", "Ctrl+S")) m_pendingAction = PA_SAVE;
+                if (ImGui::MenuItem("Save Scene As…", "Ctrl+Shift+S")) m_pendingAction = PA_SAVE_AS;
+                if (ImGui::MenuItem("Import OBJ Mesh…")) m_pendingAction = PA_IMPORT_MESH;
                 ImGui::Separator();
                 if (ImGui::MenuItem("Cornell Box Scene", "F1", m_sceneId == SCENE_CORNELL)) m_pendingScene = SCENE_CORNELL;
                 if (ImGui::MenuItem("Studio Scene", "F2", m_sceneId == SCENE_STUDIO)) m_pendingScene = SCENE_STUDIO;
@@ -561,19 +567,31 @@ void App::atlTopBar(float x0, float y0, float width) {
                 if (ImGui::MenuItem("Delete", "Del", false, m_selected >= 0)) deleteSelected();
                 ImGui::Separator();
                 if (ImGui::BeginMenu("Add Object")) {
+                    ImGui::SetWindowFontScale(menuScale);
                     for (const PartDef& p : parts())
                         if (ImGui::MenuItem(toUtf8(p.name).c_str())) addPartFromLibrary(p);
                     ImGui::EndMenu();
                 }
             }
-            if (mi == 2) {
+            if (mi == 2 && ImGui::BeginMenu("Mesh")) {
+                ImGui::SetWindowFontScale(menuScale);
+                for (int t : {PRIM_CUBE, PRIM_SPHERE, PRIM_PLANE, PRIM_CYLINDER, PRIM_TORUS, PRIM_DISK})
+                    if (ImGui::MenuItem(primitiveName(t))) addPrimitive(t);
+                ImGui::EndMenu();
+            }
+            if (mi == 3) {
                 if (ImGui::MenuItem("Frame Selection", "F")) frameSelection();
                 ImGui::MenuItem("Viewport Statistics", nullptr, &m_showStats);
                 ImGui::MenuItem("Transform Gizmo", nullptr, &m_showGizmo);
+                ImGui::Separator();
+                if (ImGui::MenuItem("Wireframe", nullptr, m_rs.wireframe == 1)) { m_rs.wireframe = m_rs.wireframe == 1 ? 0 : 1; markDirty(); }
+                if (ImGui::MenuItem("Wireframe Override", nullptr, m_rs.wireframe == 2)) { m_rs.wireframe = m_rs.wireframe == 2 ? 0 : 2; markDirty(); }
+                ImGui::Separator();
                 if (ImGui::MenuItem("Restore Panel Layout")) { m_atl.leftW = 222; m_atl.rightW = 284; m_atl.bottomH = 190; }
                 ImGui::Separator();
                 if (ImGui::MenuItem("Light Mode", nullptr, th::settings().light && !th::styled(), !th::styled())) { th::settings().light = !th::settings().light; th::apply(m_dpi); save(); }
                 if (ImGui::BeginMenu("Theme")) {
+                    ImGui::SetWindowFontScale(menuScale);
                     const char* names[] = {"Atelier", "Ambre", "Anthracite-Corail"}, *ids[] = {"Atelier", "Ambre", "Corail"};
                     for (int i = 0; i < 3; ++i)
                         if (ImGui::MenuItem(names[i], nullptr, th::skin() == i)) { th::settings().theme = ids[i]; th::apply(m_dpi); save(); }
@@ -581,7 +599,7 @@ void App::atlTopBar(float x0, float y0, float width) {
                 }
                 if (ImGui::MenuItem("Appearance Settings…")) m_showSettings = true;
             }
-            if (mi == 3) {
+            if (mi == 4) {
                 if (ImGui::MenuItem("Select", "Q", m_tool == TOOL_SELECT)) m_tool = TOOL_SELECT;
                 if (ImGui::MenuItem("Move", "W", m_tool == TOOL_MOVE)) m_tool = TOOL_MOVE;
                 if (ImGui::MenuItem("Rotate", "E", m_tool == TOOL_ROTATE)) m_tool = TOOL_ROTATE;
@@ -592,7 +610,7 @@ void App::atlTopBar(float x0, float y0, float width) {
                 ImGui::SetNextItemWidth(150 * s);
                 ImGui::SliderFloat("Camera speed", &m_camSpeed, 0.1f, 5.0f, "%.1f");
             }
-            if (mi == 4) {
+            if (mi == 5) {
                 if (ImGui::MenuItem("Controls & Shortcuts")) m_showShortcuts = true;
                 if (ImGui::MenuItem("About")) m_showAbout = true;
             }
@@ -1097,6 +1115,11 @@ void App::atlViewport(float x, float y, float w, float h) {
     int mode = renderMode();
     if (Combo("atlShading", {right(118 * s), by, 118 * s, 24 * s}, mode, modes, 4, Icon::Sun)) setRenderMode(mode);
     Tip("Lit: real-time raster · Metal iOS: Lit + GI probes without ray tracing, as the iOS build · Progressive: path tracing, exact, denoiser optional · GI: real-time probes (DDGI, ray traced)");
+    {
+        static const char* displays[] = {"Shaded", "Wireframe", "Wireframe Override"};
+        if (Combo("atlDisplay", {right(150 * s), by, 150 * s, 24 * s}, m_rs.wireframe, displays, 3, Icon::Cube)) markDirty();
+        Tip("Display: Shaded · Wireframe (edges only) · Wireframe Override (edges over the shaded view). Lit and Metal iOS modes");
+    }
     if (Combo("atlView", {right(118 * s), by, 118 * s, 24 * s}, m_viewMode, views, 6, Icon::Camera)) setViewAxis(m_viewMode);
     bx -= 6 * s;
     if (Button("atlStats", {right(28 * s), by, 28 * s, 24 * s}, "", Icon::Monitor, m_showStats, true)) m_showStats = !m_showStats;
@@ -1553,13 +1576,15 @@ void App::atlInspectorActor(float x, float y, float w, float) {
     }
     Material& mat = m_scene.materials[o->material];
     const PartDef* pd = findPart(o->part);
+    const PartKind kind = o->prim.type == PRIM_SPHERE || o->prim.type == PRIM_TORUS ? K_SPHERE : pd ? pd->kind : K_CUBE;
     ImU32 col = srgbU32(mat.baseColor);
     // header card (graph inspector node card)
     Box({x, y, w, 56 * s}, Fade(P().accent, 30), 4, true);
-    drawPrimitiveIcon(dl, pd ? pd->kind : K_CUBE, ImVec2(x + 9 * s, y + 12 * s), ImVec2(x + 39 * s, y + 42 * s), col);
+    drawPrimitiveIcon(dl, kind, ImVec2(x + 9 * s, y + 12 * s), ImVec2(x + 39 * s, y + 42 * s), col);
     dl->PushClipRect(ImVec2(x, y), ImVec2(x + w - 34 * s, y + 56 * s), true);
     Text(x + 48 * s, y + 11 * s, o->name, P().text, 14);
-    std::string type = pd ? "Primitive · " + o->part : (o->part == "WALL" ? "Wall · static mesh" : "Mesh · " + o->part);
+    std::string type = o->prim.type != PRIM_NONE ? std::string("Primitive · ") + primitiveName(o->prim.type)
+                     : pd ? "Primitive · " + o->part : (o->part == "WALL" ? "Wall · static mesh" : "Mesh · " + o->part);
     if (!m_multi.empty()) type += "  (+" + std::to_string(m_multi.size()) + ")";
     Text(x + 48 * s, y + 33 * s, type, P().accent, 10);
     dl->PopClipRect();
@@ -1592,12 +1617,69 @@ void App::atlInspectorActor(float x, float y, float w, float) {
         if (AxisFields("scl", x, y, w, &o->scale.x, 0.01f, "%.2f", act)) { o->scale = maxv(o->scale, float3(0.01f)); markDirty(); }
         y += 41 * s;
     }
+    if (o->prim.type != PRIM_NONE && show("Primitive Mesh Dimensions Size Width Height Depth Attributes Radius Tube Segmentation Segments Rings Sides Subdivisions")) {
+        // parameters of a Create > Mesh primitive: the mesh is rebuilt from them
+        PrimitiveParams& pp = o->prim;
+        bool ch = false;
+        auto length = [&](const char* id, const char* label, float& v) {
+            float f = v;
+            if (SliderRow(id, label, x, y, w, &f, 0.05f, 20.0f, "%.2f", act) && f != v) { v = std::max(f, 0.01f); ch = true; }
+        };
+        auto count = [&](const char* id, const char* label, int& v, int lo, int hi) {
+            float f = (float)v;
+            if (SliderRow(id, label, x, y, w, &f, (float)lo, (float)hi, "%.0f", act)) {
+                int n = std::clamp((int)std::lround(f), lo, hi);
+                if (n != v) { v = n; ch = true; }
+            }
+        };
+        if (pp.type == PRIM_CUBE || pp.type == PRIM_PLANE || pp.type == PRIM_CYLINDER) {
+            Label(x, y, "DIMENSIONS");
+            y += 24 * s;
+        }
+        if (pp.type == PRIM_CUBE) {
+            float v[3] = {pp.size.x, pp.size.y, pp.size.z};
+            Text(x, y, "Size", P().muted, 11);
+            y += 19 * s;
+            if (AxisFields("primSize", x, y, w, v, 0.01f, "%.2f", act)) { pp.size = maxv(float3(v[0], v[1], v[2]), float3(0.01f)); ch = true; }
+            y += 41 * s;
+        } else if (pp.type == PRIM_PLANE) {
+            length("##primW", "Width", pp.size.x);
+            length("##primD", "Depth", pp.size.z);
+        } else if (pp.type == PRIM_CYLINDER) {
+            length("##primH", "Height", pp.size.y);
+        }
+        if (pp.type == PRIM_SPHERE || pp.type == PRIM_CYLINDER || pp.type == PRIM_DISK || pp.type == PRIM_TORUS) {
+            Label(x, y, "ATTRIBUTES");
+            y += 24 * s;
+            length("##primR", "Radius", pp.radius);
+            if (pp.type == PRIM_TORUS) length("##primR2", "Tube Radius", pp.radius2);
+        }
+        Label(x, y, "SEGMENTATION");
+        y += 24 * s;
+        if (pp.type == PRIM_SPHERE) {
+            count("##primSeg", "Segments", pp.segments, 3, 128);
+            count("##primRings", "Rings", pp.rings, 2, 64);
+        } else if (pp.type == PRIM_CYLINDER) {
+            count("##primSeg", "Segments", pp.segments, 3, 128);
+            count("##primCuts", "Height Cuts", pp.subdiv, 1, 32);
+        } else if (pp.type == PRIM_TORUS) {
+            count("##primSeg", "Segments", pp.segments, 3, 128);
+            count("##primRings", "Tube Sides", pp.rings, 3, 64);
+        } else if (pp.type == PRIM_DISK) {
+            count("##primSeg", "Segments", pp.segments, 3, 128);
+            count("##primCuts", "Rings", pp.subdiv, 1, 32);
+        } else {
+            count("##primCuts", "Subdivisions", pp.subdiv, 1, 32);
+        }
+        if (ch && syncPrimitiveMesh(m_scene, m_selected)) markDirty();
+        y += 4 * s;
+    }
     if (show("Static Mesh")) {
         Label(x, y, "STATIC MESH");
         y += 24 * s;
         R slot = {x, y, w, 44 * s};
         Box(slot, P().bg, 4, true);
-        drawPrimitiveIcon(dl, pd ? pd->kind : K_CUBE, ImVec2(slot.x + 7 * s, slot.y + 6 * s), ImVec2(slot.x + 39 * s, slot.y + 38 * s), IM_COL32(190, 194, 200, 255));
+        drawPrimitiveIcon(dl, kind, ImVec2(slot.x + 7 * s, slot.y + 6 * s), ImVec2(slot.x + 39 * s, slot.y + 38 * s), IM_COL32(190, 194, 200, 255));
         std::string meshName = o->mesh >= 0 && o->mesh < (int)m_scene.meshNames.size() ? m_scene.meshNames[o->mesh] : o->part;
         dl->PushClipRect(slot.min(), slot.max(), true);
         Text(slot.x + 48 * s, slot.y + 8 * s, "SM_" + meshName, P().text, 11);
@@ -1936,7 +2018,8 @@ void App::atlInspectorRender(float x, float y, float w, float) {
 void App::atlInspectorWorld(float x, float y, float w, float) {
     Text(x, y, m_scene.name.empty() ? "Scene" : m_scene.name, P().text, 15);
     y += 25 * s;
-    Text(x, y, m_sceneId == SCENE_CORNELL ? "Test scene · Cornell Box" : (m_sceneId == SCENE_LOOKDEV ? "Test scene · LookDev" : "Test scene · Studio"), P().muted, 11);
+    Text(x, y, !m_docPath.empty() ? "File · " + toUtf8(m_docName) + (m_docDirty ? " (modified)" : "")
+               : m_sceneId == SCENE_CORNELL ? "Test scene · Cornell Box" : (m_sceneId == SCENE_LOOKDEV ? "Test scene · LookDev" : "Test scene · Studio"), P().muted, 11);
     y += 41 * s;
     Label(x, y, "SCENE PROPERTIES");
     y += 24 * s;

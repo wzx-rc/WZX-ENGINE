@@ -31,6 +31,7 @@ struct Material {
 struct Object {
     std::string name;
     std::string part;              // library part id (UI only)
+    PrimitiveParams prim;          // parametric primitive (Create > Mesh): the mesh is built from it; type PRIM_NONE otherwise
     int mesh = 0;
     int material = 0;
     float3 position{0, 0, 0};
