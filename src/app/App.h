@@ -216,6 +216,7 @@ private:
     uint32_t m_renameId = 0;                 // node renamed in the list (0 = none)
     bool m_renameFocus = false;
     char m_renameBuf[128] = {};
+    std::vector<uint32_t> m_renameMulti;     // several nodes renamed at once: text + _001, _002... (list order)
     std::vector<uint32_t> m_outDrag;         // nodes dragged in the list
 
     std::map<uint32_t, HierXf> m_hierCache;  // world transforms of the last frame (children follow their parent)

@@ -704,6 +704,7 @@ void App::atlHierarchy(float x, float y, float w, float h) {
     outlinerRows(rows, A.sceneSearch);
     struct PendingMove { int mode = -1; uint32_t target = 0; } move;
     static uint32_t ctxId = 0;   // node of the context menu
+    static std::vector<uint32_t> clickPrev;   // selection before the last plain click (double-click multi-renaming)
     bool openCtx = false, openEmpty = false;
 
     // selection rectangle swept over the rows (Maya Outliner): from the empty area or an unselected row, Ctrl / Shift
@@ -854,7 +855,22 @@ void App::atlHierarchy(float x, float y, float w, float h) {
             bool done = enter || ImGui::IsItemDeactivated();
             if (done) {
                 const bool cancel = !enter && ImGui::IsKeyPressed(ImGuiKey_Escape, false);
-                if (!cancel && m_renameBuf[0] && nodeName(n) != m_renameBuf) { pushUndo(); setNodeName(n, m_renameBuf); status(L"Renamed: " + fromUtf8(m_renameBuf)); }
+                if (!cancel && m_renameBuf[0] && !m_renameMulti.empty()) {
+                    // multi-renaming: text + _001, _002... in the order of the list (rows hidden by a fold last)
+                    std::vector<uint32_t> order;
+                    for (const OutlinerRow& r2 : rows)
+                        if (std::find(m_renameMulti.begin(), m_renameMulti.end(), r2.id) != m_renameMulti.end()) order.push_back(r2.id);
+                    for (uint32_t m : m_renameMulti)
+                        if (std::find(order.begin(), order.end(), m) == order.end()) order.push_back(m);
+                    pushUndo();
+                    for (size_t k = 0; k < order.size(); ++k) {
+                        char nm[160];
+                        snprintf(nm, sizeof(nm), "%s_%03d", m_renameBuf, (int)k + 1);
+                        setNodeName(findNode(order[k]), nm);
+                    }
+                    status(std::to_wstring(order.size()) + L" items renamed: " + fromUtf8(m_renameBuf) + L"_001...");
+                } else if (!cancel && m_renameBuf[0] && nodeName(n) != m_renameBuf) { pushUndo(); setNodeName(n, m_renameBuf); status(L"Renamed: " + fromUtf8(m_renameBuf)); }
+                m_renameMulti.clear();
                 m_renameId = 0;
             }
         } else {
@@ -877,8 +893,15 @@ void App::atlHierarchy(float x, float y, float w, float h) {
         Glyph(Icon::Lock, px + pw - 18 * s, ey, 11, locked ? P().accent : Fade(P().muted, 90));
         ImGui::PopID();
 
-        if (dbl && n.kind != NODE_SUN) startRename(row.id);
-        else if (q) {
+        if (dbl && n.kind != NODE_SUN) {
+            if (clickPrev.size() > 1 && std::find(clickPrev.begin(), clickPrev.end(), row.id) != clickPrev.end()) {
+                std::vector<NodeRef> back;
+                for (uint32_t c : clickPrev) back.push_back(findNode(c));
+                selectNodes(back, n);   // the first click of the double-click had kept this row only
+            }
+            startRename(row.id);
+        }
+        else if (q && m_renameId != row.id) {   // (the release of a double-click keeps the selection being renamed)
             const bool onArrow = ImGui::GetMousePos().x < ix && (row.hasChildren || isCol);
             if (onArrow || (isCol && ctrl)) {   // fold / unfold (Ctrl+click on a collection)
                 if (isCol) m_scene.collections[n.index].collapsed = row.open;
@@ -899,6 +922,7 @@ void App::atlHierarchy(float x, float y, float w, float h) {
                 if (isCol) range.push_back(n);
                 selectNodes(range, n);
             } else {
+                clickPrev = selectedNodeIds();   // a double-click on a row of a multi-selection renames them all
                 selectNodes({n}, n);
                 m_outAnchor = row.id;
             }

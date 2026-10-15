@@ -594,7 +594,19 @@ void App::startRename(uint32_t id) {
     if (!n.valid() || n.kind == NODE_SUN) return;
     m_renameId = id;
     m_renameFocus = true;
-    snprintf(m_renameBuf, sizeof(m_renameBuf), "%s", nodeName(n).c_str());
+    m_renameMulti.clear();
+    std::string name = nodeName(n);
+    // several nodes selected (this one among them): one field, every node gets the text + _001, _002...
+    if (nodeSelected(n)) {
+        for (uint32_t s : selectedNodeIds())
+            if (findNode(s).kind != NODE_SUN) m_renameMulti.push_back(s);
+        if (m_renameMulti.size() < 2) m_renameMulti.clear();
+        else {   // the field starts with the base name, without a _NNN suffix
+            size_t u = name.find_last_of('_');
+            if (u != std::string::npos && u + 1 < name.size() && name.find_first_not_of("0123456789", u + 1) == std::string::npos) name = name.substr(0, u);
+        }
+    }
+    snprintf(m_renameBuf, sizeof(m_renameBuf), "%s", name.c_str());
 }
 
 void App::selectionOutline(std::vector<int>& outlined) const {
