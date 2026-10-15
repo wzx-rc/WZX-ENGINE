@@ -958,7 +958,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         else if (a == L"--raster") opt.raster = _wtoi(next().c_str()) != 0;
         else if (a == L"--open") opt.openPath = next();
         else if (a.size() > 5 && a.find(L".json") != std::wstring::npos) opt.openPath = a;
-        else if (a.size() > 3 && _wcsicmp(a.c_str() + a.size() - 3, L".wx") == 0) opt.openPath = a;
+        else if (a.size() > 4 && _wcsicmp(a.c_str() + a.size() - 4, L".wzx") == 0) opt.openPath = a;
         else if (a == L"--shot") opt.shotPath = next();
         else if (a == L"--shot-viewport") { opt.shotPath = next(); opt.shotViewport = true; }
         else if (a == L"--spp") opt.shotSpp = _wtoi(next().c_str());

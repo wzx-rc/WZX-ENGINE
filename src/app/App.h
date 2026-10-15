@@ -99,7 +99,7 @@ struct Options {
 void drawPrimitiveIcon(ImDrawList* dl, PartKind kind, ImVec2 a, ImVec2 b, ImU32 col);
 void drawAssetThumb(ImDrawList* dl, int kind, int index, ImVec2 p0, ImVec2 p1, float dpi);   // 0 primitive, 1 material, 2 scene
 
-// Writes a file through a temporary file then replaces it (SceneWx.cpp).
+// Writes a file through a temporary file then replaces it (SceneWzx.cpp).
 bool writeFileSafe(const std::wstring& path, const std::string& text);
 
 // Screen-space rectangle (pixels).
@@ -161,13 +161,13 @@ private:
     void aabbOf(const Object& o, const float3& pos, const float4& rot, float3& mn, float3& mx);
     std::vector<int> selectionAll() const { std::vector<int> v; if (m_selected >= 0) v.push_back(m_selected); for (int i : m_multi) v.push_back(i); return v; }
 
-    // scene files: .wx (SceneWx.cpp), the old .v3d.json (SceneIO.cpp: written for the Build and the player, read as an import)
-    bool saveSceneFile(const std::wstring& path);   // by extension (.wx, else .v3d.json); the document is unchanged
-    bool loadSceneFile(const std::wstring& path);   // .wx, or an old .v3d.json (import); becomes the document
+    // scene files: .wzx (SceneWzx.cpp), the old .v3d.json (SceneIO.cpp: written for the Build and the player, read as an import)
+    bool saveSceneFile(const std::wstring& path);   // by extension (.wzx, else .v3d.json); the document is unchanged
+    bool loadSceneFile(const std::wstring& path);   // .wzx, or an old .v3d.json (import); becomes the document
     bool saveLegacySceneFile(const std::wstring& path);
     bool loadLegacySceneFile(const Json& j, const std::wstring& path);
-    std::string wxSceneJson(bool withCamera) const;
-    void loadWxScene(const Json& j, const std::wstring& path);
+    std::string wzxSceneJson(bool withCamera) const;
+    void loadWzxScene(const Json& j, const std::wstring& path);
     void importMeshFile(const std::wstring& path);   // OBJ as a new object, its path kept in the scene
     std::wstring projectRoot() const;
     std::string relPath(const std::wstring& path) const;   // path written in a scene file (relative to the project)
@@ -178,7 +178,7 @@ private:
     std::map<int, int> m_placeholderMat;   // red material of a missing mesh placeholder -> material saved in the file
     Json m_pendingVillage;                 // village of a scene opened before the game layer exists
 
-    // document (SceneWx.cpp): current file, modified state (* in the title), "Save changes?" before New / Open / closing
+    // document (SceneWzx.cpp): current file, modified state (* in the title), "Save changes?" before New / Open / closing
     enum DocAction { DOC_OPEN = 1, DOC_NEW, DOC_CLOSE, DOC_SCENE = 100 /* + scene id */ };
     bool saveDocument(bool saveAs);
     void requestDocAction(int action);

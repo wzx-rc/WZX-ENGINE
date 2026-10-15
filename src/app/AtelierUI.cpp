@@ -528,7 +528,7 @@ void App::atlTopBar(float x0, float y0, float width) {
     }
     const float sep = P().menuX - 10;
     dl->AddLine(ImVec2(x0 + sep * s, y0 + 7 * s), ImVec2(x0 + sep * s, y0 + 30 * s), P().border);
-    const char* menus[] = {"Project", "Edit", "View", "Tools", "Help"};
+    const char* menus[] = {"File", "Edit", "View", "Tools", "Help"};
     float x = x0 + P().menuX * s;
     auto save = [&] { if (!m_themeTestOnly) th::saveSettings(m_exeDir + L"\\wzx_settings.ini"); };
     for (int mi = 0; mi < 5; ++mi) {

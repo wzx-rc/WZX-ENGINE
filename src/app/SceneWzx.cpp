@@ -1,4 +1,4 @@
-// Scene file format .wx: readable JSON (fixed key order, one value per line, diff friendly). The file holds the
+// Scene file format .wzx: readable JSON (fixed key order, one value per line, diff friendly). The file holds the
 // whole scene: opening it rebuilds everything from the file, no built-in scene underneath. Geometry is never
 // stored: primitives are a shape and its parameters, imported meshes the path of their source file (relative to
 // the project folder) read again on open. A missing file leaves a red placeholder box that keeps its path.
@@ -6,7 +6,7 @@
 // "Save changes?" prompt.
 // Version 1 reader: unknown keys are ignored and missing keys take their defaults, so fields can be added without
 // a version bump (planned: a top-level "collections" array, and per object / light id, parent, collection, order,
-// group, collapsed: written next to "visible" / "selectable" in wxSceneJson, read in loadWxScene).
+// group, collapsed: written next to "visible" / "selectable" in wzxSceneJson, read in loadWzxScene).
 #include "App.h"
 #include "GameHost.h"
 #include "Json.h"
@@ -157,7 +157,7 @@ MeshData placeholderBox() { return makeBox({-3, 0, -3}, {3, 6, 3}); }
 
 // Geometry of an object, never the mesh data: "mesh" = path of an imported file, else "shape" = a primitive and
 // its parameters. Parametric primitives (size, radius, segments, rings, subdiv) are written here, read in
-// App::loadWxScene (shapeMesh).
+// App::loadWzxScene (shapeMesh).
 void writeGeometry(Writer& w, const Scene& sc, const Object& o) {
     const std::string mesh = o.mesh >= 0 && o.mesh < (int)sc.meshNames.size() ? sc.meshNames[o.mesh] : std::string();
     if (mesh.rfind(kMeshFile, 0) == 0) {
@@ -193,16 +193,16 @@ std::wstring sceneDialog(HWND hwnd, bool save, const std::wstring& current) {
         std::wstring name = p.filename().wstring();
         if (save) {
             size_t dot = name.find(L'.');
-            name = (dot == std::wstring::npos ? name : name.substr(0, dot)) + L".wx";
+            name = (dot == std::wstring::npos ? name : name.substr(0, dot)) + L".wzx";
             wcsncpy_s(buf, name.c_str(), _TRUNCATE);
         }
     } else if (save) {
-        wcscpy_s(buf, L"scene.wx");
+        wcscpy_s(buf, L"scene.wzx");
     }
     OPENFILENAMEW of = {sizeof(of)};
     of.hwndOwner = hwnd;
-    of.lpstrFilter = save ? L"WZX scene (*.wx)\0*.wx\0"
-                          : L"Scenes (*.wx, *.v3d.json)\0*.wx;*.v3d.json;*.json\0WZX scene (*.wx)\0*.wx\0Old scene (*.v3d.json)\0*.v3d.json;*.json\0All files\0*.*\0";
+    of.lpstrFilter = save ? L"WZX scene (*.wzx)\0*.wzx\0"
+                          : L"Scenes (*.wzx, *.v3d.json)\0*.wzx;*.v3d.json;*.json\0WZX scene (*.wzx)\0*.wzx\0Old scene (*.v3d.json)\0*.v3d.json;*.json\0All files\0*.*\0";
     of.lpstrFile = buf;
     of.nMaxFile = MAX_PATH;
     of.lpstrDefExt = L"wx";
@@ -244,11 +244,11 @@ std::wstring App::absPath(const std::string& path) const {
 
 // --------------------------------------------------------------------------- write
 
-std::string App::wxSceneJson(bool withCamera) const {
+std::string App::wzxSceneJson(bool withCamera) const {
     const Scene& sc = m_scene;
     Writer w;
     w.beginObject();
-    w.str("format", "wx-scene");
+    w.str("format", "wzx-scene");
     w.integer("version", 1);
     w.str("units", "cm");
 
@@ -414,8 +414,8 @@ std::string App::wxSceneJson(bool withCamera) const {
 }
 
 bool App::saveSceneFile(const std::wstring& path) {
-    if (!endsWithNoCase(path, L".wx")) return saveLegacySceneFile(path);   // the Build and the player read .v3d.json
-    if (!writeFileSafe(path, wxSceneJson(true))) return false;
+    if (!endsWithNoCase(path, L".wzx")) return saveLegacySceneFile(path);   // the Build and the player read .v3d.json
+    if (!writeFileSafe(path, wzxSceneJson(true))) return false;
     status(L"Scene saved: " + fs::path(path).filename().wstring(), 1);
     return true;
 }
@@ -436,15 +436,15 @@ bool App::loadSceneFile(const std::wstring& path) {
         return false;
     }
     const std::string format = j["format"].str();
-    if (format == "vp3d-scene") {   // scene saved before .wx: imported, Save writes a .wx
+    if (format == "vp3d-scene") {   // scene saved before .wzx: imported, Save writes a .wzx
         if (!loadLegacySceneFile(j, path)) return false;
         m_docPath.clear();
         m_docName = fs::path(path).filename().wstring() + L" (import)";
-        m_savedSig.clear();   // not saved as .wx yet: modified
+        m_savedSig.clear();   // not saved as .wzx yet: modified
         updateDocState(true);
         return true;
     }
-    if (format != "wx-scene") {
+    if (format != "wzx-scene") {
         status(L"Unknown scene format: " + fs::path(path).filename().wstring(), 2);
         return false;
     }
@@ -454,14 +454,14 @@ bool App::loadSceneFile(const std::wstring& path) {
                    fs::path(path).filename().wstring(), 2);
         return false;
     }
-    loadWxScene(j, path);
+    loadWzxScene(j, path);
     m_docPath = path;
     m_docName = fs::path(path).filename().wstring();
     markSaved();
     return true;
 }
 
-void App::loadWxScene(const Json& j, const std::wstring& path) {
+void App::loadWzxScene(const Json& j, const std::wstring& path) {
     // a clean editor state, as loadScene, but nothing of a built-in scene
     m_sceneId = -1;
     m_scene = Scene();
@@ -736,7 +736,7 @@ void App::importMeshFile(const std::wstring& path) {
 // --------------------------------------------------------------------------- document
 
 void App::markSaved() {
-    m_savedSig = wxSceneJson(false);
+    m_savedSig = wzxSceneJson(false);
     m_docDirty = false;
     updateTitle();
 }
@@ -747,7 +747,7 @@ void App::updateDocState(bool force) {
     uint64_t now = GetTickCount64();
     if (!force && now - m_docCheckTick < 300) return;
     m_docCheckTick = now;
-    m_docDirty = wxSceneJson(false) != m_savedSig;
+    m_docDirty = wzxSceneJson(false) != m_savedSig;
     updateTitle();
 }
 
@@ -764,7 +764,7 @@ bool App::saveDocument(bool saveAs) {
     if (saveAs || p.empty()) {
         p = sceneDialog(m_hwnd, true, m_docPath);
         if (p.empty()) return false;
-        if (!endsWithNoCase(p, L".wx")) p += L".wx";
+        if (!endsWithNoCase(p, L".wzx")) p += L".wzx";
     }
     if (!saveSceneFile(p)) {
         status(L"Scene not saved: " + p, 2);

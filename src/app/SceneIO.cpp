@@ -1,5 +1,5 @@
 // Old scene file format (.v3d.json): still written for the Build and the player, read as an import by the editor
-// (the editor saves .wx, see SceneWx.cpp).
+// (the editor saves .wzx, see SceneWzx.cpp).
 #include "App.h"
 #include "GameHost.h"
 #include "Json.h"
