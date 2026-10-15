@@ -2069,3 +2069,4 @@ void App::atlInspectorWorld(float x, float y, float w, float) {
 
 // Prefab studio panels (workspace 3): they use the Atelier helpers above
 #include "PrefabUI.inl"
+#include "RigUI.inl"

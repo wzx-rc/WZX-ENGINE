@@ -79,6 +79,9 @@ public:
     void resize(uint32_t width, uint32_t height);   // swapchain resize; release external refs first
 
     void setScene(const Scene& scene);              // upload geometry and build BLAS
+    // Rewrites the vertices of one mesh of the current scene in place (skinned meshes, raster views): same vertex count
+    // as at setScene. The ray tracing BLAS is not rebuilt (path tracing keeps the old shape).
+    void updateMeshVertices(int mesh, const std::vector<Vertex>& vertices);
     // Path trace one frame into the viewport rectangle of the current back buffer.
     // Leaves the back buffer in RENDER_TARGET state (an overlay is expected to transition it to PRESENT).
     // With toBackBuffer = false the image is only rendered offscreen (e.g. thumbnails) and the call waits.

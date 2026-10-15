@@ -1,5 +1,6 @@
 // Mesh files: OBJ through vp3d, glTF 2.0 here (see MeshFile.h).
 #include "MeshFile.h"
+#include "FbxImport.h"
 #include "Json.h"
 #include "vp3d/AssetImport.h"
 #include <cstring>
@@ -269,13 +270,20 @@ bool loadGltf(const std::wstring& path, MeshData& out, std::vector<UvSet>* sets,
 bool isMeshFile(const std::wstring& path) {
     std::wstring e = fs::path(path).extension().wstring();
     for (auto& c : e) c = (wchar_t)towlower(c);
-    return e == L".obj" || e == L".gltf" || e == L".glb";
+    return e == L".obj" || e == L".gltf" || e == L".glb" || e == L".fbx";
 }
 
 bool loadMeshFile(const std::wstring& path, MeshData& out, std::vector<UvSet>* sets, std::string* error) {
     std::wstring e = fs::path(path).extension().wstring();
     for (auto& c : e) c = (wchar_t)towlower(c);
     if (e == L".gltf" || e == L".glb") return loadGltf(path, out, sets, error);
+    if (e == L".fbx") {   // the mesh of the FBX (all its meshes merged, bind pose); joints and skin: Rig module
+        FbxScene fbx;
+        if (!loadFbx(path, fbx, error)) return false;
+        out = std::move(fbx.mesh);
+        if (sets) *sets = std::move(fbx.uvSets);
+        return true;
+    }
     if (!loadObj(path, out, nullptr, error)) return false;
     if (sets) {
         sets->clear();

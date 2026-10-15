@@ -6,6 +6,7 @@
 #include "Json.h"
 #include "MeshFile.h"
 #include "Prefab.h"
+#include "Rig.h"
 #include "UvCheck.h"
 #include "Theme.h"
 #include "atelier/material_host.h"
@@ -119,6 +120,8 @@ struct Options {
     int prefabView = -1, prefabSelect = -1, prefabTab = -1, prefabClip = -1, prefabBottom = -1, prefabLight = -1;
     float prefabTime = -1;
     std::wstring prefabOpen;
+    int prefabRig = -1, prefabJoint = -1;   // test: Rig module mode (0..3; loads the rig sample when the prefab has no joint), joint
+    std::wstring prefabRigFbx;  // test: imports this FBX in a new prefab and opens the Rig module
     std::wstring prefabUv;      // test: opens the UV Editor: "setA,setB,compare,display,background" (--prefab-uv)
     bool prefabPlace = false;   // test: places the prefab in the scene at startup and shows the Scene workspace (--prefab-place)
     std::wstring prefabSave;    // test: writes the prefab of the studio to this file at startup (--prefab-save)
@@ -403,6 +406,37 @@ private:
         bool uvPanning = false;
         std::map<std::string, ImTextureID> uvTextures;      // texture path -> ImGui texture (background)
         std::map<uint64_t, UvAnalysis> uvAnalysis;          // (part id, set, build) -> checks
+        // Rig module (centre tab 2): skeleton, skinning, weight painting, pose
+        int rigMode = 0;                   // 0 skeleton, 1 skin, 2 paint weights, 3 pose
+        int rigTab = 0;                    // inspector: 0 joint, 1 skin, 2 paint
+        int rigTool = 2;                   // 0 select, 1 move, 2 rotate
+        int selJoint = -1;                 // joint index
+        int skinPart = -1;                 // part index of the skin shown / bound / painted
+        bool showBones = true, showJointNames = true, showWeights = true, xray = true;
+        int weightView = 0;                // 0 selected influence (heat), 1 every influence (joint colours)
+        SkinBindOptions bindOpt;
+        int brushMode = 0;                 // PaintMode
+        float brushRadius = 0.3f, brushStrength = 0.4f, brushValue = 1.0f;
+        int brushFalloff = 0;              // 0 smooth, 1 linear, 2 constant
+        bool painting = false, brushHitValid = false;
+        float3 brushHit, brushNormal;
+        float brushLastStamp = 0;
+        std::map<uint32_t, PartPose> poseOverride;   // joint id -> local pose set in Pose mode (not keyed)
+        std::vector<PartPose> jointPose;
+        std::vector<PartWorld> jointNow, jointRest;
+        std::vector<MeshData> partRest;    // part index -> mesh as built (local), kept for the skinned parts
+        std::map<uint32_t, WeldGraph> weld;           // part id -> welded points (smoothing, painting)
+        std::map<uint32_t, uint64_t> skinSig;         // part id -> pose + weights signature of the last deformation
+        uint32_t weightsVersion = 1;       // bumped by every weight edit (the skins deform again)
+        int jgAxis = -1, jgHover = -1;     // joint gizmo: axis dragged / hovered (0..2 move, 3..5 rotate)
+        float jgT0 = 0, jgAngle0 = 0;
+        float3 jgStartPos, jgStartRot, jgDir, jgOrigin;
+        uint32_t jointRename = 0;
+        char jointRenameBuf[96] = {};
+        bool jointRenameFocus = false;
+        uint32_t jointDragTarget = 0;
+        char jointSearch[96] = {};
+        std::string rigStatus;             // last import / bind report
         int bottomTab = 0;                 // 0 timeline, 1 UV layout
         char search[96] = {};
     } m_pf;
@@ -437,6 +471,24 @@ private:
     void pfViewport(float x, float y, float w, float h);
     void pfInspector(float x, float y, float w, float h);
     void pfTimeline(float x, float y, float w, float h);
+    // Rig module (PrefabStudio.cpp logic, RigUI.inl panels)
+    void rigAddJoint(bool child);        // at the selected joint (child) or at the origin
+    void rigAddChain(int count, float length);
+    void rigDeleteJoint();
+    void rigBind(int partIndex);         // bind the part to every joint (bind options of the studio)
+    void rigUnbind(int partIndex);
+    void rigJointPose(int joint, PartPose& local) const;   // local pose shown (override, clip, rest)
+    void rigSetJointLocal(int joint, int channel, const float3& v);   // edit in the current mode (rest / pose / key)
+    void prefabKeyJoint(int channel = -1);
+    void rigLoadSample();
+    void rigImportFbx();
+    bool rigImportFile(const std::wstring& path);
+    void rigViewInput(bool hovered);
+    void rigPaintStamp(bool first);
+    void pfSkeleton(float x, float y, float w, float h);
+    void pfRigViewport(float x, float y, float w, float h);
+    void pfRigInspector(float x, float y, float w, float h);
+    void pfRigOverlay(float x, float y, float w, float h);
     void pfUvEditor(float x, float y, float w, float h);
     void pfUvCanvas(float x, float y, float w, float h, int part, int set, int other, const char* id);
     void pfUvSidebar(float x, float y, float w, float h, int part);

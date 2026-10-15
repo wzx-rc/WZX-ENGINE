@@ -390,6 +390,25 @@ void Renderer::uavBarrier(ID3D12Resource* r) {
     m_cmd->ResourceBarrier(1, &br);
 }
 
+void Renderer::updateMeshVertices(int mesh, const std::vector<Vertex>& vertices) {
+    if (mesh < 0 || mesh >= (int)m_meshes.size() || !m_vb.res) return;
+    const MeshGpu& g = m_meshes[mesh];
+    if (vertices.size() != g.vertexCount || vertices.empty()) return;
+    std::vector<gpu::GpuVertex> verts;
+    verts.reserve(vertices.size());
+    for (const Vertex& v : vertices) verts.push_back({v.pos, v.nrm, v.uv});
+    const uint64_t size = verts.size() * sizeof(gpu::GpuVertex);
+    Buffer stage = createBuffer(size, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ);
+    memcpy(stage.mapped, verts.data(), size);
+    waitIdle();
+    beginCommands();
+    const D3D12_RESOURCE_STATES geoRead = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER | D3D12_RESOURCE_STATE_INDEX_BUFFER;
+    transition(m_vb.res.Get(), geoRead, D3D12_RESOURCE_STATE_COPY_DEST);
+    m_cmd->CopyBufferRegion(m_vb.res.Get(), (uint64_t)g.vertexOffset * sizeof(gpu::GpuVertex), stage.res.Get(), 0, size);
+    transition(m_vb.res.Get(), D3D12_RESOURCE_STATE_COPY_DEST, geoRead);
+    executeAndWait();
+}
+
 void Renderer::setScene(const Scene& scene) {
     waitIdle();
     m_historyValid = false;

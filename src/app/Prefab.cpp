@@ -1,6 +1,7 @@
 // Prefab asset: hierarchy, animation sampling and the .prefab file (see Prefab.h).
 #include "Prefab.h"
 #include "Content.h"
+#include "Rig.h"
 #include <algorithm>
 #include <charconv>
 #include <cmath>
@@ -57,7 +58,7 @@ void PrefabTrack::sortKeys() {
 
 PrefabTrack* PrefabClip::track(uint32_t part, int channel, bool create) {
     for (PrefabTrack& t : tracks)
-        if (t.part == part && t.channel == channel) return &t;
+        if (!t.joint && t.part == part && t.channel == channel) return &t;
     if (!create) return nullptr;
     PrefabTrack t;
     t.part = part;
@@ -68,7 +69,7 @@ PrefabTrack* PrefabClip::track(uint32_t part, int channel, bool create) {
 
 const PrefabTrack* PrefabClip::track(uint32_t part, int channel) const {
     for (const PrefabTrack& t : tracks)
-        if (t.part == part && t.channel == channel) return &t;
+        if (!t.joint && t.part == part && t.channel == channel) return &t;
     return nullptr;
 }
 
@@ -96,7 +97,8 @@ void PrefabAsset::removePart(uint32_t id) {
     auto dead = [&](uint32_t i) { return std::find(gone.begin(), gone.end(), i) != gone.end(); };
     parts.erase(std::remove_if(parts.begin(), parts.end(), [&](const PrefabPart& p) { return dead(p.id); }), parts.end());
     for (PrefabClip& c : clips)
-        c.tracks.erase(std::remove_if(c.tracks.begin(), c.tracks.end(), [&](const PrefabTrack& t) { return dead(t.part); }), c.tracks.end());
+        c.tracks.erase(std::remove_if(c.tracks.begin(), c.tracks.end(), [&](const PrefabTrack& t) { return !t.joint && dead(t.part); }), c.tracks.end());
+    skins.erase(std::remove_if(skins.begin(), skins.end(), [&](const PrefabSkin& s) { return dead(s.part); }), skins.end());
 }
 
 bool PrefabAsset::isAncestor(uint32_t ancestor, uint32_t id) const {
@@ -178,6 +180,163 @@ void worldTransforms(const PrefabAsset& a, const std::vector<PartPose>& pose, st
         state[i] = 2;
     };
     for (size_t i = 0; i < a.parts.size(); ++i) solve((int)i);
+}
+
+// --------------------------------------------------------------------------- joints (Rig module)
+
+PrefabTrack* PrefabClip::jointTrack(uint32_t joint, int channel, bool create) {
+    for (PrefabTrack& t : tracks)
+        if (t.joint && t.part == joint && t.channel == channel) return &t;
+    if (!create) return nullptr;
+    PrefabTrack t;
+    t.part = joint;
+    t.channel = channel;
+    t.joint = true;
+    tracks.push_back(t);
+    return &tracks.back();
+}
+
+const PrefabTrack* PrefabClip::jointTrack(uint32_t joint, int channel) const {
+    for (const PrefabTrack& t : tracks)
+        if (t.joint && t.part == joint && t.channel == channel) return &t;
+    return nullptr;
+}
+
+int PrefabSkin::influence(uint32_t joint) const {
+    for (size_t i = 0; i < joints.size(); ++i)
+        if (joints[i] == joint) return (int)i;
+    return -1;
+}
+
+int PrefabAsset::findJoint(uint32_t id) const {
+    for (size_t i = 0; i < joints.size(); ++i)
+        if (joints[i].id == id) return (int)i;
+    return -1;
+}
+
+uint32_t PrefabAsset::addJoint(const PrefabJoint& j) {
+    for (const PrefabJoint& q : joints) nextJointId = std::max(nextJointId, q.id + 1);
+    PrefabJoint n = j;
+    n.id = nextJointId++;
+    joints.push_back(n);
+    return n.id;
+}
+
+void PrefabAsset::removeJoint(uint32_t id) {
+    std::vector<uint32_t> gone{id};
+    for (size_t k = 0; k < gone.size(); ++k)
+        for (const PrefabJoint& j : joints)
+            if (j.parent == gone[k]) gone.push_back(j.id);
+    auto dead = [&](uint32_t i) { return std::find(gone.begin(), gone.end(), i) != gone.end(); };
+    joints.erase(std::remove_if(joints.begin(), joints.end(), [&](const PrefabJoint& j) { return dead(j.id); }), joints.end());
+    for (PrefabClip& c : clips)
+        c.tracks.erase(std::remove_if(c.tracks.begin(), c.tracks.end(), [&](const PrefabTrack& t) { return t.joint && dead(t.part); }), c.tracks.end());
+    // influences of the removed joints: their weight goes to the remaining influences (renormalised)
+    for (PrefabSkin& s : skins) {
+        std::vector<size_t> keep;
+        for (size_t i = 0; i < s.joints.size(); ++i)
+            if (!dead(s.joints[i])) keep.push_back(i);
+        if (keep.size() == s.joints.size()) continue;
+        std::vector<float> w(s.vertexCount * keep.size(), 0.0f);
+        for (uint32_t v = 0; v < s.vertexCount; ++v) {
+            float sum = 0;
+            for (size_t k = 0; k < keep.size(); ++k) sum += s.weights[v * s.joints.size() + keep[k]];
+            for (size_t k = 0; k < keep.size(); ++k)
+                w[v * keep.size() + k] = sum > 1e-8f ? s.weights[v * s.joints.size() + keep[k]] / sum : (k == 0 ? 1.0f : 0.0f);
+        }
+        std::vector<uint32_t> j;
+        std::vector<uint8_t> l;
+        std::vector<Affine> b;
+        for (size_t k : keep) { j.push_back(s.joints[k]); l.push_back(k < s.locked.size() ? s.locked[k] : 0); b.push_back(s.bindJoint[k]); }
+        s.joints = j;
+        s.locked = l;
+        s.bindJoint = b;
+        s.weights = w;
+    }
+    skins.erase(std::remove_if(skins.begin(), skins.end(), [](const PrefabSkin& s) { return s.joints.empty(); }), skins.end());
+}
+
+std::vector<int> PrefabAsset::jointChildren(uint32_t parent) const {
+    std::vector<int> v;
+    for (size_t i = 0; i < joints.size(); ++i)
+        if (joints[i].parent == parent || (parent == 0 && joints[i].parent && findJoint(joints[i].parent) < 0)) v.push_back((int)i);
+    return v;
+}
+
+bool PrefabAsset::jointAncestor(uint32_t ancestor, uint32_t id) const {
+    for (int guard = 0; guard < 512 && id; ++guard) {
+        int i = findJoint(id);
+        if (i < 0) return false;
+        id = joints[i].parent;
+        if (id == ancestor) return true;
+    }
+    return false;
+}
+
+PrefabSkin* PrefabAsset::skinOf(uint32_t part) {
+    for (PrefabSkin& s : skins)
+        if (s.part == part) return &s;
+    return nullptr;
+}
+
+const PrefabSkin* PrefabAsset::skinOf(uint32_t part) const {
+    for (const PrefabSkin& s : skins)
+        if (s.part == part) return &s;
+    return nullptr;
+}
+
+void evaluateJoints(const PrefabAsset& a, const PrefabClip* clip, float time, std::vector<PartPose>& out) {
+    out.resize(a.joints.size());
+    for (size_t i = 0; i < a.joints.size(); ++i) {
+        const PrefabJoint& j = a.joints[i];
+        PartPose& o = out[i];
+        o.position = j.position;
+        o.rotation = j.rotation;
+        o.scale = j.scale;
+        if (!clip) continue;
+        for (int c = 0; c < CH_COUNT; ++c) {
+            const PrefabTrack* t = clip->jointTrack(j.id, c);
+            if (!t || t->keys.empty()) continue;
+            (c == CH_POSITION ? o.position : c == CH_ROTATION ? o.rotation : o.scale) = t->sample(time);
+        }
+    }
+}
+
+void jointWorld(const PrefabAsset& a, const std::vector<PartPose>& pose, std::vector<PartWorld>& out) {
+    out.assign(a.joints.size(), PartWorld{});
+    std::vector<int> state(a.joints.size(), 0);
+    std::function<void(int)> solve = [&](int i) {
+        if (state[i] == 2) return;
+        PartWorld& w = out[i];
+        const PartPose& p = pose[i];
+        float4 q = eulerToQuat(p.rotation);
+        int pi = a.joints[i].parent ? a.findJoint(a.joints[i].parent) : -1;
+        if (pi >= 0 && state[pi] != 1) {
+            state[i] = 1;
+            solve(pi);
+            const PartWorld& pw = out[pi];
+            w.position = pw.position + qRot(pw.rot, p.position * pw.scale);
+            w.rot = qNormalize(qMul(pw.rot, q));
+            w.scale = pw.scale * p.scale;
+        } else {
+            w.position = p.position;
+            w.rot = q;
+            w.scale = p.scale;
+        }
+        state[i] = 2;
+    };
+    for (size_t i = 0; i < a.joints.size(); ++i) solve((int)i);
+}
+
+Affine toAffine(const PartWorld& w) { return Affine::trsQuat(w.position, w.rot, w.scale); }
+
+Affine mul(const Affine& a, const Affine& b) {
+    Affine r;
+    for (int i = 0; i < 3; ++i) {
+        for (int j = 0; j < 3; ++j) r.m[i][j] = a.m[i][0] * b.m[0][j] + a.m[i][1] * b.m[1][j] + a.m[i][2] * b.m[2][j];
+        r.m[i][3] = a.m[i][0] * b.m[0][3] + a.m[i][1] * b.m[1][3] + a.m[i][2] * b.m[2][3] + a.m[i][3];
+    }
+    return r;
 }
 
 // --------------------------------------------------------------------------- file
@@ -314,6 +473,58 @@ std::string prefabToJson(const PrefabAsset& a) {
     }
     w.endArray();
 
+    // Rig module: skeleton, then the skins (weights per influence, only the non-zero ones)
+    w.beginArray("joints");
+    for (const PrefabJoint& jn : a.joints) {
+        w.beginObject();
+        w.integer("id", (int)jn.id);
+        w.integer("parent", (int)jn.parent);
+        w.str("name", jn.name);
+        w.vec("position", jn.position);
+        w.vec("rotation", jn.rotation);
+        w.vec("scale", jn.scale);
+        w.num("radius", jn.radius);
+        w.boolean("collapsed", jn.collapsed);
+        w.endObject();
+    }
+    w.endArray();
+    auto affine = [&](const Affine& m) {
+        std::string s = "[";
+        for (int r = 0; r < 3; ++r)
+            for (int c = 0; c < 4; ++c) s += (r || c ? ", " : "") + fnum(m.m[r][c]);
+        return s + "]";
+    };
+    w.beginArray("skins");
+    for (const PrefabSkin& s : a.skins) {
+        w.beginObject();
+        w.integer("part", (int)s.part);
+        w.integer("vertexCount", (int)s.vertexCount);
+        w.integer("maxInfluences", s.maxInfluences);
+        w.raw("bindMesh", affine(s.bindMesh));
+        w.beginArray("influences");
+        for (size_t k = 0; k < s.joints.size(); ++k) {
+            w.beginObject();
+            w.integer("joint", (int)s.joints[k]);
+            w.boolean("locked", k < s.locked.size() && s.locked[k]);
+            w.raw("bind", affine(s.bindJoint[k]));
+            std::string vi = "[", wv = "[";
+            bool first = true;
+            for (uint32_t v = 0; v < s.vertexCount; ++v) {
+                float x = s.w(v, k);
+                if (x <= 0) continue;
+                vi += (first ? "" : ", ") + std::to_string(v);
+                wv += (first ? "" : ", ") + fnum(x);
+                first = false;
+            }
+            w.raw("vertices", vi + "]");
+            w.raw("weights", wv + "]");
+            w.endObject();
+        }
+        w.endArray();
+        w.endObject();
+    }
+    w.endArray();
+
     w.beginArray("clips");
     for (const PrefabClip& c : a.clips) {
         w.beginObject();
@@ -326,6 +537,7 @@ std::string prefabToJson(const PrefabAsset& a) {
             if (t.keys.empty()) continue;
             w.beginObject();
             w.integer("part", (int)t.part);
+            if (t.joint) w.boolean("joint", true);
             w.str("channel", channelName(t.channel));
             w.beginArray("keys");
             for (const PrefabKey& k : t.keys)
@@ -402,6 +614,55 @@ bool prefabFromJson(const Json& j, PrefabAsset& a, std::string* error) {
     }
     for (PrefabPart& p : a.parts)
         if (!p.id) p.id = a.nextId++;
+    for (const Json& jj : j["joints"].a) {
+        PrefabJoint jn;
+        jn.id = (uint32_t)jj["id"].num(0);
+        jn.parent = (uint32_t)jj["parent"].num(0);
+        jn.name = jj["name"].str("joint");
+        jn.position = vec3(jj["position"], jn.position);
+        jn.rotation = vec3(jj["rotation"], jn.rotation);
+        jn.scale = vec3(jj["scale"], jn.scale);
+        jn.radius = fl(jj["radius"], jn.radius);
+        jn.collapsed = flag(jj["collapsed"], false);
+        if (!jn.id || a.findJoint(jn.id) >= 0) jn.id = 0;
+        a.joints.push_back(jn);
+        a.nextJointId = std::max(a.nextJointId, jn.id + 1);
+    }
+    for (PrefabJoint& jn : a.joints)
+        if (!jn.id) jn.id = a.nextJointId++;
+    auto affine = [](const Json& m) {
+        Affine r;
+        if (m.type == Json::Array && m.a.size() == 12)
+            for (int k = 0; k < 12; ++k) r.m[k / 4][k % 4] = (float)m[k].num(r.m[k / 4][k % 4]);
+        return r;
+    };
+    for (const Json& js : j["skins"].a) {
+        PrefabSkin s;
+        s.part = (uint32_t)js["part"].num(0);
+        s.vertexCount = (uint32_t)std::max(0.0, js["vertexCount"].num(0));
+        s.maxInfluences = std::clamp((int)js["maxInfluences"].num(4), 1, 8);
+        s.bindMesh = affine(js["bindMesh"]);
+        for (const Json& ji : js["influences"].a) {
+            if (a.findJoint((uint32_t)ji["joint"].num(0)) < 0) continue;
+            s.joints.push_back((uint32_t)ji["joint"].num(0));
+            s.locked.push_back(flag(ji["locked"], false) ? 1 : 0);
+            s.bindJoint.push_back(affine(ji["bind"]));
+        }
+        if (a.findPart(s.part) < 0 || s.joints.empty() || !s.vertexCount) continue;
+        s.weights.assign((size_t)s.vertexCount * s.joints.size(), 0.0f);
+        size_t k = 0;
+        for (const Json& ji : js["influences"].a) {
+            if (a.findJoint((uint32_t)ji["joint"].num(0)) < 0) continue;
+            const Json& vi = ji["vertices"];
+            const Json& wv = ji["weights"];
+            for (size_t e = 0; e < vi.a.size() && e < wv.a.size(); ++e) {
+                size_t v = (size_t)vi[e].num(0);
+                if (v < s.vertexCount) s.w(v, k) = (float)wv[e].num(0);
+            }
+            ++k;
+        }
+        a.skins.push_back(std::move(s));
+    }
     for (const Json& jc : j["clips"].a) {
         PrefabClip c;
         c.name = jc["name"].str("Clip");
@@ -411,6 +672,7 @@ bool prefabFromJson(const Json& j, PrefabAsset& a, std::string* error) {
         for (const Json& jt : jc["tracks"].a) {
             PrefabTrack t;
             t.part = (uint32_t)jt["part"].num(0);
+            t.joint = flag(jt["joint"], false);
             std::string ch = jt["channel"].str();
             t.channel = ch == "Rotation" ? CH_ROTATION : ch == "Scale" ? CH_SCALE : CH_POSITION;
             for (const Json& jk : jt["keys"].a) {
@@ -422,7 +684,7 @@ bool prefabFromJson(const Json& j, PrefabAsset& a, std::string* error) {
                 t.keys.push_back(k);
             }
             t.sortKeys();
-            if (a.findPart(t.part) >= 0 && !t.keys.empty()) c.tracks.push_back(t);
+            if ((t.joint ? a.findJoint(t.part) : a.findPart(t.part)) >= 0 && !t.keys.empty()) c.tracks.push_back(t);
         }
         a.clips.push_back(c);
     }
@@ -533,6 +795,68 @@ PrefabAsset makeDemoPrefab() {
     keys(build, crateId, CH_SCALE, {{0.0f, float3(0)}, {1.1f, float3(0)}, {1.4f, float3(1.15f)}, {1.6f, float3(1)}});
     keys(build, crate2Id, CH_SCALE, {{0.0f, float3(0)}, {1.25f, float3(0)}, {1.6f, float3(0.6f)}});
     a.clips.push_back(build);
+    return a;
+}
+
+// --------------------------------------------------------------------------- Rig module sample
+
+PrefabAsset makeRigSample() {
+    PrefabAsset a;
+    a.name = "Rig Sample";
+    a.game.category = "Unit";
+    a.game.footprintX = 1;
+    a.game.footprintZ = 1;
+    a.game.selectionRadius = 0.6f;
+    a.game.height = 2.2f;
+    PrefabPart cyl;
+    cyl.name = "Cylinder";
+    cyl.prim.type = PRIM_CYLINDER;
+    cyl.prim.radius = 0.22f;
+    cyl.prim.size = float3(1, 2.0f, 1);
+    cyl.prim.segments = 24;
+    cyl.prim.subdiv = 16;   // cuts along the height: the cylinder can bend
+    cyl.material.name = "Skin Test";
+    cyl.material.baseColor = float3(srgbToLinear(0.78f), srgbToLinear(0.62f), srgbToLinear(0.48f));
+    cyl.material.roughness = 0.55f;
+    uint32_t cylId = a.addPart(cyl);
+    // three joints up the cylinder: root at the base, mid at half height, end at the top
+    PrefabJoint root;
+    root.name = "joint_root";
+    root.radius = 0.09f;
+    uint32_t rootId = a.addJoint(root);
+    PrefabJoint mid;
+    mid.name = "joint_mid";
+    mid.parent = rootId;
+    mid.position = float3(0, 1.0f, 0);
+    mid.radius = 0.08f;
+    uint32_t midId = a.addJoint(mid);
+    PrefabJoint end;
+    end.name = "joint_end";
+    end.parent = midId;
+    end.position = float3(0, 1.0f, 0);
+    end.radius = 0.07f;
+    uint32_t endId = a.addJoint(end);
+    // smooth skin on the three joints
+    PrefabSkin skin;
+    skin.part = cylId;
+    MeshData mesh = makePrimitive(cyl.prim);
+    WeldGraph g;
+    g.build(mesh);
+    SkinBindOptions opt;
+    bindSkin(skin, a, mesh, Affine(), {rootId, midId, endId}, opt, g);
+    a.skins.push_back(skin);
+    // Bend: the mid and end joints swing on Z, the root turns a little on Y
+    PrefabClip bend;
+    bend.name = "Bend";
+    bend.length = 2.0f;
+    auto keys = [](PrefabClip& c, uint32_t joint, int ch, std::initializer_list<std::pair<float, float3>> ks) {
+        PrefabTrack* t = c.jointTrack(joint, ch, true);
+        for (auto& k : ks) t->setKey(k.first, k.second, INTERP_SMOOTH, 1e-4f);
+    };
+    keys(bend, midId, CH_ROTATION, {{0.0f, float3(0)}, {0.5f, float3(0, 0, 40)}, {1.0f, float3(0)}, {1.5f, float3(0, 0, -40)}, {2.0f, float3(0)}});
+    keys(bend, endId, CH_ROTATION, {{0.0f, float3(0)}, {0.5f, float3(0, 0, 35)}, {1.0f, float3(0)}, {1.5f, float3(0, 0, -35)}, {2.0f, float3(0)}});
+    keys(bend, rootId, CH_ROTATION, {{0.0f, float3(0)}, {1.0f, float3(0, 30, 0)}, {2.0f, float3(0)}});
+    a.clips.push_back(bend);
     return a;
 }
 

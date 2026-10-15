@@ -53,7 +53,10 @@ void pfCenterTabs(int& tab, float& bx, float by) {
     bx += 99 * s;
     if (TabButton("pfCenterUv", {bx, by, 108 * s, 24 * s}, "UV Editor", Icon::Grid, tab == 1)) tab = 1;
     Tip("UVs of the selected part, large: UDIM tiles, checks, UV set comparison");
-    bx += 116 * s;
+    bx += 111 * s;
+    if (TabButton("pfCenterRig", {bx, by, 70 * s, 24 * s}, "Rig", Icon::Link, tab == 2)) tab = 2;
+    Tip("Rig module: skeleton (joints), skinning, weight painting, pose");
+    bx += 78 * s;
     dl->AddLine(ImVec2(bx - 4 * s, by + 3 * s), ImVec2(bx - 4 * s, by + 21 * s), P().border);
     bx += 6 * s;
 }
@@ -73,17 +76,22 @@ void App::drawPrefabStudio(float X, float Y, float W, float H) {
     F.bottomH = std::clamp(F.bottomH, 150.0f, maxB);
     float lw = F.leftW * s, rw = F.rightW * s, bh = F.bottomH * s;
     float cx = X + lw + 12 * s, cw = W - lw - 12 * s - rw - 12 * s;
-    pfParts(X + 5 * s, Y, lw, H - 10 * s);
-    if (F.centerTab == 1) pfUvEditor(cx, Y, cw, H - 10 * s);   // the UV Editor takes the whole centre column
+    if (F.centerTab == 2) pfSkeleton(X + 5 * s, Y, lw, H - 10 * s);
+    else pfParts(X + 5 * s, Y, lw, H - 10 * s);
+    if (F.centerTab == 2) {   // Rig module: its viewport and the timeline (joint tracks)
+        pfRigViewport(cx, Y, cw, H - bh - 18 * s);
+        pfTimeline(cx, Y + H - bh - 8 * s, cw, bh);
+    } else if (F.centerTab == 1) pfUvEditor(cx, Y, cw, H - 10 * s);   // the UV Editor takes the whole centre column
     else {
         pfViewport(cx, Y, cw, H - bh - 18 * s);
         pfTimeline(cx, Y + H - bh - 8 * s, cw, bh);
     }
-    pfInspector(X + W - rw - 6 * s, Y, rw, H - 10 * s);
+    if (F.centerTab == 2) pfRigInspector(X + W - rw - 6 * s, Y, rw, H - 10 * s);
+    else pfInspector(X + W - rw - 6 * s, Y, rw, H - 10 * s);
     dl = ImGui::GetWindowDrawList();
     Splitter("pfSplitLeft", {X + lw + 5 * s, Y, 7 * s, H - 10 * s}, F.leftW, 200, maxL, true);
     Splitter("pfSplitRight", {X + W - rw - 12 * s, Y, 6 * s, H - 10 * s}, F.rightW, 270, maxR, true, true);
-    if (F.centerTab == 0) Splitter("pfSplitBottom", {cx, Y + H - bh - 13 * s, cw, 5 * s}, F.bottomH, 150, maxB, false, true);
+    if (F.centerTab != 1) Splitter("pfSplitBottom", {cx, Y + H - bh - 13 * s, cw, 5 * s}, F.bottomH, 150, maxB, false, true);
 }
 
 // --------------------------------------------------------------------------- parts (hierarchy)
@@ -239,7 +247,7 @@ void App::pfParts(float x, float y, float w, float h) {
         // animated in the current clip: a small diamond
         bool animated = false;
         if (clip)
-            for (const PrefabTrack& t : clip->tracks) animated |= t.part == p.id && !t.keys.empty();
+            for (const PrefabTrack& t : clip->tracks) animated |= !t.joint && t.part == p.id && !t.keys.empty();
         if (animated) {
             ImVec2 c(row.x + row.w - 34 * s, yy + rowH / 2 - 1 * s);
             float k = 4 * s;
@@ -574,7 +582,7 @@ void App::pfInspector(float x, float y, float w, float h) {
                     Text(bx + 8 * s, yy + 6 * s, p.meshPath, missing ? IM_COL32(240, 100, 90, 255) : P().text, 10);
                     dl->PopClipRect();
                     if (Button("pfMeshBrowse", {bx + bw - 64 * s, yy + 1 * s, 64 * s, 24 * s}, "Browse", Icon::FolderOpen)) {
-                        std::wstring path = pickFileDialog(m_hwnd, false, L"Meshes (*.obj;*.gltf;*.glb)\0*.obj;*.gltf;*.glb\0All files\0*.*\0", L"obj", projectRoot() + L"\\assets", L"");
+                        std::wstring path = pickFileDialog(m_hwnd, false, L"Meshes (*.obj;*.gltf;*.glb;*.fbx)\0*.obj;*.gltf;*.glb;*.fbx\0All files\0*.*\0", L"obj", projectRoot() + L"\\assets", L"");
                         if (!path.empty()) { prefabPushUndo(); p.meshPath = relPath(path); m_pf.meshErrors.erase(p.meshPath); F.rebuild = true; }
                     }
                     yy += 34 * s;
@@ -994,8 +1002,9 @@ void App::pfTimeline(float x, float y, float w, float h) {
             bx += 80 * s;
             dl->AddLine(ImVec2(bx, py + 4 * s), ImVec2(bx, py + 22 * s), P().border);
             bx += 6 * s;
-            const bool has = F.sel >= 0 && F.sel < (int)A.parts.size();
-            if (Button("pfKeyBtn", {bx, py, 64 * s, 26 * s}, "Key", Icon::Pin, false, false, has)) prefabKeySelected();
+            const bool rigKey = F.centerTab == 2 && F.selJoint >= 0 && F.selJoint < (int)A.joints.size();
+            const bool has = rigKey || (F.sel >= 0 && F.sel < (int)A.parts.size());
+            if (Button("pfKeyBtn", {bx, py, 64 * s, 26 * s}, "Key", Icon::Pin, false, false, has)) { if (rigKey) prefabKeyJoint(); else prefabKeySelected(); }
             Tip("Key the position, rotation and scale of the selected part at this frame (K)");
             bx += 68 * s;
             // auto key: red when on
@@ -1020,7 +1029,7 @@ void App::pfTimeline(float x, float y, float w, float h) {
     if (!clip) return;
 
     // rows: the selected part (its three channels) and every part with tracks (its animated channels)
-    struct Row { int part; int channel; int track; };   // channel -1 = part summary row
+    struct Row { int part; int channel; int track; bool joint = false; };   // channel -1 = summary row; joint: part = joint index
     std::vector<Row> rows;
     std::vector<int> order;
     std::function<void(uint32_t)> walk = [&](uint32_t parent) {
@@ -1030,14 +1039,36 @@ void App::pfTimeline(float x, float y, float w, float h) {
     for (int i : order) {
         const PrefabPart& p = A.parts[i];
         bool any = false;
-        for (const PrefabTrack& t : clip->tracks) any |= t.part == p.id && !t.keys.empty();
+        for (const PrefabTrack& t : clip->tracks) any |= !t.joint && t.part == p.id && !t.keys.empty();
         if (!any && i != F.sel) continue;
         rows.push_back({i, -1, -1});
         for (int ch = 0; ch < CH_COUNT; ++ch) {
             int ti = -1;
             for (size_t k = 0; k < clip->tracks.size(); ++k)
-                if (clip->tracks[k].part == p.id && clip->tracks[k].channel == ch) ti = (int)k;
+                if (!clip->tracks[k].joint && clip->tracks[k].part == p.id && clip->tracks[k].channel == ch) ti = (int)k;
             if (ti >= 0 || i == F.sel) rows.push_back({i, ch, ti});
+        }
+    }
+    // joints (Rig module): the selected joint and every joint with tracks, in skeleton order
+    {
+        std::vector<int> jorder;
+        std::function<void(uint32_t)> jwalk = [&](uint32_t parent) {
+            for (int i : A.jointChildren(parent)) { jorder.push_back(i); if (jorder.size() < 4096) jwalk(A.joints[i].id); }
+        };
+        jwalk(0);
+        const int selJ = F.centerTab == 2 ? F.selJoint : -1;
+        for (int i : jorder) {
+            const PrefabJoint& jn = A.joints[i];
+            bool any = false;
+            for (const PrefabTrack& t : clip->tracks) any |= t.joint && t.part == jn.id && !t.keys.empty();
+            if (!any && i != selJ) continue;
+            rows.push_back({i, -1, -1, true});
+            for (int ch = 0; ch < CH_COUNT; ++ch) {
+                int ti = -1;
+                for (size_t k = 0; k < clip->tracks.size(); ++k)
+                    if (clip->tracks[k].joint && clip->tracks[k].part == jn.id && clip->tracks[k].channel == ch) ti = (int)k;
+                if (ti >= 0 || i == selJ) rows.push_back({i, ch, ti, true});
+            }
         }
     }
     const float nameW = 170 * s, rowH = 22 * s, rulerH = 24 * s;
@@ -1084,18 +1115,22 @@ void App::pfTimeline(float x, float y, float w, float h) {
     bool keyClicked = false;
     for (size_t ri = 0; ri < rows.size(); ++ri) {
         const Row& row = rows[ri];
-        const PrefabPart& p = A.parts[row.part];
+        const bool isJ = row.joint;
+        const uint32_t itemId = isJ ? A.joints[row.part].id : A.parts[row.part].id;
+        const std::string& itemName = isJ ? A.joints[row.part].name : A.parts[row.part].name;
         ImGui::PushID((int)ri);
         R nr = {px, yy, nameW - 6 * s, rowH - 1 * s};
         R tr = {ax, yy, aw, rowH - 1 * s};
         Box({px, yy, pw, rowH - 1 * s}, ri % 2 ? Fade(P().panel, 255) : Fade(P().bg, 160), 0);
         if (row.channel < 0) {
-            if (Hit("partRow", nr)) { F.sel = row.part; }
-            TextBold(px + 6 * s, yy + 4 * s, Fit(p.name, nameW - 16 * s, 11), row.part == F.sel ? P().accent : P().text, 11);
+            if (Hit("partRow", nr)) { if (isJ) F.selJoint = row.part; else F.sel = row.part; }
+            const bool selected = isJ ? row.part == F.selJoint : row.part == F.sel;
+            if (isJ) Glyph(Icon::Link, px + 4 * s, yy + 4 * s, 11, IM_COL32(150, 200, 255, 255));
+            TextBold(px + (isJ ? 20 : 6) * s, yy + 4 * s, Fit(itemName, nameW - 26 * s, 11), selected ? P().accent : (isJ ? IM_COL32(170, 210, 255, 255) : P().text), 11);
             // summary: every key time of the part
             std::vector<float> times;
             for (const PrefabTrack& t : clip->tracks)
-                if (t.part == p.id)
+                if (t.joint == isJ && t.part == itemId)
                     for (const PrefabKey& k : t.keys) times.push_back(k.time);
             for (float t : times) {
                 ImVec2 c(timeX(t), yy + rowH / 2);
@@ -1111,13 +1146,14 @@ void App::pfTimeline(float x, float y, float w, float h) {
             const bool areaHovered = ImGui::IsItemHovered();
             if (areaHovered && ImGui::IsMouseDoubleClicked(0)) {
                 prefabPushUndo();
-                F.sel = row.part;
+                if (isJ) F.selJoint = row.part; else F.sel = row.part;
                 float t = snap(xTime(mouse.x));
                 std::vector<PartPose> pose;
-                evaluatePose(A, clip, t, pose);
+                if (isJ) evaluateJoints(A, clip, t, pose);
+                else evaluatePose(A, clip, t, pose);
                 const PartPose& pp = pose[row.part];
                 float3 v = row.channel == CH_POSITION ? pp.position : row.channel == CH_ROTATION ? pp.rotation : pp.scale;
-                clip->track(p.id, row.channel, true)->setKey(t, v, INTERP_SMOOTH, 0.5f / clip->fps);
+                (isJ ? clip->jointTrack(itemId, row.channel, true) : clip->track(itemId, row.channel, true))->setKey(t, v, INTERP_SMOOTH, 0.5f / clip->fps);
                 F.time = t;
             }
             if (row.track >= 0 && row.track < (int)clip->tracks.size()) {
@@ -1153,8 +1189,9 @@ void App::pfTimeline(float x, float y, float w, float h) {
         F.keyDragStart = clip->tracks[hoverTrack].keys[hoverKey].time;
         F.time = F.keyDragStart;
         F.playing = false;
-        for (size_t i = 0; i < A.parts.size(); ++i)
-            if (A.parts[i].id == clip->tracks[hoverTrack].part) F.sel = (int)i;
+        const PrefabTrack& ht = clip->tracks[hoverTrack];
+        if (ht.joint) F.selJoint = A.findJoint(ht.part);
+        else F.sel = A.findPart(ht.part);
         prefabPushUndo();
         keyClicked = true;
     }

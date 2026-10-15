@@ -57,6 +57,16 @@ void App::prefabInit() {
     if (m_opt.prefabTime >= 0) P.time = m_opt.prefabTime;
     if (m_opt.prefabBottom >= 0) P.bottomTab = m_opt.prefabBottom;
     if (m_opt.prefabLight >= 0) P.lightPreset = m_opt.prefabLight;
+    if (!m_opt.prefabRigFbx.empty()) { P.asset = PrefabAsset(); P.asset.clips.push_back(PrefabClip()); rigImportFile(m_opt.prefabRigFbx); P.centerTab = 2; }
+    if (m_opt.prefabRig >= 0) {
+        if (P.asset.joints.empty()) rigLoadSample();
+        P.centerTab = 2;
+        P.rigMode = m_opt.prefabRig;
+        P.rigTab = P.rigMode == 0 || P.rigMode == 3 ? 0 : P.rigMode == 1 ? 1 : 2;
+        if (m_opt.prefabTab >= 0) P.rigTab = m_opt.prefabTab;
+        if (m_opt.prefabJoint >= 0 && m_opt.prefabJoint < (int)P.asset.joints.size()) P.selJoint = m_opt.prefabJoint;
+        if (m_opt.prefabTime >= 0) P.time = m_opt.prefabTime;
+    }
     if (!m_opt.prefabUv.empty()) {
         P.centerTab = 1;
         swscanf_s(m_opt.prefabUv.c_str(), L"%d,%d,%d,%d,%d", &P.uvSetA, &P.uvSetB, &P.uvCompare, &P.uvFill, &P.uvBackground);
@@ -86,6 +96,9 @@ void App::prefabNew(bool demo) {
     P.playing = false;
     P.keyTrack = P.keyIndex = -1;
     P.undo.clear();
+    P.selJoint = P.asset.joints.empty() ? -1 : 0;
+    P.skinPart = -1;
+    P.poseOverride.clear();
     P.redo.clear();
     P.rebuild = true;
     prefabFrameAll();
@@ -137,6 +150,9 @@ bool App::prefabOpen(const std::wstring& path) {
     P.playing = false;
     P.keyTrack = P.keyIndex = -1;
     P.undo.clear();
+    P.selJoint = P.asset.joints.empty() ? -1 : 0;
+    P.skinPart = -1;
+    P.poseOverride.clear();
     P.redo.clear();
     P.rebuild = true;
     prefabFrameAll();
@@ -190,7 +206,7 @@ void App::prefabAddPart(int kind) {
     PrefabStudio& P = m_pf;
     PrefabPart p;
     if (kind == 100) {
-        std::wstring path = pickFileDialog(m_hwnd, false, L"Meshes (*.obj;*.gltf;*.glb)\0*.obj;*.gltf;*.glb\0All files\0*.*\0", L"obj", projectRoot() + L"\\assets", L"");
+        std::wstring path = pickFileDialog(m_hwnd, false, L"Meshes (*.obj;*.gltf;*.glb;*.fbx)\0*.obj;*.gltf;*.glb;*.fbx\0All files\0*.*\0", L"obj", projectRoot() + L"\\assets", L"");
         if (path.empty()) return;
         p.meshPath = relPath(path);
         p.name = toUtf8(fs::path(path).stem().wstring());
@@ -276,7 +292,7 @@ void App::prefabDuplicate() {
     for (PrefabClip& clip : P.asset.clips) {
         size_t count = clip.tracks.size();
         for (size_t t = 0; t < count; ++t)
-            if (remap.count(clip.tracks[t].part)) {
+            if (!clip.tracks[t].joint && remap.count(clip.tracks[t].part)) {
                 PrefabTrack c = clip.tracks[t];
                 c.part = remap[c.part];
                 clip.tracks.push_back(c);
@@ -396,6 +412,8 @@ void App::prefabBuildScene() {
     std::map<std::string, int> textures;
     P.partObject.assign(P.asset.parts.size(), -1);
     P.partUv.assign(P.asset.parts.size(), {});
+    P.partRest.assign(P.asset.parts.size(), MeshData());
+    P.skinSig.clear();
     P.uvAnalysis.clear();
     for (size_t i = 0; i < P.asset.parts.size(); ++i) {
         const PrefabPart& p = P.asset.parts[i];
@@ -436,6 +454,18 @@ void App::prefabBuildScene() {
         o.material = s.addMaterial(mat);
         o.useRot = true;
         P.partObject[i] = s.addObject(o);
+        // skinned part: keep the rest mesh (deformed every frame), weights checked against its vertex count
+        if (PrefabSkin* sk = P.asset.skinOf(p.id)) {
+            const MeshData& rest = s.meshes[s.objects[P.partObject[i]].mesh];
+            P.partRest[i] = rest;
+            P.weld[p.id].build(rest);
+            if (sk->vertexCount != rest.vertices.size()) {   // other primitive parameters or file: bind again
+                std::vector<uint32_t> joints = sk->joints;
+                Affine bm = sk->bindMesh;
+                bindSkin(*sk, P.asset, rest, bm, joints, P.bindOpt, P.weld[p.id]);
+                log("Skin of " + p.name + " bound again (the mesh changed)", 2);
+            }
+        }
     }
     P.meshMin.resize(s.meshes.size());
     P.meshMax.resize(s.meshes.size());
@@ -533,6 +563,15 @@ void App::prefabSyncScene() {
     const PrefabClip* clip = prefabClip();
     evaluatePose(P.asset, clip, P.time, P.pose);
     worldTransforms(P.asset, P.pose, P.world);
+    // joints: rest, clip, then the Pose mode overrides
+    restJointWorld(P.asset, P.jointRest);
+    evaluateJoints(P.asset, clip, P.time, P.jointPose);
+    for (size_t j = 0; j < P.asset.joints.size(); ++j) {
+        auto ov = P.poseOverride.find(P.asset.joints[j].id);
+        if (ov != P.poseOverride.end()) P.jointPose[j] = ov->second;
+    }
+    jointWorld(P.asset, P.jointPose, P.jointNow);
+    if (P.centerTab == 2 && P.rigMode == 0) P.jointNow = P.jointRest;   // Skeleton mode: the rig and the skin at the bind pose
     for (size_t i = 0; i < P.asset.parts.size() && i < P.partObject.size(); ++i) {
         int oi = P.partObject[i];
         if (oi < 0 || oi >= (int)s.objects.size()) continue;
@@ -553,6 +592,26 @@ void App::prefabSyncScene() {
             pid = P.asset.parts[pi].parent;
         }
         o.visible = visible;
+        // skinned part: the deformed mesh is in world space, the object stays at the origin
+        if (const PrefabSkin* sk = P.asset.skinOf(p.id)) {
+            if (i < P.partRest.size() && P.partRest[i].vertices.size() == sk->vertexCount && sk->vertexCount) {
+                o.position = float3(0);
+                o.rot = qIdentity();
+                o.scale = float3(1);
+                uint64_t sig = 1469598103934665603ull ^ P.weightsVersion;
+                auto mix = [&](float f) { uint32_t u; memcpy(&u, &f, 4); sig = (sig ^ u) * 1099511628211ull; };
+                for (const PartWorld& jw : P.jointNow) { mix(jw.position.x); mix(jw.position.y); mix(jw.position.z); mix(jw.rot.x); mix(jw.rot.y); mix(jw.rot.z); mix(jw.rot.w); mix(jw.scale.x); mix(jw.scale.y); mix(jw.scale.z); }
+                auto it = P.skinSig.find(p.id);
+                if (it == P.skinSig.end() || it->second != sig) {
+                    P.skinSig[p.id] = sig;
+                    MeshData& dst = s.meshes[o.mesh];
+                    MeshData out;
+                    deformSkin(*sk, P.asset, P.partRest[i], P.jointNow, out);
+                    dst.vertices = std::move(out.vertices);
+                    if (P.active) m_renderer.updateMeshVertices(o.mesh, dst.vertices);
+                }
+            }
+        }
         Material& m = s.materials[o.material];
         if (!p.meshPath.empty() && P.meshErrors.count(p.meshPath)) continue;   // missing file: the red placeholder stays
         int tex = m.baseColorTex;
@@ -711,6 +770,7 @@ void App::prefabViewInput(bool hovered) {
         }
     }
 
+    if (P.centerTab == 2) return;   // Rig module: the left button is handled by rigViewInput (joints, gizmo, brush)
     // move gizmo: drag along a world axis of the selected part
     const bool selValid = P.sel >= 0 && P.sel < (int)P.world.size();
     if (P.gizmoAxis >= 0) {
@@ -790,6 +850,16 @@ void App::prefabShortcuts() {
     if (ImGui::IsKeyPressed(ImGuiKey_End, false) && c) prefabSetTime(c->length);
     if (c && ImGui::IsKeyPressed(ImGuiKey_LeftArrow)) prefabSetTime(std::round(P.time * c->fps - 1) / c->fps);
     if (c && ImGui::IsKeyPressed(ImGuiKey_RightArrow)) prefabSetTime(std::round(P.time * c->fps + 1) / c->fps);
+    if (P.centerTab == 2) {   // Rig module: tools, modes, joint keys and deletion
+        if (ImGui::IsKeyPressed(ImGuiKey_W, false)) P.rigTool = 1;
+        if (ImGui::IsKeyPressed(ImGuiKey_E, false)) P.rigTool = 2;
+        if (ImGui::IsKeyPressed(ImGuiKey_K, false)) prefabKeyJoint();
+        if (ImGui::IsKeyPressed(ImGuiKey_Delete, false)) rigDeleteJoint();
+        for (int k = 0; k < 4; ++k)
+            if (ImGui::IsKeyPressed((ImGuiKey)(ImGuiKey_1 + k), false)) { P.rigMode = k; P.rigTab = k == 0 || k == 3 ? 0 : k == 1 ? 1 : 2; }
+        if (ImGui::IsKeyPressed(ImGuiKey_F, false)) prefabFrameAll();
+        return;
+    }
     if (ImGui::IsKeyPressed(ImGuiKey_K, false)) prefabKeySelected();
     if (P.centerTab == 0 && ImGui::IsKeyPressed(ImGuiKey_F, false)) prefabFrameAll();
     if (ImGui::IsKeyPressed(ImGuiKey_F2, false) && P.sel >= 0 && P.sel < (int)P.asset.parts.size()) {
