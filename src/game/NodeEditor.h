@@ -46,7 +46,7 @@ public:
 
     // Texts of the canvas header and footer (the Maya shader graph renames the buttons; run empty = Run / Stop).
     struct Labels {
-        std::string title = "Game Graph", subtitle = "Event Graph";
+        std::string title = "Game Graph", subtitle = "Event Graph", description = "Gameplay graph of the game";
         std::string compile = "Compile", run, build = "Build";
         uint32_t compileIcon = 0xE73E, runIcon = 0xE768, buildIcon = 0xE7B8;
         const char* vectorPin = "Vector";

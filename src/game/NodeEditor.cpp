@@ -978,8 +978,8 @@ void NodeEditor::drawInspectorNode(Graph& g, Node& n, float w) {
 }
 
 void NodeEditor::drawInspectorGraph(Graph& g, const Runtime* rt, float w) {
-    ImGui::TextUnformatted("Game Graph");
-    ImGui::TextDisabled("Gameplay graph of the game");
+    ImGui::TextUnformatted(labels.title.c_str());
+    ImGui::TextDisabled("%s", labels.description.c_str());
     ImGui::Spacing();
     ImGui::TextDisabled("GRAPH SUMMARY");
     auto row = [&](const char* label, const std::string& value, ImU32 col) {
@@ -1001,8 +1001,11 @@ void NodeEditor::drawInspectorGraph(Graph& g, const Runtime* rt, float w) {
 
     ImGui::Spacing();
     ImGui::TextDisabled("NODE FAMILIES");
-    static const char* fams[] = {"Events", "Input", "Flow Control", "Scene", "Data", "Math", "RTS"};
-    for (const char* f : fams) {
+    std::vector<std::string> fams;   // categories of the node library, in order
+    for (const NodeDef& d : nodeDefs())
+        if (std::find(fams.begin(), fams.end(), d.category) == fams.end()) fams.push_back(d.category);
+    for (const std::string& fs : fams) {
+        const char* f = fs.c_str();
         ImVec2 c = ImGui::GetCursorScreenPos();
         ImGui::GetWindowDrawList()->AddCircleFilled(c + ImVec2(5 * m_dpi, 8 * m_dpi), 4 * m_dpi, catColor(f));
         ImGui::Indent(16 * m_dpi);

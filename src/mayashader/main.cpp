@@ -32,6 +32,9 @@ struct Options {
     DWORD mayaPid = 0;
     std::wstring shotPath;
     int shotFrames = 120;
+    bool shotPreview = false;    // --shot-preview: the preview image only
+    int previewLights = 1;
+    bool acescg = true;          // Maya rendering space of the colours
 };
 
 bool savePng(const std::wstring& path, std::vector<uint8_t> rgba, uint32_t w, uint32_t h) {
@@ -107,6 +110,9 @@ Options parseArgs() {
         else if (a == L"--maya-pid") o.mayaPid = (DWORD)_wtoi(next().c_str());
         else if (a == L"--shot") o.shotPath = next();
         else if (a == L"--frames") o.shotFrames = _wtoi(next().c_str());
+        else if (a == L"--shot-preview") { o.shotPath = next(); o.shotPreview = true; }
+        else if (a == L"--preview-lights") o.previewLights = _wtoi(next().c_str());
+        else if (a == L"--rendering-space") o.acescg = next() == L"ACEScg";
     }
     LocalFree(argv);
     return o;
@@ -198,6 +204,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
     editor.setNodeIconDrawer(&drawNodeIconFn);
     editor.labels.title = "Shader Graph";
     editor.labels.subtitle = "Arnold";
+    editor.labels.description = "Arnold material, mirrored in Maya";
     editor.labels.compile = "Sync Maya";
     editor.labels.compileIcon = 0xE895;   // sync
     editor.labels.run = "Assign";
@@ -215,6 +222,8 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
     maya.start(opt.port);
     mayashader::Preview preview;
     preview.init(g_renderer, g_gui, opt.hdri);
+    preview.setLights(opt.previewLights != 0);
+    preview.setAcescg(opt.acescg);
 
     HANDLE mayaProc = opt.mayaPid ? OpenProcess(SYNCHRONIZE, FALSE, opt.mayaPid) : nullptr;
     std::string lastJson;
@@ -222,6 +231,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
     bool pendingSync = true;
     bool wasConnected = false;
     int frameCount = 0;
+    bool wasParented = false;
 
     MSG msg;
     while (g_running) {
@@ -232,6 +242,11 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         }
         if (!g_running) break;
         if (mayaProc && WaitForSingleObject(mayaProc, 0) == WAIT_OBJECT_0) break;   // Maya was closed
+        if (opt.embed) {   // the Maya panel was closed: the window lost its parent
+            HWND parent = GetParent(hwnd);
+            if (parent) wasParented = true;
+            else if (wasParented) break;
+        }
         if (g_minimized || !IsWindowVisible(hwnd)) { Sleep(50); maya.poll(); continue; }
 
         g_gui.newFrame();
@@ -335,7 +350,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         if (!opt.shotPath.empty() && ++frameCount >= opt.shotFrames) {
             std::vector<uint8_t> rgba;
             uint32_t w, h;
-            if (g_renderer.readBackBuffer(rgba, w, h)) savePng(opt.shotPath, rgba, w, h);
+            if (opt.shotPreview ? g_renderer.readViewport(rgba, w, h) : g_renderer.readBackBuffer(rgba, w, h)) savePng(opt.shotPath, rgba, w, h);
             g_running = false;
         }
         g_renderer.present(true);

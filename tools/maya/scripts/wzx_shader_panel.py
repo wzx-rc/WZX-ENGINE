@@ -128,6 +128,8 @@ class Panel(QtWidgets.QWidget):
             self.status.setText('Build missing: ' + EXE)
             return
         args = [EXE, '--embed', '--port', str(PORT), '--graph', path, '--maya-pid', str(os.getpid())]
+        cm = cmds.colorManagementPrefs(q=True, cmEnabled=True)
+        args += ['--rendering-space', cmds.colorManagementPrefs(q=True, renderingSpaceName=True) if cm else 'linear']
         s = _settings_file()
         if s:
             args += ['--settings', s]
@@ -161,8 +163,11 @@ class Panel(QtWidgets.QWidget):
         self.proc = None
         self.hwnd = 0
         if self.container:
-            self.container.setParent(None)
-            self.container.deleteLater()
+            try:   # Qt may already have deleted the container with the foreign window
+                self.body.removeWidget(self.container)
+                self.container.deleteLater()
+            except RuntimeError:
+                pass
             self.container = None
 
 
@@ -193,6 +198,7 @@ def on_close():
 def show():
     open_port()
     bridge._plugins()
+    on_close()
     if cmds.workspaceControl(CONTROL, exists=True):
         cmds.deleteUI(CONTROL)
     cmds.workspaceControl(CONTROL, label='WZX Shader Graph', floating=True, retain=False,
@@ -203,8 +209,9 @@ def show():
         build_ui()
 
 
-def install_shelf(shelf='WZX'):
-    """Adds the WZX Shader Graph button to a shelf (created when missing)."""
+def install_shelf(shelf='WZX_Shader'):
+    """Adds the WZX Shader Graph button to a shelf (created when missing). Its own shelf: on Windows a
+    "WZX" shelf would share the file shelf_Wzx.mel of an existing "Wzx" shelf."""
     top = __import__('maya.mel', fromlist=['eval']).eval('$tmp = $gShelfTopLevel')
     if not cmds.shelfLayout(shelf, exists=True):
         cmds.shelfLayout(shelf, parent=top)

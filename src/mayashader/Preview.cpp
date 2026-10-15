@@ -140,7 +140,7 @@ public:
             c = lerp3(ca, cb, k);
         } else if (t == "tex.checker") {
             float rep = F("Repeat");
-            int cell = ((int)std::floor(uv.x * rep) + (int)std::floor(uv.y * rep)) & 1;
+            int cell = ((int)std::floor(uv.x * rep * 2) + (int)std::floor(uv.y * rep * 2)) & 1;   // 2 x 2 cells per tile
             float3 c1 = C("Color 1"), c2 = C("Color 2"), avg = (c1 + c2) * 0.5f;
             float k = sat(F("Contrast"));
             c = lerp3(avg, cell ? c2 : c1, k);
@@ -148,7 +148,7 @@ public:
             float sc = std::max(1e-4f, F("Scale"));
             int oct = std::max(1, std::min(8, (int)F("Octaves")));
             float dist = F("Distortion");
-            float3 p = P * (1.0f / sc) * 2.0f;
+            float3 p = P * sc;   // aiNoise: P x scale (object space, unit sphere)
             if (dist != 0) p = p + float3(perlin(p + float3(5.2f, 1.3f, 7.1f)), perlin(p + float3(1.7f, 9.2f, 3.3f)), perlin(p + float3(8.3f, 2.8f, 4.1f))) * dist;
             float sum = 0, amp = 1, norm = 0;
             for (int o = 0; o < oct; ++o) { sum += perlin(p) * amp; norm += amp; amp *= 0.5f; p = p * 1.92f; }
@@ -248,7 +248,9 @@ uint8_t toSrgb8(float x) {
     return (uint8_t)std::lround(s * 255.0f);
 }
 
-// UV sphere with Maya-like texture coordinates (u around +Y, v from the bottom pole to the top).
+// UV sphere with the texture coordinates of a Maya polySphere (20 axis divisions): u turns from +X towards -Z,
+// starting one division (1/20) before +X; v goes from the bottom pole to the top.
+const float kSeam = 0.05f;
 MeshData uvSphere(float r, int segU, int segV) {
     MeshData m;
     for (int j = 0; j <= segV; ++j) {
@@ -256,7 +258,7 @@ MeshData uvSphere(float r, int segU, int segV) {
         float th = v * kPi;
         for (int i = 0; i <= segU; ++i) {
             float u = (float)i / segU;
-            float ph = u * 2.0f * kPi;
+            float ph = (u + kSeam) * 2.0f * kPi;
             float3 n(std::sin(th) * std::cos(ph), std::cos(th), -std::sin(th) * std::sin(ph));
             m.vertices.push_back({n * r, n, float2(u, v)});   // texture row 0 = top = Maya v 1
         }
@@ -342,6 +344,13 @@ void Preview::setHdri(int index) {
 }
 
 void Preview::applyGraph(const Graph& g) {
+    // Maya colours are in its rendering space (ACEScg by default): vp3d renders linear Rec.709
+    auto toRender = [&](float3 c) {
+        if (!m_acescg) return c;
+        float3 r(1.70505f * c.x - 0.62179f * c.y - 0.08326f * c.z, -0.13026f * c.x + 1.14080f * c.y - 0.01055f * c.z,
+                 -0.02400f * c.x - 0.12897f * c.y + 1.15297f * c.z);
+        return float3(std::max(r.x, 0.0f), std::max(r.y, 0.0f), std::max(r.z, 0.0f));
+    };
     Eval ev(g);
     const Node* sn = ev.surface();
     Shade sh = ev.shade(sn, float2(0.5f, 0.5f), float3(0, 0, 1));
@@ -357,7 +366,7 @@ void Preview::applyGraph(const Graph& g) {
     m.sssRadius = float3(1.0f, 0.35f, 0.15f) * 0.3f;
     m.coat = sat(sh.coat);
     m.coatRoughness = sat(sh.coatRough);
-    m.emission = sh.emisColor;
+    m.emission = toRender(sh.emisColor);
     m.emissionStrength = sh.emis;
     m_scene.textures.clear();
     m.baseColorTex = -1;
@@ -373,12 +382,13 @@ void Preview::applyGraph(const Graph& g) {
             float v = 1.0f - (y + 0.5f) / H;
             float th = (1.0f - v) * kPi;
             for (int x = 0; x < W; ++x) {
-                float u = (x + 0.5f) / W, ph = u * 2.0f * kPi;
+                float u = (x + 0.5f) / W, ph = (u + kSeam) * 2.0f * kPi;
                 float3 P(std::sin(th) * std::cos(ph), std::cos(th), -std::sin(th) * std::sin(ph));
                 Shade px = ev.shade(sn, float2(u, v), P);
                 // the transmission colour tints the glass: shown through the base colour slot
                 float3 c = m.transmission > 0.5f ? px.transColor : px.base;
                 uint8_t* d = &t.rgba[((size_t)y * W + x) * 4];
+                c = toRender(c);
                 d[0] = toSrgb8(c.x);
                 d[1] = toSrgb8(c.y);
                 d[2] = toSrgb8(c.z);
@@ -389,9 +399,9 @@ void Preview::applyGraph(const Graph& g) {
         m.baseColorTex = 0;
         m.baseColor = float3(1, 1, 1);
     } else {
-        m.baseColor = m.transmission > 0.5f ? sh.transColor : sh.base;
+        m.baseColor = toRender(m.transmission > 0.5f ? sh.transColor : sh.base);
     }
-    if (m.subsurface > 0) m.baseColor = lerp3(m.baseColor, sh.sssColor, m.subsurface);
+    if (m.subsurface > 0) m.baseColor = lerp3(m.baseColor, toRender(sh.sssColor), m.subsurface);
     m_sceneDirty = true;
 }
 
@@ -458,7 +468,8 @@ bool Preview::draw(const Graph& g, ImVec2 pos, ImVec2 size, float dpi) {
         light("Fill", radians(60.0f), radians(10.0f), 5.0f, 3.0f, float3(0.85f, 0.9f, 1.0f), 2.0f);
         light("Rim", radians(165.0f), radians(25.0f), 5.0f, 1.5f, float3(0.95f, 0.97f, 1.0f), 8.0f);
     }
-    m_rs.exposure = std::pow(2.0f, m_exposure);
+    // -0.6 EV: measured against Arnold (Maya ACES 1.0 SDR view, same HDRI), so EV 0 matches a Maya render
+    m_rs.exposure = std::pow(2.0f, m_exposure - 0.6f);
 
     if (m_sceneDirty) {
         m_r->setScene(s);   // also uploads the baked texture

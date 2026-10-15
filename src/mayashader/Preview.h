@@ -17,6 +17,8 @@ public:
     // renderer output texture is drawn this frame (ImGuiLayer::render must then return it to UAV state).
     bool draw(const game::Graph& g, ImVec2 pos, ImVec2 size, float dpi);
     bool busy() const { return m_busy; }
+    void setLights(bool on) { m_lights = on; }
+    void setAcescg(bool on) { m_acescg = on; m_graphKey.clear(); }   // graph colours in ACEScg (Maya default rendering space)
 
 private:
     void applyGraph(const game::Graph& g);
@@ -30,7 +32,7 @@ private:
     std::vector<std::wstring> m_hdris;
     int m_hdri = -1;
     float m_yaw = 0.0f, m_pitch = 0.12f, m_dist = 4.6f, m_exposure = 0.0f, m_envRot = 0.0f;
-    bool m_lights = true, m_background = true;
+    bool m_lights = true, m_background = true, m_acescg = true;
     bool m_busy = true;
     bool m_sceneDirty = true;
 };
