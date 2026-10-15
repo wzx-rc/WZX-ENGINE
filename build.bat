@@ -34,7 +34,7 @@ for %%S in (PathTrace Denoise Tonemap DDGIUpdate DDGIRaster DDGIBlend GIShade) d
 for %%E in (VSMain VSShadow VSBackground VSProbe) do (
     "%DXC%" -nologo -T vs_6_0 -E %%E -HV 2021 -O3 -DVP3D_DDGI_PROBES -I src\vp3d\shaders src\vp3d\shaders\Raster.hlsl -Fo "%OUT%\shaders\Raster_%%E.cso" || exit /b 1
 )
-for %%E in (PSMain PSGhost PSId PSBackground PSProbe PSProbeBackground) do (
+for %%E in (PSMain PSGhost PSId PSWire PSBackground PSProbe PSProbeBackground) do (
     "%DXC%" -nologo -T ps_6_0 -E %%E -HV 2021 -O3 -DVP3D_DDGI_PROBES -I src\vp3d\shaders src\vp3d\shaders\Raster.hlsl -Fo "%OUT%\shaders\Raster_%%E.cso" || exit /b 1
 )
 if exist assets xcopy /E /I /Y /Q assets "%OUT%\assets" >nul

@@ -166,7 +166,16 @@ void writeGeometry(Writer& w, const Scene& sc, const Object& o) {
     }
     w.beginObject("shape");
     const PartDef* part = findPart(o.part);
-    if (part && mesh == part->id) {   // library part (fixed size)
+    if (o.prim.type != PRIM_NONE) {   // parametric primitive (Create > Mesh): its mesh is rebuilt from these
+        const PrimitiveParams& p = o.prim;
+        w.str("primitive", primitiveName(p.type));
+        w.vec("size", p.size);
+        w.num("radius", p.radius);
+        w.num("radius2", p.radius2);
+        w.integer("segments", p.segments);
+        w.integer("rings", p.rings);
+        w.integer("subdiv", p.subdiv);
+    } else if (part && mesh == part->id) {   // library part (fixed size)
         w.str("primitive", part->id);
     } else {
         // built-in geometry of the test scenes (floors, walls, blocks): a plane or a box, from its bounds
@@ -610,8 +619,20 @@ void App::loadWzxScene(const Json& j, const std::wstring& path) {
         Object o;
         o.name = oj["name"].str("Object");
         o.part = oj["type"].str();
-        if (oj["mesh"].type == Json::String) o.mesh = fileMesh(oj["mesh"].s);
-        else o.mesh = shapeMesh(oj["shape"]);
+        const Json& shape = oj["shape"];
+        for (int t = PRIM_CUBE; t <= PRIM_DISK; ++t)   // parametric primitive: its mesh is built after addObject
+            if (shape["primitive"].str() == primitiveName(t)) {
+                PrimitiveParams& p = o.prim;
+                p.type = t;
+                p.size = vec3(shape["size"], p.size);
+                p.radius = f(shape["radius"], p.radius);
+                p.radius2 = f(shape["radius2"], p.radius2);
+                p.segments = (int)shape["segments"].num(p.segments);
+                p.rings = (int)shape["rings"].num(p.rings);
+                p.subdiv = (int)shape["subdiv"].num(p.subdiv);
+                o.mesh = -1;
+            }
+        if (o.prim.type == PRIM_NONE) o.mesh = oj["mesh"].type == Json::String ? fileMesh(oj["mesh"].s) : shapeMesh(shape);
         o.position = vec3(oj["position"], o.position);
         const Json& r = oj["rotation"];
         if (r.type == Json::Array && r.a.size() == 4) {
@@ -638,7 +659,8 @@ void App::loadWzxScene(const Json& j, const std::wstring& path) {
             o.material = sc.addMaterial(red);
             m_placeholderMat[o.material] = m;
         }
-        sc.addObject(o);
+        int idx = sc.addObject(o);
+        if (o.prim.type != PRIM_NONE) syncPrimitiveMesh(sc, idx);
     }
 
     const Json& rj = j["render"];
