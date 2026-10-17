@@ -392,7 +392,8 @@ private:
     bool advScaleInput(bool inView);     // hover and drag of the handles; true while it uses the mouse
     void advScaleBegin(int handle, const AdvBox& b, float mx, float my);
     void advScaleDrag(float mx, float my);
-    int m_advMods = -1;                  // self-test: forced modifiers (1 Shift, 2 Alt), -1 = the keyboard
+    int m_advMods = -1;                  // self-test and captures: forced modifiers (1 Shift, 2 Alt, 4 V), -1 = the keyboard
+    void advScaleDemo(const std::string& mode);   // --open-menu advScale...: states of the tool for the captures
     void drawAdvScale(ImDrawList* dl);
     void drawAdvScaleMenu(float x, float y, float w, float h);   // menu and modifier hints of the viewport (AtelierUI.cpp)
     void drawAdvScaleSettings();          // Advanced Scale Settings window (Editor.cpp)

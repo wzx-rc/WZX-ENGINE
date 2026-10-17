@@ -3,8 +3,9 @@
 //   - one object: the box is oriented on the object (its local box); several objects: on the world, or on the object
 //     picked with the eyedropper;
 //   - face handles (centre of each face): one axis, the opposite face stays fixed;
-//   - edge and corner handles (Ctrl held, or "Corner Handles" in the menu; they appear near the cursor): two or three
-//     axes, the opposite edge or corner stays fixed;
+//   - edge and corner handles (Ctrl held, or "Corner Handles" in the menu; they appear near the cursor): an edge scales
+//     two axes in their plane, a corner the three along the diagonal of the screen; the opposite edge or corner stays
+//     fixed;
 //   - Shift: uniform scale; Alt: both sides (around the centre); V: the handle snaps to the vertex nearest to the cursor
 //     (any object, even far away); Snapping on: the handle lands on the grid of the move step;
 //   - flat objects (a side thinner than the flat threshold): faces on four sides only, corners of the rectangle;
@@ -148,6 +149,7 @@ bool App::advScaleInput(bool inView) {
     const float mx = io.MousePos.x, my = io.MousePos.y;
     const bool playing = m_game && (m_game->playing() || m_game->playerMode());
     if (playing) { m_adv.active = false; return false; }
+    if (m_gzDemo && m_adv.active) return true;   // captures (--open-menu advScale...): a drag frozen on screen
     // eyedropper: the next click picks the object giving the orientation of the box (the selection is kept)
     if (m_advPicking && inView && ImGui::IsMouseClicked(0) && !io.KeyAlt) {
         float3 o, d;
@@ -262,7 +264,7 @@ void App::advScaleDrag(float mx, float my) {
 
     // V: the vertex nearest to the cursor on screen (objects not scaled), the handle goes to its level on each axis
     g.snapped = false;
-    if (m_advMods < 0 && ImGui::IsKeyDown(ImGuiKey_V)) {
+    if (m_advMods >= 0 ? (m_advMods & 4) != 0 : ImGui::IsKeyDown(ImGuiKey_V)) {
         const float radius = th::settings().advScale.snapRadius * m_dpi;
         float bestD = radius;
         size_t budget = 400000;
@@ -302,9 +304,31 @@ void App::advScaleDrag(float mx, float my) {
 
     // scale factors along the box axes: Alt, both sides (around the centre); Shift, the same on the three axes
     const bool both = m_advMods >= 0 ? (m_advMods & 2) != 0 : io.KeyAlt;   // (m_advMods: forced by the self-test)
+    // corner (three axes): the factor along the screen diagonal from the fixed point (the opposite corner, the centre
+    // with Alt), the same on the three axes, so that pulling the corner away from its opposite always enlarges the
+    // box (a 2D drag cannot tell three axes apart); with V the corner goes to the level of the vertex on each axis
+    bool diagonal = false;
+    float ratio = 1.0f;
+    if (n == 3 && !g.snapped) {
+        float3 fixedPt = b.c;
+        if (!both)
+            for (int k = 0; k < 3; ++k) fixedPt = fixedPt - b.ax[k] * (g.s[k] * b.h[k]);
+        float2 aS, hS;
+        if (project(fixedPt, aS) && project(g.p0, hS)) {
+            const float vx = hS.x - aS.x, vy = hS.y - aS.y, l2 = vx * vx + vy * vy;
+            if (l2 > 4.0f) {
+                ratio = ((mx - aS.x) * vx + (my - aS.y) * vy) / l2;
+                diagonal = true;
+            }
+        }
+        if (diagonal && m_magnet && m_advMods < 0) {   // grid: the largest side lands on a whole number of steps
+            const float big = 2.0f * std::max(b.h.x, std::max(b.h.y, b.h.z)), step = std::max(m_stepMove, 1e-4f);
+            ratio = std::round(big * ratio / step) * step / big;
+        }
+    }
     float f[3] = {1, 1, 1};
     for (int k = 0; k < 3; ++k)
-        if (g.s[k]) f[k] = std::max(0.01f, (2.0f * b.h[k] + (both ? 2.0f : 1.0f) * delta[k]) / (2.0f * b.h[k]));
+        if (g.s[k]) f[k] = diagonal ? std::max(0.01f, ratio) : std::max(0.01f, (2.0f * b.h[k] + (both ? 2.0f : 1.0f) * delta[k]) / (2.0f * b.h[k]));
     if (m_advMods >= 0 ? (m_advMods & 1) != 0 : io.KeyShift) {
         int lead = -1;
         for (int k = 0; k < 3; ++k)
@@ -359,6 +383,22 @@ void App::drawAdvScale(ImDrawList* dl) {
     };
     // a face of the box is turned to the camera
     auto faceFront = [&](int k, int sg) { const float3 n = b.ax[k] * (float)sg; return dot(n, eye - (b.c + n * b.h[k])) > 0; };
+    // while dragging: the box as it was at the press, faint (the fixed side shows)
+    if (m_adv.active) {
+        const AdvBox& o = m_adv.box0;
+        auto oc = [&](int i) {
+            float3 p = o.c;
+            for (int k = 0; k < 3; ++k) p = p + o.ax[k] * (((i >> k) & 1) ? o.h[k] : -o.h[k]);
+            return p;
+        };
+        for (int i = 0; i < 8; ++i)
+            for (int k = 0; k < 3; ++k) {
+                if ((i >> k) & 1) continue;
+                float2 pa, pb;
+                if (project(oc(i), pa) && project(oc(i | (1 << k)), pb))
+                    dl->AddLine(ImVec2(pa.x, pa.y), ImVec2(pb.x, pb.y), IM_COL32(220, 230, 240, 70), 1.0f * d);
+            }
+    }
     // frame: the 12 edges, the hidden ones fainter
     for (int i = 0; i < 8; ++i)
         for (int k = 0; k < 3; ++k) {
@@ -415,8 +455,12 @@ void App::drawAdvScale(ImDrawList* dl) {
         if (advScaleBox(now)) {
             char t[96];
             snprintf(t, sizeof t, "%.3f x %.3f x %.3f", now.h.x * 2, now.h.y * 2, now.h.z * 2);
-            ImVec2 m = io.MousePos, ts = ImGui::CalcTextSize(t);
-            ImVec2 p(m.x + 16 * d, m.y + 14 * d);
+            // next to the dragged handle (where it is now)
+            float3 hp = now.c;
+            for (int k = 0; k < 3; ++k) hp = hp + now.ax[k] * (m_adv.s[k] * now.h[k]);
+            float2 hs2;
+            ImVec2 m = project(hp, hs2) ? ImVec2(hs2.x, hs2.y) : io.MousePos, ts = ImGui::CalcTextSize(t);
+            ImVec2 p(m.x + 14 * d, m.y + 10 * d);
             dl->AddRectFilled(ImVec2(p.x - 4 * d, p.y - 2 * d), ImVec2(p.x + ts.x + 4 * d, p.y + ts.y + 2 * d), IM_COL32(20, 22, 26, 200), 3 * d);
             dl->AddText(p, IM_COL32(235, 240, 245, 255), t);
         }
@@ -426,6 +470,88 @@ void App::drawAdvScale(ImDrawList* dl) {
             dl->AddCircleFilled(ImVec2(vp.x, vp.y), 2.0f * d, IM_COL32(255, 214, 90, 255), 8);
         }
     }
+}
+
+// --------------------------------------------------------------------------- captures
+
+// --open-menu advScale<Mode> (with --gizmo-demo, scene Concept): states of the tool frozen for the captures of the
+// documentation. advScale: face handles; Corners: + edge / corner handles; Multi: three objects (world box); Orient:
+// objects turned, box oriented on the cube (eyedropper); Flat: a plane (flat mode); Settings: the settings window;
+// Drag / Shift / Alt / Corner / Snap: a drag in progress (+X face, Shift from the top face, Alt, corner, V towards a
+// vertex of the cylinder).
+void App::advScaleDemo(const std::string& mode) {
+    auto find = [&](const char* name) {
+        for (size_t i = 0; i < m_scene.objects.size(); ++i) if (m_scene.objects[i].name == name) return (int)i;
+        return -1;
+    };
+    const int cube = find("Cube"), sphere = find("Sphere"), cyl = find("Cylinder");
+    if (cube < 0) return;
+    outlinerIds();
+    m_advScale = true;
+    m_advCorners = mode == "advScaleCorners" || mode == "advScaleCorner" || mode == "advScaleFlat";
+    auto selSet = [&](std::vector<int> v) { select(-1); select(v[0]); m_multi.assign(v.begin() + 1, v.end()); };
+    if (mode == "advScaleMulti" && sphere >= 0 && cyl >= 0) selSet({cube, sphere, cyl});
+    if (mode == "advScaleOrient" && cyl >= 0) {
+        Object& c = m_scene.objects[cube];
+        c.rot = qAxisAngle(float3(0, 1, 0), radians(30.0f));
+        c.useRot = true;
+        Object& y = m_scene.objects[cyl];
+        y.rot = qAxisAngle(float3(0, 1, 0), radians(-25.0f));
+        y.useRot = true;
+        selSet({cube, cyl});
+        m_advRefId = c.id;   // the eyedropper picked the cube
+    }
+    if (mode == "advScaleFlat") {
+        // a thin panel standing in front of the cube
+        const int p = app::addPrimitive(m_scene, PRIM_CUBE, float3(2.2f, 0.0f, 2.6f));
+        if (p >= 0) {
+            Object& o = m_scene.objects[p];
+            o.name = "Panel";
+            o.scale = float3(1.6f, 1.4f, 0.02f);
+            o.rot = qAxisAngle(float3(0, 1, 0), radians(20.0f));
+            o.useRot = true;
+            m_renderer.setScene(m_scene);
+            outlinerIds();
+            selSet({p});
+        }
+    }
+    if (mode == "advScaleSettings") m_showAdvSettings = true;
+    // drags in progress
+    int h = -1, mods = 0;
+    float px = 70.0f;
+    if (mode == "advScaleDrag") h = 2 * 9 + 1 * 3 + 1;                 // +X face
+    if (mode == "advScaleShift") { h = 1 * 9 + 2 * 3 + 1; mods = 1; px = 45.0f; }   // top face, Shift
+    if (mode == "advScaleAlt") { h = 2 * 9 + 1 * 3 + 1; mods = 2; px = 45.0f; }      // +X face, Alt
+    if (mode == "advScaleCorner") { h = 2 * 9 + 2 * 3 + 2; px = 55.0f; }            // corner (+X, +Y, +Z)
+    if (mode == "advScaleSnap") { h = 2 * 9 + 1 * 3 + 1; mods = 4; }                // +X face, V
+    if (h < 0) return;
+    AdvBox b;
+    if (!advScaleBox(b)) return;
+    int s[3];
+    handleSides(h, s);
+    float3 p = b.c;
+    for (int k = 0; k < 3; ++k) p = p + b.ax[k] * (s[k] * b.h[k]);
+    float2 sp, sc;
+    if (!project(p, sp) || !project(b.c, sc)) return;
+    float2 end(sp.x + (sp.x - sc.x) / std::max(std::hypot(sp.x - sc.x, sp.y - sc.y), 1e-3f) * px,
+               sp.y + (sp.y - sc.y) / std::max(std::hypot(sp.x - sc.x, sp.y - sc.y), 1e-3f) * px);
+    if (mode == "advScaleSnap" && cyl >= 0) {
+        // the cursor on the far side of the cylinder (top rim, largest X): the face goes all the way to its level
+        const Object& o = m_scene.objects[cyl];
+        const Affine T = o.transform();
+        float best = -1e30f;
+        for (const Vertex& v : m_scene.meshes[o.mesh].vertices) {
+            const float3 w = T.point(v.pos);
+            float2 q;
+            if (w.x + 0.2f * w.y <= best || !project(w, q)) continue;
+            best = w.x + 0.2f * w.y;
+            end = float2(q.x + 3.0f, q.y + 2.0f);
+        }
+    }
+    m_advMods = mods;
+    advScaleBegin(h, b, sp.x, sp.y);
+    for (int i = 1; i <= 8; ++i) advScaleDrag(sp.x + (end.x - sp.x) * i / 8, sp.y + (end.y - sp.y) * i / 8);
+    m_advMods = -1;
 }
 
 } // namespace app

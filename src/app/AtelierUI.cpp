@@ -1487,13 +1487,7 @@ void App::atlViewMenus(float x, float y) {
         px += w + 6 * s;
     }
     if (m_frameCounter == 10 && m_opt.openMenu == "gridOptions") m_showGridOptions = true;   // --open-menu gridOptions: captures
-    if (m_frameCounter == 10 && m_opt.openMenu.rfind("advScale", 0) == 0) {   // --open-menu advScale[Corners|Multi]: captures
-        m_advScale = true;
-        m_advCorners = m_opt.openMenu == "advScaleCorners";
-        if (m_opt.openMenu == "advScaleMulti")
-            for (size_t i = 0; i < m_scene.objects.size(); ++i)
-                if ((int)i != m_selected && (m_scene.objects[i].name == "Sphere" || m_scene.objects[i].name == "Cylinder")) m_multi.push_back((int)i);
-    }
+    if (m_frameCounter == 10 && m_opt.openMenu.rfind("advScale", 0) == 0) advScaleDemo(m_opt.openMenu);   // --open-menu advScale...: captures
 }
 
 // --------------------------------------------------------------------------- bottom panel (former Atelier graph Output)
