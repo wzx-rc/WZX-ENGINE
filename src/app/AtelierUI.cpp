@@ -1187,7 +1187,7 @@ void App::atlViewport(float x, float y, float w, float h) {
     {
         float3 cr, cu, cf;
         m_scene.camera.basis(cr, cu, cf);
-        const float hs = 11 * s;   // half size of the cube; the axes reach 3.4 times further, ended by a lettered disc
+        const float hs = 11 * s;   // half size of the cube; the axes reach 3 times further, their letter just after
         ImVec2 c(r.x + r.w - 56 * s, r.y + 58 * s);
         auto scr = [&](const float3& v) { return ImVec2(c.x + dot(v, cr) * hs, c.y - dot(v, cu) * hs); };
         R cubeR = {c.x - 48 * s, c.y - 48 * s, 96 * s, 96 * s};
@@ -1197,24 +1197,27 @@ void App::atlViewport(float x, float y, float w, float h) {
         const ImU32 axCol[3] = {IM_COL32(236, 110, 110, 255), IM_COL32(120, 214, 140, 255), IM_COL32(100, 156, 245, 255)};
         const char* axName[3] = {"X", "Y", "Z"};
         auto unit = [](int a) { return float3(a == 0 ? 1.0f : 0.0f, a == 1 ? 1.0f : 0.0f, a == 2 ? 1.0f : 0.0f); };
-        const float disc = 7.0f * s;
+        const float tip = 3.0f, label = 3.6f;   // end of an axis and its letter, in half sizes of the cube
         int hotAxis = -1;
         for (int a = 0; a < 3 && hov; ++a) {
-            ImVec2 e = scr(unit(a) * 3.4f);
-            if (std::hypot(m.x - e.x, m.y - e.y) < disc + 1.5f * s) hotAxis = a;
+            ImVec2 e = scr(unit(a) * label);
+            if (std::hypot(m.x - e.x, m.y - e.y) < 8.0f * s) hotAxis = a;
         }
-        auto drawAxis = [&](int a, bool front) {
-            float3 v = unit(a);
-            ImVec2 p0 = scr(v * 1.0f), e = scr(v * 3.4f);
-            ImU32 col = front ? axCol[a] : Fade(axCol[a], 110);
-            // the line stops at the disc
-            float dx = e.x - p0.x, dy = e.y - p0.y, l = std::max(std::hypot(dx, dy), 1e-3f);
-            if (l > disc) dl->AddLine(p0, ImVec2(e.x - dx / l * disc, e.y - dy / l * disc), col, 1.3f * s);
-            dl->AddCircleFilled(e, disc, hotAxis == a ? IM_COL32(255, 255, 255, 255) : col, 24);
-            ImVec2 ts = TextSize(axName[a], 9);
-            TextBold(e.x - ts.x * 0.5f, e.y - ts.y * 0.5f, axName[a], IM_COL32(22, 24, 30, front ? 255 : 170), 9);
+        auto axisCol = [&](int a, bool front) { return hotAxis == a ? IM_COL32(255, 255, 255, 255) : (front ? axCol[a] : Fade(axCol[a], 120)); };
+        auto drawLetter = [&](int a, bool front) {
+            ImVec2 e = scr(unit(a) * label), ts = TextSize(axName[a], 10);
+            TextBold(e.x - ts.x * 0.5f, e.y - ts.y * 0.5f, axName[a], axisCol(a, front), 10);
         };
-        for (int a = 0; a < 3; ++a) if (dot(unit(a), cf) > 0) drawAxis(a, false);   // axes going away: behind the cube
+        // seen through the translucent cube: the axes from its centre (whole when they go away), the edges behind
+        for (int a = 0; a < 3; ++a) {
+            const bool front = dot(unit(a), cf) <= 0;
+            dl->AddLine(scr(float3(0, 0, 0)), scr(unit(a) * (front ? 1.0f : tip)), axisCol(a, front), 1.3f * s);
+            if (!front) drawLetter(a, false);
+        }
+        auto corner = [](int i) { return float3((i & 1) ? 1.0f : -1.0f, (i & 2) ? 1.0f : -1.0f, (i & 4) ? 1.0f : -1.0f); };
+        for (int i = 0; i < 8; ++i)
+            for (int b = 1; b < 8; b <<= 1)
+                if (!(i & b)) dl->AddLine(scr(corner(i)), scr(corner(i | b)), IM_COL32(235, 240, 250, 55), 1.0f * s);
         // faces turned to the camera (a convex cube: they do not overlap on screen)
         int hotFace = -1;
         for (int f = 0; f < 6; ++f) {
@@ -1236,11 +1239,15 @@ void App::atlViewport(float x, float y, float w, float h) {
             }
             if (in) hotFace = f;
             float shade = 0.5f + 0.5f * -dot(n, cf);
-            dl->AddConvexPolyFilled(q, 4, in ? IM_COL32(90, 160, 255, 120) : IM_COL32(190, 200, 220, (int)(14 + 26 * shade)));
-            dl->AddPolyline(q, 4, IM_COL32(220, 226, 238, in ? 230 : 150), ImDrawFlags_Closed, 1.0f * s);
+            dl->AddConvexPolyFilled(q, 4, in ? IM_COL32(90, 160, 255, 90) : IM_COL32(170, 190, 225, (int)(10 + 18 * shade)));   // translucent
+            dl->AddPolyline(q, 4, IM_COL32(245, 248, 255, in ? 245 : 200), ImDrawFlags_Closed, 1.0f * s);   // thin white edges
         }
-        for (int a = 0; a < 3; ++a) if (dot(unit(a), cf) <= 0) drawAxis(a, true);
-        if (hotAxis >= 0) hotFace = hotAxis * 2;   // a disc: the view from that axis (as its face)
+        for (int a = 0; a < 3; ++a)   // axes coming towards the camera: out of the cube, over its faces
+            if (dot(unit(a), cf) <= 0) {
+                dl->AddLine(scr(unit(a)), scr(unit(a) * tip), axisCol(a, true), 1.3f * s);
+                drawLetter(a, true);
+            }
+        if (hotAxis >= 0) hotFace = hotAxis * 2;   // a letter: the view from that axis (as its face)
         if (hov) Tip(hotFace >= 0 ? "Look along this axis" : "View cube");
         if (clicked && hotFace >= 0) {
             // +X right, -X left, +Y top, -Y bottom, +Z front, -Z back (the camera sits on the face's side)
