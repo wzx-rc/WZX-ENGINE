@@ -61,6 +61,7 @@ void App::viewportCanvas(ImVec2 p0, ImVec2 size) {
 
     viewportInput(hovered);
     dl->PushClipRect(p0, ImVec2(p0.x + size.x, p0.y + size.y), true);
+    drawSelectionFx(dl);   // white glow on the outline vertices, reflection on the floor
     if (!(m_game && m_game->placementMode())) drawGizmo(dl);
     dl->PopClipRect();
     drawMarkingMenu(ImGui::GetForegroundDrawList());

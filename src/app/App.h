@@ -363,6 +363,12 @@ private:
     void drawMarkingMenu(ImDrawList* dl);
     void markingSelect(int op);   // 0 all, 1 none, 2 invert, 3 hierarchy
     void markingReset(int what);  // 0 position, 1 rotation, 2 scale
+    // selection overlay (SelectionFx.cpp): white glow on the outline vertices, outline in the floor reflection
+    struct SilEdge { float3 a, b, n0, n1; bool open = true; };   // mesh edge (object space) and its two face normals
+    struct SilCache { bool built = false; uint32_t version = 0; size_t vertexCount = 0, indexCount = 0; float3 first; std::vector<SilEdge> edges; };
+    std::map<int, SilCache> m_silCache;   // per mesh
+    const std::vector<SilEdge>& silhouetteEdges(int mesh);
+    void drawSelectionFx(ImDrawList* dl);
     void toggleGroundGrid();
     void marqueeInput();
 
