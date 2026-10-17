@@ -605,8 +605,14 @@ void App::atlTopBar(float x0, float y0, float width) {
                 if (ImGui::MenuItem("Rotate", "E", m_tool == TOOL_ROTATE)) m_tool = TOOL_ROTATE;
                 if (ImGui::MenuItem("Scale", "R", m_tool == TOOL_SCALE)) m_tool = TOOL_SCALE;
                 ImGui::Separator();
-                ImGui::MenuItem("Snapping (1 cm / 90°)", nullptr, &m_magnet);
-                if (ImGui::MenuItem("Local Axes", nullptr, m_localSpace)) m_localSpace = !m_localSpace;
+                ImGui::MenuItem("Snapping always on (else Shift)", nullptr, &m_magnet);
+                if (ImGui::BeginMenu("Axes (Move / Rotate)")) {
+                    ImGui::SetWindowFontScale(menuScale);
+                    const char* modes[] = {"World", "Object", "Parent"};
+                    for (int i = 0; i < 3; ++i)
+                        if (ImGui::MenuItem(modes[i], nullptr, m_axisMode == i)) m_axisMode = i;
+                    ImGui::EndMenu();
+                }
                 ImGui::SetNextItemWidth(150 * s);
                 ImGui::SliderFloat("Camera speed", &m_camSpeed, 0.1f, 5.0f, "%.1f");
             }
@@ -1139,16 +1145,17 @@ void App::atlViewport(float x, float y, float w, float h) {
     Tip("Frame selection (F)");
     bx -= 6 * s;
     if (Button("atlSnap", {right(28 * s), by, 28 * s, 24 * s}, "", Icon::Magnet, m_magnet, true)) m_magnet = !m_magnet;
-    Tip("Snapping: 1 cm / 90° / x0.1");
+    Tip("Snapping always on (else hold Shift while dragging): steps in the marking menu (W / E / R + left click)");
     {
         float lx = right(76 * s);
-        if (Button("atlSpace", {lx, by, 76 * s, 24 * s}, m_localSpace ? "Local" : "World", Icon::World)) m_localSpace = !m_localSpace;
-        Tip("Gizmo axes: object (Local) or scene (World)");
+        static const char* kModes[] = {"World", "Object", "Parent"};
+        if (Button("atlSpace", {lx, by, 76 * s, 24 * s}, kModes[m_axisMode], Icon::World)) m_axisMode = (m_axisMode + 1) % 3;
+        Tip("Move / rotate axes: World, Object or Parent (scale: always Object)");
     }
     if (Button("atlScale", {right(28 * s), by, 28 * s, 24 * s}, "", Icon::Scale, m_tool == TOOL_SCALE, true)) m_tool = TOOL_SCALE;
     Tip("Scale (R)");
     if (Button("atlRotate", {right(28 * s), by, 28 * s, 24 * s}, "", Icon::Rotate, m_tool == TOOL_ROTATE, true)) m_tool = TOOL_ROTATE;
-    Tip("Rotate by 90° steps (E)");
+    Tip("Rotate (E)");
     if (Button("atlMove", {right(28 * s), by, 28 * s, 24 * s}, "", Icon::Move, m_tool == TOOL_MOVE, true)) m_tool = TOOL_MOVE;
     Tip("Move (W)");
 

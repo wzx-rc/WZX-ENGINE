@@ -107,9 +107,11 @@ void App::drawShortcutsWindow() {
     ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
     if (ImGui::Begin("Controls & Shortcuts", &m_showShortcuts, ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoCollapse)) {
         static const char* rows[][2] = {
-            {"Right click (or Alt+left click)", "Orbit"}, {"Middle click / Shift+right click", "Pan the view"}, {"Wheel", "Zoom"},
-            {"Double-click", "Pivot + focus"}, {"Click / rectangle (Select tool)", "Select"}, {"Shift+click", "Add to selection"},
-            {"Q / W / E", "Select / move / rotate / scale"}, {"Arrows, PgUp / PgDn", "Move by 1 cm"}, {"F", "Frame Selection"},
+            {"Right click (or Alt+left click)", "Orbit"}, {"Alt+middle / Shift+right click", "Pan the view"}, {"Wheel", "Zoom"},
+            {"Double-click", "Pivot + focus"}, {"Click / rectangle", "Select"}, {"Shift / Ctrl / Ctrl+Shift+click", "Toggle / remove / add"},
+            {"Q / W / E / R", "Select / move / rotate / scale"}, {"Q W E R + left click (hold)", "Marking menu"},
+            {"Shift while dragging", "Increments"}, {"Middle drag", "Manipulator: handle under the mouse, else the last one"},
+            {"Arrows, PgUp / PgDn", "Move by 1 cm"}, {"F", "Frame Selection"},
             {"T", "Auto rotate"}, {"P", "Real time / path tracing"}, {"Ctrl+Z / Ctrl+Y", "Undo / redo"},
             {"Ctrl+D / Del", "Duplicate / delete"}, {"Ctrl+S / Ctrl+O", "Save / open a scene"}, {"F1 / F2", "Cornell Box / Village scenes"},
             {"F12", "Viewport Capture"}, {"Drag an asset", "Add to the view / apply a material"}};
@@ -283,7 +285,7 @@ void App::drawSettingsWindow() {
             ImGui::Checkbox("##stats", &m_showStats);
             propLabel("Gizmo", labelW);
             ImGui::Checkbox("##gizmo", &m_showGizmo);
-            propLabel("Snapping 1 cm", labelW);
+            propLabel("Snapping always", labelW);
             ImGui::Checkbox("##magnet", &m_magnet);
             propLabel("Auto focus", labelW);
             ImGui::Checkbox("##af", &m_autoFocus);

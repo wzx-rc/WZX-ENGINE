@@ -18,24 +18,30 @@ namespace app {
 enum Tool { TOOL_SELECT, TOOL_MOVE, TOOL_ROTATE, TOOL_SCALE };
 enum SceneId { SCENE_CORNELL = 0, SCENE_STUDIO = 1, SCENE_LOOKDEV = 2 };
 
-// Move / rotate manipulator drag on the selected object.
+// Maya-style manipulator handles (Manipulators.cpp): axes, plane squares (2 axes, named by their normal), centre
+// anchor, rotate view ring and trackball.
+enum ManipHandle { MH_NONE = -1, MH_X = 0, MH_Y, MH_Z, MH_YZ, MH_XZ, MH_XY, MH_CENTER, MH_VIEW, MH_FREE };
+
+// Manipulator drag on the selection.
 struct GizmoDrag {
     bool active = false;
-    int axis = 0;                // 0 X, 1 Y, 2 Z
-    bool rotate = false;
-    int mode = 0;                // 0 move, 1 rotate, 2 scale
-    float3 dir;                  // axis direction at the press (world or local)
-    float3 startScale;
-    float s0 = 1;                // gizmo size at the press
-    int obj = -1;
-    float3 startPos, pivot;
-    float4 startRot = qIdentity();
-    float t0 = 0;                // move: parameter along the axis at the press
-    float3 v0;                   // rotate: vector pivot -> press point in the ring plane
-    int steps = 0;
+    int handle = MH_NONE;
+    int tool = 0;
+    int button = 0;              // 0 left, 2 middle
+    int obj = -1;                // object carrying the manipulator
+    float3 pivot;                // manipulator position at the press
+    float3 ax[3];                // manipulator axes at the press
+    float size = 1;              // manipulator size (world) at the press
+    float3 n, hit0, v0;          // plane normal, press point on the plane, rotate: start direction in the ring plane
+    float t0 = 0;                // press parameter along the axis
+    float2 mouse0, prevMouse, tan2;
+    bool tangent = false;        // rotate: ring seen edge-on, dragged along its screen tangent
+    float angle = 0, lastAng = 0;
+    float4 free = qIdentity();   // trackball rotation
+    float3 value;                // shown next to the mouse: displacement, degrees (x) or scale factors
     bool moved = false;
-    struct Other { int obj; float3 pos; float4 rot; float3 scale; };
-    std::vector<Other> others;   // rest of a multi-selection moved / turned with the primary object
+    struct Item { int obj; float3 pos; float4 rot; float3 scale; float3 ax[3]; };
+    std::vector<Item> items;     // objects driven (each on its own pivot and axes)
 };
 
 struct ViewBookmark {
@@ -338,11 +344,20 @@ private:
     // viewport (Viewport.cpp)
     void viewportCanvas(ImVec2 p0, ImVec2 size);
     void viewportInput(bool hovered);
+    // manipulators (Manipulators.cpp)
+    bool gizmoShown() const;
     bool gizmoInput(bool inView);
+    void gizmoBegin(int handle, int button, float mx, float my);
+    void gizmoDrag(float mx, float my, bool snap);
     void drawGizmo(ImDrawList* dl);
-    bool gizmoHit(float mx, float my, int& axis, bool& rotate);
-    float gizmoScale(const float3& pivot) const;
-    float3 gizmoAxis(int a) const;
+    int gizmoHit(float mx, float my);
+    float gizmoSize(const float3& p) const;
+    void gizmoFrame(int obj, int tool, float3 ax[3]) const;
+    std::vector<int> gizmoTargets() const;
+    bool markingMenuInput(bool inView);
+    void drawMarkingMenu(ImDrawList* dl);
+    void markingSelect(int op);   // 0 all, 1 none, 2 invert, 3 hierarchy
+    void markingReset(int what);  // 0 position, 1 rotation, 2 scale
     void toggleGroundGrid();
     void marqueeInput();
 
@@ -374,24 +389,25 @@ private:
 
     // interaction state
     Tool m_tool = TOOL_SELECT;
-    bool m_magnet = true;
+    bool m_magnet = false;       // Snapping always on (else hold Shift while dragging a manipulator)
     int m_selected = -1;
     std::vector<int> m_multi;
-    bool m_orbiting = false, m_panning = false, m_dragging = false;
+    bool m_orbiting = false, m_panning = false;
     float m_lastX = 0, m_lastY = 0;
-    float m_dragPlaneY = 0;
-    float3 m_dragOffset;
-    bool m_dragMoved = false;
     bool m_turntable = false;
     bool m_autoFocus = true;
     bool m_showGrid = true;
     bool m_showStats = true;
     bool m_showGizmo = true;
-    bool m_localSpace = false;   // gizmo axes: world (false) or the object's own axes
+    int m_axisMode = 0;          // move / rotate axes: 0 world, 1 object, 2 parent (scale: always object)
+    float m_stepMove = 1.0f, m_stepRotate = 15.0f, m_stepScale = 0.1f;   // increments (Shift, or Snapping on)
+    bool m_snapAbsolute = false; // move increments land on the grid of the step instead of relative to the start
     float m_camSpeed = 1.0f;     // camera navigation speed factor
     struct Marquee { bool active = false, moved = false; float x0 = 0, y0 = 0; } m_marq;
     GizmoDrag m_gz;
-    int m_gzHover = -1;
+    int m_gzHover = MH_NONE;
+    int m_gzLast[4] = {MH_NONE, MH_NONE, MH_NONE, MH_NONE};   // last used handle per tool (middle button, drawn yellow)
+    struct MarkingMenu { bool open = false; int tool = 0, hover = -1; float x = 0, y = 0; } m_mm;
     std::vector<Snapshot> m_undo, m_redo;
     int m_viewMode = 0;
 
