@@ -392,6 +392,8 @@ float4 PSMain(VSOut i) : SV_Target {
 float4 PSGhost(VSOut i) : SV_Target { return Shade(i, true, 0.0015, false); }
 // id in w; the world normal in rgb lets the selection glow find the creases of the selected object (Tonemap.hlsl)
 float4 PSId(VSOut i) : SV_Target { return float4(normalize(i.nrm) * 0.5 + 0.5, (float)D.id); }
+// selection mask (coverage of the selected objects, see Renderer::recordSelectionMask)
+float4 PSSelect(VSOut i) : SV_Target { return 1.0; }
 // Editor wireframe display: flat lines, grey level in D.alpha (blended, no depth write).
 // Flag 8 (Wireframe Override): faint light lines with a facing ratio gradient, clear where the surface faces the
 // camera and fading towards the silhouettes (where the lines crowd).

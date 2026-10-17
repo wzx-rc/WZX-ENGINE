@@ -12,6 +12,7 @@
 #include <d3d12.h>
 #include <dxgi1_6.h>
 #include <wrl/client.h>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -185,6 +186,7 @@ private:
     bool createRasterPipelines(std::string* error);
     bool createMsaaPipelines(std::string* error);   // the multisampled viewport passes (m_msaa samples)
     void resolveViewport(ID3D12Resource* dst);      // the multisampled viewport colour into a texture slot
+    void recordSelectionMask(const std::function<void(const Draw&)>& drawOne);   // coverage of the selection (t8)
     void createRasterTargets(uint32_t w, uint32_t h);
     // probeCapture: shadow map, then the cube captures of the next probes (m_capSlots) instead of the viewport.
     // probes: DDGI without ray tracing, the main pass reads the probe atlases (SRVs t4..t6) instead of the ambient.
@@ -244,6 +246,8 @@ private:
     static constexpr uint32_t kCapHeapSlot = kEnvHeapSlot + 1;
     // SRVs of the probe atlases (irradiance, distance, state) read by the raster pass, after the capture UAVs
     static constexpr uint32_t kProbeSrvSlot = kCapHeapSlot + 3;
+    // coverage of the selection (resolved MSAA mask of the selected objects) read by the tonemapper (t8)
+    static constexpr uint32_t kSelCovSlot = kProbeSrvSlot + 3;
     static constexpr uint32_t kProbeFace = 16;   // texels per cube face of a probe capture
     std::vector<ComPtr<ID3D12Resource>> m_materialTex;
     ComPtr<ID3D12Resource> m_tex[kTexCount];
@@ -325,7 +329,12 @@ private:
     uint64_t m_taaSig = 0;
     bool m_taaValid = false;
     // shaders of the multisampled passes, kept to rebuild their pipelines when the sample count changes
-    struct RasterShaders { std::vector<char> vsMain, vsWire, vsBg, psMain, psGhost, psWire, psBg, vsGrid, psGrid; } m_rasterShaders;
+    struct RasterShaders { std::vector<char> vsMain, vsWire, vsBg, psMain, psGhost, psWire, psBg, psSelect, vsGrid, psGrid; } m_rasterShaders;
+    // Selection outline: the selected objects drawn into a mask with the samples of the viewport (m_selMask), resolved
+    // into their coverage per pixel (m_selCov, SRV kSelCovSlot): the tonemapper draws a glow as smooth as the edges.
+    ComPtr<ID3D12Resource> m_selMask, m_selCov;
+    ComPtr<ID3D12PipelineState> m_psoSelect;
+    std::vector<uint32_t> m_selIds;   // instance ids + 1 of the selection (as FrameConstants)
     ComPtr<ID3D12RootSignature> m_rasterRoot;
     ComPtr<ID3D12PipelineState> m_psoShadow, m_psoBg, m_psoMain, m_psoTrans, m_psoGhost, m_psoId, m_psoWire, m_psoGrid, m_psoDepth;
     ComPtr<ID3D12DescriptorHeap> m_rtvHeap, m_dsvHeap;

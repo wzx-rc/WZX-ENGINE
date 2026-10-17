@@ -132,7 +132,7 @@ bool Renderer::init(HWND hwnd, uint32_t width, uint32_t height, const std::wstri
 
     D3D12_DESCRIPTOR_HEAP_DESC hd = {};
     hd.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-    hd.NumDescriptors = kProbeSrvSlot + 3;  // + shadow map SRV + material textures + DDGI UAVs + history UAVs + HDRI SRV + capture UAVs + probe SRVs
+    hd.NumDescriptors = kSelCovSlot + 1;  // + shadow map SRV + material textures + DDGI UAVs + history UAVs + HDRI SRV + capture UAVs + probe SRVs
     hd.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
     m_device->CreateDescriptorHeap(&hd, IID_PPV_ARGS(&m_heap));
     m_descSize = m_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
@@ -146,6 +146,13 @@ bool Renderer::init(HWND hwnd, uint32_t width, uint32_t height, const std::wstri
         D3D12_CPU_DESCRIPTOR_HANDLE h = m_heap->GetCPUDescriptorHandleForHeapStart();
         h.ptr += (SIZE_T)kEnvHeapSlot * m_descSize;
         m_device->CreateShaderResourceView(nullptr, &sv, h);
+        {   // no selection coverage yet (created with the viewport targets)
+            D3D12_SHADER_RESOURCE_VIEW_DESC cv = sv;
+            cv.Format = DXGI_FORMAT_R8_UNORM;
+            D3D12_CPU_DESCRIPTOR_HANDLE ch = m_heap->GetCPUDescriptorHandleForHeapStart();
+            ch.ptr += (SIZE_T)kSelCovSlot * m_descSize;
+            m_device->CreateShaderResourceView(nullptr, &cv, ch);
+        }
         // no probe grid yet: null views in the probe SRV slots of the raster pass
         for (uint32_t k = 0; k < 3; ++k) {
             D3D12_CPU_DESCRIPTOR_HANDLE ph = m_heap->GetCPUDescriptorHandleForHeapStart();
@@ -205,7 +212,12 @@ bool Renderer::createPipelines(std::string* error) {
     capRange.NumDescriptors = 3;
     capRange.BaseShaderRegister = 12;
 
-    D3D12_ROOT_PARAMETER p[16] = {};
+    D3D12_DESCRIPTOR_RANGE selRange = {};   // t8 coverage of the selection (tonemapper)
+    selRange.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+    selRange.NumDescriptors = 1;
+    selRange.BaseShaderRegister = 8;
+
+    D3D12_ROOT_PARAMETER p[17] = {};
     p[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
     p[0].Descriptor.ShaderRegister = 0;
     p[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
@@ -237,6 +249,9 @@ bool Renderer::createPipelines(std::string* error) {
     p[15].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;   // u12 probe captures (raster DDGI)
     p[15].DescriptorTable.NumDescriptorRanges = 1;
     p[15].DescriptorTable.pDescriptorRanges = &capRange;
+    p[16].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;   // t8 coverage of the selection
+    p[16].DescriptorTable.NumDescriptorRanges = 1;
+    p[16].DescriptorTable.pDescriptorRanges = &selRange;
 
     D3D12_STATIC_SAMPLER_DESC ss = {};   // gLinearWrap (s0) of the path tracer
     ss.Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
@@ -245,7 +260,7 @@ bool Renderer::createPipelines(std::string* error) {
     ss.ShaderRegister = 0;
 
     D3D12_ROOT_SIGNATURE_DESC rsd = {};
-    rsd.NumParameters = 16;
+    rsd.NumParameters = 17;
     rsd.pParameters = p;
     rsd.NumStaticSamplers = 1;
     rsd.pStaticSamplers = &ss;
@@ -1422,6 +1437,11 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
     vp.w = std::max(1, std::min(vp.w, (int)m_width - vp.x));
     vp.h = std::max(1, std::min(vp.h, (int)m_height - vp.y));
     setMsaa((uint32_t)std::max(1, rs.msaaSamples));   // viewport anti-aliasing (rebuilds the MSAA passes when it changes)
+    auto selCovTable = [&]() {   // t8 of the tonemapper: coverage of the selection
+        D3D12_GPU_DESCRIPTOR_HANDLE g = m_heap->GetGPUDescriptorHandleForHeapStart();
+        g.ptr += (UINT64)kSelCovSlot * m_descSize;
+        return g;
+    };
     if ((uint32_t)vp.w != m_rtW || (uint32_t)vp.h != m_rtH) {
         waitIdle();
         createTargets(vp.w, vp.h);
@@ -1491,6 +1511,8 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
     int selInst = (selectedObject >= 0 && selectedObject < (int)m_objectToInstance.size()) ? m_objectToInstance[selectedObject] : -1;
     fc.selectedInstance = (uint32_t)(selInst + 1);
     fc.selMoreCount = 0;
+    m_selIds.clear();
+    if (selInst >= 0) m_selIds.push_back((uint32_t)(selInst + 1));
     fc.selAge = rs.selectionAge;
     fc.selCenterX = rs.selectionCenter.x;
     fc.selCenterY = rs.selectionCenter.y;
@@ -1500,7 +1522,10 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
     for (int o : m_extraSelection) {
         if (fc.selMoreCount >= 32 || o < 0 || o >= (int)m_objectToInstance.size() || m_objectToInstance[o] < 0) continue;
         reinterpret_cast<uint32_t*>(fc.selMore)[fc.selMoreCount++] = (uint32_t)(m_objectToInstance[o] + 1);
+        m_selIds.push_back((uint32_t)(m_objectToInstance[o] + 1));
     }
+    // the raster pass draws the coverage of the selection whenever there is one (the path traced view gets the overlay pass)
+    fc.selCovValid = (!m_selIds.empty() && m_psoSelect && m_psoDepth) ? 1u : 0u;
     fc.fireflyClamp = rs.fireflyClamp;
     fc.sssScale = rs.sssScale;
     fc.gridScale = scene.gridScale;
@@ -1562,6 +1587,7 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
         m_cmd->SetComputeRootConstantBufferView(0, m_constants.va());
         m_cmd->SetComputeRootDescriptorTable(8, m_heap->GetGPUDescriptorHandleForHeapStart());
         m_cmd->SetPipelineState(m_psoTonemap.Get());
+        m_cmd->SetComputeRootDescriptorTable(16, selCovTable());
         const bool blend = m_msaaTemporal && m_taaValid && sig == m_taaSig;
         uint32_t rc[4] = {TEX_DENOISE_A, 1u, (uint32_t)rs.tonemapper, blend ? (uint32_t)TEX_DENOISE_B + 1u : 0u};
         m_cmd->SetComputeRoot32BitConstants(1, 4, rc, 0);
@@ -1645,6 +1671,7 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
         m_cmd->SetComputeRootConstantBufferView(0, m_constants.va());
         m_cmd->SetComputeRootDescriptorTable(8, m_heap->GetGPUDescriptorHandleForHeapStart());
         m_cmd->SetPipelineState(m_psoTonemap.Get());
+        m_cmd->SetComputeRootDescriptorTable(16, selCovTable());
         uint32_t rc[4] = {TEX_DENOISE_A, 1u, (uint32_t)rs.tonemapper, 0};
         m_cmd->SetComputeRoot32BitConstants(1, 4, rc, 0);
         m_cmd->Dispatch(gx, gy, 1);
@@ -1703,12 +1730,13 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
 
     // editor overlay (grid, wireframe) drawn by the raster pass into the denoise slot not holding the image
     uint32_t overlay = 0;
-    if (m_psoDepth && (rs.editorGrid > 0 || rs.wireframe)) {
+    if (m_psoDepth && (rs.editorGrid > 0 || rs.wireframe || !m_selIds.empty())) {   // (also draws the coverage of the selection)
         const uint32_t slot = (rs.denoise && denoisedSlot == TEX_DENOISE_A) ? TEX_DENOISE_B : TEX_DENOISE_A;
         recordRaster(scene, rs, vp, false, false, false, (int)slot);
         overlay = slot + 1;
     }
     m_cmd->SetPipelineState(m_psoTonemap.Get());
+    m_cmd->SetComputeRootDescriptorTable(16, selCovTable());
     uint32_t tc[4] = {rs.denoise ? denoisedSlot : 0xFFFFFFFFu, 0, (uint32_t)rs.tonemapper, overlay};
     m_cmd->SetComputeRoot32BitConstants(1, 4, tc, 0);
     m_cmd->Dispatch(gx, gy, 1);

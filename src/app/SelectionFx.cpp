@@ -114,6 +114,7 @@ void App::drawSelectionFx(ImDrawList* dl) {
     auto floorPoint = [&](const float3& m) { return eye + (m - eye) * (eye.y / std::max(eye.y - m.y, 1e-6f)); };
 
     std::vector<float2> dots;
+    std::vector<std::pair<float2, float2>> creases;
     struct MirrorDot { float2 p; float a; };
     std::vector<MirrorDot> mdots;
     std::vector<std::pair<MirrorDot, MirrorDot>> msegs;
@@ -136,6 +137,10 @@ void App::drawSelectionFx(ImDrawList* dl) {
                 float2 pa, pb;
                 if (!hidden(a, i) && project(a, pa)) dots.push_back(pa);
                 if (!hidden(b, i) && project(b, pb)) dots.push_back(pb);
+            } else if (dot(n0, n1) < 0.85f && dot(n0, eye - a) > 0 && dot(n1, eye - a) > 0) {
+                // a crease turned to the camera (both faces seen, sharp angle): a thin glowing line, antialiased
+                float2 pa, pb;
+                if (!hidden((a + b) * 0.5f, i) && project(a, pa) && project(b, pb)) creases.push_back({pa, pb});
             }
             if (refl <= 0) continue;
             // mirrored under the floor: its silhouette as seen by the camera is the outline in the reflection
@@ -183,6 +188,20 @@ void App::drawSelectionFx(ImDrawList* dl) {
             if (k < 0.02f) continue;
             dl->AddCircleFilled(ImVec2(m.p.x, m.p.y), 2.0f * d, IM_COL32(200, 225, 255, (int)(24 * k)), 10);
             dl->AddCircleFilled(ImVec2(m.p.x, m.p.y), 0.8f * d, IM_COL32(225, 238, 255, (int)(110 * k)), 8);
+        }
+    }
+    // creases of the selection, with the light running along the contour (as the outline of Tonemap.hlsl)
+    {
+        const float kx = m_rcView.w / std::max(1, m_vpPx.w), ky = m_rcView.h / std::max(1, m_vpPx.h);
+        const ImVec2 sc(m_rcView.x + m_rs.selectionCenter.x * kx, m_rcView.y + m_rs.selectionCenter.y * ky);
+        for (const auto& s : creases) {
+            const ImVec2 a(s.first.x, s.first.y), b(s.second.x, s.second.y);
+            const float ang = std::atan2((a.y + b.y) * 0.5f - sc.y, (a.x + b.x) * 0.5f - sc.x);
+            float fl = ang * (4.0f / 6.2831853f) - m_rs.selectionAge * 0.6f;
+            fl -= std::floor(fl);
+            const float k = 0.75f + 0.25f * fl;
+            dl->AddLine(a, b, IM_COL32(77, 158, 255, (int)(38 * k)), 3.0f * d);
+            dl->AddLine(a, b, IM_COL32(150, 205, 255, (int)(150 * k)), 1.0f * d);
         }
     }
     // small soft glints on the vertices of the outline (about 2.5 px)

@@ -8,6 +8,11 @@ ConstantBuffer<TonemapConstants> T : register(b1);
 
 #include "ToneCurves.hlsli"
 
+// coverage of the selection per pixel: the selected objects drawn with the MSAA samples of the viewport and resolved
+// (Renderer::recordSelectionMask), valid when F.selCovValid
+Texture2D<float> gSelCov : register(t8);
+float SelCov(int2 q) { return gSelCov.Load(int3(clamp(q, int2(0, 0), int2(F.resolution) - 1), 0)); }
+
 [numthreads(8, 8, 1)]
 void main(uint3 id : SV_DispatchThreadID) {
     if (id.x >= F.resolution.x || id.y >= F.resolution.y) return;
@@ -46,7 +51,7 @@ void main(uint3 id : SV_DispatchThreadID) {
 
     // Selection (selStyle 1): a soft blue glow hugging the silhouette on both sides (a neon edge, no hard line), its
     // light flowing slowly along the contour (sawtooth around the selection centre, selAge = seconds since the
-    // selection changed), and the creases of the object lit thinly (raster: normals of the id pass). The vertex glints
+    // selection changed), antialiased like the image (coverage of the selection, MSAA). The creases, the vertex glints
     // and the floor reflection are drawn by the editor (SelectionFx.cpp). selStyle 0: the yellow outline (2px).
     uint sel = F.selectedInstance;
     if ((sel != 0 || F.selMoreCount != 0) && F.selStyle == 1) {
@@ -54,34 +59,45 @@ void main(uint3 id : SV_DispatchThreadID) {
         const float3 glow = float3(0.30, 0.62, 1.0);
         float2 cv = float2(p) - float2(F.selCenterX, F.selCenterY);
         float k = 0.75 + 0.25 * frac(atan2(cv.y, cv.x) * (4.0 / 6.2831853) - F.selAge * 0.6);
-        bool inside = IsSelected((uint)(alb.w + 0.5));
-        // distance (render pixels) to the other side of the silhouette: up to 3 screen pixels outside, 1 inside
-        float dmin = 100.0;
-        const int maxR = (int)ceil((inside ? 1.0 : 3.0) * ps);
-        [loop] for (int r = 1; r <= maxR && dmin > 99.0; ++r)
-            [loop] for (int n = 0; n < 12; ++n) {
-                float an = (n + (r & 1) * 0.5) * 0.5235988;
-                int2 q = clamp(p + int2(round(float2(cos(an), sin(an)) * r)), int2(0, 0), int2(F.resolution) - 1);
-                if (IsSelected((uint)(gTex[SLOT_ALBEDO][q].w + 0.5)) != inside) { dmin = (float)r; break; }
-            }
-        float ds = dmin < 99.0 ? dmin / ps : 100.0;   // screen pixels
-        if (!inside) {
-            if (ds < 99.0) c += glow * exp(-(ds - 1.0) * 1.1) * 0.55 * k;   // bright next to the edge, gone after ~3 px
-        } else {
-            if (ds < 99.0) c += glow * 0.32 * k;   // the edge pixels of the object glow too
-            if (T.raster) {   // creases (normal breaks inside the object)
-                float3 n0 = alb.rgb * 2.0 - 1.0;
-                float crease = 0.0;
-                const int o = (int)round(ps);
-                [unroll] for (int m = 0; m < 4; ++m) {
-                    int2 d = m == 0 ? int2(o, 0) : m == 1 ? int2(-o, 0) : m == 2 ? int2(0, o) : int2(0, -o);
-                    float4 a = gTex[SLOT_ALBEDO][clamp(p + d, int2(0, 0), int2(F.resolution) - 1)];
-                    if (abs(a.w - alb.w) > 0.5) continue;
-                    crease = max(crease, 1.0 - saturate((dot(n0, a.rgb * 2.0 - 1.0) - 0.55) / 0.3));
+        float outer = 0.0, inner = 0.0, cover = 0.0;   // glow outside / inside the silhouette, coverage of this pixel
+        if (F.selCovValid != 0) {
+            // Smooth: the coverage of the selection per pixel (resolved MSAA mask, as smooth as the image edges).
+            // Distances (render pixels) to the covered and to the uncovered side, estimated from the coverage of the
+            // neighbours: a neighbour r pixels away covered at c has its edge about r + 0.5 - c away.
+            cover = SelCov(p);
+            float sOut = cover > 0.001 ? 0.5 - cover : 100.0, sIn = cover < 0.999 ? cover - 0.5 : 100.0;
+            // every pixel of the disc of radius 3 screen pixels, at its true distance (no rounded directions: no steps)
+            const int R = (int)ceil(3.0 * ps);
+            const float inR = ps + 0.5;
+            [loop] for (int dy = -R; dy <= R; ++dy)
+                [loop] for (int dx = -R; dx <= R; ++dx) {
+                    const float len = length(float2(dx, dy));
+                    if ((dx == 0 && dy == 0) || len > R + 0.5) continue;
+                    const float cq = SelCov(p + int2(dx, dy));
+                    if (cq > 0.001) sOut = min(sOut, len + 0.5 - cq);
+                    if (len <= inR && cq < 0.999) sIn = min(sIn, len + 0.5 - (1.0 - cq));
                 }
-                c += glow * crease * 0.3 * k;
-            }
+            sOut /= ps;
+            sIn /= ps;
+            outer = (1.0 - cover) * (sOut < 3.0 ? exp(-max(sOut - 0.5, 0.0) * 1.1) : 0.0);
+            inner = cover * saturate(1.5 - sIn);
+        } else {
+            // without the mask (no raster pass this frame): the ids of the pixels, hard edges
+            bool inside = IsSelected((uint)(alb.w + 0.5));
+            float dmin = 100.0;
+            const int maxR = (int)ceil((inside ? 1.0 : 3.0) * ps);
+            [loop] for (int r = 1; r <= maxR && dmin > 99.0; ++r)
+                [loop] for (int n = 0; n < 12; ++n) {
+                    float an = (n + (r & 1) * 0.5) * 0.5235988;
+                    int2 q = clamp(p + int2(round(float2(cos(an), sin(an)) * r)), int2(0, 0), int2(F.resolution) - 1);
+                    if (IsSelected((uint)(gTex[SLOT_ALBEDO][q].w + 0.5)) != inside) { dmin = (float)r; break; }
+                }
+            float ds = dmin < 99.0 ? dmin / ps : 100.0;   // screen pixels
+            cover = inside ? 1.0 : 0.0;
+            if (!inside && ds < 99.0) outer = exp(-(ds - 1.0) * 1.1);
+            if (inside && ds < 99.0) inner = 1.0;
         }
+        c += glow * (outer * 0.55 + inner * 0.32) * k;   // bright next to the edge, gone after ~3 px; the edge of the object
     } else if (sel != 0 || F.selMoreCount != 0) {
         uint center = (uint)(alb.w + 0.5);
         bool centerSel = IsSelected(center);

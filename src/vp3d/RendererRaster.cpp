@@ -1,7 +1,9 @@
 // Light raster viewport of vp3d::Renderer (no ray tracing): shadow map + forward PBR.
 #include "Renderer.h"
 #include "shaders/Shared.h"
+#include <algorithm>
 #include <cstring>
+#include <functional>
 #include <fstream>
 
 namespace vp3d {
@@ -205,7 +207,8 @@ bool Renderer::createRasterPipelines(std::string* error) {
     if (!load(L"Raster_VSMain.cso", shaders.vsMain) || !load(L"Raster_VSWire.cso", shaders.vsWire) || !load(L"Raster_VSShadow.cso", vsShadow) ||
         !load(L"Raster_VSBackground.cso", shaders.vsBg) || !load(L"Raster_VSProbe.cso", vsProbe) || !load(L"Raster_PSMain.cso", shaders.psMain) ||
         !load(L"Raster_PSGhost.cso", shaders.psGhost) || !load(L"Raster_PSId.cso", psId) || !load(L"Raster_PSWire.cso", shaders.psWire) ||
-        !load(L"Raster_PSBackground.cso", shaders.psBg) || !load(L"Raster_PSProbe.cso", psProbe) || !load(L"Raster_PSProbeBackground.cso", psProbeBg))
+        !load(L"Raster_PSBackground.cso", shaders.psBg) || !load(L"Raster_PSProbe.cso", psProbe) || !load(L"Raster_PSProbeBackground.cso", psProbeBg) ||
+        !load(L"Raster_PSSelect.cso", shaders.psSelect))
         return false;
     // editor ground grid (EditorGrid.hlsl): optional
     if (!readBlob(m_shaderDir + L"\\EditorGrid_VSGrid.cso", shaders.vsGrid) || !readBlob(m_shaderDir + L"\\EditorGrid_PSGrid.cso", shaders.psGrid)) {
@@ -271,10 +274,11 @@ bool Renderer::createRasterPipelines(std::string* error) {
     d.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
     if (!make(d, m_psoProbeBg, "probe background")) return false;
 
-    // Heaps and the shadow map (RTV 0-1 viewport and id, 2-4 probe capture; DSV 0-1 as before, 2 shadow, 3 capture)
+    // Heaps and the shadow map (RTV 0-1 viewport and id, 2-4 probe capture, 5 selection mask; DSV 0-1 as before, 2 shadow,
+    // 3 capture)
     D3D12_DESCRIPTOR_HEAP_DESC hd = {};
     hd.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
-    hd.NumDescriptors = 5;
+    hd.NumDescriptors = 6;
     m_device->CreateDescriptorHeap(&hd, IID_PPV_ARGS(&m_rtvHeap));
     hd.Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
     hd.NumDescriptors = 4;
@@ -363,6 +367,13 @@ bool Renderer::createMsaaPipelines(std::string* error) {
     d.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_LINE;
     d.RasterizerState.AntialiasedLineEnable = TRUE;
     if (!make(d, m_psoWire, "wireframe")) return false;
+    // Selection mask: the selected objects, 1 in their visible samples (depth test against the viewport depth, no write)
+    d = ms();
+    d.VS = {sh.vsMain.data(), sh.vsMain.size()};
+    d.PS = {sh.psSelect.data(), sh.psSelect.size()};
+    d.RTVFormats[0] = DXGI_FORMAT_R8_UNORM;
+    d.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
+    if (!make(d, m_psoSelect, "selection mask")) return false;
     // Editor ground grid: full screen, blended, at the depth of its lines
     m_psoGrid.Reset();
     if (!sh.vsGrid.empty()) {
@@ -489,6 +500,57 @@ void Renderer::createRasterTargets(uint32_t w, uint32_t h) {
     m_device->CreateDepthStencilView(m_msaaDepth.Get(), nullptr, dsv);
     dsv.ptr += m_dsvSize;
     m_device->CreateDepthStencilView(m_idDepth.Get(), nullptr, dsv);
+
+    // selection mask (samples of the viewport) and its coverage per pixel, read by the tonemapper (SRV t8)
+    d.Format = DXGI_FORMAT_R8_UNORM;
+    d.SampleDesc.Count = m_msaa;
+    d.Flags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
+    D3D12_CLEAR_VALUE mc = {};
+    mc.Format = DXGI_FORMAT_R8_UNORM;
+    m_selMask.Reset();
+    m_device->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &d, D3D12_RESOURCE_STATE_RENDER_TARGET, &mc, IID_PPV_ARGS(&m_selMask));
+    d.SampleDesc.Count = 1;
+    d.Flags = D3D12_RESOURCE_FLAG_NONE;
+    m_selCov.Reset();
+    m_device->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &d, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, nullptr,
+                                      IID_PPV_ARGS(&m_selCov));
+    rtv = m_rtvHeap->GetCPUDescriptorHandleForHeapStart();
+    rtv.ptr += 5 * (SIZE_T)m_rtvSize;
+    m_device->CreateRenderTargetView(m_selMask.Get(), nullptr, rtv);
+    D3D12_SHADER_RESOURCE_VIEW_DESC sv = {};
+    sv.Format = DXGI_FORMAT_R8_UNORM;
+    sv.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+    sv.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+    sv.Texture2D.MipLevels = 1;
+    D3D12_CPU_DESCRIPTOR_HANDLE sh = m_heap->GetCPUDescriptorHandleForHeapStart();
+    sh.ptr += (SIZE_T)kSelCovSlot * m_descSize;
+    m_device->CreateShaderResourceView(m_selCov.Get(), &sv, sh);
+}
+
+// Coverage of the selection: the selected objects drawn into the mask with the samples (and depth) of the viewport,
+// then resolved (the average of the samples) into m_selCov for the tonemapper. Its outline is then as smooth as the
+// edges of the image (Tonemap.hlsl).
+void Renderer::recordSelectionMask(const std::function<void(const Draw&)>& drawOne) {
+    if (m_selIds.empty() || !m_psoSelect) return;
+    D3D12_CPU_DESCRIPTOR_HANDLE rtv = m_rtvHeap->GetCPUDescriptorHandleForHeapStart();
+    rtv.ptr += 5 * (SIZE_T)m_rtvSize;
+    D3D12_CPU_DESCRIPTOR_HANDLE dsv = m_dsvHeap->GetCPUDescriptorHandleForHeapStart();
+    m_cmd->OMSetRenderTargets(1, &rtv, FALSE, &dsv);
+    const float zero[4] = {0, 0, 0, 0};
+    m_cmd->ClearRenderTargetView(rtv, zero, 0, nullptr);
+    m_cmd->SetPipelineState(m_psoSelect.Get());
+    m_cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+    for (const Draw& d : m_draws)
+        if (!(d.flags & 5u) && std::find(m_selIds.begin(), m_selIds.end(), d.id) != m_selIds.end()) drawOne(d);
+    const bool ms = m_msaa > 1;
+    const D3D12_RESOURCE_STATES src = ms ? D3D12_RESOURCE_STATE_RESOLVE_SOURCE : D3D12_RESOURCE_STATE_COPY_SOURCE;
+    const D3D12_RESOURCE_STATES dst = ms ? D3D12_RESOURCE_STATE_RESOLVE_DEST : D3D12_RESOURCE_STATE_COPY_DEST;
+    transition(m_selMask.Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, src);
+    transition(m_selCov.Get(), D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, dst);
+    if (ms) m_cmd->ResolveSubresource(m_selCov.Get(), 0, m_selMask.Get(), 0, DXGI_FORMAT_R8_UNORM);
+    else m_cmd->CopyResource(m_selCov.Get(), m_selMask.Get());
+    transition(m_selCov.Get(), dst, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+    transition(m_selMask.Get(), src, D3D12_RESOURCE_STATE_RENDER_TARGET);
 }
 
 void Renderer::recordRaster(const Scene& scene, const RenderSettings& rs, const ViewRect& vp, bool probeCapture, bool probes,
@@ -774,6 +836,7 @@ void Renderer::recordRaster(const Scene& scene, const RenderSettings& rs, const 
         m_cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
     }
 
+    recordSelectionMask(drawOne);   // coverage of the selection (smooth outline)
     if (overlay) {   // the overlay (premultiplied alpha) goes to its slot, composited by the tonemapper
         resolveViewport(m_tex[overlaySlot].Get());
         return;
