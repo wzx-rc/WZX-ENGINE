@@ -69,6 +69,7 @@ void App::viewportCanvas(ImVec2 p0, ImVec2 size) {
     dl->PushClipRect(p0, ImVec2(p0.x + size.x, p0.y + size.y), true);
     drawSelectionFx(dl);   // white glow on the outline vertices, reflection on the floor
     drawCameraIcons(dl);   // the camera objects
+    drawSnapPoints(dl);    // the grid points of the absolute snapping
     drawAdvScale(dl);      // Advanced Scale: bounding box and handles
     if (!(m_game && m_game->placementMode())) drawGizmo(dl);
     dl->PopClipRect();
@@ -99,7 +100,9 @@ void App::viewportInput(bool hovered) {
         else cam.distance = clampf(cam.distance * k, 0.5f, 2000.0f);
         cameraChanged();
     }
-    if (inView && (ImGui::IsMouseClicked(1) || (alt && ImGui::IsMouseClicked(0)))) {
+    // (Alt + click on a handle of Advanced Scale: the handle, scaled on both sides; elsewhere Alt + click is the camera)
+    const bool advHandle = m_advScale && m_advHover >= 0 && !placing;
+    if (inView && (ImGui::IsMouseClicked(1) || (alt && ImGui::IsMouseClicked(0) && !advHandle))) {
         if (shift || orbitLocked()) m_panning = true;   // (the orthographic views do not tumble, as in Maya: they pan)
         else m_orbiting = true;
     }
@@ -125,6 +128,7 @@ void App::viewportInput(bool hovered) {
 
     // Advanced Scale (a separate tool) replaces the manipulator while it is on
     bool gzBusy = placing ? false : (m_advScale ? advScaleInput(inView) : gizmoInput(inView));
+    if (!gzBusy && !placing) gzBusy = surfacePlaceInput(inView, ImGui::IsMouseClicked(0) && !alt);   // Place: dragged over the surfaces
     if (!placing) marqueeInput();
     if (m_marq.active) gzBusy = true;
 

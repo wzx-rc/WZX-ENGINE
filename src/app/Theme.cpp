@@ -562,6 +562,15 @@ void loadSettings(const std::wstring& file) {
         else if (k == "graphOutlineWeight") g_settings.graphOutlineWeight = std::clamp((float)atof(v.c_str()), 0.1f, 3.0f);
         else if (k == "graphSelectColor") { if (parseVec(v, c, 4)) g_settings.graphSelectColor = ImVec4(c[0], c[1], c[2], 1); }
         else if (k == "graphOutputHeight") g_settings.graphOutputHeight = std::clamp((float)atof(v.c_str()), 70.0f, 2000.0f);
+        else if (k.rfind("snap.", 0) == 0) {   // snapping
+            SnapOptions& o = g_settings.snap;
+            const std::string n = k.substr(5);
+            if (n == "gridPoint") o.gridPoint = std::clamp(atoi(v.c_str()), 0, 2);
+            else if (n == "gridStep") o.gridStep = v != "0";
+            else if (n == "showPoints") o.showPoints = v != "0";
+            else if (n == "vertexRadius") o.vertexRadius = std::clamp((float)atof(v.c_str()), 5.0f, 200.0f);
+            else if (n == "alignToSurface") o.alignToSurface = v != "0";
+        }
         else if (k.rfind("advScale.", 0) == 0) {   // Advanced Scale tool
             AdvScaleOptions& a = g_settings.advScale;
             const std::string n = k.substr(9);
@@ -637,6 +646,9 @@ void saveSettings(const std::wstring& file) {
       << "\ngrid.widthGrid=" << g.widthGrid << "\ngrid.widthSub=" << g.widthSub << "\ngrid.widthAxis=" << g.widthAxis
       << "\ngrid.opacity=" << g.opacity << "\ngrid.colorGrid=" << col(g.colorGrid) << "\ngrid.colorSub=" << col(g.colorSub)
       << "\ngrid.colorX=" << col(g.colorX) << "\ngrid.colorY=" << col(g.colorY) << "\ngrid.colorZ=" << col(g.colorZ) << "\n";
+    const SnapOptions& sn = s.snap;   // snapping
+    f << "snap.gridPoint=" << sn.gridPoint << "\nsnap.gridStep=" << (sn.gridStep ? 1 : 0) << "\nsnap.showPoints=" << (sn.showPoints ? 1 : 0)
+      << "\nsnap.vertexRadius=" << sn.vertexRadius << "\nsnap.alignToSurface=" << (sn.alignToSurface ? 1 : 0) << "\n";
     const AdvScaleOptions& as = s.advScale;   // Advanced Scale tool
     f << "advScale.colorEdge=" << col(as.colorEdge) << "\nadvScale.colorFace=" << col(as.colorFace)
       << "\nadvScale.colorEdgeHandle=" << col(as.colorEdgeHandle) << "\nadvScale.colorCorner=" << col(as.colorCorner)

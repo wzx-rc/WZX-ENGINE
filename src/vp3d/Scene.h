@@ -65,9 +65,14 @@ struct Object {
     float camDistance = 10.0f;     // its pivot, this far in front of it (tumbling while looking through it)
     float camAspect = 16.0f / 9.0f;   // shape of its image (resolution gate, preview)
     bool camRender = false;
+    // Pivot (Edit Pivot, Center Pivot): the point of the geometry (object space) at the object position; the geometry
+    // is drawn at transform(v - pivot). 0: the origin of the mesh.
+    float3 pivot{0, 0, 0};
 
     Affine transform() const {
         Affine m = useRot ? Affine::trsQuat(position, rot, scale) : Affine::trs(position, yaw, scale);
+        if (pivot.x != 0.0f || pivot.y != 0.0f || pivot.z != 0.0f)   // (the pivot of the geometry at the position)
+            for (int i = 0; i < 3; ++i) m.m[i][3] -= m.m[i][0] * pivot.x + m.m[i][1] * pivot.y + m.m[i][2] * pivot.z;
         if (tiltX == 0.0f && tiltZ == 0.0f) return m;
         float3 w = m.point(tiltPivot);
         float cx = std::cos(tiltX), sx = std::sin(tiltX), cz = std::cos(tiltZ), sz = std::sin(tiltZ);

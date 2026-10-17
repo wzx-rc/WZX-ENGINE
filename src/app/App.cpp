@@ -135,6 +135,9 @@ bool App::init(HINSTANCE inst, const Options& opt) {
     if (opt.tool >= 0 && opt.tool <= TOOL_SCALE) m_tool = (Tool)opt.tool;
     if (opt.aa >= 1) m_msaa = opt.aa;
     if (opt.demoCameras) demoCameras();
+    if (opt.snap >= 0) { th::settings().snap.gridPoint = std::clamp(opt.snap, 0, 2); m_snapAbsolute = m_magnet = true; }
+    if (opt.pivotEdit) m_pivotEdit = true;
+    if (opt.selStyle >= 0) m_rs.selectionStyle = opt.selStyle;
     if (opt.layout >= 0) setLayout(opt.layout);
     for (int k = 0; k < VCAM_COUNT; ++k)
         if (opt.cam == viewCamName(k)) setViewAxis(k);
@@ -481,6 +484,7 @@ void App::frame() {
         drawSaveChangesPopup();
     }
     spaceInput(!gameKeys && m_workspace == 0 && !(m_game && m_game->playerMode()));   // Space: the pane alone, or the view menu (held)
+    pivotInput(!gameKeys && m_workspace == 0 && !(m_game && (m_game->playerMode() || m_game->playing())));   // Edit Pivot (D, Insert), Center Pivot (Alt+Y)
     storeActiveCamera();   // the other panes see this camera as it is now (a camera object: moved with the view)
     if (m_game) m_game->update(m_dt);
     updateDocState();
@@ -700,7 +704,7 @@ void App::aabbOf(const Object& o, const float3& pos, const float4& rot, float3& 
     mn = float3(1e30f);
     mx = float3(-1e30f);
     for (int i = 0; i < 8; ++i) {
-        float3 p = qRot(rot, float3((i & 1) ? b.x : a.x, (i & 2) ? b.y : a.y, (i & 4) ? b.z : a.z) * o.scale) + pos;
+        float3 p = qRot(rot, (float3((i & 1) ? b.x : a.x, (i & 2) ? b.y : a.y, (i & 4) ? b.z : a.z) - o.pivot) * o.scale) + pos;
         mn = minv(mn, p);
         mx = maxv(mx, p);
     }
@@ -1194,6 +1198,9 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         else if (a == L"--cam") { std::wstring c = next(); opt.cam = std::string(c.begin(), c.end()); }
         else if (a == L"--layout") opt.layout = _wtoi(next().c_str());
         else if (a == L"--demo-cameras") opt.demoCameras = true;
+        else if (a == L"--snap") opt.snap = _wtoi(next().c_str());
+        else if (a == L"--pivot-edit") opt.pivotEdit = true;
+        else if (a == L"--sel-style") opt.selStyle = _wtoi(next().c_str());
         else if (a == L"--shot-seq") opt.shotSeq = _wtoi(next().c_str());
         else if (a == L"--aa") opt.aa = _wtoi(next().c_str());
         else if (a == L"--gizmo-demo") opt.gizmoDemo = next();

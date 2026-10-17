@@ -437,6 +437,7 @@ std::string App::wzxSceneJson(bool withCamera) const {
         w.vec("position", o.position);
         w.vec4("rotation", objRot(o));
         w.vec("scale", o.scale);
+        if (o.pivot.x != 0 || o.pivot.y != 0 || o.pivot.z != 0) w.vec("pivot", o.pivot);   // (Edit Pivot: the point of the geometry at the position)
         w.boolean("visible", o.visible);
         w.boolean("selectable", o.selectable);
         // Scene Manager: links and order (transforms above are world values), a group has no material
@@ -722,6 +723,7 @@ void App::loadWzxScene(const Json& j, const std::wstring& path) {
         }
         o.useRot = true;
         o.scale = vec3(oj["scale"], o.scale);
+        o.pivot = vec3(oj["pivot"], o.pivot);
         o.visible = flag(oj["visible"], true);
         o.selectable = flag(oj["selectable"], true);
         o.id = (uint32_t)std::max(0.0, oj["id"].num(0));   // Scene Manager (0 / missing: a new id is given)

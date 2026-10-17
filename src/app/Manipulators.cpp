@@ -25,6 +25,7 @@ const int kRingSeg = 72;
 // (the plane squares sit far from the centre, at two thirds of the axes, as the reference of the user)
 const float kConeBase = 0.86f, kPlane0 = 0.60f, kPlane1 = 0.74f, kCube = 0.045f, kRing = 0.85f, kViewRing = 1.08f;
 const double kMarkingDelay = 0.2;   // seconds before the marking menu is drawn
+const float kFlashTime = 0.6f;     // seconds the item chosen by a quick gesture stays shown
 
 float3 unitAxis(int a) { return float3(a == 0 ? 1.0f : 0.0f, a == 1 ? 1.0f : 0.0f, a == 2 ? 1.0f : 0.0f); }
 ImVec2 iv(float2 p) { return ImVec2(p.x, p.y); }
@@ -203,9 +204,11 @@ void App::gizmoBegin(int handle, int button, float mx, float my) {
         it.pos = o.position;
         it.rot = objRot(o);
         it.scale = o.scale;
+        it.pivot = o.pivot;
         gizmoFrame(i, m_tool, it.ax);
         g.items.push_back(it);
     }
+    g.pivotEdit = m_tool == TOOL_MOVE && pivotEditing();
     m_gzLast[m_tool] = handle;
     float3 r, u, f;
     m_scene.camera.basis(r, u, f);
@@ -302,22 +305,58 @@ void App::gizmoDrag(float mx, float my, bool snap) {
             if (g.handle == MH_CENTER) world = dv;
             else { int a, b; planeAxes(g.handle, a, b); c[a] = dot(dv, g.ax[a]); c[b] = dot(dv, g.ax[b]); }
         }
-        if (snap) {
-            const bool worldAxes = m_axisMode == 0 || g.handle == MH_CENTER;
-            for (int i = 0; i < 3; ++i) {
-                float& v = g.handle == MH_CENTER ? world[i] : c[i];
-                if (v == 0.0f) continue;
-                // absolute: the pivot lands on the grid of the step (world axes only), else a multiple of the step
-                if (m_snapAbsolute && worldAxes) v = snapTo(g.pivot[i] + v, m_stepMove) - g.pivot[i];
-                else v = snapTo(v, m_stepMove);
+        // V held: the pivot on the vertex nearest to the cursor (the moved objects left out, unless their pivot is edited)
+        m_snapTargetOn = false;
+        bool onVertex = false;
+        if (ImGui::IsKeyDown(ImGuiKey_V)) {
+            std::vector<int> skip;
+            if (!g.pivotEdit)
+                for (const auto& it : g.items) skip.push_back(it.obj);
+            float3 vtx;
+            if (nearestVertex(mx, my, skip, th::settings().snap.vertexRadius, vtx)) {
+                const float3 dv = vtx - g.pivot;
+                if (g.handle == MH_CENTER) world = dv;
+                else if (g.handle <= MH_Z) c[g.handle] = dot(dv, g.ax[g.handle]);
+                else { int a, b; planeAxes(g.handle, a, b); c[a] = dot(dv, g.ax[a]); c[b] = dot(dv, g.ax[b]); }
+                onVertex = true;
             }
+        }
+        if (snap && !onVertex) {
+            const bool worldAxes = m_axisMode == 0 || g.handle == MH_CENTER;
+            if (m_snapAbsolute && worldAxes) {
+                // absolute: the pivot lands on a point of the grid (intersections, centres of the cells, middles of the
+                // edges), on the axes of the handle
+                bool on[3] = {g.handle == MH_X || g.handle == MH_CENTER, g.handle == MH_Y || g.handle == MH_CENTER, g.handle == MH_Z || g.handle == MH_CENTER};
+                if (g.handle >= MH_YZ && g.handle <= MH_XY) { int a, b; planeAxes(g.handle, a, b); on[a] = on[b] = true; }
+                const float3 d0 = g.handle == MH_CENTER ? world : float3(c[0], c[1], c[2]);   // (world axes: c along X, Y, Z)
+                const float3 t = snapGridPoint(g.pivot + d0, on) - g.pivot;
+                if (g.handle == MH_CENTER) world = t;
+                else for (int i = 0; i < 3; ++i) if (on[i]) c[i] = t[i];
+                m_snapTarget = g.pivot + t;
+                m_snapTargetOn = true;
+            } else
+                for (int i = 0; i < 3; ++i) {   // a multiple of the step from the start
+                    float& v = g.handle == MH_CENTER ? world[i] : c[i];
+                    if (v != 0.0f) v = snapTo(v, m_stepMove);
+                }
         }
         g.value = g.handle == MH_CENTER ? world : float3(c[0], c[1], c[2]);
         bool changed = false;
         for (const auto& it : g.items) {
             Object& o = m_scene.objects[it.obj];
-            float3 np = it.pos + (g.handle == MH_CENTER ? world : it.ax[0] * c[0] + it.ax[1] * c[1] + it.ax[2] * c[2]);
-            if (np.x != o.position.x || np.y != o.position.y || np.z != o.position.z) { o.position = np; changed = true; }
+            const float3 dv = g.handle == MH_CENTER ? world : it.ax[0] * c[0] + it.ax[1] * c[1] + it.ax[2] * c[2];
+            const float3 np = it.pos + dv;
+            if (np.x != o.position.x || np.y != o.position.y || np.z != o.position.z) {
+                o.position = np;
+                if (g.pivotEdit) {   // Edit Pivot: the geometry stays, its pivot (object space) moves by as much
+                    const float3 l = qRot(float4(-it.rot.x, -it.rot.y, -it.rot.z, it.rot.w), dv);
+                    o.pivot = it.pivot + float3(l.x / std::max(std::fabs(it.scale.x), 1e-6f) * (it.scale.x < 0 ? -1.0f : 1.0f),
+                                                l.y / std::max(std::fabs(it.scale.y), 1e-6f) * (it.scale.y < 0 ? -1.0f : 1.0f),
+                                                l.z / std::max(std::fabs(it.scale.z), 1e-6f) * (it.scale.z < 0 ? -1.0f : 1.0f));
+                    hierRebase(o.id);
+                }
+                changed = true;
+            }
         }
         if (changed) { g.moved = true; markDirty(); }
         return;
@@ -513,6 +552,13 @@ void App::drawGizmo(ImDrawList* dl) {
             float hs = 4.0f * d;
             dl->AddRectFilled(ImVec2(pc.x - hs, pc.y - hs), ImVec2(pc.x + hs, pc.y + hs), withAlpha(lit ? kHot : kCenterCol, lit ? 110 : 40));
             dl->AddRect(ImVec2(pc.x - hs, pc.y - hs), ImVec2(pc.x + hs, pc.y + hs), lit ? kHot : kCenterCol, 0, 0, thin);
+            if (pivotEditing()) {   // Edit Pivot: an orange ring around the pivot and the name of the mode
+                const ImU32 pivotCol = IM_COL32(255, 170, 60, 255);
+                dl->AddCircle(iv(pc), 9.0f * d, pivotCol, 24, 1.6f * d);
+                dl->AddLine(ImVec2(pc.x - 13 * d, pc.y), ImVec2(pc.x - 9 * d, pc.y), pivotCol, 1.4f * d);
+                dl->AddLine(ImVec2(pc.x + 9 * d, pc.y), ImVec2(pc.x + 13 * d, pc.y), pivotCol, 1.4f * d);
+                dl->AddText(ImVec2(pc.x + 14 * d, pc.y + 10 * d), pivotCol, "Edit Pivot");
+            }
         }
     }
 
@@ -568,6 +614,7 @@ static std::vector<MMItem> markingItems(App& app, int tool, int& axisMode, bool&
         v.push_back({2, buf, false, [&stepMove] { stepMove = stepMove >= 1.0f ? 0.5f : stepMove >= 0.5f ? 0.25f : stepMove >= 0.25f ? 0.1f : 1.0f; }});
         v.push_back({5, "Snap to grid (absolute)", absolute, [&absolute] { absolute = !absolute; }});
         v.push_back({3, "Reset Position", false, [=] { resetOp(0); }});
+        v.push_back({6, "Center Pivot (Alt+Y)", false, [=] { selectOp(5); }});   // the pivot at the centre of the geometry
     } else if (tool == TOOL_ROTATE) {
         snprintf(buf, sizeof buf, "Step %g°", stepRot);
         v.push_back({2, buf, false, [&stepRot] { stepRot = stepRot <= 5.0f ? 15.0f : stepRot <= 15.0f ? 45.0f : stepRot <= 45.0f ? 90.0f : 5.0f; }});
@@ -590,6 +637,7 @@ static int mmDirOf(float dx, float dy) {
 
 void App::markingSelect(int op) {
     if (op == 4) { setAdvScale(true); return; }   // R menu: Advanced Scale
+    if (op == 5) { centerPivot(); return; }      // W menu: Center Pivot
     std::vector<int> v;
     auto pickable = [&](const Object& o) { return o.visible && o.selectable && !o.ghost && !o.group && o.part != "GROUND" && o.part != "WALL"; };
     std::vector<int> cur = selectionAll();
@@ -660,15 +708,54 @@ bool App::markingMenuInput(bool inView) {
             auto items = markingItems(*this, mm.tool, m_axisMode, m_magnet, m_snapAbsolute, m_stepMove, m_stepRotate, m_stepScale,
                                       [this](int op) { markingSelect(op); }, [this](int w) { markingReset(w); });
             for (auto& it : items)
-                if (it.dir == mm.hover) { it.run(); status(L"Marking menu: " + std::wstring(it.label.begin(), it.label.end())); break; }
+                if (it.dir == mm.hover) {
+                    if (!mm.shown) {   // a quick gesture: the chosen item shown for a moment
+                        m_mmFlash.t = ImGui::GetTime();
+                        m_mmFlash.label = it.label;
+                        pillRect(ImVec2(mm.x, mm.y), it.dir, it.label, m_dpi, m_mmFlash.b0, m_mmFlash.b1);
+                    }
+                    it.run();
+                    status(L"Marking menu: " + std::wstring(it.label.begin(), it.label.end()));
+                    break;
+                }
         }
     }
     return true;
 }
 
+
+// The pill of an item of a radial menu (marking menus, the view menu of Space): direction dir 0..7 (N, NE ... NW) at 92 px
+// from the centre; the items on the left / right grow away from it.
+void App::pillRect(ImVec2 c, int dir, const std::string& label, float dpi, ImVec2& b0, ImVec2& b1) {
+    const float a = dir * kPi / 4, rad = 92.0f * dpi;
+    const ImVec2 p(c.x + std::sin(a) * rad, c.y - std::cos(a) * rad * 0.82f);
+    const ImVec2 sz = ImGui::CalcTextSize(label.c_str());
+    const float pw = sz.x + 18 * dpi, ph = sz.y + 8 * dpi;
+    const float x0 = std::sin(a) > 0.3f ? p.x - 8 * dpi : std::sin(a) < -0.3f ? p.x - pw + 8 * dpi : p.x - pw * 0.5f;
+    b0 = ImVec2(x0, p.y - ph * 0.5f);
+    b1 = ImVec2(x0 + pw, p.y + ph * 0.5f);
+}
+
+void App::drawPill(ImDrawList* dl, ImVec2 b0, ImVec2 b1, const std::string& label, bool hot, float alpha, float dpi, ImU32 edge) {
+    auto fade = [&](ImU32 c) { return (c & 0x00FFFFFFu) | ((ImU32)(((c >> 24) & 255) * alpha) << 24); };
+    const float ph = b1.y - b0.y;
+    dl->AddRectFilled(b0, b1, fade(hot ? IM_COL32(255, 226, 102, 240) : IM_COL32(34, 36, 42, 235)), ph * 0.5f);
+    dl->AddRect(b0, b1, fade(hot ? IM_COL32(255, 226, 102, 255) : (edge ? edge : IM_COL32(110, 114, 124, 200))), ph * 0.5f, 0, 1.0f * dpi);
+    dl->AddText(ImVec2(b0.x + 9 * dpi, b0.y + 4 * dpi), fade(hot ? IM_COL32(28, 28, 30, 255) : IM_COL32(228, 228, 232, 255)), label.c_str());
+}
+
+// After a quick gesture (the menu not drawn): the chosen item alone, lit, fading out, so that the choice is seen.
+void App::drawRadialFlash(ImDrawList* dl, const RadialFlash& f) {
+    const float t = (float)(ImGui::GetTime() - f.t);
+    if (t < 0 || t > kFlashTime) return;
+    const float alpha = t < kFlashTime * 0.5f ? 1.0f : 1.0f - (t - kFlashTime * 0.5f) / (kFlashTime * 0.5f);
+    drawPill(dl, f.b0, f.b1, f.label, true, alpha, m_dpi, 0);
+}
+
 void App::drawMarkingMenu(ImDrawList* dl) {
+    drawRadialFlash(dl, m_mmFlash);
     if (!m_mm.open) return;
-    // drawn after a short delay (Maya): a quick flick does the item in its direction without showing the menu
+    // drawn after a short delay (Maya): a quick flick does the item in its direction, only that item shown (flash)
     if (!m_mm.shown && !m_gzDemo && ImGui::GetTime() - m_mm.t0 < kMarkingDelay) return;
     m_mm.shown = true;
     const float d = m_dpi;
@@ -682,22 +769,12 @@ void App::drawMarkingMenu(ImDrawList* dl) {
     ImVec2 ts = ImGui::CalcTextSize(names[m_mm.tool]);
     dl->AddText(ImVec2(c.x - ts.x * 0.5f, c.y + 26 * d), IM_COL32(236, 236, 226, 160), names[m_mm.tool]);
     for (const MMItem& it : items) {
-        float a = it.dir * kPi / 4;
-        float rad = 92.0f * d;
-        ImVec2 p(c.x + std::sin(a) * rad, c.y - std::cos(a) * rad * 0.82f);
-        std::string label = (it.checked ? "\xE2\x80\xA2 " : "") + it.label;   // bullet on the active option
-        ImVec2 sz = ImGui::CalcTextSize(label.c_str());
-        float pw = sz.x + 18 * d, ph = sz.y + 8 * d;
-        // items on the left / right grow away from the centre
-        float x0 = std::sin(a) > 0.3f ? p.x - 8 * d : std::sin(a) < -0.3f ? p.x - pw + 8 * d : p.x - pw * 0.5f;
-        ImVec2 b0(x0, p.y - ph * 0.5f), b1(x0 + pw, p.y + ph * 0.5f);
-        bool hot = m_mm.hover == it.dir;
-        dl->AddRectFilled(b0, b1, hot ? IM_COL32(255, 226, 102, 240) : IM_COL32(34, 36, 42, 235), ph * 0.5f);
-        dl->AddRect(b0, b1, hot ? IM_COL32(255, 226, 102, 255) : IM_COL32(110, 114, 124, 200), ph * 0.5f, 0, 1.0f * d);
-        dl->AddText(ImVec2(b0.x + 9 * d, b0.y + 4 * d), hot ? IM_COL32(28, 28, 30, 255) : IM_COL32(228, 228, 232, 255), label.c_str());
+        const std::string label = (it.checked ? "\xE2\x80\xA2 " : "") + it.label;   // bullet on the active option
+        ImVec2 b0, b1;
+        pillRect(c, it.dir, label, d, b0, b1);
+        drawPill(dl, b0, b1, label, m_mm.hover == it.dir, 1.0f, d, 0);
     }
 }
-
 #include "ManipulatorsTest.inl"
 
 } // namespace app

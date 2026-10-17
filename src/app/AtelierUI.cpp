@@ -1174,8 +1174,52 @@ void App::atlViewport(float x, float y, float w, float h) {
         }
     }
     bx -= 6 * s;
-    if (Button("atlSnap", {right(28 * s), by, 28 * s, 24 * s}, "", Icon::Magnet, m_magnet, true)) m_magnet = !m_magnet;
-    Tip("Snapping always on (else hold Shift while dragging): steps in the marking menu (W / E / R + left click)");
+    if (Button("atlSnap", {right(28 * s), by, 28 * s, 24 * s}, "", Icon::Magnet, m_magnet, true)) toggleSnap();
+    Tip("Snapping always on (else hold Shift while dragging) · Shift+click: Snapping Options");
+    {   // Place: the selection dragged over the surfaces of the scene
+        const R pb = {right(28 * s), by, 28 * s, 24 * s};
+        const bool clicked = Hit("atlPlace", pb);
+        const bool hov = ImGui::IsItemHovered();
+        Box(pb, m_surfacePlace ? P().select : (hov ? P().hover : P().raised), 3, true);
+        const ImU32 c = m_surfacePlace ? P().accent : P().text;
+        const ImVec2 o(pb.x + pb.w * 0.5f, pb.y + pb.h * 0.5f);   // a box resting on a surface, an arrow down to it
+        dl->AddLine(ImVec2(o.x - 8 * s, o.y + 6 * s), ImVec2(o.x + 8 * s, o.y + 6 * s), c, 1.4f * s);
+        dl->AddRect(ImVec2(o.x - 1 * s, o.y - 1 * s), ImVec2(o.x + 6 * s, o.y + 6 * s), c, 0, 0, 1.2f * s);
+        dl->AddLine(ImVec2(o.x - 5 * s, o.y - 7 * s), ImVec2(o.x - 5 * s, o.y + 3 * s), c, 1.2f * s);
+        dl->AddTriangleFilled(ImVec2(o.x - 7.5f * s, o.y + 1 * s), ImVec2(o.x - 2.5f * s, o.y + 1 * s), ImVec2(o.x - 5 * s, o.y + 5 * s), c);
+        if (clicked) m_surfacePlace = !m_surfacePlace;
+        Tip("Place: drag a selected object over the surfaces of the scene (Snapping Options: turned to the surface)");
+    }
+    {   // the points of the grid the absolute snapping takes: intersections, centres of the cells, middles of the edges
+        static const char* ids[3] = {"atlSnapInter", "atlSnapCenter", "atlSnapEdge"};
+        static const char* tips[3] = {"Snap to the grid: intersections of the lines (click again: relative steps)",
+                                      "Snap to the grid: centres of the cells (click again: relative steps)",
+                                      "Snap to the grid: middles of the edges (click again: relative steps)"};
+        SnapOptions& so = th::settings().snap;
+        for (int k = 2; k >= 0; --k) {
+            const R sb = {right(26 * s), by, 26 * s, 24 * s};
+            const bool clicked = Hit(ids[k], sb);
+            const bool hov = ImGui::IsItemHovered();
+            const bool on = m_snapAbsolute && so.gridPoint == k;
+            Box(sb, on ? P().select : (hov ? P().hover : P().raised), 3, true);
+            const ImU32 c = on ? P().accent : Fade(P().text, 170);
+            // a cell of the grid and its snap point(s)
+            const float x0 = sb.x + 6 * s, y0 = sb.y + 5 * s, e = 14 * s;
+            dl->AddRect(ImVec2(x0, y0), ImVec2(x0 + e, y0 + e), Fade(c, 150), 0, 0, 1.0f * s);
+            auto pt = [&](float fx, float fy) { dl->AddCircleFilled(ImVec2(x0 + fx * e, y0 + fy * e), 2.2f * s, c, 8); };
+            if (k == 0) { pt(0, 0); pt(1, 0); pt(0, 1); pt(1, 1); }
+            else if (k == 1) pt(0.5f, 0.5f);
+            else { pt(0.5f, 0); pt(0, 0.5f); pt(1, 0.5f); pt(0.5f, 1); }
+            if (clicked) {
+                if (on) m_snapAbsolute = false;
+                else { so.gridPoint = k; m_snapAbsolute = true; }
+                if (!m_themeTestOnly) th::saveSettings(m_exeDir + L"\\wzx_settings.ini");
+            }
+            Tip(tips[k]);
+            if (k > 0) bx += 4 * s;   // (the three side by side)
+        }
+    }
+    bx -= 6 * s;
     {   // Advanced Scale: the three-colour button (face, edge and corner handles)
         const R ab = {right(28 * s), by, 28 * s, 24 * s};
         const bool clicked = Hit("atlAdvScale", ab);
@@ -1546,6 +1590,8 @@ void App::atlViewMenus(float x, float y, float room) {
         ImGui::Separator();
         ImGui::MenuItem("Snapping always (else Shift)", nullptr, &m_magnet);
         ImGui::MenuItem("Snap to grid (absolute)", nullptr, &m_snapAbsolute);
+        ImGui::MenuItem("Place on Surfaces", nullptr, &m_surfacePlace);
+        if (ImGui::MenuItem("Snapping Options...")) m_showSnapOptions = true;
         ImGui::SetNextItemWidth(150 * s);
         ImGui::SliderFloat("Move step", &m_stepMove, 0.05f, 10.0f, "%.2f", ImGuiSliderFlags_Logarithmic);
         ImGui::SetNextItemWidth(150 * s);
@@ -1583,6 +1629,7 @@ void App::atlViewMenus(float x, float y, float room) {
         px += w1 + w2 + 6 * s;
     }
     if (m_frameCounter == 10 && m_opt.openMenu == "gridOptions") m_showGridOptions = true;   // --open-menu gridOptions: captures
+    if (m_frameCounter == 10 && m_opt.openMenu == "snapOptions") m_showSnapOptions = true;   // --open-menu snapOptions: captures
     if (m_frameCounter == 10 && m_opt.openMenu.rfind("advScale", 0) == 0) advScaleDemo(m_opt.openMenu);   // --open-menu advScale...: captures
     if (m_frameCounter == 10 && m_opt.openMenu == "viewMenu") {   // --open-menu viewMenu: the menu of Space held, for captures
         m_vm = ViewMenu();

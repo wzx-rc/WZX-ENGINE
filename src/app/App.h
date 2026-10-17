@@ -46,8 +46,9 @@ struct GizmoDrag {
     float4 free = qIdentity();   // trackball rotation
     float3 value;                // shown next to the mouse: displacement, degrees (x) or scale factors
     bool moved = false;
-    struct Item { int obj; float3 pos; float4 rot; float3 scale; float3 ax[3]; };
+    struct Item { int obj; float3 pos; float4 rot; float3 scale; float3 ax[3]; float3 pivot; };
     std::vector<Item> items;     // objects driven (each on its own pivot and axes)
+    bool pivotEdit = false;      // Edit Pivot: the move moves the pivots, the geometry stays
 };
 
 struct ViewBookmark {
@@ -107,6 +108,9 @@ struct Options {
     std::string cam;            // camera of the view at startup: persp, top, front, side, bottom, back, left (--cam)
     int layout = -1;            // layout of the view at startup: 0 single ... 3 four (2 x 2), 5 sixteen (--layout)
     bool demoCameras = false;   // test: two camera objects around the view at startup, one of them the render camera (--demo-cameras)
+    int snap = -1;              // test: absolute snapping on, always, on these grid points (--snap 0 intersections, 1 centres, 2 edges)
+    bool pivotEdit = false;     // test: Edit Pivot on at startup (--pivot-edit)
+    int selStyle = -1;          // selection style at startup: 0 yellow outline, 1 blue glow (--sel-style)
     std::wstring gizmoDemo;     // "tool handle dx dy menuDir": frozen drag or marking menu for a capture (--gizmo-demo)
     std::string openMenu;       // test: view menu opened at startup for a capture (vmCamera, vmDisplay, vmRender, vmAxes)
     int shotSeq = 0;            // test: --shot-seq N saves N images (name_00.png...) one every 8 frames
@@ -467,12 +471,13 @@ private:
     ScreenRect m_paneArea;             // the area of the panes this frame (layoutPanes)
     float splitAt(bool rows, int k) const;   // boundary k (0..n) of the columns or rows of the layout, 0..1
     void splitInput(const ScreenRect& area, bool windowHovered);
-    // Space: a tap shows the pane under the mouse alone (and back); held, the view menu at the mouse (Maya's hotbox
-    // centre): top, front, side and persp around it, the camera objects on the diagonals; a quick flick chooses
-    // without showing it
+    // Space, as Maya: a tap goes from one view to the four views, and shows the pane under the mouse alone (and back);
+    // held, the view menu at the mouse: top, side, front and persp around it, the cameras of the scene listed under
+    // it; a quick flick chooses without the menu (the choice shown for a moment). hover: index of the item
     struct ViewMenu { bool down = false, shown = false; int pane = 0, hover = -1; float x = 0, y = 0; double t0 = 0; } m_vm;
-    struct ViewMenuItem { int dir; int cam; uint32_t object; std::string label; };
-    std::vector<ViewMenuItem> viewMenuItems() const;
+    struct ViewMenuItem { int dir; int cam; uint32_t object; std::string label; ImVec2 b0, b1; };   // dir -1: in the list of cameras
+    std::vector<ViewMenuItem> viewMenuItems() const;   // with their pill around the centre of the menu (m_vm.x, y)
+    int viewMenuHover(const std::vector<ViewMenuItem>& items, float mx, float my) const;
     void spaceInput(bool allowed);   // after the editor of the frame (the view sees the menu open on the frame it closes)
     void drawViewMenu(ImDrawList* dl);
     bool selectionInView(const Camera& c, float w, float h, float2& centre, float& radius) const;
@@ -537,6 +542,31 @@ private:
     int m_axisMode = 0;          // move / rotate axes: 0 world, 1 object, 2 parent (scale: always object)
     float m_stepMove = 1.0f, m_stepRotate = 15.0f, m_stepScale = 0.1f;   // increments (Shift, or Snapping on)
     bool m_snapAbsolute = false; // move increments land on the grid of the step instead of relative to the start
+    // Snapping (Snapping.cpp): the grid points of the absolute snapping (intersections, centres of the cells, middles of
+    // the edges, SnapOptions), drawn around the moved object; V: the vertex nearest to the cursor; the options window
+    // (Shift + the Snapping button); placement on the surfaces (Place button); the pivot (Edit Pivot: D held or Insert,
+    // Center Pivot: Alt+Y)
+    bool m_showSnapOptions = false;
+    bool m_surfacePlace = false;       // Place: a selected object dragged with the left button slides over the surfaces
+    struct SurfaceDrag { bool active = false, moved = false; std::vector<int> objs; std::vector<float3> offs; std::vector<float4> rots; int lead = -1; float3 hit, normal; } m_sd;
+    bool m_pivotEdit = false;          // Insert: Edit Pivot until pressed again
+    bool m_pivotHold = false;          // D held: Edit Pivot meanwhile
+    int m_pivotTool = -1;              // the tool before Edit Pivot (the move manipulator moves the pivot)
+    bool m_snapShown = false;          // snap points drawn this frame (tests)
+    float3 m_snapTarget;               // the grid point the dragged pivot lands on (drawn lit)
+    bool m_snapTargetOn = false;
+    bool pivotEditing() const { return m_pivotEdit || m_pivotHold; }
+    float snapCell() const;            // size of the cells of the absolute snapping
+    float3 snapGridPoint(const float3& p, const bool on[3]) const;
+    bool nearestVertex(float mx, float my, const std::vector<int>& skip, float maxPx, float3& out) const;
+    void drawSnapPoints(ImDrawList* dl);
+    void drawSnapOptionsWindow();
+    void toggleSnap();                 // the Snapping button: on / off; Shift: the options
+    bool surfacePlaceInput(bool inView, bool click);
+    void surfacePlaceDrag(float mx, float my);
+    void pivotInput(bool allowed);     // D / Insert / Alt+Y
+    void centerPivot();
+    void hierRebase(uint32_t id);      // Outliner.cpp: the children do not follow this move of their parent
     float m_camSpeed = 1.0f;     // camera navigation speed factor
     struct Marquee { bool active = false, moved = false; float x0 = 0, y0 = 0; } m_marq;
     GizmoDrag m_gz;
@@ -544,6 +574,12 @@ private:
     int m_gzLast[4] = {MH_NONE, MH_NONE, MH_NONE, MH_NONE};   // last used handle per tool (middle button, drawn yellow)
     // (shown: drawn, after a short delay: a quick flick only does the item in its direction, as in Maya)
     struct MarkingMenu { bool open = false, shown = false; int tool = 0, hover = -1; float x = 0, y = 0, mx = 0, my = 0; double t0 = 0; } m_mm;
+    // a quick gesture: the chosen item alone, lit for a moment (the marking menus, the view menu of Space)
+    struct RadialFlash { double t = -10; ImVec2 b0, b1; std::string label; };
+    RadialFlash m_mmFlash, m_vmFlash;
+    static void pillRect(ImVec2 centre, int dir, const std::string& label, float dpi, ImVec2& b0, ImVec2& b1);
+    static void drawPill(ImDrawList* dl, ImVec2 b0, ImVec2 b1, const std::string& label, bool hot, float alpha, float dpi, ImU32 edge);
+    void drawRadialFlash(ImDrawList* dl, const RadialFlash& f);
     bool m_gzDemo = false;       // --gizmo-demo: a drag / marking menu frozen on screen for a capture
     int m_shotSeqDone = 0;       // --shot-seq: images saved
     void gizmoScript();          // --gizmo-demo / --gizmo-test (command line), called once per frame

@@ -81,6 +81,23 @@ Comme dans Maya (`src/app/Cameras.cpp`, `src/app/Panes.cpp`) :
   outils ; les autres sont des vues raster de leur caméra. **Espace** : la vue sous la souris seule, et retour.
 - **Aperçu** : la caméra sélectionnée s'affiche en bas à droite de la vue active (comme Unreal), épinglable, avec un
   bouton Look Through. Pendant Play, la caméra RTS prend la vue persp et rend la vue d'origine à l'arrêt.
+- **Espace** (comme Maya) : un appui bref passe d'une vue aux quatre vues, puis met la vue sous la souris seule et
+  revient ; maintenu, menu des vues (Top, Side, Front, Persp) et liste des caméras de la scène ; un geste rapide
+  choisit sans afficher le menu.
+
+## Snapping, placement, pivot
+
+`src/app/Snapping.cpp` :
+
+- Bouton aimant : snapping toujours actif (sinon Maj pendant le glisser) ; **Maj+clic** : fenêtre Snapping Options.
+- Trois icônes de la barre : snap absolu sur la grille aux **intersections**, aux **centres des cases** ou aux
+  **milieux des arêtes** (les points sont dessinés autour de l'objet déplacé) ; re-cliquer revient aux pas relatifs.
+- **V** maintenu pendant un déplacement : le pivot va sur le sommet le plus proche du curseur.
+- **Place** (icône de la barre) : un objet sélectionné glissé au clic gauche suit les surfaces de la scène (le sol à
+  défaut), posé dessus, tourné vers la surface si l'option est cochée.
+- **Edit Pivot** : D maintenu (ou Insert jusqu'au prochain appui) ; le manipulateur de déplacement bouge le pivot, la
+  géométrie reste. **Center Pivot** : Alt+Y (aussi dans le marking menu W, à gauche). Le pivot est enregistré dans
+  le `.wzx`.
 
 ## Contrôles
 

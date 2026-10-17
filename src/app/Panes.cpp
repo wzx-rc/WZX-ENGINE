@@ -15,12 +15,6 @@ const int kCols[kLayoutCount] = {1, 2, 1, 2, 3, 4};
 const int kRows[kLayoutCount] = {1, 1, 2, 2, 3, 4};
 const double kViewMenuDelay = 0.2;   // seconds of Space held before the view menu is drawn (as the marking menus)
 
-// direction 0..7 (N, NE, E ... NW, clockwise) of a mouse offset
-int dirOf(float dx, float dy) {
-    const int d = (int)std::lround(std::atan2(dx, -dy) / (kPi / 4));
-    return (d + 8) % 8;
-}
-
 } // namespace
 
 const char* App::layoutName(int l) {
@@ -234,26 +228,49 @@ int App::previewCamera() const {
 
 // --------------------------------------------------------------------------- Space: the view menu
 
-// Top, side, front and persp around the centre (north, east, south, west), the camera objects on the diagonals (the
-// render camera first).
+// Top, side, front and persp around the centre (north, east, south, west), the camera objects of the scene in a list
+// under it (the render camera first), with their pills.
 std::vector<App::ViewMenuItem> App::viewMenuItems() const {
     std::vector<ViewMenuItem> v = {{0, VCAM_TOP, 0, "Top"}, {2, VCAM_SIDE, 0, "Side"}, {4, VCAM_FRONT, 0, "Front"}, {6, VCAM_PERSP, 0, "Persp"}};
+    const ImVec2 c(m_vm.x, m_vm.y);
+    for (ViewMenuItem& it : v) pillRect(c, it.dir, it.label, m_dpi, it.b0, it.b1);
     std::vector<int> cams;
     const int rc = renderCamera();
     if (rc >= 0) cams.push_back(rc);
     for (size_t i = 0; i < m_scene.objects.size(); ++i)
         if (m_scene.objects[i].camera && (int)i != rc) cams.push_back((int)i);
-    static const int diag[4] = {1, 7, 3, 5};   // NE, NW, SE, SW
-    for (size_t k = 0; k < cams.size() && k < 4; ++k) {
-        const Object& o = m_scene.objects[cams[k]];
-        v.push_back({diag[k], VCAM_OBJECT, o.id, o.name});
+    float y = v[2].b1.y + 30.0f * m_dpi;   // under Front, after the "Cameras" title
+    for (int i : cams) {
+        const Object& o = m_scene.objects[i];
+        ViewMenuItem it{-1, VCAM_OBJECT, o.id, o.name};
+        const ImVec2 sz = ImGui::CalcTextSize(o.name.c_str());
+        const float pw = std::max(sz.x + 18 * m_dpi, 110.0f * m_dpi), ph = sz.y + 8 * m_dpi;
+        it.b0 = ImVec2(c.x - pw * 0.5f, y);
+        it.b1 = ImVec2(c.x + pw * 0.5f, y + ph);
+        y += ph + 4 * m_dpi;
+        v.push_back(it);
     }
     return v;
 }
 
-// Space pressed: the pane under the mouse is the one the menu acts on. Released: the item in the direction of the mouse
-// (also after a quick flick, the menu not drawn yet) makes that pane look through its camera; a tap (no item, menu
-// not shown) shows the pane alone, and back. A left click on an item chooses it too.
+// The item under the mouse: a camera of the list under its pill, else the view in the direction of the mouse (four
+// sectors) away from the centre.
+int App::viewMenuHover(const std::vector<ViewMenuItem>& items, float mx, float my) const {
+    for (size_t i = 0; i < items.size(); ++i)
+        if (items[i].dir < 0 && mx >= items[i].b0.x - 2 && mx <= items[i].b1.x + 2 && my >= items[i].b0.y - 2 && my <= items[i].b1.y + 2) return (int)i;
+    const float dx = mx - m_vm.x, dy = my - m_vm.y;
+    if (std::hypot(dx, dy) <= 22.0f * m_dpi) return -1;
+    if (my > items[2].b1.y + 10.0f * m_dpi && std::fabs(dx) < std::fabs(dy) * 1.5f && items.size() > 4) return -1;   // (beside the list)
+    const int dir = std::fabs(dx) > std::fabs(dy) ? (dx > 0 ? 2 : 6) : (dy > 0 ? 4 : 0);
+    for (size_t i = 0; i < items.size(); ++i)
+        if (items[i].dir == dir) return (int)i;
+    return -1;
+}
+
+// Space pressed: the pane under the mouse is the one the menu acts on. Released: the item under the mouse (also after
+// a quick flick, the menu not drawn yet: the item is then shown for a moment) makes that pane look through its camera;
+// a tap (no item, menu not shown) switches the view as Maya: one view -> the four views, a pane of the layout -> that
+// pane alone, and back. A left click on an item chooses it too.
 void App::spaceInput(bool allowed) {
     ImGuiIO& io = ImGui::GetIO();
     ViewMenu& vm = m_vm;
@@ -272,59 +289,60 @@ void App::spaceInput(bool allowed) {
     }
     if (m_opt.openMenu == "viewMenu") return;   // (captures: kept open)
     const std::vector<ViewMenuItem> items = viewMenuItems();
-    const float dx = io.MousePos.x - vm.x, dy = io.MousePos.y - vm.y;
-    vm.hover = -1;
-    if (std::hypot(dx, dy) > 22.0f * m_dpi) {
-        const int dir = dirOf(dx, dy);
-        for (const ViewMenuItem& it : items)
-            if (it.dir == dir) vm.hover = dir;
-    }
+    vm.hover = viewMenuHover(items, io.MousePos.x, io.MousePos.y);
     if (ImGui::GetTime() - vm.t0 >= kViewMenuDelay) vm.shown = true;
     const bool click = ImGui::IsMouseClicked(0) && vm.hover >= 0;
     if (ImGui::IsKeyDown(ImGuiKey_Space) && !click) return;
     vm.down = false;
     if (vm.pane >= (int)m_panes.size()) return;
     if (vm.hover >= 0) {
-        for (const ViewMenuItem& it : items)
-            if (it.dir == vm.hover) {
-                activatePane(vm.pane);
-                setPaneCamera(vm.pane, it.cam, it.object);
-                status(L"View: " + fromUtf8(it.label));
-            }
+        const ViewMenuItem& it = items[vm.hover];
+        if (!vm.shown) {   // a quick flick: the chosen item shown for a moment
+            m_vmFlash.t = ImGui::GetTime();
+            m_vmFlash.label = it.label;
+            m_vmFlash.b0 = it.b0;
+            m_vmFlash.b1 = it.b1;
+        }
+        activatePane(vm.pane);
+        setPaneCamera(vm.pane, it.cam, it.object);
+        status(L"View: " + fromUtf8(it.label));
     } else if (!vm.shown) {   // a tap
-        if (!m_paneMax) activatePane(vm.pane);
-        togglePaneMax(false);
+        if (m_panes.size() <= 1) setLayout(3);   // one view: the four views
+        else {
+            if (!m_paneMax) activatePane(vm.pane);
+            togglePaneMax(false);
+        }
     }
 }
 
 void App::drawViewMenu(ImDrawList* dl) {
+    drawRadialFlash(dl, m_vmFlash);
     if (!m_vm.down || !m_vm.shown) return;
     const float d = m_dpi;
     const ImVec2 c(m_vm.x, m_vm.y), m = ImGui::GetIO().MousePos;
     const ViewPane& p = m_panes[std::clamp(m_vm.pane, 0, (int)m_panes.size() - 1)];
+    const std::vector<ViewMenuItem> items = viewMenuItems();
     dl->AddCircleFilled(c, 5 * d, IM_COL32(236, 236, 226, 200), 20);
     dl->AddCircle(c, 22 * d, IM_COL32(236, 236, 226, 70), 40, 1.0f * d);
-    if (m_vm.hover >= 0) dl->AddLine(c, m, IM_COL32(255, 226, 102, 200), 1.2f * d);
+    if (m_vm.hover >= 0 && items[m_vm.hover].dir >= 0) dl->AddLine(c, m, IM_COL32(255, 226, 102, 200), 1.2f * d);
     const char* title = "Views";
     const ImVec2 ts = ImGui::CalcTextSize(title);
     dl->AddText(ImVec2(c.x - ts.x * 0.5f, c.y + 26 * d), IM_COL32(236, 236, 226, 160), title);
-    for (const ViewMenuItem& it : viewMenuItems()) {
-        const float a = it.dir * kPi / 4, rad = (it.dir & 1 ? 104.0f : 92.0f) * d;
-        const ImVec2 q(c.x + std::sin(a) * rad, c.y - std::cos(a) * rad * 0.82f);
+    if (items.size() > 4) {   // the cameras of the scene
+        const char* ct = "Cameras";
+        const ImVec2 cs = ImGui::CalcTextSize(ct);
+        dl->AddText(ImVec2(c.x - cs.x * 0.5f, items[4].b0.y - cs.y - 4 * d), IM_COL32(236, 236, 226, 140), ct);
+    }
+    for (size_t i = 0; i < items.size(); ++i) {
+        const ViewMenuItem& it = items[i];
         const bool current = p.cam == it.cam && (it.cam != VCAM_OBJECT || p.object == it.object);
         const std::string label = (current ? "\xE2\x80\xA2 " : "") + it.label;   // bullet: what the pane looks through
-        const ImVec2 sz = ImGui::CalcTextSize(label.c_str());
-        const float pw = sz.x + 18 * d, ph = sz.y + 8 * d;
-        const float x0 = std::sin(a) > 0.3f ? q.x - 8 * d : std::sin(a) < -0.3f ? q.x - pw + 8 * d : q.x - pw * 0.5f;
-        const ImVec2 b0(x0, q.y - ph * 0.5f), b1(x0 + pw, q.y + ph * 0.5f);
-        const bool hot = m_vm.hover == it.dir;
-        const bool camObj = it.cam == VCAM_OBJECT;   // camera objects: the colour of their icon (render camera orange)
-        const int ci = camObj ? cameraObject(it.object) : -1;
-        const ImU32 edge = hot ? IM_COL32(255, 226, 102, 255)
-                               : (ci >= 0 && m_scene.objects[ci].camRender ? IM_COL32(255, 196, 92, 200) : IM_COL32(110, 114, 124, 200));
-        dl->AddRectFilled(b0, b1, hot ? IM_COL32(255, 226, 102, 240) : IM_COL32(34, 36, 42, 235), ph * 0.5f);
-        dl->AddRect(b0, b1, edge, ph * 0.5f, 0, 1.0f * d);
-        dl->AddText(ImVec2(b0.x + 9 * d, b0.y + 4 * d), hot ? IM_COL32(28, 28, 30, 255) : IM_COL32(228, 228, 232, 255), label.c_str());
+        const int ci = it.cam == VCAM_OBJECT ? cameraObject(it.object) : -1;
+        const ImU32 edge = ci >= 0 && m_scene.objects[ci].camRender ? IM_COL32(255, 196, 92, 200) : 0;   // the render camera: orange
+        ImVec2 b0 = it.b0, b1 = it.b1;
+        if (current && it.dir >= 0) pillRect(c, it.dir, label, d, b0, b1);
+        else if (current) b1.x = std::max(b1.x, b0.x + ImGui::CalcTextSize(label.c_str()).x + 18 * d);
+        drawPill(dl, b0, b1, label, m_vm.hover == (int)i, 1.0f, d, edge);
     }
 }
 

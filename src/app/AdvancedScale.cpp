@@ -202,7 +202,7 @@ bool App::advScaleInput(bool inView) {
         if (dd < bestD) { bestD = dd; best = h; }
     }
     m_advHover = best;
-    if (best < 0 || io.KeyAlt || !ImGui::IsMouseClicked(0)) return false;   // (Alt + click: the camera)
+    if (best < 0 || !ImGui::IsMouseClicked(0)) return false;   // (Alt + click on a handle: both sides, from the start)
     advScaleBegin(best, b, mx, my);   // press on a handle: the drag starts
     return true;
 }

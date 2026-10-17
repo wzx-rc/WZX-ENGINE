@@ -374,6 +374,11 @@ struct App::SelfTest {
         a.m_undo.clear();
         th::settings().grid = GridOptions();
         th::settings().advScale = AdvScaleOptions();
+        th::settings().snap = SnapOptions();
+        a.m_snapAbsolute = false;
+        a.m_surfacePlace = false;
+        a.m_pivotEdit = false;
+        a.m_showSnapOptions = false;
     }
     // a point of the view on the empty background, away from the overlays
     bool emptyPoint(float2& p) const {
@@ -1014,6 +1019,7 @@ void App::SelfTest::build() {
         check("W + left button: the menu opens", flag);
         check("W menu, up: World", a.m_axisMode == 0 && !a.m_mm.open);
         check("a quick gesture: the result only, the menu not drawn (Maya)", !a.m_mm.shown);
+        check("... the chosen item shown for a moment", ImGui::GetTime() - a.m_mmFlash.t < 1.0 && a.m_mmFlash.label == "World", a.m_mmFlash.label);
         return 1;
     });
     add("marking menu", [this, gesture] { return gesture(ImGuiKey_W, 100, 0); });
@@ -1226,7 +1232,36 @@ void App::SelfTest::build() {
         a.m_game->requestPlay();
         return 3;
     });
-    add("advanced scale", [this] { check("Play stopped", !a.m_game->playing()); a.setAdvScale(false); return 1; });
+    add("advanced scale", [this] {
+        check("Play stopped", !a.m_game->playing());
+        // Alt held from the press on a handle: both sides (the centre stays), not the camera
+        a.m_scene.objects[obj("Cube")].scale = float3(1, 1, 1);
+        AdvBox b;
+        a.advScaleBox(b);
+        v["cx"] = b.c.x; v["cy"] = b.c.y; v["cz"] = b.c.z;
+        v["yaw"] = a.m_scene.camera.yaw;
+        float2 p;
+        advHandle(1, 0, 0, p);
+        return moveTo(p.x, p.y, 4);
+    });
+    add("advanced scale", [this] {
+        float2 p, c;
+        AdvBox b;
+        a.advScaleBox(b);
+        advHandle(1, 0, 0, p);
+        a.project(b.c, c);
+        const float l = std::max(std::hypot(p.x - c.x, p.y - c.y), 1.0f);
+        return drag(p.x, p.y, p.x + (p.x - c.x) / l * 50, p.y + (p.y - c.y) / l * 50, 0, 4);
+    });
+    add("advanced scale", [this] {
+        AdvBox b;
+        a.advScaleBox(b);
+        const float3 s = a.m_scene.objects[obj("Cube")].scale;
+        check("Alt + click on a handle: both sides, the centre stays, the camera does not move",
+              s.x > 1.02f && length(b.c - float3((float)v["cx"], (float)v["cy"], (float)v["cz"])) < 1e-3f && a.m_scene.camera.yaw == (float)v["yaw"], fmt("s.x=%.3f", s.x));
+        a.setAdvScale(false);
+        return 1;
+    });
 
     // ================================================================= rendering: Concept scene
     add("concept scene", [this] {
@@ -1466,6 +1501,17 @@ void App::SelfTest::build() {
                 ++n;
             }
         check("Selection Outline style: a yellow outline", n > 100 && r > b, fmt("%d pixels, added red %.1f, blue %.1f", n, n ? r / n : 0.0, n ? b / n : 0.0));
+        {   // thin: a line of about 1.3 px along the outline (the box of the cube on screen: its perimeter)
+            const Rect rc = objRect(obj("Cube"), 0);
+            const double perim = 2.0 * ((rc.x1 - rc.x0) + (rc.y1 - rc.y0));
+            int lineN = 0;   // the yellow of the line (the faint tint inside left out)
+            for (uint32_t y = 0; y < img[0].h; ++y)
+                for (uint32_t x = 0; x < img[0].w; ++x) {
+                    const uint8_t *p = img[0].at(x, y), *q = img[3].at(x, y);
+                    if (std::abs(p[0] - q[0]) + std::abs(p[1] - q[1]) + std::abs(p[2] - q[2]) > 150) ++lineN;
+                }
+            check("Selection Outline style: a thin line (about 1.3 px)", lineN > 50 && lineN < perim * 1.6, fmt("%.2f pixels per pixel of the box perimeter", lineN / std::max(perim, 1.0)));
+        }
         a.m_rs.selectionStyle = 1;
         a.select(obj("Sphere"));
         return 4;
@@ -1956,6 +2002,167 @@ void App::SelfTest::build() {
         return 3;
     });
 
+    // ================================================================= snapping, placement on the surfaces, pivot
+    add("snapping", [this] {
+        fresh();
+        // the grid points (cells of 1: the move step)
+        th::settings().snap.gridStep = false;
+        a.m_stepMove = 1.0f;
+        const float3 p(0.7f, 0.3f, 1.2f);
+        const bool xz[3] = {true, false, true}, all[3] = {true, true, true}, xOnly[3] = {true, false, false};
+        auto near3 = [](const float3& q, float x0, float y0, float z0) { return std::fabs(q.x - x0) < 1e-5f && std::fabs(q.y - y0) < 1e-5f && std::fabs(q.z - z0) < 1e-5f; };
+        th::settings().snap.gridPoint = 0;
+        float3 q = a.snapGridPoint(p, all);
+        check("grid points: intersections", near3(q, 1, 0, 1), fmt("%.2f %.2f %.2f", q.x, q.y, q.z));
+        th::settings().snap.gridPoint = 1;
+        q = a.snapGridPoint(p, xz);
+        check("grid points: centres of the cells", near3(q, 0.5f, 0.3f, 1.5f), fmt("%.2f %.2f %.2f", q.x, q.y, q.z));
+        th::settings().snap.gridPoint = 2;
+        q = a.snapGridPoint(p, xz);
+        check("grid points: middles of the edges (the nearest)", near3(q, 0.5f, 0.3f, 1.0f), fmt("%.2f %.2f %.2f", q.x, q.y, q.z));
+        q = a.snapGridPoint(float3(0.7f, 0, 1.0f), xOnly);
+        check("grid points: middles of the edges along X on a line", near3(q, 0.5f, 0, 1.0f), fmt("%.2f %.2f %.2f", q.x, q.y, q.z));
+        th::settings().snap = SnapOptions();
+        check("the cells of the snapping: the editor grid", std::fabs(a.snapCell() - a.m_rs.editorGrid) < 1e-5f, fmt("%.3f", a.snapCell()));
+        a.select(obj("Cube"));
+        a.m_tool = TOOL_MOVE;
+        return clickItem("atlSnapCenter");
+    });
+    add("snapping", [this] {
+        check("header: centres of the cells, absolute snapping on", a.m_snapAbsolute && th::settings().snap.gridPoint == 1);
+        a.m_magnet = true;
+        return 3;
+    });
+    add("snapping", [this] {
+        check("the snap points drawn around the moved object", a.m_snapShown);
+        v["x0"] = a.m_scene.objects[obj("Cube")].position.x;
+        const float2 s = a.gizmoHandlePoint(MH_X), d = a.gizmoHandleDir(MH_X, s);
+        return drag(s.x, s.y, s.x + d.x * 70, s.y + d.y * 70);
+    });
+    add("snapping", [this] {
+        const float c = a.snapCell(), px = a.m_scene.objects[obj("Cube")].position.x;
+        const float k = px / c - 0.5f;
+        check("move X, centres of the cells: the pivot in the middle of a cell", std::fabs(k - std::round(k)) < 1e-3f && px != (float)v["x0"], fmt("x %.3f, cell %.2f", px, c));
+        return clickItem("atlSnapCenter");
+    });
+    add("snapping", [this] { check("header: the same button again, relative steps", !a.m_snapAbsolute); a.m_magnet = false; return clickItem("atlSnap", 1); });
+    add("snapping", [this] { check("Shift+click on the Snapping button: Snapping Options", a.m_showSnapOptions); return clickItem("Close"); });
+    add("snapping", [this] {
+        check("Snapping Options: Close", !a.m_showSnapOptions);
+        // V: the vertex nearest to the cursor (the highest of the cylinder, on the side of the camera)
+        const Object& cy = a.m_scene.objects[obj("Cylinder")];
+        const Affine T = cy.transform();
+        const float3 eye = a.m_scene.camera.eye();
+        float3 w = T.point(a.m_scene.meshes[cy.mesh].vertices[0].pos);
+        float best = -1e30f;
+        for (const Vertex& vx : a.m_scene.meshes[cy.mesh].vertices) {
+            const float3 q = T.point(vx.pos);
+            const float score = q.y - 0.05f * length(q - eye);
+            if (score > best) { best = score; w = q; }
+        }
+        float2 sw, sg;
+        a.project(w, sw);
+        float3 got;
+        const std::vector<int> none;
+        const bool found = a.nearestVertex(sw.x + 2, sw.y + 1, none, 40, got) && a.project(got, sg);
+        check("V: the vertex nearest to the cursor", found && std::hypot(sg.x - sw.x, sg.y - sw.y) < 3, found ? fmt("%.1f px", std::hypot(sg.x - sw.x, sg.y - sw.y)) : "none");
+        v["vx"] = w.x; v["vy"] = w.y; v["vz"] = w.z;
+        const float2 s = a.gizmoHandlePoint(MH_CENTER);
+        return drag(s.x, s.y, sw.x + 2, sw.y + 1, 0, 0, 8, -1, ImGuiKey_V);
+    });
+    add("snapping", [this] {
+        const float3 p = a.m_scene.objects[obj("Cube")].position;
+        float2 sp, sv;
+        a.project(p, sp);
+        a.project(float3((float)v["vx"], (float)v["vy"], (float)v["vz"]), sv);
+        check("move with V held: the pivot on that vertex", std::hypot(sp.x - sv.x, sp.y - sv.y) < 3, fmt("%.1f px away", std::hypot(sp.x - sv.x, sp.y - sv.y)));
+        return 1;
+    });
+    // Place: the sphere dragged onto the top of the cube rests on it
+    add("snapping", [this] { fresh(); a.select(-1); return clickItem("atlPlace"); });
+    add("snapping", [this] {
+        check("Place button: on", a.m_surfacePlace);
+        const Object& cb = a.m_scene.objects[obj("Cube")];
+        float3 mn, mx2;
+        a.aabbOf(cb, cb.position, a.objRot(cb), mn, mx2);
+        v["top"] = mx2.y;
+        const float3 cube = (mn + mx2) * 0.5f;
+        float2 from, to;
+        a.project(objCentre(obj("Sphere")), from);
+        a.project(float3(cube.x, mx2.y, cube.z), to);
+        return drag(from.x, from.y, to.x, to.y);
+    });
+    add("snapping", [this] {
+        const Object& sp = a.m_scene.objects[obj("Sphere")];
+        float3 mn, mx2;
+        a.aabbOf(sp, sp.position, a.objRot(sp), mn, mx2);
+        const float3 cube = objCentre(obj("Cube"));
+        check("Place: the sphere rests on the top of the cube", std::fabs(mn.y - (float)v["top"]) < 0.02f && std::hypot(sp.position.x - cube.x, sp.position.z - cube.z) < 0.6f,
+              fmt("bottom %.3f, top of the cube %.3f", mn.y, v["top"]));
+        check("Place: the sphere selected, one undo step", a.m_selected == obj("Sphere") && a.m_undo.size() == 1, fmt("%d undo steps", (int)a.m_undo.size()));
+        a.m_surfacePlace = false;
+        // Center Pivot: the pivot at the centre of the geometry, the geometry does not move
+        const Object& cy = a.m_scene.objects[obj("Cylinder")];
+        a.aabbOf(cy, cy.position, a.objRot(cy), mn, mx2);
+        v["mnx"] = mn.x; v["mny"] = mn.y; v["mxy"] = mx2.y;
+        a.select(obj("Cylinder"));
+        return key(ImGuiKey_Insert);
+    });
+    add("snapping", [this] {
+        check("Insert: Edit Pivot, the move manipulator", a.m_pivotEdit && a.m_tool == TOOL_MOVE);
+        v["px"] = a.m_scene.objects[obj("Cylinder")].position.x;
+        return 2;
+    });
+    add("snapping", [this] {
+        const float2 s = a.gizmoHandlePoint(MH_X), d = a.gizmoHandleDir(MH_X, s);
+        return drag(s.x, s.y, s.x + d.x * 80, s.y + d.y * 80);
+    });
+    add("snapping", [this] {
+        const Object& cy = a.m_scene.objects[obj("Cylinder")];
+        float3 mn, mx2;
+        a.aabbOf(cy, cy.position, a.objRot(cy), mn, mx2);
+        check("Edit Pivot: the pivot moves, the geometry stays", cy.position.x > (float)v["px"] + 0.1f && std::fabs(mn.x - (float)v["mnx"]) < 1e-3f && std::fabs(mx2.y - (float)v["mxy"]) < 1e-3f,
+              fmt("pivot x %.3f -> %.3f, box min x %.4f", v["px"], cy.position.x, mn.x));
+        return key(ImGuiKey_Insert);
+    });
+    add("snapping", [this] {
+        check("Insert again: Edit Pivot off", !a.m_pivotEdit && !a.pivotEditing());
+        // .wzx: the pivot saved and read back
+        const float3 pv = a.m_scene.objects[obj("Cylinder")].pivot, pos = a.m_scene.objects[obj("Cylinder")].position;
+        wchar_t tmp[MAX_PATH];
+        GetTempPathW(MAX_PATH, tmp);
+        const std::wstring file = std::wstring(tmp) + L"wzx_selftest_pivot.wzx";
+        const bool ok = a.saveSceneFile(file) && a.loadSceneFile(file);
+        DeleteFileW(file.c_str());
+        const int c = obj("Cylinder");
+        check(".wzx: the pivot saved and read back", ok && c >= 0 && length(a.m_scene.objects[c].pivot - pv) < 1e-4f && length(a.m_scene.objects[c].position - pos) < 1e-4f);
+        a.select(c);
+        return key(ImGuiKey_Y, 4);
+    });
+    add("snapping", [this] {
+        const Object& cy = a.m_scene.objects[obj("Cylinder")];
+        float3 mn, mx2;
+        a.aabbOf(cy, cy.position, a.objRot(cy), mn, mx2);
+        const bool still = std::fabs(mn.x - (float)v["mnx"]) < 1e-3f && std::fabs(mn.y - (float)v["mny"]) < 1e-3f && std::fabs(mx2.y - (float)v["mxy"]) < 1e-3f;
+        check("Alt+Y, Center Pivot: the pivot back at the centre of the geometry", length(cy.position - (mn + mx2) * 0.5f) < 1e-3f,
+              fmt("pivot %.2f %.2f %.2f", cy.pivot.x, cy.pivot.y, cy.pivot.z));
+        check("Center Pivot: the geometry stays", still);
+        fresh();
+        // D held: Edit Pivot meanwhile
+        a.select(obj("Cube"));
+        a.m_tool = TOOL_ROTATE;
+        events.push_back([](ImGuiIO& io) { io.AddKeyEvent(ImGuiKey_D, true); });
+        events.push_back([](ImGuiIO&) {});
+        return queued() + 1;
+    });
+    add("snapping", [this] {
+        check("D held: Edit Pivot, the move manipulator", a.pivotEditing() && a.m_tool == TOOL_MOVE);
+        events.push_back([](ImGuiIO& io) { io.AddKeyEvent(ImGuiKey_D, false); });
+        events.push_back([](ImGuiIO&) {});
+        return queued() + 1;
+    });
+    add("snapping", [this] { check("D released: the tool of before", !a.pivotEditing() && a.m_tool == TOOL_ROTATE); return 1; });
+
     // ================================================================= split views: layouts, the active pane, Space
     add("layouts", [this] {
         fresh();
@@ -2090,7 +2297,8 @@ void App::SelfTest::build() {
     });
     add("layouts", [this] {
         check("a quick flick to the left: Persp, the menu not drawn", a.m_panes[0].cam == VCAM_PERSP && !a.m_vm.shown && !a.m_paneMax);
-        // a camera object: on the first diagonal (north east)
+        check("... Persp shown for a moment", ImGui::GetTime() - a.m_vmFlash.t < 1.0 && a.m_vmFlash.label == "Persp");
+        // a camera object: in the list of cameras under the menu
         a.createCameraFromView(false);
         a.select(-1);
         const float cx = (float)v["cx"], cy = (float)v["cy"];
@@ -2099,15 +2307,17 @@ void App::SelfTest::build() {
     });
     add("layouts", [this] { return a.m_vm.shown ? 1 : -1; });
     add("layouts", [this] {
-        const float cx = (float)v["cx"], cy = (float)v["cy"];
-        events.push_back([=](ImGuiIO&) { mx = cx + 70; my = cy - 70; });
+        const std::vector<ViewMenuItem> items = a.viewMenuItems();
+        check("the view menu: the four views and the camera listed under them", items.size() == 5 && items[4].dir < 0 && items[4].label == "Camera");
+        const float cx = items.size() == 5 ? (items[4].b0.x + items[4].b1.x) * 0.5f : 0, cy = items.size() == 5 ? (items[4].b0.y + items[4].b1.y) * 0.5f : 0;
+        events.push_back([=](ImGuiIO&) { mx = cx; my = cy; });
         events.push_back([](ImGuiIO&) {});
         events.push_back([](ImGuiIO& io) { io.AddKeyEvent(ImGuiKey_Space, false); });
         return queued() + 1;
     });
     add("layouts", [this] {
         const int cam = obj("Camera");
-        check("Space menu, north east: the camera object of the scene", cam >= 0 && a.m_panes[0].cam == VCAM_OBJECT && a.m_panes[0].object == a.m_scene.objects[cam].id);
+        check("Space menu, the camera in the list: the pane looks through it", cam >= 0 && a.m_panes[0].cam == VCAM_OBJECT && a.m_panes[0].object == a.m_scene.objects[cam].id);
         return clickItem("atlLayout");
     });
     add("layouts", [this] { return clickItem("       Sixteen (4 x 4)"); });
@@ -2136,6 +2346,14 @@ void App::SelfTest::build() {
     add("layouts", [this] {
         check("Layout menu: Single, on the camera of the active pane", a.m_panes.size() == 1 && a.m_layout == 0);
         check("Single: the view takes the whole area again", std::fabs(a.m_rcView.w - v["vw"]) < 2 && std::fabs(a.m_rcView.h - v["vh"]) < 2);
+        // a tap on Space in one view: the four views (Maya)
+        events.push_back([this](ImGuiIO&) { mx = a.m_rcView.x + a.m_rcView.w * 0.5f; my = a.m_rcView.y + a.m_rcView.h * 0.5f; });
+        events.push_back([](ImGuiIO&) {});
+        key(ImGuiKey_Space);
+        return queued() + 2;
+    });
+    add("layouts", [this] {
+        check("a tap on Space in one view: the four views (Maya)", a.m_layout == 3 && a.m_panes.size() == 4 && !a.m_paneMax, fmt("layout %d", a.m_layout));
         a.setViewAxis(VCAM_PERSP);
         a.setLayout(3);   // Play in a layout
         a.m_game->requestPlay();

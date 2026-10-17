@@ -62,6 +62,15 @@ struct AdvScaleOptions {
     bool showHints = true;            // modifier hints at the bottom of the viewport
 };
 
+// Snapping (Snapping Options, Shift + the Snapping button): saved with the UI settings.
+struct SnapOptions {
+    int gridPoint = 0;                // the points of the grid a move snaps to: 0 intersections, 1 centres of the cells, 2 middles of the edges
+    bool gridStep = true;             // absolute snapping on the cells of the editor grid (else on the move step)
+    bool showPoints = true;           // the snap points of the grid drawn around the moved object
+    float vertexRadius = 40.0f;       // screen pixels: V (vertex snapping) takes the vertex nearest to the cursor within this
+    bool alignToSurface = false;      // placement on the surfaces: the object turned to the surface
+};
+
 struct UiSettings {
     std::string theme = "Atelier";        // "Atelier" (Blue 01, main / accent colours), "Ambre" or "Corail" (fixed colours)
     bool light = false;
@@ -82,6 +91,7 @@ struct UiSettings {
     float graphOutputHeight = 151.0f;     // Graph tab: height of the Output panel (DIPs), dragged from its top edge
     GridOptions grid;                     // editor grid of the viewport
     AdvScaleOptions advScale;             // Advanced Scale tool
+    SnapOptions snap;                     // snapping
 };
 
 namespace th {

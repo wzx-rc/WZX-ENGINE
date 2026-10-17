@@ -104,6 +104,7 @@ void App::drawEditor() {
     st.FontScaleMain = savedScale;
     if (m_showSettings) drawSettingsWindow();
     if (m_showGridOptions) drawGridOptionsWindow();
+    if (m_showSnapOptions) drawSnapOptionsWindow();
     if (m_showAdvSettings) drawAdvScaleSettings();
     if (m_showShortcuts) drawShortcutsWindow();
     if (m_showAbout) drawAboutWindow();
@@ -170,6 +171,77 @@ void App::drawAdvScaleSettings() {
     if (ImGui::Button("Reset", ImVec2(120 * d, 0))) { a = AdvScaleOptions(); changed = true; }
     ImGui::SameLine();
     if (ImGui::Button("Close", ImVec2(120 * d, 0))) m_showAdvSettings = false;
+    ImGui::End();
+    static bool unsaved = false;   // saved once the edit is over
+    if (changed) unsaved = true;
+    if (unsaved && !ImGui::IsAnyItemActive()) {
+        if (!m_themeTestOnly) th::saveSettings(m_exeDir + L"\\wzx_settings.ini");
+        unsaved = false;
+    }
+}
+
+// Snapping Options (Shift + the Snapping button): when it applies, the grid points of the absolute snapping, the
+// steps, the vertex snapping (V), the placement on the surfaces, the pivot. Saved with the UI settings.
+void App::drawSnapOptionsWindow() {
+    const float d = m_dpi;
+    ImGui::SetNextWindowSize(ImVec2(470 * d, 0), ImGuiCond_Appearing);
+    ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+    if (!ImGui::Begin("Snapping Options###snapOptions", &m_showSnapOptions, ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoCollapse)) {
+        ImGui::End();
+        return;
+    }
+    SnapOptions& o = th::settings().snap;
+    bool changed = false;
+    const float labelW = 210 * d, fieldW = 200 * d;
+    auto section = [&](const char* title) {
+        ImGui::Spacing();
+        ImGui::TextColored(th::accentTextV(), "%s", title);
+        ImGui::Separator();
+    };
+    auto check = [&](const char* label, const char* id, bool* v) {
+        propLabel(label, labelW);
+        changed |= ImGui::Checkbox(id, v);
+    };
+    section("Snapping");
+    check("Always on (else hold Shift)", "##snAlways", &m_magnet);
+    check("Snap to the grid (absolute)", "##snAbs", &m_snapAbsolute);
+    section("Grid points");
+    static const char* points[3] = {"Intersections", "Centres of the cells", "Middles of the edges"};
+    for (int k = 0; k < 3; ++k) {
+        propLabel(k == 0 ? "Snap to the" : "", labelW);
+        char id[24];
+        snprintf(id, sizeof id, "%s##snPt%d", points[k], k);
+        if (ImGui::RadioButton(id, o.gridPoint == k)) { o.gridPoint = k; changed = true; }
+    }
+    check("On the cells of the editor grid", "##snGridStep", &o.gridStep);
+    propLabel("Else every (move step)", labelW);
+    ImGui::SetNextItemWidth(fieldW);
+    changed |= ImGui::SliderFloat("##snStep", &m_stepMove, 0.05f, 10.0f, "%.2f", ImGuiSliderFlags_Logarithmic);
+    check("Show the snap points", "##snPoints", &o.showPoints);
+    ImGui::TextDisabled("Cells of the snapping now: %.3g units", snapCell());
+    section("Steps");
+    propLabel("Rotate step", labelW);
+    ImGui::SetNextItemWidth(fieldW);
+    ImGui::SliderFloat("##snRot", &m_stepRotate, 1.0f, 90.0f, "%.0f deg");
+    propLabel("Scale step", labelW);
+    ImGui::SetNextItemWidth(fieldW);
+    ImGui::SliderFloat("##snScale", &m_stepScale, 0.01f, 1.0f, "%.2f");
+    section("Vertex snapping (hold V while moving)");
+    propLabel("Screen radius", labelW);
+    ImGui::SetNextItemWidth(fieldW);
+    changed |= ImGui::SliderFloat("##snVtx", &o.vertexRadius, 5.0f, 200.0f, "%.0f px");
+    section("Placement on the surfaces");
+    check("Place (drag over the surfaces)", "##snPlace", &m_surfacePlace);
+    check("Turn to the surface", "##snAlign", &o.alignToSurface);
+    section("Pivot");
+    ImGui::TextDisabled("Edit Pivot: hold D (or Insert) and move it  ·  Center Pivot: Alt+Y");
+    if (ImGui::Button("Center Pivot", ImVec2(150 * d, 0))) centerPivot();
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
+    if (ImGui::Button("Reset", ImVec2(120 * d, 0))) { o = SnapOptions(); changed = true; }
+    ImGui::SameLine();
+    if (ImGui::Button("Close", ImVec2(120 * d, 0))) m_showSnapOptions = false;
     ImGui::End();
     static bool unsaved = false;   // saved once the edit is over
     if (changed) unsaved = true;

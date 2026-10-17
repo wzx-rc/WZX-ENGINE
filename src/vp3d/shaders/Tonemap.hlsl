@@ -52,7 +52,7 @@ void main(uint3 id : SV_DispatchThreadID) {
     // Selection (selStyle 1): a soft blue glow hugging the silhouette on both sides (a neon edge, no hard line), its
     // light flowing slowly along the contour (sawtooth around the selection centre, selAge = seconds since the
     // selection changed), antialiased like the image (coverage of the selection, MSAA). The creases, the vertex glints
-    // and the floor reflection are drawn by the editor (SelectionFx.cpp). selStyle 0: the yellow outline (2px).
+    // and the floor reflection are drawn by the editor (SelectionFx.cpp). selStyle 0: a thin yellow line.
     uint sel = F.selectedInstance;
     if ((sel != 0 || F.selMoreCount != 0) && F.selStyle == 1) {
         const float ps = max(F.selPixelScale, 1.0);   // render pixels per screen pixel (viewport supersampling)
@@ -99,17 +99,39 @@ void main(uint3 id : SV_DispatchThreadID) {
         }
         c += glow * (outer * 0.55 + inner * 0.32) * k;   // bright next to the edge, gone after ~3 px; the edge of the object
     } else if (sel != 0 || F.selMoreCount != 0) {
-        uint center = (uint)(alb.w + 0.5);
-        bool centerSel = IsSelected(center);
-        int hits = 0;
-        for (int dy = -2; dy <= 2; ++dy)
-            for (int dx = -2; dx <= 2; ++dx) {
-                int2 q = clamp(p + int2(dx, dy), int2(0, 0), int2(F.resolution) - 1);
-                if (IsSelected((uint)(gTex[SLOT_ALBEDO][q].w + 0.5))) hits++;
-            }
-        if (!centerSel && hits > 0) c = lerp(c, float3(1.0, 0.82, 0.1), 0.95);
-        else if (centerSel && hits < 25) c = lerp(c, float3(1.0, 0.86, 0.2), 0.6);
-        else if (centerSel) c = lerp(c, float3(1.0, 0.9, 0.4), 0.08);
+        // selStyle 0: a thin yellow line on the silhouette (about 1.3 screen pixels), antialiased by the coverage of the
+        // selection (MSAA) when there is one, a faint tint inside
+        const float ps = max(F.selPixelScale, 1.0);
+        const float3 yellow = float3(1.0, 0.82, 0.1);
+        float edge = 0.0, cover = 0.0;
+        if (F.selCovValid != 0) {
+            cover = SelCov(p);
+            // signed distance to the edge (render pixels, > 0 outside), from the coverage of the pixel and its neighbours
+            float sOut = cover > 0.001 ? 0.5 - cover : 100.0, sIn = cover < 0.999 ? cover - 0.5 : 100.0;
+            const int R = (int)ceil(2.0 * ps);
+            [loop] for (int dy = -R; dy <= R; ++dy)
+                [loop] for (int dx = -R; dx <= R; ++dx) {
+                    const float len = length(float2(dx, dy));
+                    if ((dx == 0 && dy == 0) || len > R + 0.5) continue;
+                    const float cq = SelCov(p + int2(dx, dy));
+                    if (cq > 0.001) sOut = min(sOut, len + 0.5 - cq);
+                    if (cq < 0.999) sIn = min(sIn, len + 0.5 - (1.0 - cq));
+                }
+            const float d = cover <= 0.001 ? sOut : (cover >= 0.999 ? sIn : abs(0.5 - cover));
+            edge = saturate(1.0 - d / (1.3 * ps));
+        } else {
+            // without the mask: the ids, a one pixel line outside the silhouette
+            bool inside = IsSelected((uint)(alb.w + 0.5));
+            cover = inside ? 1.0 : 0.0;
+            if (!inside)
+                for (int dy = -1; dy <= 1 && edge == 0.0; ++dy)
+                    for (int dx = -1; dx <= 1; ++dx) {
+                        int2 q = clamp(p + int2(dx, dy), int2(0, 0), int2(F.resolution) - 1);
+                        if (IsSelected((uint)(gTex[SLOT_ALBEDO][q].w + 0.5))) { edge = 1.0; break; }
+                    }
+        }
+        c = lerp(c, float3(1.0, 0.9, 0.4), 0.08 * cover);
+        c = lerp(c, yellow, 0.95 * edge);
     }
     gTex[SLOT_OUTPUT][p] = float4(c, 1.0);
 }
