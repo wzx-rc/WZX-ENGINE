@@ -133,7 +133,7 @@ bool App::init(HINSTANCE inst, const Options& opt) {
     if (!opt.hdri.empty()) setHdri(opt.hdri);
     if (opt.select >= 0 && opt.select < (int)m_scene.objects.size()) m_selected = opt.select;
     if (opt.tool >= 0 && opt.tool <= TOOL_SCALE) m_tool = (Tool)opt.tool;
-    if (opt.aa >= 0) m_aaQuality = opt.aa ? 1 : 0;
+    if (opt.aa >= 1) m_msaa = opt.aa;
     m_game = new GameHost(*this);   // node graph, Play, builds, command API
     m_game->init();
     if (m_pendingVillage.type == Json::Array) {   // the scene opened from the command line has a village

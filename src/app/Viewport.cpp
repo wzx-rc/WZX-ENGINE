@@ -14,11 +14,10 @@ void App::viewportCanvas(ImVec2 p0, ImVec2 size) {
     m_rcView = {p0.x, p0.y, size.x, size.y};
     m_vpPx.x = 0;
     m_vpPx.y = 0;
-    // High anti-aliasing: the image is rendered twice as large and filtered down on display (2x2 supersampling)
-    const float ss = m_aaQuality ? 2.0f : 1.0f;
-    m_rs.pixelScale = ss;
-    m_vpPx.w = std::max(16, (int)(size.x * ss));
-    m_vpPx.h = std::max(16, (int)(size.y * ss));
+    m_rs.pixelScale = 1.0f;
+    m_rs.msaaSamples = m_msaa;   // anti-aliasing: hardware MSAA (Display menu)
+    m_vpPx.w = std::max(16, (int)size.x);
+    m_vpPx.h = std::max(16, (int)size.y);
 
     ImGui::SetCursorScreenPos(p0);
     ImGui::SetNextItemAllowOverlap();   // overlay buttons drawn on top of the image stay clickable

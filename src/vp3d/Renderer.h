@@ -38,6 +38,7 @@ struct RenderSettings {
     float lightScale = 1.0f;
     float vignette = 0.12f;
     bool raster = false;
+    int msaaSamples = 4;            // viewport anti-aliasing of the raster passes: MSAA sample count (1 off, 4, 8, 16)
     // Editor overlays of the raster viewport: ground grid (smallest cell in scene units, 0 = off, see EditorGrid.hlsl),
     // length of its Y axis, and the selection glow (style 1 = blue glow, 0 = yellow outline; age in seconds animates it).
     float editorGrid = 0.0f;
@@ -95,6 +96,12 @@ public:
     // The caller must transition it back to UNORDERED_ACCESS before the next render (see outputTexture()).
     void renderToTexture(const Scene& scene, const RenderSettings& rs, const ViewRect& vp, int selectedObject);
     ID3D12Resource* outputTexture() const { return m_tex[kTexCount - 1].Get(); }   // RGBA8, size = last viewport
+    // Viewport anti-aliasing (MSAA): the sample count in use, and whether the GPU supports n samples (1, 2, 4, 8, 16).
+    // RenderSettings::msaaSamples picks it (the largest supported count up to the request).
+    uint32_t msaaSamples() const { return m_msaa * (m_msaaTemporal ? 2u : 1u); }   // effective samples per pixel
+    bool msaaTemporal() const { return m_msaaTemporal; }                               // x16 as 8 samples x 2 frames
+    bool msaaSupported(uint32_t n) const { return n <= 1 || (n <= 16 && (m_msaaMask & (1u << n)) != 0); }
+    void setMsaa(uint32_t n);
     // Reads the current back buffer (call after the overlay finished, before present()).
     bool readBackBuffer(std::vector<uint8_t>& rgba, uint32_t& w, uint32_t& h);
     void present(bool vsync);
@@ -162,6 +169,8 @@ private:
 
     bool createPipelines(std::string* error);
     bool createRasterPipelines(std::string* error);
+    bool createMsaaPipelines(std::string* error);   // the multisampled viewport passes (m_msaa samples)
+    void resolveViewport(ID3D12Resource* dst);      // the multisampled viewport colour into a texture slot
     void createRasterTargets(uint32_t w, uint32_t h);
     // probeCapture: shadow map, then the cube captures of the next probes (m_capSlots) instead of the viewport.
     // probes: DDGI without ray tracing, the main pass reads the probe atlases (SRVs t4..t6) instead of the ambient.
@@ -292,7 +301,17 @@ private:
     bool m_envSunValid = false;
 
     // Raster viewport
-    static constexpr uint32_t kShadowSize = 2048, kMsaa = 4;
+    static constexpr uint32_t kShadowSize = 2048;
+    uint32_t m_msaa = 4;              // samples of the viewport anti-aliasing (setMsaa)
+    uint32_t m_msaaMask = 2;          // bit n set: n samples supported by the GPU
+    // MSAA beyond the GPU (x16 with 8 samples): m_msaa samples over two frames with alternating sub-pixel offsets,
+    // averaged by the tonemapper while the view and the objects do not move (history in the TEX_DENOISE_B slot)
+    bool m_msaaTemporal = false;
+    uint32_t m_taaFrame = 0;
+    uint64_t m_taaSig = 0;
+    bool m_taaValid = false;
+    // shaders of the multisampled passes, kept to rebuild their pipelines when the sample count changes
+    struct RasterShaders { std::vector<char> vsMain, vsWire, vsBg, psMain, psGhost, psWire, psBg, vsGrid, psGrid; } m_rasterShaders;
     ComPtr<ID3D12RootSignature> m_rasterRoot;
     ComPtr<ID3D12PipelineState> m_psoShadow, m_psoBg, m_psoMain, m_psoTrans, m_psoGhost, m_psoId, m_psoWire, m_psoGrid, m_psoDepth;
     ComPtr<ID3D12DescriptorHeap> m_rtvHeap, m_dsvHeap;

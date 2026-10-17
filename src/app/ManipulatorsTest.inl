@@ -222,6 +222,11 @@ void App::gizmoScript() {
         markingSelect(1);
         check("marking menu Q: Deselect", m_selected < 0, "");
     }
+    {   // viewport anti-aliasing: the MSAA sample counts this GPU supports
+        std::string aa = "msaa supported:";
+        for (uint32_t n : {2u, 4u, 8u, 16u}) if (m_renderer.msaaSupported(n)) aa += " x" + std::to_string(n);
+        rep += aa + "\n";
+    }
     rep += fails ? "FAILED " + std::to_string(fails) + "\n" : std::string("ALL PASSED\n");
     writeFileSafe(m_opt.gizmoTest, rep);
     m_running = false;

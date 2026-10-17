@@ -1,7 +1,9 @@
 ﻿// Exposure, view transform (ACES / AgX / AgX Punchy / Standard), vignette, sRGB and selection outline.
 #include "Common.hlsli"
 
-struct TonemapConstants { uint denoisedSlot; uint raster; uint tonemapper; uint overlaySlot; };   // overlaySlot: 1 + slot of the editor overlay (grid, wireframe) drawn over the path traced image, 0 = none
+// auxSlot (1 + slot, 0 = none): path tracing, the editor overlay (grid, wireframe) drawn over the image; raster, the
+// previous frame of MSAA x16 over two frames, averaged with this one (Renderer::render)
+struct TonemapConstants { uint denoisedSlot; uint raster; uint tonemapper; uint auxSlot; };
 ConstantBuffer<TonemapConstants> T : register(b1);
 
 #include "ToneCurves.hlsli"
@@ -17,14 +19,15 @@ void main(uint3 id : SV_DispatchThreadID) {
     float3 color = raw;
     if (T.raster) {
         color = gTex[T.denoisedSlot][p].rgb;
+        if (T.auxSlot != 0) color = 0.5 * (color + gTex[T.auxSlot - 1][p].rgb);   // the other sub-pixel offset
     } else if (T.denoisedSlot != 0xFFFFFFFFu) {
         float3 den = gTex[T.denoisedSlot][p].rgb * max(alb.rgb, 0.01);
         float keepRaw = saturate((spp - 64.0) / 768.0);
         color = lerp(den, raw, keepRaw);
     }
     // editor overlay (grid, wireframe) drawn by the raster pass over the path traced image, premultiplied alpha
-    if (T.overlaySlot != 0) {
-        float4 ov = gTex[T.overlaySlot - 1][p];
+    if (!T.raster && T.auxSlot != 0) {
+        float4 ov = gTex[T.auxSlot - 1][p];
         color = color * (1.0 - ov.a) + ov.rgb;
     }
     color *= F.exposure;

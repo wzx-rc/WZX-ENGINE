@@ -1421,6 +1421,7 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
     vp.y = std::max(0, std::min(vp.y, (int)m_height - 1));
     vp.w = std::max(1, std::min(vp.w, (int)m_width - vp.x));
     vp.h = std::max(1, std::min(vp.h, (int)m_height - vp.y));
+    setMsaa((uint32_t)std::max(1, rs.msaaSamples));   // viewport anti-aliasing (rebuilds the MSAA passes when it changes)
     if ((uint32_t)vp.w != m_rtW || (uint32_t)vp.h != m_rtH) {
         waitIdle();
         createTargets(vp.w, vp.h);
@@ -1536,7 +1537,23 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
     ID3D12DescriptorHeap* heaps[] = {m_heap.Get()};
     m_cmd->SetDescriptorHeaps(1, heaps);
     UINT gx = (vp.w + 7) / 8, gy = (vp.h + 7) / 8;
+    if (!(rs.raster && !giRaster)) m_taaValid = false;
     if (rs.raster && !giRaster) {
+        // MSAA x16 over two frames (m_msaaTemporal): the frames are averaged only while nothing that moves the image
+        // changes (camera, objects, view size, display)
+        uint64_t sig = 1469598103934665603ull;
+        if (m_msaaTemporal) {
+            const Camera& c = scene.camera;
+            const float k[] = {c.target.x, c.target.y, c.target.z, c.yaw, c.pitch, c.distance, c.fovY, (float)vp.w, (float)vp.h,
+                               (float)rs.wireframe, rs.editorGrid};
+            const uint32_t n[2] = {transformSignature(scene), scene.geometryVersion};
+            auto mix = [&](const void* p, size_t len) {
+                const unsigned char* b = static_cast<const unsigned char*>(p);
+                for (size_t i = 0; i < len; ++i) { sig ^= b[i]; sig *= 1099511628211ull; }
+            };
+            mix(k, sizeof(k));
+            mix(n, sizeof(n));
+        }
         m_cmd->EndQuery(m_queryHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 0);
         recordRaster(scene, rs, vp);
         m_denoisedSlot = 0xFFFFFFFF;
@@ -1545,9 +1562,22 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
         m_cmd->SetComputeRootConstantBufferView(0, m_constants.va());
         m_cmd->SetComputeRootDescriptorTable(8, m_heap->GetGPUDescriptorHandleForHeapStart());
         m_cmd->SetPipelineState(m_psoTonemap.Get());
-        uint32_t rc[4] = {TEX_DENOISE_A, 1u, (uint32_t)rs.tonemapper, 0};
+        const bool blend = m_msaaTemporal && m_taaValid && sig == m_taaSig;
+        uint32_t rc[4] = {TEX_DENOISE_A, 1u, (uint32_t)rs.tonemapper, blend ? (uint32_t)TEX_DENOISE_B + 1u : 0u};
         m_cmd->SetComputeRoot32BitConstants(1, 4, rc, 0);
         m_cmd->Dispatch(gx, gy, 1);
+        if (m_msaaTemporal) {   // this frame becomes the history of the next one
+            ID3D12Resource* cur = m_tex[TEX_DENOISE_A].Get();
+            ID3D12Resource* hist = m_tex[TEX_DENOISE_B].Get();
+            transition(cur, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_COPY_SOURCE);
+            transition(hist, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_COPY_DEST);
+            m_cmd->CopyResource(hist, cur);
+            transition(hist, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+            transition(cur, D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+            m_taaSig = sig;
+            m_taaValid = true;
+            ++m_taaFrame;
+        } else m_taaValid = false;
     } else if (giRaster) {
         // Probe captures (raster), probe rays + blend (compute), then the viewport lit by the raster pass reading the
         // probes, and the tonemapper. Nothing here needs ray tracing.

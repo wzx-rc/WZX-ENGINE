@@ -1167,18 +1167,20 @@ void App::atlViewport(float x, float y, float w, float h) {
     else if (tris >= 10000) snprintf(triText, sizeof(triText), "%.1f k", tris / 1e3);
     else snprintf(triText, sizeof(triText), "%zu", tris);
     if (m_showStats) {
-        R st = {r.x + r.w - 165 * s, r.y + 116 * s, 151 * s, 113 * s};   // under the view cube
+        R st = {r.x + r.w - 165 * s, r.y + 116 * s, 151 * s, 129 * s};   // under the view cube
         Box(st, P().minimap, 4, true);
         Text(st.x + 10 * s, st.y + 10 * s, "VIEWPORT", P().accent, 9);
-        char v[5][32];
+        char v[6][32];
         snprintf(v[0], 32, "%.0f FPS", 1000.0f / std::max(m_frameMs, 0.1f));
         snprintf(v[1], 32, "%.1f ms", m_frameMs);
         if (m_rs.raster) snprintf(v[2], 32, "%.2f ms", m_renderer.gpuFrameMs());
         else snprintf(v[2], 32, "%u / %u", std::min<uint32_t>(m_renderer.sampleCount(), m_rs.maxSamples), m_rs.maxSamples);
         snprintf(v[3], 32, "%s", triText);
         snprintf(v[4], 32, "%zu · %zu", objs, m_scene.lights.size());
-        const char* names[] = {"Frame rate", "Frame time", m_rs.raster ? "GPU" : "Samples", "Triangles", "Objects · lights"};
-        for (int i = 0; i < 5; ++i) {
+        const uint32_t aa = m_renderer.msaaSamples();
+        if (aa > 1) snprintf(v[5], 32, m_renderer.msaaTemporal() ? "MSAA x%u (%ux2)" : "MSAA x%u", aa, aa / 2); else snprintf(v[5], 32, "Off");
+        const char* names[] = {"Frame rate", "Frame time", m_rs.raster ? "GPU" : "Samples", "Triangles", "Objects · lights", "Anti-aliasing"};
+        for (int i = 0; i < 6; ++i) {
             Text(st.x + 10 * s, st.y + (30 + i * 16) * s, names[i], P().muted, 9);
             Text(st.x + 92 * s, st.y + (30 + i * 16) * s, v[i], P().text, 9);
         }
@@ -1355,8 +1357,17 @@ void App::atlViewMenus(float x, float y) {
         ImGui::Separator();
         if (ImGui::BeginMenu("Anti-aliasing")) {
             ImGui::SetWindowFontScale(menuScale);
-            if (ImGui::MenuItem("Standard (MSAA 4x)", nullptr, m_aaQuality == 0)) { m_aaQuality = 0; markDirty(); }
-            if (ImGui::MenuItem("High (MSAA 4x + supersampling 2x)", nullptr, m_aaQuality == 1)) { m_aaQuality = 1; markDirty(); }
+            // hardware multisampling of the raster passes; x16 without 16 hardware samples: 8 samples over two frames
+            // (temporal, while the view does not move); a count out of reach is greyed out
+            const int counts[4] = {1, 4, 8, 16};
+            const char* names[4] = {"Off", "MSAA x4", "MSAA x8", "MSAA x16"};
+            for (int i = 0; i < 4; ++i) {
+                const uint32_t n = (uint32_t)counts[i];
+                const bool hw = m_renderer.msaaSupported(n), twoFrames = !hw && n > 2 && m_renderer.msaaSupported(n / 2);
+                char note[48];
+                snprintf(note, sizeof note, twoFrames ? "%u samples x 2 frames" : "not supported by this GPU", n / 2);
+                if (ImGui::MenuItem(names[i], hw ? nullptr : note, m_msaa == counts[i], hw || twoFrames)) { m_msaa = counts[i]; markDirty(); }
+            }
             ImGui::EndMenu();
         }
         ImGui::EndPopup();

@@ -100,7 +100,7 @@ struct Options {
     std::wstring gizmoDemo;     // "tool handle dx dy menuDir": frozen drag or marking menu for a capture (--gizmo-demo)
     std::string openMenu;       // test: view menu opened at startup for a capture (vmCamera, vmDisplay, vmRender, vmAxes)
     int shotSeq = 0;            // test: --shot-seq N saves N images (name_00.png...) one every 8 frames
-    int aa = -1;                // viewport anti-aliasing at startup (--aa 0 standard, 1 high)
+    int aa = -1;                // viewport anti-aliasing at startup: MSAA samples (--aa 1, 4, 8 or 16)
     std::wstring hdri;          // HDRI to load at startup (file, or "sky" for the procedural sky)
     // DDGI probe GI (real-time mode)
     bool ddgi = false;          // start in the real-time probe GI mode
@@ -412,7 +412,7 @@ private:
     bool m_showStats = true;
     bool m_showGizmo = true;
     bool m_showEditorGrid = true; // ground grid of the editor (EditorGrid.hlsl)
-    int m_aaQuality = 0;          // viewport anti-aliasing: 0 MSAA 4x, 1 MSAA 4x + 2x supersampling (Display menu)
+    int m_msaa = 4;               // viewport anti-aliasing: MSAA samples (1 off, 4, 8, 16; Display menu)
     size_t m_selSig = 0;          // selection signature: the glow animation restarts when it changes
     double m_selSince = 0;
     int m_axisMode = 0;          // move / rotate axes: 0 world, 1 object, 2 parent (scale: always object)
