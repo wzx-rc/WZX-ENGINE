@@ -526,8 +526,25 @@ void App::frame() {
             }
         }
         const bool game = m_game && (m_game->playing() || m_game->playerMode());
-        m_rs.editorGrid = m_showEditorGrid && !game ? std::max(m_scene.gridScale, 1e-3f) : 0.0f;
-        m_rs.editorGridAxis = std::max(m_scene.gridScale * 2.5f, m_scene.camera.distance * 0.45f);
+        // editor grid: the options of the Grid Options window (saved with the UI settings)
+        const GridOptions& go = th::settings().grid;
+        m_rs.editorGrid = go.visible && !game ? std::max(go.sceneSpacing ? m_scene.gridScale : go.every, 1e-3f) : 0.0f;
+        EditorGridStyle& gs = m_rs.grid;
+        gs.flags = (go.lines ? EditorGridStyle::Lines : 0u) | (go.subdivLines ? EditorGridStyle::Subdivisions : 0u) |
+                   (go.axes ? EditorGridStyle::Axes : 0u) | (go.axes && go.arrows ? EditorGridStyle::Arrows : 0u) | (go.fade ? EditorGridStyle::Fade : 0u);
+        gs.subdivisions = go.subdivisions;
+        gs.extent = go.extent;
+        gs.widthGrid = go.widthGrid;
+        gs.widthSub = go.widthSub;
+        gs.widthAxis = go.thickAxes ? go.widthAxis : go.widthGrid;
+        gs.opacity = go.opacity;
+        auto f4 = [](const ImVec4& v) { return float4(v.x, v.y, v.z, v.w); };
+        gs.colorGrid = f4(go.colorGrid);
+        gs.colorSub = f4(go.colorSub);
+        gs.colorX = f4(go.colorX);
+        gs.colorY = f4(go.colorY);
+        gs.colorZ = f4(go.colorZ);
+        m_rs.editorGridAxis = std::max(std::max(m_rs.editorGrid, m_scene.gridScale) * 2.5f, m_scene.camera.distance * 0.45f);
     }
     m_viewportRendered = false;
     if (m_workspace == 2 && m_matHost.want) {

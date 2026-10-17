@@ -34,6 +34,20 @@ struct ThemeDef {
     float fontSize = 15.0f;
 };
 
+// Editor grid of the viewport (Grid button, Grid Options window): saved with the UI settings.
+struct GridOptions {
+    bool visible = true;
+    bool sceneSpacing = true;          // grid lines every the scene grid spacing (else `every`)
+    float every = 1.0f;                // grid lines every (units)
+    int subdivisions = 1;              // cells between two grid lines (1 = none)
+    float extent = 0.0f;               // length and width (0 = infinite)
+    bool lines = true, subdivLines = true, axes = true, thickAxes = true, arrows = true, numbers = false, fade = true;
+    float widthGrid = 1.0f, widthSub = 1.0f, widthAxis = 1.4f;   // screen pixels
+    float opacity = 1.0f;
+    ImVec4 colorGrid = ImVec4(0.58f, 0.63f, 0.72f, 0.40f), colorSub = ImVec4(0.58f, 0.63f, 0.72f, 0.20f);
+    ImVec4 colorX = ImVec4(0.93f, 0.36f, 0.36f, 0.90f), colorY = ImVec4(0.42f, 0.86f, 0.50f, 0.95f), colorZ = ImVec4(0.36f, 0.56f, 0.98f, 0.90f);
+};
+
 struct UiSettings {
     std::string theme = "Atelier";        // "Atelier" (Blue 01, main / accent colours), "Ambre" or "Corail" (fixed colours)
     bool light = false;
@@ -52,6 +66,7 @@ struct UiSettings {
     float graphOutlineWeight = 0.5f;      // Graph tab: outline thickness in px (the selected node gets twice this)
     ImVec4 graphSelectColor = ImVec4(0.400f, 0.729f, 0.816f, 1.0f);   // Graph tab: outline of the selected node (cyan)
     float graphOutputHeight = 151.0f;     // Graph tab: height of the Output panel (DIPs), dragged from its top edge
+    GridOptions grid;                     // editor grid of the viewport
 };
 
 namespace th {

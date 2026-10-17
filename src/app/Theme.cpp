@@ -562,6 +562,36 @@ void loadSettings(const std::wstring& file) {
         else if (k == "graphOutlineWeight") g_settings.graphOutlineWeight = std::clamp((float)atof(v.c_str()), 0.1f, 3.0f);
         else if (k == "graphSelectColor") { if (parseVec(v, c, 4)) g_settings.graphSelectColor = ImVec4(c[0], c[1], c[2], 1); }
         else if (k == "graphOutputHeight") g_settings.graphOutputHeight = std::clamp((float)atof(v.c_str()), 70.0f, 2000.0f);
+        else if (k.rfind("grid.", 0) == 0) {   // editor grid (Grid Options)
+            GridOptions& g = g_settings.grid;
+            const std::string n = k.substr(5);
+            const float x = (float)atof(v.c_str());
+            const bool on = v != "0";
+            if (n == "visible") g.visible = on;
+            else if (n == "sceneSpacing") g.sceneSpacing = on;
+            else if (n == "every") g.every = std::clamp(x, 0.001f, 100000.0f);
+            else if (n == "subdivisions") g.subdivisions = std::clamp((int)x, 1, 100);
+            else if (n == "extent") g.extent = std::clamp(x, 0.0f, 1000000.0f);
+            else if (n == "lines") g.lines = on;
+            else if (n == "subdivLines") g.subdivLines = on;
+            else if (n == "axes") g.axes = on;
+            else if (n == "thickAxes") g.thickAxes = on;
+            else if (n == "arrows") g.arrows = on;
+            else if (n == "numbers") g.numbers = on;
+            else if (n == "fade") g.fade = on;
+            else if (n == "widthGrid") g.widthGrid = std::clamp(x, 0.25f, 8.0f);
+            else if (n == "widthSub") g.widthSub = std::clamp(x, 0.25f, 8.0f);
+            else if (n == "widthAxis") g.widthAxis = std::clamp(x, 0.25f, 8.0f);
+            else if (n == "opacity") g.opacity = std::clamp(x, 0.0f, 1.0f);
+            else if (parseVec(v, c, 4)) {
+                ImVec4 col(c[0], c[1], c[2], c[3]);
+                if (n == "colorGrid") g.colorGrid = col;
+                else if (n == "colorSub") g.colorSub = col;
+                else if (n == "colorX") g.colorX = col;
+                else if (n == "colorY") g.colorY = col;
+                else if (n == "colorZ") g.colorZ = col;
+            }
+        }
     }
 }
 
@@ -580,6 +610,15 @@ void saveSettings(const std::wstring& file) {
       << "\nlockBrightness=" << (s.lockBrightness ? 1 : 0) << "\nlanguage=" << s.language
       << "\ngraphOutline=" << (s.graphOutline ? 1 : 0) << "\ngraphOutlineWeight=" << s.graphOutlineWeight
       << "\ngraphSelectColor=" << sc << "\n";
+    const GridOptions& g = s.grid;   // editor grid (Grid Options)
+    auto col = [](const ImVec4& v) { char b[64]; snprintf(b, sizeof(b), "%.3f %.3f %.3f %.3f", v.x, v.y, v.z, v.w); return std::string(b); };
+    f << "grid.visible=" << (g.visible ? 1 : 0) << "\ngrid.sceneSpacing=" << (g.sceneSpacing ? 1 : 0) << "\ngrid.every=" << g.every
+      << "\ngrid.subdivisions=" << g.subdivisions << "\ngrid.extent=" << g.extent << "\ngrid.lines=" << (g.lines ? 1 : 0)
+      << "\ngrid.subdivLines=" << (g.subdivLines ? 1 : 0) << "\ngrid.axes=" << (g.axes ? 1 : 0) << "\ngrid.thickAxes=" << (g.thickAxes ? 1 : 0)
+      << "\ngrid.arrows=" << (g.arrows ? 1 : 0) << "\ngrid.numbers=" << (g.numbers ? 1 : 0) << "\ngrid.fade=" << (g.fade ? 1 : 0)
+      << "\ngrid.widthGrid=" << g.widthGrid << "\ngrid.widthSub=" << g.widthSub << "\ngrid.widthAxis=" << g.widthAxis
+      << "\ngrid.opacity=" << g.opacity << "\ngrid.colorGrid=" << col(g.colorGrid) << "\ngrid.colorSub=" << col(g.colorSub)
+      << "\ngrid.colorX=" << col(g.colorX) << "\ngrid.colorY=" << col(g.colorY) << "\ngrid.colorZ=" << col(g.colorZ) << "\n";
 }
 
 } // namespace th

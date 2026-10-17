@@ -19,6 +19,19 @@ namespace vp3d {
 
 using Microsoft::WRL::ComPtr;
 
+// Look of the editor grid (EditorGrid.hlsl), set by the Grid Options window of the editor.
+struct EditorGridStyle {
+    enum Flags : uint32_t { Lines = 1, Subdivisions = 2, Axes = 4, Arrows = 8, Fade = 16 };
+    uint32_t flags = Lines | Subdivisions | Axes | Arrows | Fade;
+    int subdivisions = 1;             // lines between two grid lines + 1 (1 = none)
+    float extent = 0.0f;              // length and width of the grid (0 = infinite)
+    float widthGrid = 1.0f, widthSub = 1.0f, widthAxis = 1.4f;   // screen pixels
+    float opacity = 1.0f;
+    float4 colorGrid{0.58f, 0.63f, 0.72f, 0.40f};   // rgb, a = opacity of the lines
+    float4 colorSub{0.58f, 0.63f, 0.72f, 0.20f};
+    float4 colorX{0.93f, 0.36f, 0.36f, 0.90f}, colorY{0.42f, 0.86f, 0.50f, 0.95f}, colorZ{0.36f, 0.56f, 0.98f, 0.90f};
+};
+
 struct RenderSettings {
     int maxBounces = 6;
     int samplesPerFrame = 1;
@@ -43,6 +56,7 @@ struct RenderSettings {
     // length of its Y axis, and the selection glow (style 1 = blue glow, 0 = yellow outline; age in seconds animates it).
     float editorGrid = 0.0f;
     float editorGridAxis = 10.0f;
+    EditorGridStyle grid;
     int selectionStyle = 1;
     float selectionAge = 10.0f;
     float2 selectionCenter{0, 0};   // screen centre (viewport pixels) and radius of the selection: the glow light runs around it

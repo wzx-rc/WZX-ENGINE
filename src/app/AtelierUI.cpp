@@ -1121,13 +1121,8 @@ void App::atlViewport(float x, float y, float w, float h) {
     auto right = [&](float bw) { bx -= bw; float r0 = bx; bx -= 6 * s; return r0; };
     if (Button("atlStats", {right(28 * s), by, 28 * s, 24 * s}, "", Icon::Monitor, m_showStats, true)) m_showStats = !m_showStats;
     Tip("Viewport statistics");
-    {
-        bool gridOn = false;
-        for (const Object& o : m_scene.objects)
-            if (o.part == "GROUND" && o.material >= 0 && o.material < (int)m_scene.materials.size()) gridOn = (m_scene.materials[o.material].flags & 1u) != 0;
-        if (Button("atlGrid", {right(28 * s), by, 28 * s, 24 * s}, "", Icon::Grid, gridOn, true)) toggleGroundGrid();
-        Tip("Ground grid");
-    }
+    if (Button("atlGrid", {right(28 * s), by, 28 * s, 24 * s}, "", Icon::Grid, th::settings().grid.visible, true)) toggleGrid();
+    Tip("Grid: show / hide (Shift+click: Grid Options)");
     {
         const bool placing = m_game && m_game->placementMode();
         if (Button("atlVillage", {right(28 * s), by, 28 * s, 24 * s}, "", Icon::Cube, placing, true) && m_game) m_game->togglePlacement();
@@ -1263,8 +1258,24 @@ void App::atlViewport(float x, float y, float w, float h) {
             cameraChanged();
         }
     }
+    // grid numbers along the X and Z axes (Grid Options), one per grid line
+    if (m_rs.editorGrid > 0 && th::settings().grid.numbers && th::settings().grid.axes) {
+        const float every = m_rs.editorGrid, L = m_rs.editorGridAxis;
+        const int n = std::min(40, (int)std::floor(L / every * 0.92f));
+        for (int i = -n; i <= n; ++i) {
+            if (i == 0) continue;
+            char t[32];
+            snprintf(t, sizeof t, "%g", i * every);
+            for (int a = 0; a < 2; ++a) {
+                float2 sp;
+                const float3 w = a == 0 ? float3(i * every, 0, 0) : float3(0, 0, i * every);
+                if (!project(w, sp) || sp.x < r.x || sp.y < r.y || sp.x > r.x + r.w || sp.y > r.y + r.h) continue;
+                Text(sp.x + 3 * s, sp.y + 1 * s, t, IM_COL32(205, 210, 222, 150), 9);
+            }
+        }
+    }
     // labels at the ends of the world axes of the editor grid
-    if (m_rs.editorGrid > 0) {
+    if (m_rs.editorGrid > 0 && th::settings().grid.axes && th::settings().grid.arrows) {
         const float L = m_rs.editorGridAxis;
         const float3 ends[3] = {float3(L * 1.07f, 0, 0), float3(0, L * 1.09f, 0), float3(0, 0, L * 1.07f)};   // past the arrows (EditorGrid.hlsl)
         const ImU32 cols[3] = {IM_COL32(238, 96, 96, 235), IM_COL32(110, 220, 130, 235), IM_COL32(96, 146, 252, 235)};
@@ -1344,7 +1355,10 @@ void App::atlViewMenus(float x, float y) {
         for (int i = 0; i < 3; ++i)
             if (ImGui::MenuItem(displays[i], nullptr, m_rs.wireframe == i)) { m_rs.wireframe = i; markDirty(); }
         ImGui::Separator();
-        if (ImGui::MenuItem("Grid", nullptr, m_showEditorGrid)) { m_showEditorGrid = !m_showEditorGrid; markDirty(); }
+        if (ImGui::MenuItem("Grid", nullptr, th::settings().grid.visible)) {
+            toggleGrid();   // (Shift: the options)
+        }
+        if (ImGui::MenuItem("Grid Options...")) m_showGridOptions = true;
         bool gridOn = false;
         for (const Object& o : m_scene.objects)
             if (o.part == "GROUND" && o.material >= 0 && o.material < (int)m_scene.materials.size()) gridOn = (m_scene.materials[o.material].flags & 1u) != 0;
@@ -1394,6 +1408,15 @@ void App::atlViewMenus(float x, float y) {
         ImGui::SliderFloat("Scale step", &m_stepScale, 0.01f, 1.0f, "%.2f");
         ImGui::EndPopup();
     }
+    // Grid: shows / hides the editor grid; Shift+click opens its options (the option box of Maya)
+    {
+        const char* label = "Grid";
+        const float w = TextSize(label, 12).x + 38 * s;
+        if (Button("vmGrid", {px, y, w, 24 * s}, label, Icon::Grid, th::settings().grid.visible)) toggleGrid();
+        Tip("Grid: show / hide (Shift+click: Grid Options)");
+        px += w + 6 * s;
+    }
+    if (m_frameCounter == 10 && m_opt.openMenu == "gridOptions") m_showGridOptions = true;   // --open-menu gridOptions: captures
 }
 
 // --------------------------------------------------------------------------- bottom panel (former Atelier graph Output)

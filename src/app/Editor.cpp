@@ -103,10 +103,123 @@ void App::drawEditor() {
     ImGui::PopFont();
     st.FontScaleMain = savedScale;
     if (m_showSettings) drawSettingsWindow();
+    if (m_showGridOptions) drawGridOptionsWindow();
     if (m_showShortcuts) drawShortcutsWindow();
     if (m_showAbout) drawAboutWindow();
 }
 // --------------------------------------------------------------------------- dialogs
+
+// Grid button (viewport and its header): shows / hides the editor grid; with Shift, opens the Grid Options window.
+void App::toggleGrid() {
+    if (ImGui::GetIO().KeyShift) {
+        m_showGridOptions = true;
+        return;
+    }
+    GridOptions& g = th::settings().grid;
+    g.visible = !g.visible;
+    if (!m_themeTestOnly) th::saveSettings(m_exeDir + L"\\wzx_settings.ini");
+    markDirty();
+}
+
+// Grid Options (Maya's option box of the grid): size, display, line thickness in pixels, colours. Changes apply live
+// and are saved with the UI settings.
+void App::drawGridOptionsWindow() {
+    const float d = m_dpi;
+    ImGui::SetNextWindowSize(ImVec2(470 * d, 0), ImGuiCond_Appearing);
+    ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+    if (!ImGui::Begin("Grid Options###gridOptions", &m_showGridOptions, ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoCollapse)) {
+        ImGui::End();
+        return;
+    }
+    GridOptions& g = th::settings().grid;
+    bool changed = false;
+    const float labelW = 190 * d, fieldW = 220 * d;
+    auto section = [&](const char* title) {
+        ImGui::Spacing();
+        ImGui::TextColored(th::accentTextV(), "%s", title);
+        ImGui::Separator();
+    };
+    auto check = [&](const char* label, const char* id, bool* v) {
+        propLabel(label, labelW);
+        changed |= ImGui::Checkbox(id, v);
+    };
+    auto width = [&](const char* label, const char* id, float* v) {
+        propLabel(label, labelW);
+        ImGui::SetNextItemWidth(fieldW);
+        changed |= ImGui::SliderFloat(id, v, 0.25f, 6.0f, "%.2f px");
+    };
+    auto color = [&](const char* label, const char* id, ImVec4* v) {
+        propLabel(label, labelW);
+        changed |= ImGui::ColorEdit4(id, &v->x, ImGuiColorEditFlags_AlphaBar | ImGuiColorEditFlags_AlphaPreviewHalf);
+    };
+
+    section("Size");
+    check("Use the scene spacing", "##sceneSpacing", &g.sceneSpacing);
+    propLabel("Grid lines every", labelW);
+    ImGui::SetNextItemWidth(fieldW);
+    ImGui::BeginDisabled(g.sceneSpacing);
+    changed |= ImGui::DragFloat("##every", g.sceneSpacing ? &m_scene.gridScale : &g.every, 0.05f, 0.01f, 10000.0f, "%.2f units",
+                                ImGuiSliderFlags_Logarithmic);
+    ImGui::EndDisabled();
+    propLabel("Subdivisions", labelW);
+    ImGui::SetNextItemWidth(fieldW);
+    changed |= ImGui::SliderInt("##subdiv", &g.subdivisions, 1, 20);
+    propLabel("Length and width", labelW);
+    ImGui::SetNextItemWidth(fieldW);
+    changed |= ImGui::DragFloat("##extent", &g.extent, 0.5f, 0.0f, 100000.0f, g.extent > 0 ? "%.1f units" : "infinite");
+
+    section("Display");
+    check("Grid lines", "##lines", &g.lines);
+    check("Subdivision lines", "##subdivLines", &g.subdivLines);
+    check("Axes", "##axes", &g.axes);
+    check("Thicker line for axes", "##thickAxes", &g.thickAxes);
+    check("Axis arrows and letters", "##arrows", &g.arrows);
+    check("Grid numbers on axes", "##numbers", &g.numbers);
+    check("Fade with distance", "##fade", &g.fade);
+
+    section("Line thickness (pixels)");
+    width("Grid lines", "##wGrid", &g.widthGrid);
+    width("Subdivision lines", "##wSub", &g.widthSub);
+    ImGui::BeginDisabled(!g.thickAxes);
+    width("Axes", "##wAxis", &g.widthAxis);
+    ImGui::EndDisabled();
+
+    section("Color");
+    color("Grid lines", "##cGrid", &g.colorGrid);
+    color("Subdivision lines", "##cSub", &g.colorSub);
+    color("X axis", "##cX", &g.colorX);
+    color("Y axis", "##cY", &g.colorY);
+    color("Z axis", "##cZ", &g.colorZ);
+    propLabel("Opacity", labelW);
+    ImGui::SetNextItemWidth(fieldW);
+    changed |= ImGui::SliderFloat("##opacity", &g.opacity, 0.0f, 1.0f, "%.2f");
+
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
+    const float bw = 120 * d;
+    if (ImGui::Button(g.visible ? "Hide Grid" : "Show Grid", ImVec2(bw, 0))) { g.visible = !g.visible; changed = true; }
+    ImGui::SameLine();
+    if (ImGui::Button("Reset", ImVec2(bw, 0))) {
+        const bool visible = g.visible;
+        g = GridOptions();
+        g.visible = visible;
+        changed = true;
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Close", ImVec2(bw, 0))) m_showGridOptions = false;
+    ImGui::End();
+    // saved once the edit is over (not every frame of a slider drag)
+    static bool unsaved = false;
+    if (changed) {
+        markDirty();
+        unsaved = true;
+    }
+    if (unsaved && !ImGui::IsAnyItemActive()) {
+        if (!m_themeTestOnly) th::saveSettings(m_exeDir + L"\\wzx_settings.ini");
+        unsaved = false;
+    }
+}
 
 void App::drawShortcutsWindow() {
     ImGui::SetNextWindowSize(ImVec2(520 * m_dpi, 0), ImGuiCond_Appearing);

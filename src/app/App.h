@@ -411,7 +411,9 @@ private:
     bool m_showGrid = true;
     bool m_showStats = true;
     bool m_showGizmo = true;
-    bool m_showEditorGrid = true; // ground grid of the editor (EditorGrid.hlsl)
+    bool m_showGridOptions = false; // Grid Options window (Shift+click on the Grid button)
+    void drawGridOptionsWindow();     // AtelierUI.cpp
+    void toggleGrid();                // Grid button: shows / hides the editor grid (Shift: options)
     int m_msaa = 4;               // viewport anti-aliasing: MSAA samples (1 off, 4, 8, 16; Display menu)
     size_t m_selSig = 0;          // selection signature: the glow animation restarts when it changes
     double m_selSince = 0;

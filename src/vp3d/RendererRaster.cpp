@@ -153,7 +153,7 @@ bool Renderer::createRasterPipelines(std::string* error) {
     p[6].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
     p[7].ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;   // b3 probe face (DDGI capture), vertex + pixel
     p[7].Constants.ShaderRegister = 3;
-    p[7].Constants.Num32BitValues = 20;
+    p[7].Constants.Num32BitValues = 32;   // probe face (20 values) or editor grid (32)
     p[8].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;   // t4..t6 probe atlases, pixel
     p[8].DescriptorTable.NumDescriptorRanges = 1;
     p[8].DescriptorTable.pDescriptorRanges = &probeRange;
@@ -723,8 +723,14 @@ void Renderer::recordRaster(const Scene& scene, const RenderSettings& rs, const 
     // editor grid after the opaque objects (they hide it), before the transparent ones
     auto drawGrid = [&]() {
         if (!m_psoGrid || rs.editorGrid <= 0) return;
-        float gc[8] = {rs.editorGrid, rs.editorGridAxis, 1.0f, 2.0f * t / std::max(1, vp.h), std::max(rs.pixelScale, 1.0f), 0, 0, 0};
-        m_cmd->SetGraphicsRoot32BitConstants(7, 8, gc, 0);
+        const EditorGridStyle& g = rs.grid;
+        float gc[32] = {rs.editorGrid, rs.editorGridAxis, g.opacity, 2.0f * t / std::max(1, vp.h),
+                        std::max(rs.pixelScale, 1.0f), (float)std::max(1, g.subdivisions), std::max(g.extent, 0.0f), 0.0f,
+                        g.widthGrid, g.widthSub, g.widthAxis, 0.0f};
+        memcpy(&gc[7], &g.flags, sizeof(uint32_t));   // GridConstants::flags (uint)
+        const float4* cols[5] = {&g.colorGrid, &g.colorSub, &g.colorX, &g.colorY, &g.colorZ};
+        for (int k = 0; k < 5; ++k) memcpy(&gc[12 + 4 * k], cols[k], sizeof(float4));
+        m_cmd->SetGraphicsRoot32BitConstants(7, 32, gc, 0);
         m_cmd->SetPipelineState(m_psoGrid.Get());
         m_cmd->DrawInstanced(3, 1, 0, 0);
     };
