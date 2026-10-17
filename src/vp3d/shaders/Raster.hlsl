@@ -393,7 +393,15 @@ float4 PSGhost(VSOut i) : SV_Target { return Shade(i, true, 0.0015, false); }
 // id in w; the world normal in rgb lets the selection glow find the creases of the selected object (Tonemap.hlsl)
 float4 PSId(VSOut i) : SV_Target { return float4(normalize(i.nrm) * 0.5 + 0.5, (float)D.id); }
 // Editor wireframe display: flat lines, grey level in D.alpha (blended, no depth write).
-float4 PSWire(VSOut i) : SV_Target { return float4(D.alpha.xxx, (D.flags & 8u) ? 0.16 : 0.75); }   // flag 8: Wireframe Override, faint
+// Flag 8 (Wireframe Override): faint light lines with a facing ratio gradient, clear where the surface faces the
+// camera and fading towards the silhouettes (where the lines crowd).
+float4 PSWire(VSOut i) : SV_Target {
+    if (D.flags & 8u) {
+        float facing = abs(dot(normalize(i.nrm), normalize(R.camPos - i.wpos)));
+        return float4(D.alpha.xxx, 0.02 + 0.24 * facing * facing);
+    }
+    return float4(D.alpha.xxx, 0.75);
+}
 
 // ---------------------------------------------------------------- DDGI probe capture
 // One 90-degree cube face per draw: the view-projection of the face and the probe position (32-bit root constants b3).

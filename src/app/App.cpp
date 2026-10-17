@@ -501,6 +501,28 @@ void App::frame() {
         double now = ImGui::GetTime();
         if (sig != m_selSig) { m_selSig = sig; m_selSince = now; }
         m_rs.selectionAge = (float)(now - m_selSince);
+        // screen centre and radius of the selection (viewport pixels): the light of the glow runs around it
+        std::vector<int> sel = selectionAll();
+        if (!sel.empty() && m_rcView.w > 1 && m_rcView.h > 1) {
+            float3 mn(1e30f), mx(-1e30f);
+            for (int i : sel) {
+                if (i < 0 || i >= (int)m_scene.objects.size()) continue;
+                const Object& o = m_scene.objects[i];
+                float3 a, b;
+                aabbOf(o, o.position, objRot(o), a, b);
+                mn = minv(mn, a);
+                mx = maxv(mx, b);
+            }
+            float3 cr, cu, cf;
+            m_scene.camera.basis(cr, cu, cf);
+            float2 sc, se;
+            float3 c = (mn + mx) * 0.5f;
+            if (mn.x <= mx.x && project(c, sc) && project(c + cr * (length(mx - mn) * 0.5f), se)) {
+                const float kx = m_vpPx.w / m_rcView.w, ky = m_vpPx.h / m_rcView.h;
+                m_rs.selectionCenter = float2((sc.x - m_rcView.x) * kx, (sc.y - m_rcView.y) * ky);
+                m_rs.selectionRadius = std::max(8.0f, std::fabs(se.x - sc.x) * kx);
+            }
+        }
         const bool game = m_game && (m_game->playing() || m_game->playerMode());
         m_rs.editorGrid = m_showEditorGrid && !game ? std::max(m_scene.gridScale, 1e-3f) : 0.0f;
         m_rs.editorGridAxis = std::max(m_scene.gridScale * 2.5f, m_scene.camera.distance * 0.45f);

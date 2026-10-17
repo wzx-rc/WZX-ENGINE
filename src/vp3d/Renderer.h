@@ -44,6 +44,8 @@ struct RenderSettings {
     float editorGridAxis = 10.0f;
     int selectionStyle = 1;
     float selectionAge = 10.0f;
+    float2 selectionCenter{0, 0};   // screen centre (viewport pixels) and radius of the selection: the glow light runs around it
+    float selectionRadius = 100.0f;
     int tonemapper = 0;           // 0 ACES (Hill fit), 1 AgX, 2 AgX Punchy, 3 Standard (clip)          // light raster viewport instead of path tracing
     // Stable history (interactive, GI): the history is dropped when an object moves, edges are validated on the
     // pixel centre, the denoiser strength is bounded. Off = the previous behaviour (marks behind moved objects).

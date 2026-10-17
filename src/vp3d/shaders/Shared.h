@@ -95,7 +95,7 @@ struct FrameConstants {
     float3 prevCamUp;    uint historyValid;     // 1 = history textures hold the previous frame
     float3 prevCamFwd;   float historyCap;      // history length in frames (exponential average window)
     uint pad3; uint pad4; uint pad5; uint pad6;
-    float denoiseEdgeLuma; float pad7; float pad8; float pad9;   // edge sensitivity of the denoiser (lower = keeps shadows)
+    float denoiseEdgeLuma; float selCenterX; float selCenterY; float selRadius;   // edge sensitivity of the denoiser (lower = keeps shadows); selection glow: screen centre and radius (pixels) of the selection
     // HDRI: lat-long texture (gEnvTex) and its importance sampling tables (gEnvDist, see EnvSample in PathTrace.hlsl)
     uint envW; uint envH; float envRotation; float envMapIntensity;   // table size, rotation (radians), intensity
     float envPdfScale; float envMips; float filterGlossy; float indirectClamp;   // W*H / sum of the table, mip count of gEnvTex; see TracePath
