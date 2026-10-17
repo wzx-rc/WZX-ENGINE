@@ -1,5 +1,6 @@
 #include "App.h"
 #include "GameHost.h"
+#include "CurveEditor.h"
 #include "backends/imgui_impl_win32.h"
 #include "vp3d/shaders/Shared.h"
 #include "atelier/material_ui.h"
@@ -135,6 +136,8 @@ bool App::init(HINSTANCE inst, const Options& opt) {
     if (opt.tool >= 0 && opt.tool <= TOOL_ROTATE) m_tool = (Tool)opt.tool;
     m_game = new GameHost(*this);   // node graph, Play, builds, command API
     m_game->init();
+    m_curves = new CurveEditor(*this);   // Create > Curve, point editing
+    m_curves->testReport = opt.curveTest;
     if (m_pendingVillage.type == Json::Array) {   // the scene opened from the command line has a village
         m_game->loadVillage(m_pendingVillage);
         m_pendingVillage = Json();
@@ -158,6 +161,8 @@ int App::run() {
         frame();
     }
     m_renderer.waitIdle();
+    delete m_curves;
+    m_curves = nullptr;
     delete m_game;
     m_game = nullptr;
     atelier::material::Shutdown();
@@ -445,6 +450,7 @@ void App::frame() {
     m_lastTick = now;
     updateBake();
 
+    if (m_curves) m_curves->beginFrame();   // --curve-test sequence
     if (m_pendingAction) runPendingAction();
     if (m_pendingScene >= 0) {
         int s = m_pendingScene;
@@ -456,7 +462,7 @@ void App::frame() {
     m_interacting = false;
     // game layer first: it owns the keys and the graph overlay (drawn after the editor, below)
     bool gameKeys = m_game && m_game->beginFrame();
-    if (!gameKeys && m_workspace == 0) handleShortcuts();   // Graph / Material Studio have their own shortcuts
+    if (!gameKeys && m_workspace == 0 && !(m_curves && m_curves->keys())) handleShortcuts();   // Graph / Material Studio have their own shortcuts; the curve tools use some keys first
     if (!m_game || !m_game->playerMode()) {
         drawEditor();
         drawSaveChangesPopup();
@@ -616,6 +622,12 @@ bool App::project(const float3& p, float2& s) const {
 }
 
 void App::aabbOf(const Object& o, const float3& pos, const float4& rot, float3& mn, float3& mx) {
+    if (o.curve.valid() && m_curves) {   // curve: its world box moved to pos
+        m_curves->worldBounds(o, mn, mx);
+        mn = mn - o.position + pos;
+        mx = mx - o.position + pos;
+        return;
+    }
     if (o.mesh < 0 || o.mesh >= (int)m_scene.meshes.size()) { mn = mx = pos; return; }   // group node: its pivot
     float3 a, b;
     m_scene.meshes[o.mesh].bounds(a, b);
@@ -643,6 +655,8 @@ void App::setPivotKeepEye(const float3& p) {
 void App::frameSelection() {
     float3 mn(1e30f), mx(-1e30f);
     auto addObj = [&](const Object& o) {
+        float3 ca, cb;
+        if (o.curve.valid() && m_curves && m_curves->worldBounds(o, ca, cb)) { mn = minv(mn, ca); mx = maxv(mx, cb); return; }
         if (o.mesh < 0 || o.mesh >= (int)m_scene.meshes.size()) {   // group node: its children
             std::vector<NodeRef> d;
             nodeDescendants(o.id, d);
@@ -1119,6 +1133,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         else if (a == L"--spp") opt.shotSpp = _wtoi(next().c_str());
         else if (a == L"--view") opt.view = _wtoi(next().c_str());
         else if (a == L"--select") opt.select = _wtoi(next().c_str());
+        else if (a == L"--curve-test") opt.curveTest = next();
         else if (a == L"--tool") opt.tool = _wtoi(next().c_str());
         else if (a == L"--quality") opt.quality = _wtoi(next().c_str());
         else if (a == L"--light") opt.light = _wtoi(next().c_str());

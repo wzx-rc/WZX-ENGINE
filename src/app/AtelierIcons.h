@@ -12,7 +12,7 @@ enum class Icon {
     ArrowLeft, ArrowRight, ChevronDown, ChevronRight, Play, Pause, Step,
     Settings, Sun, Grid, List, Filter, Move, Rotate, Scale, Magnet, Camera,
     Material, Animation, Blueprint, Light, Volume, Info, Check, Link, More,
-    Save, Trash, Undo, Redo, Home, Pin, Person, Monitor, Refresh, Collection
+    Save, Trash, Undo, Redo, Home, Pin, Person, Monitor, Refresh, Collection, Curve
 };
 
 // Small editor glyphs drawn as vectors: p is the top-left of a size x size square.
@@ -80,6 +80,11 @@ inline void DrawIcon(ImDrawList* dl, Icon icon, ImVec2 p, float size, ImU32 colo
         line(8 / 24.0f, 16.5f / 24.0f, 16 / 24.0f, 16.5f / 24.0f);
         break;
     }
+    case Icon::Curve:   // S curve between two control points (Create > Curve)
+        dl->AddBezierCubic(point(.14f, .80f), point(.20f, .10f), point(.80f, .90f), point(.86f, .20f), color, stroke * 1.2f);
+        dl->AddRectFilled(point(.06f, .72f), point(.22f, .88f), color);
+        dl->AddRectFilled(point(.78f, .12f), point(.94f, .28f), color);
+        break;
     case Icon::FolderOpen:
         line(.14f,.34f,.14f,.78f); line(.14f,.34f,.37f,.34f);
         line(.37f,.34f,.46f,.43f); line(.46f,.43f,.77f,.43f);

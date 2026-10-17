@@ -9,6 +9,7 @@
 // order, selectable (objects: group, collapsed); positions stay world values, groups have no geometry.
 #include "App.h"
 #include "GameHost.h"
+#include "CurveEditor.h"
 #include "Json.h"
 #include "vp3d/AssetImport.h"
 #include <algorithm>
@@ -424,6 +425,7 @@ std::string App::wzxSceneJson(bool withCamera) const {
         w.str("name", o.name);
         w.str("type", o.part);
         if (o.group) w.boolean("group", true);   // group node: a transform only, no geometry
+        else if (o.curve.valid()) w.value("curve", curveToJson(o.curve));   // curve: its points (CurveEditor.cpp)
         else writeGeometry(w, sc, o);
         w.vec("position", o.position);
         w.vec4("rotation", objRot(o));
@@ -690,6 +692,7 @@ void App::loadWzxScene(const Json& j, const std::wstring& path) {
             }
         o.group = flag(oj["group"], false);   // Scene Manager group node: a transform only
         if (o.group) { o.mesh = -1; if (o.part.empty()) o.part = "GROUP"; }
+        else if (curveFromJson(oj["curve"], o.curve)) { o.mesh = -1; if (o.part.empty()) o.part = "CURVE"; }   // curve object
         else if (o.prim.type == PRIM_NONE) o.mesh = oj["mesh"].type == Json::String ? fileMesh(oj["mesh"].s) : shapeMesh(shape);
         o.position = vec3(oj["position"], o.position);
         const Json& r = oj["rotation"];
