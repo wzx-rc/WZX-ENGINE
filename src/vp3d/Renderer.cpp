@@ -135,7 +135,7 @@ bool Renderer::init(HWND hwnd, uint32_t width, uint32_t height, const std::wstri
 
     D3D12_DESCRIPTOR_HEAP_DESC hd = {};
     hd.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-    hd.NumDescriptors = kSelCovSlot + 1;  // + shadow map SRV + material textures + DDGI UAVs + history UAVs + HDRI SRV + capture UAVs + probe SRVs
+    hd.NumDescriptors = kViewHeapBase + kMaxViews * kViewHeapStride;  // (extra views last) + shadow map SRV + material textures + DDGI UAVs + history UAVs + HDRI SRV + capture UAVs + probe SRVs
     hd.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
     m_device->CreateDescriptorHeap(&hd, IID_PPV_ARGS(&m_heap));
     m_descSize = m_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
@@ -1495,6 +1495,8 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
     fc.tanHalfFovY = std::tan(cam.fovY * 0.5f);
     fc.camFwd = fwd;
     fc.aspect = (float)vp.w / (float)vp.h;
+    fc.orthoHalfH = cam.ortho ? cam.orthoHeight * 0.5f : 0.0f;
+    fc.orthoBack = cam.ortho ? orthoBack(cam) : 0.0f;
     fc.resolution = {(uint32_t)vp.w, (uint32_t)vp.h};
     fc.frameIndex = m_frameIndex++;
     fc.sampleIndex = m_sampleIndex;
@@ -1552,6 +1554,8 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
     fc.prevCamFwd = m_prevCam.fwd;
     fc.prevTanHalfFovY = m_prevCam.tanHalf;
     fc.prevAspect = m_prevCam.aspect;
+    fc.prevOrthoHalfH = m_prevCam.orthoHalfH;
+    fc.prevOrthoBack = m_prevCam.orthoBack;
     fc.envW = envMap ? m_envW : 0;
     fc.envH = envMap ? m_envH : 0;
     fc.envRotation = scene.env.hdriRotation;
@@ -1561,6 +1565,9 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
     fc.filterGlossy = rs.filterGlossy;
     fc.indirectClamp = rs.indirectClamp;
     memcpy(m_constants.mapped, &fc, sizeof(fc));
+    static_assert(sizeof(fc) <= sizeof(m_lastFc), "m_lastFc holds the frame constants");
+    memcpy(m_lastFc, &fc, sizeof(fc));   // the extra views of this frame start from them (renderView)
+    m_lastProbes = giRaster;
 
     ID3D12DescriptorHeap* heaps[] = {m_heap.Get()};
     m_cmd->SetDescriptorHeaps(1, heaps);
@@ -1573,7 +1580,7 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
         if (m_msaaTemporal) {
             const Camera& c = scene.camera;
             const float k[] = {c.target.x, c.target.y, c.target.z, c.yaw, c.pitch, c.distance, c.fovY, (float)vp.w, (float)vp.h,
-                               (float)rs.wireframe, rs.editorGrid};
+                               (float)rs.wireframe, rs.editorGrid, c.ortho ? c.orthoHeight : 0.0f};
             const uint32_t n[2] = {transformSignature(scene), scene.geometryVersion};
             auto mix = [&](const void* p, size_t len) {
                 const unsigned char* b = static_cast<const unsigned char*>(p);
@@ -1747,7 +1754,7 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
     if (useHistory) {
         copyHistory();
         m_historyValid = true;
-        m_prevCam = {fc.camPos, fc.camRight, fc.camUp, fc.camFwd, fc.tanHalfFovY, fc.aspect};
+        m_prevCam = {fc.camPos, fc.camRight, fc.camUp, fc.camFwd, fc.tanHalfFovY, fc.aspect, fc.orthoHalfH, fc.orthoBack};
     }
     m_cmd->EndQuery(m_queryHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 1);
     m_cmd->ResolveQueryData(m_queryHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 0, m_giTimed ? 4 : 2, m_queryReadback.res.Get(), 0);
@@ -1782,6 +1789,14 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
     m_cmd->Close();
     ID3D12CommandList* l[] = {m_cmd.Get()};
     m_queue->ExecuteCommandLists(1, l);
+}
+
+float Renderer::orthoBack(const Camera& cam) const {
+    float3 r, u, f;
+    cam.basis(r, u, f);
+    // the nearest point of the bounding sphere of the scene along the view, from the eye (negative: behind it)
+    const float nearest = dot(m_sceneCenter - cam.eye(), f) - m_sceneRadius;
+    return std::max(0.0f, -nearest) + m_sceneRadius * 0.05f + 1.0f;
 }
 
 void Renderer::renderToTexture(const Scene& scene, const RenderSettings& rs, const ViewRect& vp, int selectedObject) {

@@ -55,6 +55,16 @@ struct Object {
     int order = 0;                 // rank among its siblings in the Scene Manager
     bool group = false;            // group node: a transform only (mesh -1, part "GROUP"), never drawn or picked
     bool collapsed = false;        // Scene Manager: children folded
+    // Camera object (mesh -1, part "CAMERA"): a transform only, looking along its -Z with +Y up, drawn by the editor.
+    // The viewports can look through it; the render camera of the scene is the one with camRender. Ignored by the
+    // renderers and the players.
+    bool camera = false;
+    float camFovY = 0.61086524f;   // 35 degrees
+    bool camOrtho = false;
+    float camOrthoHeight = 10.0f;  // orthographic: scene units from the bottom of the view to its top
+    float camDistance = 10.0f;     // its pivot, this far in front of it (tumbling while looking through it)
+    float camAspect = 16.0f / 9.0f;   // shape of its image (resolution gate, preview)
+    bool camRender = false;
 
     Affine transform() const {
         Affine m = useRot ? Affine::trsQuat(position, rot, scale) : Affine::trs(position, yaw, scale);
@@ -147,10 +157,23 @@ struct Camera {
     float focalLengthMm = 50.0f;  // used for aperture size together with fStop
     float focusDistance = 10.0f;
     float sensorScale = 1.0f;     // scene units per meter, for physically scaled aperture
+    // Orthographic projection (top / front / side views): orthoHeight scene units from the bottom of the view to its
+    // top; the eye stays where the orbit puts it, the rays are parallel to the view direction (no depth of field).
+    bool ortho = false;
+    float orthoHeight = 10.0f;
 
     float3 eye() const;
-    void basis(float3& right, float3& up, float3& fwd) const;
+    void basis(float3& right, float3& up, float3& fwd) const;   // straight down / up: right is the yaw's
     float apertureRadius() const; // in scene units
+    // Primary ray of the image point ndc (-1..1, y up) for the aspect (width / height): from the eye (perspective),
+    // or parallel to the view from the plane of the eye moved `back` units behind it (orthographic).
+    void ray(float ndcX, float ndcY, float aspect, float3& origin, float3& dir, float back = 0.0f) const;
+    // Image point (ndc) of p and its depth along the view; false when p is behind a perspective camera.
+    bool project(const float3& p, float aspect, float2& ndc, float* depth = nullptr) const;
+    // Size in scene units of one pixel at p, the image being pixelsHigh pixels high.
+    float pixelSize(const float3& p, float pixelsHigh) const;
+    // Direction from p towards the viewer (orthographic: the opposite of the view direction).
+    float3 toViewer(const float3& p) const;
 };
 
 struct Scene {

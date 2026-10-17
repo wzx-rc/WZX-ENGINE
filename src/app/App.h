@@ -22,6 +22,11 @@ enum SceneId { SCENE_CORNELL = 0, SCENE_STUDIO = 1, SCENE_LOOKDEV = 2, SCENE_CON
 // Maya-style manipulator handles (Manipulators.cpp): axes, plane squares (2 axes, named by their normal), centre
 // anchor, rotate view ring and trackball.
 enum ManipHandle { MH_NONE = -1, MH_X = 0, MH_Y, MH_Z, MH_YZ, MH_XZ, MH_XY, MH_CENTER, MH_VIEW, MH_FREE };
+// Built-in cameras of the viewports (Cameras.cpp): persp, then the orthographic ones; VCAM_OBJECT: a camera object.
+enum ViewCam { VCAM_PERSP = 0, VCAM_TOP, VCAM_FRONT, VCAM_SIDE, VCAM_BOTTOM, VCAM_BACK, VCAM_LEFT, VCAM_COUNT, VCAM_OBJECT = VCAM_COUNT };
+// Split layouts of the viewport (Panes.cpp): single, two side by side, two stacked, 2 x 2, 3 x 3, 4 x 4.
+constexpr int kLayoutCount = 6;
+constexpr int kPreviewSlot = 16;   // extra view of the camera preview (the panes use 0..15)
 
 // Manipulator drag on the selection.
 struct GizmoDrag {
@@ -99,6 +104,9 @@ struct Options {
     std::wstring openPath;      // scene file to open at startup
     std::wstring gizmoTest;     // manipulator self-test: report written there, then exit (--gizmo-test)
     std::wstring selfTest;      // editor self-test: report written there, then exit (--self-test, tools\selftest.bat)
+    std::string cam;            // camera of the view at startup: persp, top, front, side, bottom, back, left (--cam)
+    int layout = -1;            // layout of the view at startup: 0 single ... 3 four (2 x 2), 5 sixteen (--layout)
+    bool demoCameras = false;   // test: two camera objects around the view at startup, one of them the render camera (--demo-cameras)
     std::wstring gizmoDemo;     // "tool handle dx dy menuDir": frozen drag or marking menu for a capture (--gizmo-demo)
     std::string openMenu;       // test: view menu opened at startup for a capture (vmCamera, vmDisplay, vmRender, vmAxes)
     int shotSeq = 0;            // test: --shot-seq N saves N images (name_00.png...) one every 8 frames
@@ -195,7 +203,7 @@ private:
     void setPreset(int preset);
     float4 objRot(const Object& o) const { return o.useRot ? o.rot : qAxisAngle(float3(0, 1, 0), o.yaw); }
     void ensureRot(Object& o) { if (!o.useRot) { o.rot = qSnap90(qAxisAngle(float3(0, 1, 0), o.yaw)); o.useRot = true; } }
-    void aabbOf(const Object& o, const float3& pos, const float4& rot, float3& mn, float3& mx);
+    void aabbOf(const Object& o, const float3& pos, const float4& rot, float3& mn, float3& mx) const;
     std::vector<int> selectionAll() const { std::vector<int> v; if (m_selected >= 0) v.push_back(m_selected); for (int i : m_multi) v.push_back(i); return v; }
 
     // Scene Manager (Outliner.cpp): ids, parent / child links, order, groups, collections, selection of the list.
@@ -332,7 +340,7 @@ private:
     void atlTopBar(float x0, float y0, float width);
     void atlHierarchy(float x, float y, float w, float h);
     void atlViewport(float x, float y, float w, float h);
-    void atlViewMenus(float x, float y);   // camera, display, renderer and axes menus inside the view
+    void atlViewMenus(float x, float y, float w);   // camera, display, renderer and axes menus inside the view (w: the room)
     void atlContent(float x, float y, float w, float h);
     void atlInspector(float x, float y, float w, float h);
     void atlInspectorActor(float x, float y, float w, float h);
@@ -400,6 +408,61 @@ private:
     void drawAdvScaleMenu(float x, float y, float w, float h);   // menu and modifier hints of the viewport (AtelierUI.cpp)
     void drawAdvScaleSettings();          // Advanced Scale Settings window (Editor.cpp)
     void setAdvScale(bool on);
+    // cameras of the viewports (Cameras.cpp): built-in persp / top / front / side... and the camera objects
+    struct ViewPane {
+        int cam = VCAM_PERSP;          // the built-in camera it looks through (ViewCam), or VCAM_OBJECT
+        uint32_t object = 0;           // VCAM_OBJECT: id of the camera object
+        ScreenRect rc;                 // on screen, this frame
+    };
+    Camera m_viewCams[VCAM_COUNT];     // the built-in cameras (the active pane's is m_scene.camera meanwhile)
+    std::vector<ViewPane> m_panes = std::vector<ViewPane>(1);   // the panes of the layout (Panes.cpp)
+    int m_activePane = 0;              // looks through m_scene.camera, drawn by the full renderer
+    Camera m_objCamLoaded;             // the camera object's view as loaded this frame (written back when it moved)
+    static const char* viewCamName(int k);    // persp, top, front, side, bottom, back, left
+    static const char* viewCamLabel(int k);   // menu labels
+    void resetViewCams();
+    int cameraObject(uint32_t id) const;
+    Camera cameraOfObject(const Object& o) const;
+    void cameraToObject(Object& o, const Camera& c);
+    Camera paneCamera(int pane) const;
+    std::string paneCameraName(int pane) const;
+    const Camera& perspCamera() const;
+    void storeActiveCamera();
+    void loadActiveCamera();
+    void setPaneCamera(int pane, int cam, uint32_t object = 0);
+    void activatePane(int pane);
+    bool orbitLocked() const;
+    void applyViewBookmark(const Camera& c);
+    int renderCamera() const;          // the camera object that is the render camera, -1 for none
+    void setRenderCamera(int idx);
+    int createCameraFromView(bool render);
+    void lookThroughRenderCam();
+    void lookThroughSelected();
+    void demoCameras();                // --demo-cameras: a render camera and a camera around the view (the latter selected)
+    bool cameraIcon(int idx, std::vector<std::pair<float3, float3>>& lines) const;
+    void drawCameraIcons(ImDrawList* dl);
+    int pickCameraIcon(float mx, float my);
+    int m_iconPane = -1;               // drawCameraIcons for this pane (-1: the active one)
+    void cameraMenu(int pane);         // the cameras a pane can look through (AtelierUI.cpp)
+    // split layouts (Panes.cpp) and the camera preview
+    int m_layout = 0;                  // kLayoutCount layouts, see layoutName
+    bool m_paneMax = false;            // Space: the active pane alone in the view
+    bool m_paneClicked = false;        // a click made this pane the active one: the view takes that click too (Maya)
+    uint32_t m_previewPin = 0;         // camera object kept in the preview when it is not selected
+    ScreenRect m_previewRc;            // image of the preview on screen, this frame (0: none)
+    bool m_previewShown = false;
+    static const char* layoutName(int layout);
+    static int layoutCols(int layout);
+    static int layoutRows(int layout);
+    void setLayout(int layout);
+    ScreenRect layoutPanes(const ScreenRect& area);
+    void togglePaneMax(bool underMouse = true);   // (false: the active pane)
+    void paneInput(bool windowHovered);
+    bool selectionInView(const Camera& c, float w, float h, float2& centre, float& radius) const;
+    void renderPanes();
+    int previewCamera() const;
+    void drawPanes();                  // the other panes: images, frames, camera names (AtelierUI.cpp)
+    void drawCameraPreview(float x, float y, float w, float h);   // AtelierUI.cpp
     // selection overlay (SelectionFx.cpp): white glow on the outline vertices, outline in the floor reflection
     struct SilEdge { float3 a, b, n0, n1; bool open = true; };   // mesh edge (object space) and its two face normals
     struct SilCache { bool built = false; uint32_t version = 0; size_t vertexCount = 0, indexCount = 0; float3 first; std::vector<SilEdge> edges; };
@@ -476,7 +539,7 @@ private:
     void selfTestFrame();        // called once per frame
     int m_exitCode = 0;          // of run(): 1 when the self-test failed
     std::vector<Snapshot> m_undo, m_redo;
-    int m_viewMode = 0;
+
 
     // panels
     int m_contentAsset = 0;     // selected asset in the content browser

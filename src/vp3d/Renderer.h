@@ -117,6 +117,16 @@ public:
     bool msaaTemporal() const { return m_msaaTemporal; }                               // x16 as 8 samples x 2 frames
     bool msaaSupported(uint32_t n) const { return n <= 1 || (n <= 16 && (m_msaaMask & (1u << n)) != 0); }
     void setMsaa(uint32_t n);
+    // Extra views (the other panes of a split layout, the preview of a camera): the raster view (Lit, with the editor
+    // grid, wireframe and selection glow) of another camera, each into its own image. Between beginViews and endViews,
+    // after renderToTexture of the frame (same scene and settings); the images are then readable by the UI.
+    void beginViews();
+    void renderView(int slot, const Scene& scene, const Camera& cam, const RenderSettings& rs, uint32_t w, uint32_t h,
+                    float2 selectionCenter, float selectionRadius);
+    void endViews();
+    ID3D12Resource* viewOutput(int slot) const;   // RGBA8 image of the extra view (null before its first render)
+    bool readView(int slot, std::vector<uint8_t>& rgba, uint32_t& w, uint32_t& h);   // self-test
+    static constexpr int kMaxViews = 20;
     // Reads the current back buffer (call after the overlay finished, before present()).
     bool readBackBuffer(std::vector<uint8_t>& rgba, uint32_t& w, uint32_t& h);
     void present(bool vsync);
@@ -190,7 +200,7 @@ private:
     bool createPipelines(std::string* error);
     bool createRasterPipelines(std::string* error);
     bool createMsaaPipelines(std::string* error);   // the multisampled viewport passes (m_msaa samples)
-    void resolveViewport(ID3D12Resource* dst);      // the multisampled viewport colour into a texture slot
+    void resolveViewport(ID3D12Resource* src, ID3D12Resource* dst);   // the multisampled viewport colour into a texture
     void recordSelectionMask(const std::function<void(const Draw&)>& drawOne);   // coverage of the selection (t8)
     void createRasterTargets(uint32_t w, uint32_t h);
     // probeCapture: shadow map, then the cube captures of the next probes (m_capSlots) instead of the viewport.
@@ -225,6 +235,26 @@ private:
     ComPtr<ID3D12CommandQueue> m_queue;
     ComPtr<ID3D12CommandAllocator> m_alloc;
     ComPtr<ID3D12GraphicsCommandList4> m_cmd;
+    // Extra views (renderView): their own targets, images and constants, the pipelines of the main view. They are
+    // recorded into a second command list, sent after the main one (m_cmd points to it between beginViews and endViews).
+    struct ExtraView {
+        int index = 0;
+        uint32_t w = 0, h = 0, samples = 0;
+        ComPtr<ID3D12Resource> color, depth, selMask, selCov, hdr, id, idDepth, out;
+        Buffer cb;                 // raster constants (0, 512 without jitter), frame constants of the tonemapper (1024)
+        bool outReadable = false;  // out is in the pixel shader resource state (drawn by the UI)
+    };
+    std::vector<ExtraView> m_extra;
+    ComPtr<ID3D12CommandAllocator> m_viewAlloc;
+    ComPtr<ID3D12GraphicsCommandList4> m_viewCmd;
+    ComPtr<ID3D12DescriptorHeap> m_viewRtvHeap, m_viewDsvHeap;   // per view: 3 RTVs (colour, ids, selection), 2 DSVs
+    bool m_viewsOpen = false;
+    bool m_viewsShadow = false;   // the shadow map still to draw for the extra views of this frame (once: it does not depend on the camera)
+    const ExtraView* m_rtView = nullptr;   // recordRaster draws into this extra view (null: the main viewport)
+    const Camera* m_rtCam = nullptr;       // ... with this camera
+    alignas(16) unsigned char m_lastFc[1024] = {};   // the main view's gpu::FrameConstants of this frame (exposure, selection...)
+    bool m_lastProbes = false;             // its raster pass read the probes (Metal iOS, baked)
+    void createViewTargets(ExtraView& v, uint32_t w, uint32_t h);
     ComPtr<ID3D12Fence> m_fence;
     uint64_t m_fenceValue = 0;
     HANDLE m_fenceEvent = nullptr;
@@ -254,6 +284,8 @@ private:
     static constexpr uint32_t kProbeSrvSlot = kCapHeapSlot + 3;
     // coverage of the selection (resolved MSAA mask of the selected objects) read by the tonemapper (t8)
     static constexpr uint32_t kSelCovSlot = kProbeSrvSlot + 3;
+    // extra views (renderView): per view, the u0..u5 table of the tonemapper then its selection coverage (t8)
+    static constexpr uint32_t kViewHeapBase = kSelCovSlot + 1, kViewHeapStride = kTexCount + 1;
     static constexpr uint32_t kProbeFace = 16;   // texels per cube face of a probe capture
     std::vector<ComPtr<ID3D12Resource>> m_materialTex;
     ComPtr<ID3D12Resource> m_tex[kTexCount];
@@ -309,7 +341,9 @@ private:
 
     // Temporal history: copies of ACCUM and NORMAL of the previous frame, and the camera they were rendered with.
     ComPtr<ID3D12Resource> m_hist[2];
-    struct PrevCamera { float3 pos, right, up, fwd; float tanHalf = 1.0f, aspect = 1.0f; } m_prevCam;
+    struct PrevCamera { float3 pos, right, up, fwd; float tanHalf = 1.0f, aspect = 1.0f, orthoHalfH = 0.0f, orthoBack = 0.0f; } m_prevCam;
+    // orthographic camera: how far behind its eye the rays start so that the whole scene lies in front of them
+    float orthoBack(const Camera& cam) const;
     bool m_historyValid = false;
     uint32_t m_sceneSignature = 0;
 

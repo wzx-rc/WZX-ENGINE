@@ -355,6 +355,9 @@ void GameHost::stop() {
     m_app.m_selected = m_saveSelected < (int)s.objects.size() ? m_saveSelected : -1;
     m_app.m_multi.clear();
     m_app.m_tool = (Tool)m_saveTool;
+    if (m_rtsPane >= 0 && m_rtsPane < (int)m_app.m_panes.size() && m_rtsPaneCam != VCAM_PERSP)   // the pane the RTS camera took
+        m_app.setPaneCamera(m_rtsPane, m_rtsPaneCam, m_rtsPaneObject);
+    m_rtsPane = -1;
     m_app.markDirty();
 }
 
@@ -369,6 +372,14 @@ void GameHost::update(float dt) {
 
 void GameHost::setRtsCamera(bool on) {
     if (on && !m_rtsCam) {
+        // the RTS camera is a perspective view: the active pane looks through persp while it runs (its camera back on Stop)
+        const App::ViewPane p = m_app.m_panes[m_app.m_activePane];
+        if (m_rtsPane < 0) {
+            m_rtsPane = m_app.m_activePane;
+            m_rtsPaneCam = p.cam;
+            m_rtsPaneObject = p.object;
+        }
+        if (p.cam != VCAM_PERSP) m_app.setPaneCamera(m_app.m_activePane, VCAM_PERSP);
         const vp3d::Camera& c = m_app.m_scene.camera;
         m_cam.reset(c.target, c.yaw, std::min(c.distance, 14.0f));   // the RTS starting view (prototype default)
     }

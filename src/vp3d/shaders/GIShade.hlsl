@@ -154,7 +154,8 @@ void main(uint3 id : SV_DispatchThreadID) {
     float2 jitter = (F.sampleIndex == 0 || (F.flags & FRAME_FLAG_NO_JITTER)) ? float2(0.5, 0.5) : Rnd2(rng);
     float2 uv = (float2(id.xy) + jitter) / float2(F.resolution);
     float2 ndc = float2(2.0 * uv.x - 1.0, 1.0 - 2.0 * uv.y);
-    float3 dir = normalize(F.camFwd + F.camRight * (ndc.x * F.aspect * F.tanHalfFovY) + F.camUp * (ndc.y * F.tanHalfFovY));
+    float3 org, dir;
+    CameraRay(ndc, org, dir);
 
     Guides g = (Guides)0;
     // Stratified over frames: a low-discrepancy sequence with a per-pixel shift. The light sample and the glossy
@@ -166,7 +167,7 @@ void main(uint3 id : SV_DispatchThreadID) {
     float fr = (float)F.frameIndex;
     float3 ul = frac(0.5 + fr * float3(0.8191725134, 0.6710436067, 0.5497004779) + shift);
     float2 ur = frac(0.5 + fr * float2(0.7548776662, 0.5698402910) + shift.yz);
-    float3 L = ShadePixel(F.camPos, dir, rng, g, ul, ur);
+    float3 L = ShadePixel(org, dir, rng, g, ul, ur);
     if (any(isnan(L)) || any(isinf(L))) L = 0;
     float lum = Luminance(L);
     if (lum > F.fireflyClamp) L *= F.fireflyClamp / lum;
@@ -177,7 +178,7 @@ void main(uint3 id : SV_DispatchThreadID) {
         float best = g.depth;
         uint hitProbe = 0xFFFFFFFFu;
         for (uint p = 0; p < G.counts.w; ++p) {
-            float3 oc = F.camPos - ProbePos(ProbeCoord(p));
+            float3 oc = org - ProbePos(ProbeCoord(p));
             float b = dot(oc, dir), c = dot(oc, oc) - r * r;
             float disc = b * b - c;
             if (disc <= 0) continue;
@@ -185,7 +186,7 @@ void main(uint3 id : SV_DispatchThreadID) {
             if (t > 0 && t < best) { best = t; hitProbe = p; }
         }
         if (hitProbe != 0xFFFFFFFFu) {
-            float3 n = normalize(F.camPos + dir * best - ProbePos(ProbeCoord(hitProbe)));
+            float3 n = normalize(org + dir * best - ProbePos(ProbeCoord(hitProbe)));
             L = gProbe[int2(hitProbe, 0)].x > 0.5 ? SampleTile(gIrr, hitProbe, DDGI_IRR_N, n).rgb : float3(0.6, 0.02, 0.02);
             g.albedo = 1; g.normal = n; g.depth = best; g.id = 65000;
         }
@@ -194,12 +195,13 @@ void main(uint3 id : SV_DispatchThreadID) {
     // Temporal accumulation with reprojection (Temporal.hlsli). The guides are the current frame's.
     // Stable edges (flag): the pixel-centre surface validates the history, see PathTrace.hlsl (main).
     if (F.flags & FRAME_FLAG_CENTRE_VALID) {
-        float3 dirc = CurPixelDir(float2(id.xy));
+        float3 orgc, dirc;
+        CurPixelRay(float2(id.xy), orgc, dirc);
         Hit hc;
-        bool okc = TraceClosest(F.camPos, dirc, 1e30, 0xFF & ~MASK_LIGHT_HIDDEN, hc);
+        bool okc = TraceClosest(orgc, dirc, 1e30, 0xFF & ~MASK_LIGHT_HIDDEN, hc);
         float depthC = okc ? hc.t : 1e6;
         float3 geomC = okc ? hc.Ng : -dirc;
-        float3 Pc = F.camPos + dirc * depthC;
+        float3 Pc = orgc + dirc * depthC;
         // A jittered sample that hit another object than the pixel centre is not averaged in: the history stands.
         // Otherwise a silhouette pixel alternates between the two objects from one frame to the next (flicker).
         if (g.id != (okc ? hc.inst + 1 : 0)) {
@@ -211,7 +213,9 @@ void main(uint3 id : SV_DispatchThreadID) {
         gTex[SLOT_ACCUM][id.xy] = TemporalAccumulate(L, Pc, geomC, depthC);
         gTex[SLOT_NORMAL][id.xy] = float4(geomC, depthC);
     } else {
-        gTex[SLOT_ACCUM][id.xy] = TemporalAccumulate(L, F.camPos + CurPixelDir(float2(id.xy)) * g.depth, g.geom, g.depth);
+        float3 orgp, dirp;
+        CurPixelRay(float2(id.xy), orgp, dirp);
+        gTex[SLOT_ACCUM][id.xy] = TemporalAccumulate(L, orgp + dirp * g.depth, g.geom, g.depth);
         gTex[SLOT_NORMAL][id.xy] = float4(g.geom, g.depth);
     }
     gTex[SLOT_ALBEDO][id.xy] = float4(g.albedo, (float)g.id);

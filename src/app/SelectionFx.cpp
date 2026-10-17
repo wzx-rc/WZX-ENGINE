@@ -70,7 +70,10 @@ void App::drawSelectionFx(ImDrawList* dl) {
     m_fxStats = FxStats();
     if (m_rs.selectionStyle != 1 || m_selected < 0) return;
     if (m_game && (m_game->playing() || m_game->playerMode())) return;
-    const float3 eye = m_scene.camera.eye();
+    const Camera& cam = m_scene.camera;
+    const float3 eye = cam.eye();
+    float3 cr, cu, cf;
+    cam.basis(cr, cu, cf);
     const float d = m_dpi;
     // reflection strength: a glossy ground lying at y = 0
     float refl = 0;
@@ -89,17 +92,18 @@ void App::drawSelectionFx(ImDrawList* dl) {
         aabbOf(o, o.position, objRot(o), b.mn, b.mx);
         boxes.push_back(b);
     }
+    // (from p towards the viewer; orthographic: along the view, the whole scene)
     auto hidden = [&](const float3& p, int skip) {
-        float3 dir = p - eye;
-        const float tp = length(dir);
+        const float3 dir = cam.toViewer(p);
+        const float tp = cam.ortho ? 1e6f : length(eye - p);
         if (tp < 1e-5f) return false;
-        dir = dir / tp;
+        const float eps = cam.ortho ? 0.01f : tp * 0.005f;   // (p lies on the surface of its own object)
         for (const Box& b : boxes) {
             if (b.obj == skip) continue;
-            float t0 = 0.0f, t1 = tp;
+            float t0 = eps, t1 = tp;
             bool miss = false;
             for (int a = 0; a < 3 && !miss; ++a) {
-                const float o = eye[a], dd = dir[a];
+                const float o = p[a], dd = dir[a];
                 if (std::fabs(dd) < 1e-8f) { miss = o < b.mn[a] || o > b.mx[a]; continue; }
                 float ta = (b.mn[a] - o) / dd, tb = (b.mx[a] - o) / dd;
                 if (ta > tb) std::swap(ta, tb);
@@ -107,12 +111,15 @@ void App::drawSelectionFx(ImDrawList* dl) {
                 t1 = std::min(t1, tb);
                 miss = t0 > t1;
             }
-            if (!miss && t0 < tp * 0.995f) return true;
+            if (!miss) return true;
         }
         return false;
     };
     // a point of the reflection is seen where its camera ray meets the floor
-    auto floorPoint = [&](const float3& m) { return eye + (m - eye) * (eye.y / std::max(eye.y - m.y, 1e-6f)); };
+    auto floorPoint = [&](const float3& m) {
+        if (cam.ortho) return m - cf * (m.y / (std::fabs(cf.y) > 1e-4f ? cf.y : -1e-4f));
+        return eye + (m - eye) * (eye.y / std::max(eye.y - m.y, 1e-6f));
+    };
 
     std::vector<float2> dots;
     std::vector<std::pair<float2, float2>> creases;
@@ -134,11 +141,12 @@ void App::drawSelectionFx(ImDrawList* dl) {
         for (const SilEdge& e : edges) {
             const float3 a = T.point(e.a), b = T.point(e.b);
             const float3 n0 = toWorldN(e.n0), n1 = e.open ? n0 : toWorldN(e.n1);
-            if (e.open || ((dot(n0, eye - a) > 0) != (dot(n1, eye - a) > 0))) {
+            const float3 va = cam.toViewer(a);
+            if (e.open || ((dot(n0, va) > 0) != (dot(n1, va) > 0))) {
                 float2 pa, pb;
                 if (!hidden(a, i) && project(a, pa)) dots.push_back(pa);
                 if (!hidden(b, i) && project(b, pb)) dots.push_back(pb);
-            } else if (dot(n0, n1) < 0.85f && dot(n0, eye - a) > 0 && dot(n1, eye - a) > 0) {
+            } else if (dot(n0, n1) < 0.85f && dot(n0, va) > 0 && dot(n1, va) > 0) {
                 // a crease turned to the camera (both faces seen, sharp angle): a thin glowing line, antialiased
                 float2 pa, pb;
                 if (!hidden((a + b) * 0.5f, i) && project(a, pa) && project(b, pb)) creases.push_back({pa, pb});
@@ -147,8 +155,9 @@ void App::drawSelectionFx(ImDrawList* dl) {
             // mirrored under the floor: its silhouette as seen by the camera is the outline in the reflection
             const float3 ma(a.x, -a.y, a.z), mb(b.x, -b.y, b.z), m0(n0.x, -n0.y, n0.z), m1(n1.x, -n1.y, n1.z);
             if (ma.y > 0 && mb.y > 0) continue;   // part of the object under the floor
-            if (!(e.open || ((dot(m0, eye - ma) > 0) != (dot(m1, eye - ma) > 0)))) continue;
-            if (eye.y <= 0) continue;
+            const float3 vm = cam.toViewer(ma);
+            if (!(e.open || ((dot(m0, vm) > 0) != (dot(m1, vm) > 0)))) continue;
+            if (cam.ortho ? cf.y > -1e-3f : eye.y <= 0) continue;   // (the floor seen from under it, or edge-on)
             // in pieces: the parts hidden by an object (the selection itself included) are left out
             const int n = 6;
             for (int s = 0; s < n; ++s) {

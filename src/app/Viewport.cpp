@@ -22,7 +22,10 @@ void App::viewportCanvas(ImVec2 p0, ImVec2 size) {
     ImGui::SetCursorScreenPos(p0);
     ImGui::SetNextItemAllowOverlap();   // overlay buttons drawn on top of the image stay clickable
     ImGui::InvisibleButton("##viewport", size, ImGuiButtonFlags_MouseButtonLeft | ImGuiButtonFlags_MouseButtonRight | ImGuiButtonFlags_MouseButtonMiddle);
-    bool hovered = ImGui::IsItemHovered() && !(m_game && (m_game->graphOpen() || m_game->rtsCameraOn()));   // the graph editor covers the view
+    // (a click that made this pane the active one: the view takes it, as the button, moved here, is hovered next frame)
+    const bool clickedIn = m_paneClicked && m_rcView.contains(ImGui::GetIO().MousePos.x, ImGui::GetIO().MousePos.y);
+    m_paneClicked = false;
+    bool hovered = (ImGui::IsItemHovered() || clickedIn) && !(m_game && (m_game->graphOpen() || m_game->rtsCameraOn()));   // the graph editor covers the view
     ImDrawList* dl = ImGui::GetWindowDrawList();
     // the texture of the previous size is stretched for one frame when the panel is resized
     dl->AddImage(m_gui.viewportTexture(), p0, ImVec2(p0.x + size.x, p0.y + size.y));
@@ -64,6 +67,7 @@ void App::viewportCanvas(ImVec2 p0, ImVec2 size) {
     viewportInput(hovered);
     dl->PushClipRect(p0, ImVec2(p0.x + size.x, p0.y + size.y), true);
     drawSelectionFx(dl);   // white glow on the outline vertices, reflection on the floor
+    drawCameraIcons(dl);   // the camera objects
     drawAdvScale(dl);      // Advanced Scale: bounding box and handles
     if (!(m_game && m_game->placementMode())) drawGizmo(dl);
     dl->PopClipRect();
@@ -89,12 +93,13 @@ void App::viewportInput(bool hovered) {
     const bool manipMiddle = !placing && gizmoShown() && !alt;
 
     if (inView && io.MouseWheel != 0) {
-        cam.distance *= std::pow(0.88f, io.MouseWheel * m_camSpeed);
-        cam.distance = clampf(cam.distance, 0.5f, 2000.0f);
+        const float k = std::pow(0.88f, io.MouseWheel * m_camSpeed);
+        if (cam.ortho) cam.orthoHeight = clampf(cam.orthoHeight * k, 1e-3f, 1e6f);   // orthographic: the size of the view
+        else cam.distance = clampf(cam.distance * k, 0.5f, 2000.0f);
         cameraChanged();
     }
     if (inView && (ImGui::IsMouseClicked(1) || (alt && ImGui::IsMouseClicked(0)))) {
-        if (shift) m_panning = true;
+        if (shift || orbitLocked()) m_panning = true;   // (the orthographic views do not tumble, as in Maya: they pan)
         else m_orbiting = true;
     }
     if (inView && ImGui::IsMouseClicked(2) && !manipMiddle) m_panning = true;
@@ -107,11 +112,11 @@ void App::viewportInput(bool hovered) {
         }
     }
     if (m_panning) {
-        if (!(io.MouseDown[2] || io.MouseDown[1])) m_panning = false;
+        if (!(io.MouseDown[2] || io.MouseDown[1] || io.MouseDown[0])) m_panning = false;
         else if (dx != 0 || dy != 0) {
             float3 right, up, fwd;
             cam.basis(right, up, fwd);
-            float k = cam.distance * std::tan(cam.fovY * 0.5f) * 2.0f / m_rcView.h * m_camSpeed;
+            float k = (cam.ortho ? cam.orthoHeight : cam.distance * std::tan(cam.fovY * 0.5f) * 2.0f) / m_rcView.h * m_camSpeed;
             cam.target = cam.target - right * (dx * k) + up * (dy * k);
             cameraChanged();
         }
@@ -127,9 +132,14 @@ void App::viewportInput(bool hovered) {
         float3 o, d;
         cameraRay(mx, my, o, d);
         PickResult pr = pick(m_scene, o, d);
+        const int camIcon = pickCameraIcon(mx, my);   // the camera icons are drawn over the view
+        if (camIcon >= 0) {
+            pr.object = camIcon;
+            pr.position = m_scene.objects[camIcon].position;
+        }
         if (ImGui::IsMouseDoubleClicked(0)) {
             if (pr.object >= 0 || pr.t < 1e29f) {
-                float3 p = pr.object >= 0 ? pr.position : o + d * cam.distance;
+                float3 p = pr.object >= 0 ? pr.position : o + d * dot(cam.target - o, d);
                 setPivotKeepEye(p);
                 cam.focusDistance = cam.distance;
                 status(L"Pivot and focus on the clicked point");

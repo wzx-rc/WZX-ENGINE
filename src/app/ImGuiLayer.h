@@ -24,6 +24,9 @@ public:
 
     // The 3D viewport image (renderer output texture) as an ImGui texture. Call after the 3D frame was rendered.
     ImTextureID viewportTexture();
+    // The image of the extra view i (Renderer::renderView): same id every frame (0 before its first render); call it
+    // again after the views were rendered (their images are recreated when their size changes).
+    ImTextureID viewTexture(int i);
     // Static RGBA8 texture (thumbnails). Returns 0 on failure.
     ImTextureID createTexture(const uint8_t* rgba, uint32_t w, uint32_t h);
     void releaseTexture(ImTextureID id);
@@ -48,6 +51,7 @@ private:
     UINT m_srvSize = 0, m_rtvSize = 0;
     std::vector<bool> m_used;
     int m_viewportSlot = -1;
+    std::vector<int> m_viewSlots;   // SRV slots of the extra views
     ComPtr<ID3D12CommandAllocator> m_alloc;
     ComPtr<ID3D12GraphicsCommandList> m_cmd;
     std::vector<Tex> m_textures;

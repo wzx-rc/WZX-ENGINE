@@ -80,12 +80,7 @@ bool App::gizmoShown() const {
 
 // world length of a manipulator axis at p: a constant size on screen
 float App::gizmoSize(const float3& p) const {
-    const Camera& c = m_scene.camera;
-    float3 r, u, f;
-    c.basis(r, u, f);
-    float z = std::max(dot(p - c.eye(), f), 1e-3f);
-    float wpp = 2.0f * z * std::tan(c.fovY * 0.5f) / std::max(m_rcView.h, 1.0f);
-    return 92.0f * m_dpi * wpp;
+    return 92.0f * m_dpi * m_scene.camera.pixelSize(p, m_rcView.h);
 }
 
 // axes of the manipulator for an object: world, its own axes, or its parent's axes (the Scale tool is always local)
@@ -125,7 +120,7 @@ int App::gizmoHit(float mx, float my) {
     float2 pc;
     if (!project(pv, pc)) return MH_NONE;
     const float d = m_dpi, lineTol = 7.0f * d;
-    float3 eye = m_scene.camera.eye(), toCam = normalize(eye - pv);
+    float3 toCam = m_scene.camera.toViewer(pv);
 
     if (m_tool == TOOL_ROTATE) {
         int best = MH_NONE;
@@ -153,7 +148,7 @@ int App::gizmoHit(float mx, float my) {
 
     // move / scale: centre first, then the plane squares, then the axes
     if (std::hypot(mx - pc.x, my - pc.y) < 9.0f * d) return MH_CENTER;
-    float3 viewDir = normalize(pv - eye);
+    float3 viewDir = -toCam;
     for (int h = MH_YZ; h <= MH_XY; ++h) {
         int u, v;
         planeAxes(h, u, v);
@@ -206,7 +201,7 @@ void App::gizmoBegin(int handle, int button, float mx, float my) {
     m_gzLast[m_tool] = handle;
     float3 r, u, f;
     m_scene.camera.basis(r, u, f);
-    const float3 viewDir = normalize(g.pivot - m_scene.camera.eye());
+    const float3 viewDir = -m_scene.camera.toViewer(g.pivot);
 
     if (m_tool == TOOL_ROTATE) {
         if (handle == MH_FREE) return;
@@ -385,14 +380,14 @@ void App::gizmoDrag(float mx, float my, bool snap) {
 // --------------------------------------------------------------------------- drawing
 
 // small solid box (scale handles): the faces turned to the camera, shaded per axis
-static void drawBox(App* app, ImDrawList* dl, const float3& c, const float3 ax[3], float half, ImU32 col, const float3& eye,
+static void drawBox(App* app, ImDrawList* dl, const float3& c, const float3 ax[3], float half, ImU32 col, const Camera& cam,
                     bool (App::*proj)(const float3&, float2&) const) {
     static const float shade[3] = {0.80f, 1.0f, 0.90f};
     for (int a = 0; a < 3; ++a)
         for (int sgn = -1; sgn <= 1; sgn += 2) {
             float3 n = ax[a] * (float)sgn;
             float3 fc = c + n * half;
-            if (dot(n, eye - fc) <= 0) continue;
+            if (dot(n, cam.toViewer(fc)) <= 0) continue;
             float3 u = ax[(a + 1) % 3] * half, v = ax[(a + 2) % 3] * half;
             float2 p[4];
             if (!(app->*proj)(fc - u - v, p[0]) || !(app->*proj)(fc + u - v, p[1]) || !(app->*proj)(fc + u + v, p[2]) || !(app->*proj)(fc - u + v, p[3])) return;
@@ -417,7 +412,7 @@ void App::drawGizmo(ImDrawList* dl) {
     const int last = m_gzLast[m_tool];
     // yellow: the dragged handle, else the handle under the mouse, else the last used handle (Maya)
     auto hot = [&](int h) { return dragging ? g.handle == h : (m_gzHover == h || (m_gzHover == MH_NONE && last == h)); };
-    float3 eye = m_scene.camera.eye(), toCam = normalize(eye - pv), viewDir = -toCam;
+    float3 toCam = m_scene.camera.toViewer(pv), viewDir = -toCam;
 
     if (m_tool == TOOL_ROTATE) {
         float rPx = 92.0f * d;
@@ -488,7 +483,7 @@ void App::drawGizmo(ImDrawList* dl) {
             ImU32 c = lit ? kHot : kAxisCol[a];
             if (scale) {
                 dl->AddLine(iv(pc), iv(pt), c, lit ? thick : thin);
-                drawBox(this, dl, pv + ax[a] * (s * len), ax, kCube * s, c, eye, &App::project);
+                drawBox(this, dl, pv + ax[a] * (s * len), ax, kCube * s, c, m_scene.camera, &App::project);
                 continue;
             }
             if (!project(pv + ax[a] * (kConeBase * s), pb)) continue;
@@ -505,7 +500,7 @@ void App::drawGizmo(ImDrawList* dl) {
         bool lit = hot(MH_CENTER);
         if (scale) {
             float k = dragging && g.handle == MH_CENTER ? g.value.x : 1.0f;
-            drawBox(this, dl, pv, ax, kCube * 1.25f * s * std::min(k, 3.0f), lit ? kHot : kCenterCol, eye, &App::project);
+            drawBox(this, dl, pv, ax, kCube * 1.25f * s * std::min(k, 3.0f), lit ? kHot : kCenterCol, m_scene.camera, &App::project);
         } else {
             float hs = 4.0f * d;
             dl->AddRectFilled(ImVec2(pc.x - hs, pc.y - hs), ImVec2(pc.x + hs, pc.y + hs), withAlpha(lit ? kHot : kCenterCol, lit ? 110 : 40));

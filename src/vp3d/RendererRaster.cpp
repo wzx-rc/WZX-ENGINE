@@ -29,7 +29,7 @@ struct RasterConstants {
     float3 sunRadiance; float sunFromEnv;
     float shIrr[9][4];
     float envMapOn; float envRotation; float envMapIntensity; float envMips;
-    float envVisible; uint32_t sunLight; float giMode, pad3;   // giMode: DDGI probes read by Shade (Raster.hlsl)
+    float envVisible; uint32_t sunLight; float giMode, orthoHalfH;   // giMode: DDGI probes read by Shade (Raster.hlsl); orthoHalfH: orthographic camera
 };
 
 struct DrawConstants {
@@ -285,6 +285,16 @@ bool Renderer::createRasterPipelines(std::string* error) {
     m_device->CreateDescriptorHeap(&hd, IID_PPV_ARGS(&m_dsvHeap));
     m_rtvSize = m_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
     m_dsvSize = m_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_DSV);
+    // extra views (renderView): 3 RTVs and 2 DSVs each, and their own command list
+    hd.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
+    hd.NumDescriptors = kMaxViews * 3;
+    m_device->CreateDescriptorHeap(&hd, IID_PPV_ARGS(&m_viewRtvHeap));
+    hd.Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
+    hd.NumDescriptors = kMaxViews * 2;
+    m_device->CreateDescriptorHeap(&hd, IID_PPV_ARGS(&m_viewDsvHeap));
+    m_device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&m_viewAlloc));
+    m_device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, m_viewAlloc.Get(), nullptr, IID_PPV_ARGS(&m_viewCmd));
+    m_viewCmd->Close();
 
     D3D12_RESOURCE_DESC sd = {};
     sd.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
@@ -389,16 +399,16 @@ bool Renderer::createMsaaPipelines(std::string* error) {
 
 // The viewport colour into a texture slot (UAV): a resolve of its samples, a plain copy when the anti-aliasing is off
 // (ResolveSubresource needs a multisampled source).
-void Renderer::resolveViewport(ID3D12Resource* dst) {
+void Renderer::resolveViewport(ID3D12Resource* color, ID3D12Resource* dst) {
     const bool ms = m_msaa > 1;
     const D3D12_RESOURCE_STATES src = ms ? D3D12_RESOURCE_STATE_RESOLVE_SOURCE : D3D12_RESOURCE_STATE_COPY_SOURCE;
     const D3D12_RESOURCE_STATES dstState = ms ? D3D12_RESOURCE_STATE_RESOLVE_DEST : D3D12_RESOURCE_STATE_COPY_DEST;
-    transition(m_msaaColor.Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, src);
+    transition(color, D3D12_RESOURCE_STATE_RENDER_TARGET, src);
     transition(dst, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, dstState);
-    if (ms) m_cmd->ResolveSubresource(dst, 0, m_msaaColor.Get(), 0, DXGI_FORMAT_R16G16B16A16_FLOAT);
-    else m_cmd->CopyResource(dst, m_msaaColor.Get());
+    if (ms) m_cmd->ResolveSubresource(dst, 0, color, 0, DXGI_FORMAT_R16G16B16A16_FLOAT);
+    else m_cmd->CopyResource(dst, color);
     transition(dst, dstState, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
-    transition(m_msaaColor.Get(), src, D3D12_RESOURCE_STATE_RENDER_TARGET);
+    transition(color, src, D3D12_RESOURCE_STATE_RENDER_TARGET);
 }
 
 // Samples per pixel of the viewport anti-aliasing (1 = off). The GPU draws the largest supported count up to n; twice
@@ -532,9 +542,13 @@ void Renderer::createRasterTargets(uint32_t w, uint32_t h) {
 // edges of the image (Tonemap.hlsl).
 void Renderer::recordSelectionMask(const std::function<void(const Draw&)>& drawOne) {
     if (m_selIds.empty() || !m_psoSelect) return;
-    D3D12_CPU_DESCRIPTOR_HANDLE rtv = m_rtvHeap->GetCPUDescriptorHandleForHeapStart();
-    rtv.ptr += 5 * (SIZE_T)m_rtvSize;
-    D3D12_CPU_DESCRIPTOR_HANDLE dsv = m_dsvHeap->GetCPUDescriptorHandleForHeapStart();
+    const ExtraView* xv = m_rtView;
+    ID3D12Resource* selMask = xv ? xv->selMask.Get() : m_selMask.Get();
+    ID3D12Resource* selCov = xv ? xv->selCov.Get() : m_selCov.Get();
+    D3D12_CPU_DESCRIPTOR_HANDLE rtv = xv ? m_viewRtvHeap->GetCPUDescriptorHandleForHeapStart() : m_rtvHeap->GetCPUDescriptorHandleForHeapStart();
+    rtv.ptr += (xv ? xv->index * 3 + 2 : 5) * (SIZE_T)m_rtvSize;
+    D3D12_CPU_DESCRIPTOR_HANDLE dsv = xv ? m_viewDsvHeap->GetCPUDescriptorHandleForHeapStart() : m_dsvHeap->GetCPUDescriptorHandleForHeapStart();
+    if (xv) dsv.ptr += (SIZE_T)(xv->index * 2) * m_dsvSize;
     m_cmd->OMSetRenderTargets(1, &rtv, FALSE, &dsv);
     const float zero[4] = {0, 0, 0, 0};
     m_cmd->ClearRenderTargetView(rtv, zero, 0, nullptr);
@@ -545,31 +559,43 @@ void Renderer::recordSelectionMask(const std::function<void(const Draw&)>& drawO
     const bool ms = m_msaa > 1;
     const D3D12_RESOURCE_STATES src = ms ? D3D12_RESOURCE_STATE_RESOLVE_SOURCE : D3D12_RESOURCE_STATE_COPY_SOURCE;
     const D3D12_RESOURCE_STATES dst = ms ? D3D12_RESOURCE_STATE_RESOLVE_DEST : D3D12_RESOURCE_STATE_COPY_DEST;
-    transition(m_selMask.Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, src);
-    transition(m_selCov.Get(), D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, dst);
-    if (ms) m_cmd->ResolveSubresource(m_selCov.Get(), 0, m_selMask.Get(), 0, DXGI_FORMAT_R8_UNORM);
-    else m_cmd->CopyResource(m_selCov.Get(), m_selMask.Get());
-    transition(m_selCov.Get(), dst, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
-    transition(m_selMask.Get(), src, D3D12_RESOURCE_STATE_RENDER_TARGET);
+    transition(selMask, D3D12_RESOURCE_STATE_RENDER_TARGET, src);
+    transition(selCov, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, dst);
+    if (ms) m_cmd->ResolveSubresource(selCov, 0, selMask, 0, DXGI_FORMAT_R8_UNORM);
+    else m_cmd->CopyResource(selCov, selMask);
+    transition(selCov, dst, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+    transition(selMask, src, D3D12_RESOURCE_STATE_RENDER_TARGET);
 }
 
 void Renderer::recordRaster(const Scene& scene, const RenderSettings& rs, const ViewRect& vp, bool probeCapture, bool probes,
                             bool shadow, int overlaySlot) {
     const bool overlay = overlaySlot >= 0;   // editor overlay only: grid and wireframe lines, for the path traced view
     if (overlay) shadow = false;
-    const Camera& cam = scene.camera;
+    const ExtraView* xv = m_rtView;   // an extra view (renderView): its camera, targets and constants
+    const Camera& cam = (xv && m_rtCam) ? *m_rtCam : scene.camera;
+    Buffer& rcb = xv ? const_cast<Buffer&>(xv->cb) : m_rasterCB;
     float3 r, u, f;
     cam.basis(r, u, f);
     float3 eye = cam.eye();
     float t = std::tan(cam.fovY * 0.5f), a = (float)vp.w / vp.h;
-    float zn = std::max(cam.distance * 0.005f, 0.02f), zf = cam.distance * 40.0f + 2000.0f;
-    float A = zf / (zf - zn), B = -zf * zn / (zf - zn);
-
     RasterConstants rc = {};
-    setRows(rc.viewProj, 0, r / (t * a), -dot(r, eye) / (t * a));
-    setRows(rc.viewProj, 1, u / t, -dot(u, eye) / t);
-    setRows(rc.viewProj, 2, f * A, -dot(f, eye) * A + B);
-    setRows(rc.viewProj, 3, f, -dot(f, eye));
+    if (cam.ortho) {
+        // orthographic: x, y scaled by the view size, linear depth from orthoBack behind the eye (the whole scene in front)
+        const float hh = cam.orthoHeight * 0.5f, hw = hh * a;
+        const float zn = -orthoBack(cam), zf = std::max(dot(m_sceneCenter - eye, f) + m_sceneRadius * 2.0f, 1.0f) + cam.distance;
+        setRows(rc.viewProj, 0, r / hw, -dot(r, eye) / hw);
+        setRows(rc.viewProj, 1, u / hh, -dot(u, eye) / hh);
+        setRows(rc.viewProj, 2, f / (zf - zn), (-dot(f, eye) - zn) / (zf - zn));
+        setRows(rc.viewProj, 3, float3(0, 0, 0), 1);
+        rc.orthoHalfH = hh;
+    } else {
+        float zn = std::max(cam.distance * 0.005f, 0.02f), zf = cam.distance * 40.0f + 2000.0f;
+        float A = zf / (zf - zn), B = -zf * zn / (zf - zn);
+        setRows(rc.viewProj, 0, r / (t * a), -dot(r, eye) / (t * a));
+        setRows(rc.viewProj, 1, u / t, -dot(u, eye) / t);
+        setRows(rc.viewProj, 2, f * A, -dot(f, eye) * A + B);
+        setRows(rc.viewProj, 3, f, -dot(f, eye));
+    }
 
     // Key light = the sun when enabled, else the strongest enabled area light; it gets the shadow map.
     int key = -1;
@@ -645,8 +671,8 @@ void Renderer::recordRaster(const Scene& scene, const RenderSettings& rs, const 
     // 8 samples alternates two sub-pixel offsets of its pattern, frame after frame, and the tonemapper averages the last
     // two frames while nothing moves (16 different samples per pixel).
     static_assert(sizeof(RasterConstants) <= 512, "two copies in m_rasterCB");
-    memcpy((uint8_t*)m_rasterCB.mapped + 512, &rc, sizeof(rc));
-    if (m_msaaTemporal && !overlay && !probeCapture && !probes) {
+    memcpy((uint8_t*)rcb.mapped + 512, &rc, sizeof(rc));
+    if (m_msaaTemporal && !overlay && !probeCapture && !probes && !xv) {
         const float o = (m_taaFrame & 1) ? 1.0f / 32.0f : -1.0f / 32.0f;   // pixels: the two frames are 1/16 px apart
         const float jx = 2.0f * o / (float)vp.w, jy = -2.0f * o / (float)vp.h;
         for (int k = 0; k < 4; ++k) {
@@ -654,10 +680,10 @@ void Renderer::recordRaster(const Scene& scene, const RenderSettings& rs, const 
             rc.viewProj[4 + k] += jy * rc.viewProj[12 + k];
         }
     }
-    memcpy(m_rasterCB.mapped, &rc, sizeof(rc));
+    memcpy(rcb.mapped, &rc, sizeof(rc));
 
     m_cmd->SetGraphicsRootSignature(m_rasterRoot.Get());
-    m_cmd->SetGraphicsRootConstantBufferView(0, m_rasterCB.va());
+    m_cmd->SetGraphicsRootConstantBufferView(0, rcb.va());
     m_cmd->SetGraphicsRootShaderResourceView(2, m_materials.va());
     m_cmd->SetGraphicsRootShaderResourceView(3, m_lights.va());
     D3D12_GPU_DESCRIPTOR_HANDLE shadowSrv = m_heap->GetGPUDescriptorHandleForHeapStart();
@@ -763,8 +789,14 @@ void Renderer::recordRaster(const Scene& scene, const RenderSettings& rs, const 
         return;
     }
 
-    // 2) main MSAA pass
+    // 2) main MSAA pass (an extra view: its own targets, 3 RTVs and 2 DSVs per view)
     D3D12_CPU_DESCRIPTOR_HANDLE rtvBase = m_rtvHeap->GetCPUDescriptorHandleForHeapStart();
+    if (xv) {
+        rtvBase = m_viewRtvHeap->GetCPUDescriptorHandleForHeapStart();
+        rtvBase.ptr += (SIZE_T)(xv->index * 3) * m_rtvSize;
+        dsvBase = m_viewDsvHeap->GetCPUDescriptorHandleForHeapStart();
+        dsvBase.ptr += (SIZE_T)(xv->index * 2) * m_dsvSize;
+    }
     m_cmd->OMSetRenderTargets(1, &rtvBase, FALSE, &dsvBase);
     m_cmd->ClearDepthStencilView(dsvBase, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
     D3D12_VIEWPORT mvp = {0, 0, (float)vp.w, (float)vp.h, 0, 1};
@@ -786,10 +818,14 @@ void Renderer::recordRaster(const Scene& scene, const RenderSettings& rs, const 
     auto drawGrid = [&]() {
         if (!m_psoGrid || rs.editorGrid <= 0) return;
         const EditorGridStyle& g = rs.grid;
-        float gc[32] = {rs.editorGrid, rs.editorGridAxis, g.opacity, 2.0f * t / std::max(1, vp.h),
+        // orthographic: the grid in the plane facing the view (Maya), a pixel of a fixed size
+        uint32_t plane = 0;
+        if (cam.ortho) plane = std::fabs(f.y) >= std::max(std::fabs(f.x), std::fabs(f.z)) ? 0u : (std::fabs(f.z) >= std::fabs(f.x) ? 1u : 2u);
+        const uint32_t flags = g.flags | (plane << 8);
+        float gc[32] = {rs.editorGrid, rs.editorGridAxis, g.opacity, cam.ortho ? cam.orthoHeight / std::max(1, vp.h) : 2.0f * t / std::max(1, vp.h),
                         std::max(rs.pixelScale, 1.0f), (float)std::max(1, g.subdivisions), std::max(g.extent, 0.0f), 0.0f,
-                        g.widthGrid, g.widthSub, g.widthAxis, 0.0f};
-        memcpy(&gc[7], &g.flags, sizeof(uint32_t));   // GridConstants::flags (uint)
+                        g.widthGrid, g.widthSub, g.widthAxis, cam.ortho ? cam.orthoHeight * 0.5f : 0.0f};
+        memcpy(&gc[7], &flags, sizeof(uint32_t));   // GridConstants::flags (uint)
         const float4* cols[5] = {&g.colorGrid, &g.colorSub, &g.colorX, &g.colorY, &g.colorZ};
         for (int k = 0; k < 5; ++k) memcpy(&gc[12 + 4 * k], cols[k], sizeof(float4));
         m_cmd->SetGraphicsRoot32BitConstants(7, 32, gc, 0);
@@ -838,27 +874,227 @@ void Renderer::recordRaster(const Scene& scene, const RenderSettings& rs, const 
 
     recordSelectionMask(drawOne);   // coverage of the selection (smooth outline)
     if (overlay) {   // the overlay (premultiplied alpha) goes to its slot, composited by the tonemapper
-        resolveViewport(m_tex[overlaySlot].Get());
+        resolveViewport(m_msaaColor.Get(), m_tex[overlaySlot].Get());
         return;
     }
     // 3) resolve into the HDR slot read by the tonemapper
-    resolveViewport(m_tex[kTexDenoiseA].Get());
+    ID3D12Resource* idTex = xv ? xv->id.Get() : m_tex[kTexAlbedo].Get();
+    resolveViewport(xv ? xv->color.Get() : m_msaaColor.Get(), xv ? xv->hdr.Get() : m_tex[kTexDenoiseA].Get());
 
     // 4) object ids (selection outline)
     D3D12_CPU_DESCRIPTOR_HANDLE idRtv = rtvBase;
     idRtv.ptr += m_rtvSize;
     D3D12_CPU_DESCRIPTOR_HANDLE idDsv = dsvBase;
     idDsv.ptr += m_dsvSize;
-    transition(m_tex[kTexAlbedo].Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_RENDER_TARGET);
+    transition(idTex, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_RENDER_TARGET);
     const float zero[4] = {0, 0, 0, 0};
     m_cmd->OMSetRenderTargets(1, &idRtv, FALSE, &idDsv);
     m_cmd->ClearRenderTargetView(idRtv, zero, 0, nullptr);
     m_cmd->ClearDepthStencilView(idDsv, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
     m_cmd->SetPipelineState(m_psoId.Get());
-    m_cmd->SetGraphicsRootConstantBufferView(0, m_rasterCB.va() + 512);   // ids without the anti-aliasing jitter
+    m_cmd->SetGraphicsRootConstantBufferView(0, rcb.va() + 512);   // ids without the anti-aliasing jitter
     for (const Draw& d : m_draws)
         if (!(d.flags & 7u)) drawOne(d);
-    transition(m_tex[kTexAlbedo].Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+    transition(idTex, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+}
+
+// --------------------------------------------------------------------------- extra views
+
+// Targets of an extra view: the multisampled colour, depth and selection mask (m_msaa samples), the selection
+// coverage, the HDR image and the ids (single sample), the RGBA8 image of the UI; their RTVs, DSVs and the table of
+// the tonemapper (u0..u5 as the main view's slots, the ones it does not use left null, then t8).
+void Renderer::createViewTargets(ExtraView& v, uint32_t w, uint32_t h) {
+    v.w = w;
+    v.h = h;
+    v.samples = m_msaa;
+    v.outReadable = false;
+    auto hp = defaultHeap();
+    auto make = [&](ComPtr<ID3D12Resource>& r, DXGI_FORMAT fmt, uint32_t samples, D3D12_RESOURCE_FLAGS flags,
+                    D3D12_RESOURCE_STATES state, const D3D12_CLEAR_VALUE* clear) {
+        D3D12_RESOURCE_DESC d = {};
+        d.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+        d.Width = w;
+        d.Height = h;
+        d.DepthOrArraySize = 1;
+        d.MipLevels = 1;
+        d.Format = fmt;
+        d.SampleDesc.Count = samples;
+        d.Flags = flags;
+        r.Reset();
+        m_device->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &d, state, clear, IID_PPV_ARGS(&r));
+    };
+    D3D12_CLEAR_VALUE cc = {}, dc = {}, mc = {}, ic = {};
+    cc.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
+    dc.Format = DXGI_FORMAT_D32_FLOAT;
+    dc.DepthStencil.Depth = 1.0f;
+    mc.Format = DXGI_FORMAT_R8_UNORM;
+    ic.Format = DXGI_FORMAT_R32G32B32A32_FLOAT;
+    const auto rt = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET, ds = D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL, ua = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
+    make(v.color, DXGI_FORMAT_R16G16B16A16_FLOAT, m_msaa, rt, D3D12_RESOURCE_STATE_RENDER_TARGET, &cc);
+    make(v.depth, DXGI_FORMAT_D32_FLOAT, m_msaa, ds, D3D12_RESOURCE_STATE_DEPTH_WRITE, &dc);
+    make(v.selMask, DXGI_FORMAT_R8_UNORM, m_msaa, rt, D3D12_RESOURCE_STATE_RENDER_TARGET, &mc);
+    make(v.selCov, DXGI_FORMAT_R8_UNORM, 1, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, nullptr);
+    make(v.hdr, DXGI_FORMAT_R16G16B16A16_FLOAT, 1, ua, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, nullptr);
+    make(v.id, DXGI_FORMAT_R32G32B32A32_FLOAT, 1, rt | ua, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, &ic);
+    make(v.idDepth, DXGI_FORMAT_D32_FLOAT, 1, ds, D3D12_RESOURCE_STATE_DEPTH_WRITE, &dc);
+    make(v.out, DXGI_FORMAT_R8G8B8A8_UNORM, 1, ua, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, nullptr);
+
+    D3D12_CPU_DESCRIPTOR_HANDLE rtv = m_viewRtvHeap->GetCPUDescriptorHandleForHeapStart();
+    rtv.ptr += (SIZE_T)(v.index * 3) * m_rtvSize;
+    for (ID3D12Resource* r : {v.color.Get(), v.id.Get(), v.selMask.Get()}) {
+        m_device->CreateRenderTargetView(r, nullptr, rtv);
+        rtv.ptr += m_rtvSize;
+    }
+    D3D12_CPU_DESCRIPTOR_HANDLE dsv = m_viewDsvHeap->GetCPUDescriptorHandleForHeapStart();
+    dsv.ptr += (SIZE_T)(v.index * 2) * m_dsvSize;
+    m_device->CreateDepthStencilView(v.depth.Get(), nullptr, dsv);
+    dsv.ptr += m_dsvSize;
+    m_device->CreateDepthStencilView(v.idDepth.Get(), nullptr, dsv);
+
+    D3D12_CPU_DESCRIPTOR_HANDLE base = m_heap->GetCPUDescriptorHandleForHeapStart();
+    base.ptr += (SIZE_T)(kViewHeapBase + v.index * kViewHeapStride) * m_descSize;
+    const DXGI_FORMAT fmts[kTexCount] = {DXGI_FORMAT_R32G32B32A32_FLOAT, DXGI_FORMAT_R32G32B32A32_FLOAT, DXGI_FORMAT_R32G32B32A32_FLOAT,
+                                         DXGI_FORMAT_R16G16B16A16_FLOAT, DXGI_FORMAT_R16G16B16A16_FLOAT, DXGI_FORMAT_R8G8B8A8_UNORM};
+    ID3D12Resource* res[kTexCount] = {nullptr, v.id.Get(), nullptr, v.hdr.Get(), nullptr, v.out.Get()};
+    for (int k = 0; k < kTexCount; ++k) {
+        D3D12_UNORDERED_ACCESS_VIEW_DESC u = {};
+        u.Format = fmts[k];
+        u.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
+        D3D12_CPU_DESCRIPTOR_HANDLE hnd = base;
+        hnd.ptr += (SIZE_T)k * m_descSize;
+        m_device->CreateUnorderedAccessView(res[k], nullptr, &u, hnd);
+    }
+    D3D12_SHADER_RESOURCE_VIEW_DESC sv = {};
+    sv.Format = DXGI_FORMAT_R8_UNORM;
+    sv.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+    sv.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+    sv.Texture2D.MipLevels = 1;
+    D3D12_CPU_DESCRIPTOR_HANDLE ch = base;
+    ch.ptr += (SIZE_T)kTexCount * m_descSize;
+    m_device->CreateShaderResourceView(v.selCov.Get(), &sv, ch);
+    if (!v.cb.res) v.cb = createBuffer(2048, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ);
+}
+
+// The extra views of a frame are recorded into m_viewCmd (m_cmd points to it meanwhile: the raster helpers record
+// into m_cmd), sent after the main list. present() waits for the GPU at the end of each frame, so the allocator is free.
+void Renderer::beginViews() {
+    if (m_viewsOpen || !m_viewCmd) return;
+    m_viewAlloc->Reset();
+    m_viewCmd->Reset(m_viewAlloc.Get(), nullptr);
+    std::swap(m_cmd, m_viewCmd);
+    ID3D12DescriptorHeap* heaps[] = {m_heap.Get()};
+    m_cmd->SetDescriptorHeaps(1, heaps);
+    m_viewsOpen = true;
+    m_viewsShadow = true;   // (the main view may be path traced: no shadow map drawn this frame)
+}
+
+void Renderer::endViews() {
+    if (!m_viewsOpen) return;
+    m_cmd->Close();
+    ID3D12CommandList* l[] = {m_cmd.Get()};
+    m_queue->ExecuteCommandLists(1, l);
+    std::swap(m_cmd, m_viewCmd);
+    m_viewsOpen = false;
+}
+
+void Renderer::renderView(int slot, const Scene& scene, const Camera& cam, const RenderSettings& rs, uint32_t w, uint32_t h,
+                          float2 selectionCenter, float selectionRadius) {
+    if (!m_viewsOpen || slot < 0 || slot >= kMaxViews || !m_psoMain || !m_vb.res) return;
+    if (scene.geometryVersion != m_sceneGeometryVersion) return;   // (the main render of the frame takes the scene first)
+    w = std::max(16u, w);
+    h = std::max(16u, h);
+    if ((int)m_extra.size() <= slot) m_extra.resize(slot + 1);
+    ExtraView& v = m_extra[slot];
+    v.index = slot;
+    if (v.w != w || v.h != h || v.samples != m_msaa || !v.out) createViewTargets(v, w, h);
+    if (v.outReadable) {
+        transition(v.out.Get(), D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+        v.outReadable = false;
+    }
+    ViewRect vp;
+    vp.x = 0;
+    vp.y = 0;
+    vp.w = (int)w;
+    vp.h = (int)h;
+    m_rtView = &v;
+    m_rtCam = &cam;
+    recordRaster(scene, rs, vp, false, m_lastProbes, m_viewsShadow);
+    m_viewsShadow = false;
+    m_rtView = nullptr;
+    m_rtCam = nullptr;
+
+    // tonemapper: the frame constants of the main view with this camera, size and selection centre
+    gpu::FrameConstants fc;
+    memcpy(&fc, m_lastFc, sizeof(fc));
+    float3 r, u, f;
+    cam.basis(r, u, f);
+    fc.camPos = cam.eye();
+    fc.camRight = r;
+    fc.camUp = u;
+    fc.camFwd = f;
+    fc.tanHalfFovY = std::tan(cam.fovY * 0.5f);
+    fc.aspect = (float)w / (float)h;
+    fc.orthoHalfH = cam.ortho ? cam.orthoHeight * 0.5f : 0.0f;
+    fc.orthoBack = cam.ortho ? orthoBack(cam) : 0.0f;
+    fc.resolution = {w, h};
+    fc.selCenterX = selectionCenter.x;
+    fc.selCenterY = selectionCenter.y;
+    fc.selRadius = selectionRadius;
+    fc.selPixelScale = 1.0f;
+    fc.selCovValid = (!m_selIds.empty() && m_psoSelect) ? 1u : 0u;
+    memcpy((uint8_t*)v.cb.mapped + 1024, &fc, sizeof(fc));
+    m_cmd->SetComputeRootSignature(m_rootSig.Get());
+    m_cmd->SetComputeRootConstantBufferView(0, v.cb.va() + 1024);
+    D3D12_GPU_DESCRIPTOR_HANDLE table = m_heap->GetGPUDescriptorHandleForHeapStart();
+    table.ptr += (UINT64)(kViewHeapBase + slot * kViewHeapStride) * m_descSize;
+    m_cmd->SetComputeRootDescriptorTable(8, table);
+    D3D12_GPU_DESCRIPTOR_HANDLE cov = table;
+    cov.ptr += (UINT64)kTexCount * m_descSize;
+    m_cmd->SetComputeRootDescriptorTable(16, cov);
+    m_cmd->SetPipelineState(m_psoTonemap.Get());
+    uint32_t tc[4] = {(uint32_t)kTexDenoiseA, 1u, (uint32_t)rs.tonemapper, 0u};
+    m_cmd->SetComputeRoot32BitConstants(1, 4, tc, 0);
+    m_cmd->Dispatch((w + 7) / 8, (h + 7) / 8, 1);
+    transition(v.out.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+    v.outReadable = true;
+}
+
+ID3D12Resource* Renderer::viewOutput(int slot) const {
+    return slot >= 0 && slot < (int)m_extra.size() ? m_extra[slot].out.Get() : nullptr;
+}
+
+bool Renderer::readView(int slot, std::vector<uint8_t>& rgba, uint32_t& w, uint32_t& h) {
+    if (m_viewsOpen || slot < 0 || slot >= (int)m_extra.size() || !m_extra[slot].out) return false;
+    ExtraView& v = m_extra[slot];
+    waitIdle();
+    D3D12_RESOURCE_DESC d = v.out->GetDesc();
+    w = (uint32_t)d.Width;
+    h = d.Height;
+    D3D12_PLACED_SUBRESOURCE_FOOTPRINT fp = {};
+    UINT64 total = 0;
+    m_device->GetCopyableFootprints(&d, 0, 1, 0, &fp, nullptr, nullptr, &total);
+    if (!m_readback.res || m_readback.size < total)
+        m_readback = createBuffer(total, D3D12_HEAP_TYPE_READBACK, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST);
+    const D3D12_RESOURCE_STATES st = v.outReadable ? D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE : D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+    beginCommands();
+    transition(v.out.Get(), st, D3D12_RESOURCE_STATE_COPY_SOURCE);
+    D3D12_TEXTURE_COPY_LOCATION dl = {}, sl = {};
+    dl.pResource = m_readback.res.Get();
+    dl.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
+    dl.PlacedFootprint = fp;
+    sl.pResource = v.out.Get();
+    sl.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+    m_cmd->CopyTextureRegion(&dl, 0, 0, 0, &sl, nullptr);
+    transition(v.out.Get(), D3D12_RESOURCE_STATE_COPY_SOURCE, st);
+    executeAndWait();
+    void* p = nullptr;
+    D3D12_RANGE rr = {0, (SIZE_T)total};
+    if (FAILED(m_readback.res->Map(0, &rr, &p))) return false;
+    rgba.resize((size_t)w * h * 4);
+    for (uint32_t y = 0; y < h; ++y) memcpy(&rgba[(size_t)y * w * 4], (uint8_t*)p + fp.Offset + (size_t)y * fp.Footprint.RowPitch, (size_t)w * 4);
+    D3D12_RANGE wr = {0, 0};
+    m_readback.res->Unmap(0, &wr);
+    return true;
 }
 
 } // namespace vp3d

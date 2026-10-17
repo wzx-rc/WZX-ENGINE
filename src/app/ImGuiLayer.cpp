@@ -147,6 +147,20 @@ ImTextureID ImGuiLayer::viewportTexture() {
     return (ImTextureID)gpu(m_viewportSlot).ptr;
 }
 
+ImTextureID ImGuiLayer::viewTexture(int i) {
+    ID3D12Resource* t = m_r->viewOutput(i);
+    if (!t || i < 0) return (ImTextureID)0;
+    if ((int)m_viewSlots.size() <= i) m_viewSlots.resize(i + 1, -1);
+    if (m_viewSlots[i] < 0 && !allocSlot(m_viewSlots[i])) return (ImTextureID)0;
+    D3D12_SHADER_RESOURCE_VIEW_DESC sd = {};
+    sd.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+    sd.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+    sd.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+    sd.Texture2D.MipLevels = 1;
+    m_r->device()->CreateShaderResourceView(t, &sd, cpu(m_viewSlots[i]));
+    return (ImTextureID)gpu(m_viewSlots[i]).ptr;
+}
+
 ImTextureID ImGuiLayer::createTexture(const uint8_t* rgba, uint32_t w, uint32_t h) {
     ID3D12Device* dev = m_r->device();
     Tex t;

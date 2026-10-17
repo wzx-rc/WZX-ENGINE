@@ -9,7 +9,7 @@ float2 App::gizmoHandlePoint(int h) {
     float s = gizmoSize(pv);
     float2 pc, p(0, 0);
     project(pv, pc);
-    float3 toCam = normalize(m_scene.camera.eye() - pv);
+    float3 toCam = m_scene.camera.toViewer(pv);
     if (m_tool == TOOL_ROTATE) {
         float rPx = 92.0f * m_dpi;
         if (h == MH_FREE) return float2(pc.x + 0.3f * rPx, pc.y - 0.2f * rPx);

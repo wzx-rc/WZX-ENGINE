@@ -134,6 +134,11 @@ bool App::init(HINSTANCE inst, const Options& opt) {
     if (opt.select >= 0 && opt.select < (int)m_scene.objects.size()) m_selected = opt.select;
     if (opt.tool >= 0 && opt.tool <= TOOL_SCALE) m_tool = (Tool)opt.tool;
     if (opt.aa >= 1) m_msaa = opt.aa;
+    if (opt.demoCameras) demoCameras();
+    if (opt.layout >= 0) setLayout(opt.layout);
+    for (int k = 0; k < VCAM_COUNT; ++k)
+        if (opt.cam == viewCamName(k)) setViewAxis(k);
+    if (opt.cam == "render" && renderCamera() >= 0) lookThroughRenderCam();
     m_game = new GameHost(*this);   // node graph, Play, builds, command API
     m_game->init();
     if (m_pendingVillage.type == Json::Array) {   // the scene opened from the command line has a village
@@ -362,6 +367,8 @@ void App::loadScene(int id, bool newScene) {
     m_activeView = 0;
     generateThumbnails();
     m_scene.camera = m_views[0].cam;
+    resetViewCams();   // persp is this camera, top / front / side frame the scene
+    loadActiveCamera();
     log("Scene loaded: " + m_scene.name, 1);
     m_placeholderMat.clear();
     if (newScene) {
@@ -464,6 +471,8 @@ void App::frame() {
 
     m_gui.newFrame();
     m_interacting = false;
+    // a pane looking through a camera object follows it (moved by the manipulators, the inspector, undo...)
+    if (m_panes[m_activePane].cam == VCAM_OBJECT) loadActiveCamera();
     // game layer first: it owns the keys and the graph overlay (drawn after the editor, below)
     bool gameKeys = m_game && m_game->beginFrame();
     if (!gameKeys && m_workspace == 0) handleShortcuts();   // Graph / Material Studio have their own shortcuts
@@ -471,9 +480,10 @@ void App::frame() {
         drawEditor();
         drawSaveChangesPopup();
     }
+    storeActiveCamera();   // the other panes see this camera as it is now (a camera object: moved with the view)
     if (m_game) m_game->update(m_dt);
     updateDocState();
-    if (m_turntable) {
+    if (m_turntable && !orbitLocked()) {
         m_scene.camera.yaw += 0.006f;
         cameraChanged();
     }
@@ -544,7 +554,7 @@ void App::frame() {
         gs.colorX = f4(go.colorX);
         gs.colorY = f4(go.colorY);
         gs.colorZ = f4(go.colorZ);
-        m_rs.editorGridAxis = std::max(std::max(m_rs.editorGrid, m_scene.gridScale) * 2.5f, m_scene.camera.distance * 0.45f);
+        m_rs.editorGridAxis = std::max(std::max(m_rs.editorGrid, m_scene.gridScale) * 2.5f, (m_scene.camera.ortho ? m_scene.camera.orthoHeight : m_scene.camera.distance) * 0.45f);
     }
     m_viewportRendered = false;
     if (m_workspace == 2 && m_matHost.want) {
@@ -560,6 +570,7 @@ void App::frame() {
         m_renderer.renderToTexture(m_scene, m_rs, m_vpPx, m_selected);
         m_gui.viewportTexture();   // refresh the SRV (the texture is recreated when the viewport size changes)
         m_viewportRendered = true;
+        renderPanes();   // the other panes of the layout, the camera preview
     }
     // built game: the editor's viewport canvas is not drawn, so the 3D view is the background of the window
     if (m_game && m_game->playerMode() && m_viewportRendered)
@@ -638,7 +649,7 @@ void App::frame() {
         m_renderer.present(true);
         return;
     }
-    if (!m_opt.shotPath.empty() && (moving ? m_frameCounter >= m_opt.shotSpp : ((int)m_renderer.sampleCount() >= m_opt.shotSpp || !m_viewportRendered)) && m_frameCounter > (m_opt.gizmoDemo.empty() ? 6 : 12)) {
+    if (!m_opt.shotPath.empty() && (moving ? m_frameCounter >= m_opt.shotSpp : ((int)m_renderer.sampleCount() >= m_opt.shotSpp || !m_viewportRendered)) && m_frameCounter > (m_opt.gizmoDemo.empty() && m_opt.openMenu.empty() ? 6 : 12)) {   // (a menu opened at frame 10: captured after)
         std::vector<uint8_t> img;
         uint32_t w, h;
         bool ok = m_opt.shotViewport ? m_renderer.readViewport(img, w, h) : m_renderer.readBackBuffer(img, w, h);
@@ -669,30 +680,19 @@ void App::frame() {
 // --------------------------------------------------------------------------- camera & picking
 
 void App::cameraRay(float px, float py, float3& o, float3& d) const {
-    const Camera& c = m_scene.camera;
-    float3 right, up, fwd;
-    c.basis(right, up, fwd);
-    float u = (px - m_rcView.x) / m_rcView.w, v = (py - m_rcView.y) / m_rcView.h;
-    float t = std::tan(c.fovY * 0.5f);
-    float aspect = m_rcView.w / m_rcView.h;
-    o = c.eye();
-    d = normalize(fwd + right * ((2 * u - 1) * aspect * t) + up * ((1 - 2 * v) * t));
+    const float u = (px - m_rcView.x) / m_rcView.w, v = (py - m_rcView.y) / m_rcView.h;
+    // (orthographic: the rays start far behind the eye, the objects behind it are picked too)
+    m_scene.camera.ray(2 * u - 1, 1 - 2 * v, m_rcView.w / m_rcView.h, o, d, 1e4f);
 }
 
 bool App::project(const float3& p, float2& s) const {
-    const Camera& c = m_scene.camera;
-    float3 r, u, f;
-    c.basis(r, u, f);
-    float3 v = p - c.eye();
-    float z = dot(v, f);
-    if (z < 1e-3f) return false;
-    float t = std::tan(c.fovY * 0.5f), a = m_rcView.w / m_rcView.h;
-    float x = dot(v, r) / (z * t * a), y = dot(v, u) / (z * t);
-    s = float2(m_rcView.x + (0.5f + 0.5f * x) * m_rcView.w, m_rcView.y + (0.5f - 0.5f * y) * m_rcView.h);
+    float2 n;
+    if (!m_scene.camera.project(p, m_rcView.w / m_rcView.h, n)) return false;
+    s = float2(m_rcView.x + (0.5f + 0.5f * n.x) * m_rcView.w, m_rcView.y + (0.5f - 0.5f * n.y) * m_rcView.h);
     return true;
 }
 
-void App::aabbOf(const Object& o, const float3& pos, const float4& rot, float3& mn, float3& mx) {
+void App::aabbOf(const Object& o, const float3& pos, const float4& rot, float3& mn, float3& mx) const {
     if (o.mesh < 0 || o.mesh >= (int)m_scene.meshes.size()) { mn = mx = pos; return; }   // group node: its pivot
     float3 a, b;
     m_scene.meshes[o.mesh].bounds(a, b);
@@ -707,6 +707,10 @@ void App::aabbOf(const Object& o, const float3& pos, const float4& rot, float3& 
 
 void App::setPivotKeepEye(const float3& p) {
     Camera& c = m_scene.camera;
+    if (c.ortho) {   // (an orthographic view keeps its direction: centred on the point)
+        c.target = p;
+        return;
+    }
     float3 eye = c.eye();
     float3 v = eye - p;
     float dist = length(v);
@@ -769,7 +773,8 @@ void App::frameSelection() {
     Camera& c = m_scene.camera;
     c.target = (mn + mx) * 0.5f;
     float radius = length(mx - mn) * 0.5f;
-    c.distance = std::max(radius / std::sin(c.fovY * 0.5f) * 1.1f, 1.0f);
+    if (c.ortho) c.orthoHeight = std::max(radius * 2.2f / std::min(1.0f, m_rcView.w / std::max(m_rcView.h, 1.0f)), 0.05f);
+    else c.distance = std::max(radius / std::sin(c.fovY * 0.5f) * 1.1f, 1.0f);
     cameraChanged();
 }
 
@@ -785,18 +790,8 @@ void App::toggleGroundGrid() {
     else status(L"No ground grid in this scene", 2);
 }
 
-void App::setViewAxis(int axis) {
-    Camera& c = m_scene.camera;
-    switch (axis) {
-    case 0: c.yaw = 0; c.pitch = radians(10); break;            // perspective front
-    case 1: c.yaw = 0; c.pitch = 0; break;                       // face
-    case 2: c.yaw = kPi; c.pitch = 0; break;                     // arriere
-    case 3: c.yaw = -kPi * 0.5f; c.pitch = 0; break;             // gauche
-    case 4: c.yaw = kPi * 0.5f; c.pitch = 0; break;              // droite
-    case 5: c.yaw = 0.001f; c.pitch = radians(89.0f); break;     // dessus
-    }
-    cameraChanged();
-}
+// The active pane looks through a built-in camera (ViewCam): persp, top, front, side, bottom, back, left.
+void App::setViewAxis(int cam) { setPaneCamera(m_activePane, std::clamp(cam, 0, VCAM_COUNT - 1)); }
 
 void App::handleShortcuts() {
     ImGuiIO& io = ImGui::GetIO();
@@ -837,6 +832,7 @@ void App::handleShortcuts() {
     if (pressed(ImGuiKey_R) && !placing) { m_tool = TOOL_SCALE; setAdvScale(false); }
     if (pressed(ImGuiKey_F)) frameSelection();
     if (pressed(ImGuiKey_T)) m_turntable = !m_turntable;
+    if (pressed(ImGuiKey_Space) && !ImGui::IsAnyItemActive()) togglePaneMax();   // the pane under the mouse alone, and back (Maya)
     if (pressed(ImGuiKey_Escape)) select(-1);
     if (m_selected >= 0 && !placing && !ImGui::IsAnyItemActive()) {
         // Arrow keys move along the axis closest to the camera direction.
@@ -979,10 +975,11 @@ void App::duplicateSelected() {
     std::function<int(int, uint32_t, bool)> copy = [&](int i, uint32_t parent, bool top) -> int {
         Object o = m_scene.objects[i];
         const uint32_t oldId = o.id;
-        if (!o.group && o.material >= 0 && o.material < (int)m_scene.materials.size()) {
+        if (!o.group && !o.camera && o.material >= 0 && o.material < (int)m_scene.materials.size()) {
             Material m = m_scene.materials[o.material];
             o.material = m_scene.addMaterial(m);
         }
+        o.camRender = false;   // (one render camera: the original)
         o.position.x += 8.0f;
         o.id = next++;
         if (!top) o.parent = parent;
@@ -1080,7 +1077,7 @@ void App::setColor(int pi) {
     pushUndo();
     const PaletteColor& c = palette()[pi];
     for (int sel : selectionAll()) {
-        if (m_scene.objects[sel].group) continue;   // a group has no material
+        if (m_scene.objects[sel].group || m_scene.objects[sel].camera) continue;   // a group or a camera has no material
         Material& m = m_scene.materials[m_scene.objects[sel].material];
         m.baseColor = c.linear();
         m.colorId = c.id;
@@ -1098,7 +1095,7 @@ void App::setPreset(int preset) {
     if (m_selected < 0) return;
     pushUndo();
     for (int sel : selectionAll())
-        if (!m_scene.objects[sel].group) applyPreset(m_scene.materials[m_scene.objects[sel].material], preset, 1.0f);
+        if (!m_scene.objects[sel].group && !m_scene.objects[sel].camera) applyPreset(m_scene.materials[m_scene.objects[sel].material], preset, 1.0f);
     markDirty();
 }
 
@@ -1194,6 +1191,9 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         else if (a == L"--open") opt.openPath = next();
         else if (a == L"--gizmo-test") opt.gizmoTest = next();
         else if (a == L"--self-test") opt.selfTest = next();
+        else if (a == L"--cam") { std::wstring c = next(); opt.cam = std::string(c.begin(), c.end()); }
+        else if (a == L"--layout") opt.layout = _wtoi(next().c_str());
+        else if (a == L"--demo-cameras") opt.demoCameras = true;
         else if (a == L"--shot-seq") opt.shotSeq = _wtoi(next().c_str());
         else if (a == L"--aa") opt.aa = _wtoi(next().c_str());
         else if (a == L"--gizmo-demo") opt.gizmoDemo = next();

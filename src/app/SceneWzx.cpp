@@ -281,7 +281,7 @@ std::string App::wzxSceneJson(bool withCamera) const {
     w.endArray();
 
     if (withCamera) {   // left out of the modified test: moving the view does not modify the scene
-        const Camera& c = sc.camera;
+        const Camera& c = perspCamera();   // (the persp camera, also when a pane looks through another one)
         w.beginObject("camera");
         w.vec("target", c.target);
         w.deg("yaw", c.yaw);
@@ -380,7 +380,7 @@ std::string App::wzxSceneJson(bool withCamera) const {
     };
     std::vector<int> fileIndex(sc.materials.size(), -1), order;
     for (int i : saved) {
-        if (sc.objects[i].group) continue;   // a group has no material
+        if (sc.objects[i].group || sc.objects[i].camera) continue;   // a group or a camera has no material
         int m = materialOf(sc.objects[i]);
         if (m >= 0 && m < (int)sc.materials.size() && fileIndex[m] < 0) {
             fileIndex[m] = 0;
@@ -424,7 +424,16 @@ std::string App::wzxSceneJson(bool withCamera) const {
         w.str("name", o.name);
         w.str("type", o.part);
         if (o.group) w.boolean("group", true);   // group node: a transform only, no geometry
-        else writeGeometry(w, sc, o);
+        else if (o.camera) {   // camera object: a transform and its lens, no geometry
+            w.beginObject("camera");
+            w.deg("fov", o.camFovY);
+            w.boolean("orthographic", o.camOrtho);
+            w.num("orthoHeight", o.camOrthoHeight);
+            w.num("distance", o.camDistance);
+            w.num("aspect", o.camAspect);
+            w.boolean("render", o.camRender);
+            w.endObject();
+        } else writeGeometry(w, sc, o);
         w.vec("position", o.position);
         w.vec4("rotation", objRot(o));
         w.vec("scale", o.scale);
@@ -436,7 +445,7 @@ std::string App::wzxSceneJson(bool withCamera) const {
         w.integer("collection", (int)o.collection);
         w.integer("order", o.order);
         w.boolean("collapsed", o.collapsed);
-        int m = o.group ? -1 : materialOf(o);
+        int m = (o.group || o.camera) ? -1 : materialOf(o);
         w.integer("material", m >= 0 && m < (int)fileIndex.size() ? fileIndex[m] : -1);
         w.endObject();
     }
@@ -689,7 +698,20 @@ void App::loadWzxScene(const Json& j, const std::wstring& path) {
                 o.mesh = -1;
             }
         o.group = flag(oj["group"], false);   // Scene Manager group node: a transform only
+        const Json& cj = oj["camera"];
+        o.camera = !o.group && cj.type == Json::Object;   // camera object: a transform and its lens
+        if (o.camera) {
+            o.mesh = -1;
+            if (o.part.empty()) o.part = "CAMERA";
+            o.camFovY = angle(cj["fov"], o.camFovY);
+            o.camOrtho = flag(cj["orthographic"], false);
+            o.camOrthoHeight = std::max(f(cj["orthoHeight"], o.camOrthoHeight), 1e-3f);
+            o.camDistance = std::max(f(cj["distance"], o.camDistance), 0.01f);
+            o.camAspect = std::clamp(f(cj["aspect"], o.camAspect), 0.1f, 10.0f);
+            o.camRender = flag(cj["render"], false);
+        }
         if (o.group) { o.mesh = -1; if (o.part.empty()) o.part = "GROUP"; }
+        else if (o.camera) {}
         else if (o.prim.type == PRIM_NONE) o.mesh = oj["mesh"].type == Json::String ? fileMesh(oj["mesh"].s) : shapeMesh(shape);
         o.position = vec3(oj["position"], o.position);
         const Json& r = oj["rotation"];
@@ -708,7 +730,7 @@ void App::loadWzxScene(const Json& j, const std::wstring& path) {
         o.order = (int)oj["order"].num(0);
         o.collapsed = flag(oj["collapsed"], false);
         int m = (int)oj["material"].num(-1);
-        if (o.group) {
+        if (o.group || o.camera) {
             o.material = 0;   // never used (no geometry)
             sc.addObject(o);
             continue;
@@ -787,6 +809,8 @@ void App::loadWzxScene(const Json& j, const std::wstring& path) {
     m_activeView = 0;
     generateThumbnails();
     m_scene.camera = c;
+    resetViewCams();   // persp is the camera of the file, top / front / side frame the scene
+    loadActiveCamera();
 
     log("Scene loaded: " + toUtf8(fs::path(path).filename().wstring()) + " (" + std::to_string(sc.objects.size()) + " objects)", 1);
     if (warnings) status(L"Scene loaded with " + std::to_wstring(warnings) + L" warning(s): see the log", 2);

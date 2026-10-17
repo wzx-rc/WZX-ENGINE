@@ -99,6 +99,9 @@ struct FrameConstants {
     // HDRI: lat-long texture (gEnvTex) and its importance sampling tables (gEnvDist, see EnvSample in PathTrace.hlsl)
     uint envW; uint envH; float envRotation; float envMapIntensity;   // table size, rotation (radians), intensity
     float envPdfScale; float envMips; float filterGlossy; float indirectClamp;   // W*H / sum of the table, mip count of gEnvTex; see TracePath
+    // Orthographic camera (0 = perspective): half the height of the view (scene units) and how far behind the eye the
+    // parallel rays start (the whole scene in front of them); the same for the previous frame (reprojection)
+    float orthoHalfH; float orthoBack; float prevOrthoHalfH; float prevOrthoBack;
 };
 
 // DDGI probe volume (real-time GI test). Atlases: irradiance 8x8 octahedral texels per probe, distance

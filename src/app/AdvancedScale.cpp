@@ -182,7 +182,7 @@ bool App::advScaleInput(bool inView) {
     if (!advScaleBox(b)) { m_advHover = -1; return false; }
     const AdvScaleOptions& opt = th::settings().advScale;
     const bool corners = m_advCorners || io.KeyCtrl;
-    const float3 eye = m_scene.camera.eye();
+    const Camera& cam = m_scene.camera;
     int best = -1;
     float bestD = opt.interactDist * m_dpi;
     for (int h = 0; h < 27; ++h) {
@@ -199,7 +199,7 @@ bool App::advScaleInput(bool inView) {
         float2 sp;
         if (!project(p, sp)) continue;
         float dd = std::hypot(mx - sp.x, my - sp.y);
-        if (dot(dir, eye - p) < 0) dd += 4.0f * m_dpi;   // a handle behind the box loses against one in front
+        if (dot(dir, cam.toViewer(p)) < 0) dd += 4.0f * m_dpi;   // a handle behind the box loses against one in front
         if (dd < bestD) { bestD = dd; best = h; }
     }
     m_advHover = best;
@@ -374,7 +374,7 @@ void App::drawAdvScale(ImDrawList* dl) {
     if (!advScaleBox(b)) return;
     const AdvScaleOptions& opt = th::settings().advScale;
     const float d = m_dpi;
-    const float3 eye = m_scene.camera.eye();
+    const Camera& cam = m_scene.camera;
     ImGuiIO& io = ImGui::GetIO();
     auto corner = [&](int i) {
         float3 p = b.c;
@@ -382,7 +382,7 @@ void App::drawAdvScale(ImDrawList* dl) {
         return p;
     };
     // a face of the box is turned to the camera
-    auto faceFront = [&](int k, int sg) { const float3 n = b.ax[k] * (float)sg; return dot(n, eye - (b.c + n * b.h[k])) > 0; };
+    auto faceFront = [&](int k, int sg) { const float3 n = b.ax[k] * (float)sg; return dot(n, cam.toViewer(b.c + n * b.h[k])) > 0; };
     // while dragging: the box as it was at the press, faint (the fixed side shows)
     if (m_adv.active) {
         const AdvBox& o = m_adv.box0;
@@ -437,7 +437,7 @@ void App::drawAdvScale(ImDrawList* dl) {
             alpha = clampf(1.0f - (dist - 30.0f * d) / (50.0f * d), 0.0f, 1.0f);
             if (alpha <= 0.01f) continue;
         }
-        const bool front = dot(dir, eye - p) >= 0;
+        const bool front = dot(dir, cam.toViewer(p)) >= 0;
         const ImVec4& c = isCorner ? opt.colorCorner : (n == 2 ? opt.colorEdgeHandle : opt.colorFace);
         const float r = (dragged || hover) ? hs * 1.45f : hs;
         const ImVec2 a(sp.x - r, sp.y - r), e(sp.x + r, sp.y + r);

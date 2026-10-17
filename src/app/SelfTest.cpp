@@ -6,6 +6,8 @@
 //     in build.bat), the view cube, click and rectangle selection, manipulator and Advanced Scale drags, marking menu;
 //   - rendering: viewport images read back and measured: editor grid and its options, wireframe, selection glow and its
 //     coverage, MSAA x4 / x8 / x16, path traced view with the editor overlay, the selection overlay of SelectionFx;
+//   - cameras: the orthographic views (drawn where Camera::project puts the objects, pan, zoom, their own state), camera
+//     objects, RenderCam, camera icons, the preview, the split layouts (the other panes' pictures, the active pane, Space);
 //   - robustness: anti-aliasing changes, window resize, GPU times, validation layer messages (VP3D_DEBUG).
 #define IMGUI_ENABLE_TEST_ENGINE   // declarations of the item hooks in imgui_internal.h
 #include "App.h"
@@ -168,6 +170,9 @@ struct App::SelfTest {
     void input() {
         ++g_uiFrame;
         ImGuiIO& io = ImGui::GetIO();
+        // the window kept as the focused one: Dear ImGui releases the mouse buttons when the application loses the focus
+        // (another window activated meanwhile), which would drop a scripted click
+        io.AddFocusEvent(true);
         if (!events.empty()) {
             auto e = std::move(events.front());
             events.pop_front();
@@ -278,6 +283,52 @@ struct App::SelfTest {
     }
     Img view() { Img i; a.m_renderer.readViewport(i.px, i.w, i.h); return i; }
     Img window() { Img i; a.m_renderer.readBackBuffer(i.px, i.w, i.h); return i; }
+    Img extraView(int slot) { Img i; a.m_renderer.readView(slot, i.px, i.w, i.h); return i; }   // another pane, the camera preview
+    // standard deviation of the luminance (a picture, not a flat colour)
+    static double lumSpread(const Img& im) {
+        if (!im.ok()) return 0;
+        double s = 0, s2 = 0;
+        const size_t n = (size_t)im.w * im.h;
+        for (uint32_t y = 0; y < im.h; ++y)
+            for (uint32_t x = 0; x < im.w; ++x) {
+                const double l = im.lum(x, y);
+                s += l;
+                s2 += l * l;
+            }
+        const double m = s / n;
+        return std::sqrt(std::max(0.0, s2 / n - m * m));
+    }
+    // the pixels the selection covers more than half in the view, their bounding box
+    bool coverageBox(Rect& box) {
+        std::vector<uint8_t> cov;
+        uint32_t w = 0, h = 0;
+        if (!a.m_renderer.readSelectionCoverage(cov, w, h)) return false;
+        box = Rect{(int)w, (int)h, -1, -1};
+        for (uint32_t y = 0; y < h; ++y)
+            for (uint32_t x = 0; x < w; ++x)
+                if (cov[(size_t)y * w + x] >= 128) {
+                    box.x0 = std::min(box.x0, (int)x);
+                    box.y0 = std::min(box.y0, (int)y);
+                    box.x1 = std::max(box.x1, (int)x + 1);
+                    box.y1 = std::max(box.y1, (int)y + 1);
+                }
+        return box.x1 > box.x0;
+    }
+    // a point of the scene in pane i (its camera, its image inside the frame)
+    bool paneScr(int i, const float3& p, float2& s) const {
+        const ScreenRect& rc = a.m_panes[i].rc;
+        float2 n;
+        if (rc.w < 4 || !a.paneCamera(i).project(p, (rc.w - 2) / (rc.h - 2), n)) return false;
+        s = float2(rc.x + 1 + (0.5f + 0.5f * n.x) * (rc.w - 2), rc.y + 1 + (0.5f - 0.5f * n.y) * (rc.h - 2));
+        return true;
+    }
+    float3 objCentre(int o) const {
+        const Object& ob = a.m_scene.objects[o];
+        float3 mn, mx2;
+        a.aabbOf(ob, ob.position, a.objRot(ob), mn, mx2);
+        return (mn + mx2) * 0.5f;
+    }
+    float3 forward() const { float3 r, u, f; a.m_scene.camera.basis(r, u, f); return f; }
     void select(std::vector<int> v) {
         a.select(-1);
         if (v.empty()) return;
@@ -297,10 +348,14 @@ struct App::SelfTest {
         for (int i : a.selectionAll()) t += (t.empty() ? "" : ", ") + a.m_scene.objects[i].name;
         return "selection: " + (t.empty() ? std::string("none") : t);
     }
-    // a fresh Concept scene, saved state (no "Save changes?"), raster view, standard tools
+    // a fresh Concept scene, saved state (no "Save changes?"), raster view, standard tools, one pane looking through persp
     void fresh() {
         a.setAdvScale(false);
         a.m_advCorners = false;
+        a.m_previewPin = 0;
+        if (a.m_layout != 0 || a.m_panes.size() != 1) a.setLayout(0);
+        a.m_paneMax = false;
+        if (a.m_panes[a.m_activePane].cam != VCAM_PERSP) a.setPaneCamera(a.m_activePane, VCAM_PERSP);
         a.loadScene(SCENE_CONCEPT);
         a.m_savedSig = a.wzxSceneJson(false);
         a.m_docDirty = false;
@@ -574,9 +629,10 @@ void App::SelfTest::build() {
     menu("vmCamera", "Top", [this] {
         float3 r, u, f;
         a.m_scene.camera.basis(r, u, f);
-        check("Camera menu: Top", a.m_viewMode == 5 && f.y < -0.99f, fmt("view %d, forward y %.3f", a.m_viewMode, f.y));
+        check("Camera menu: Top (orthographic)", a.m_panes[a.m_activePane].cam == VCAM_TOP && a.m_scene.camera.ortho && f.y < -0.99f,
+              fmt("camera %d, forward y %.3f", a.m_panes[a.m_activePane].cam, f.y));
     });
-    menu("vmCamera", "Perspective", [this] { check("Camera menu: Perspective", a.m_viewMode == 0); });
+    menu("vmCamera", "Perspective", [this] { check("Camera menu: Perspective", a.m_panes[a.m_activePane].cam == VCAM_PERSP && !a.m_scene.camera.ortho); });
     menu("vmCamera", "Turntable", [this] { check("Camera menu: Turntable on", a.m_turntable); });
     menu("vmCamera", "Turntable", [this] { check("Camera menu: Turntable off", !a.m_turntable); });
     menu("vmCamera", "Depth of Field", [this] { check("Camera menu: Depth of Field on", a.m_scene.camera.dof); });
@@ -607,8 +663,8 @@ void App::SelfTest::build() {
     menu("vmDisplay", "MSAA x4", [this] { check("Display menu: Anti-aliasing MSAA x4", a.m_msaa == 4); }, "Anti-aliasing");
     menu("vmRender", "Progressive", [this] { check("Renderer menu: Progressive (path tracing)", !a.m_rs.raster); });
     menu("vmRender", "Lit", [this] { check("Renderer menu: Lit", a.m_rs.raster && a.renderMode() == 0); });
-    menu("vmAxes", "Object", [this] { check("Axes menu: Object", a.m_axisMode == 1); });
-    menu("vmAxes", "Parent", [this] { check("Axes menu: Parent", a.m_axisMode == 2); });
+    menu("vmAxes", "Object", [this] { check("Axes menu: Object", a.m_axisMode == 1, fmt("axes %d", a.m_axisMode)); });
+    menu("vmAxes", "Parent", [this] { check("Axes menu: Parent", a.m_axisMode == 2, fmt("axes %d", a.m_axisMode)); });
     menu("vmAxes", "World", [this] { check("Axes menu: World", a.m_axisMode == 0); });
     menu("vmAxes", "Snapping always (else Shift)", [this] { check("Axes menu: Snapping always", a.m_magnet); });
     menu("vmAxes", "Snapping always (else Shift)", [this] { check("Axes menu: Snapping always off", !a.m_magnet); });
@@ -1576,6 +1632,378 @@ void App::SelfTest::build() {
         return 1;
     });
 
+    // ================================================================= cameras: orthographic views
+    // Each built-in camera looks along its axis; the GPU draws the cube where Camera::project puts it (the orthographic
+    // projection of the renderer and of the editor agree); the views pan instead of tumbling; each keeps its own state.
+    add("cameras", [this] {
+        fresh();
+        a.select(obj("Cube"));
+        th::settings().grid.visible = false;
+        a.m_rs.wireframe = 0;
+        cam0 = a.m_scene.camera;
+        return 2;
+    });
+    struct OrthoCase { int cam; float3 dir; const char* name; bool coverage; };
+    const OrthoCase orthoCases[6] = {{VCAM_TOP, float3(0, -1, 0), "top", true},       {VCAM_FRONT, float3(0, 0, -1), "front", true},
+                                     {VCAM_SIDE, float3(-1, 0, 0), "side", true},      {VCAM_BOTTOM, float3(0, 1, 0), "bottom", false},
+                                     {VCAM_BACK, float3(0, 0, 1), "back", false},      {VCAM_LEFT, float3(1, 0, 0), "left", false}};
+    for (const OrthoCase& oc : orthoCases) {
+        add("cameras", [this, oc] { a.setViewAxis(oc.cam); return 4; });
+        add("cameras", [this, oc] {
+            const float3 f = forward();
+            check(std::string(oc.name) + ": orthographic, along its axis", a.m_scene.camera.ortho && dot(f, oc.dir) > 0.999f && a.paneCameraName(a.m_activePane) == oc.name,
+                  fmt("forward %.3f %.3f %.3f", f.x, f.y, f.z));
+            if (oc.coverage) {   // (the views where nothing hides the cube)
+                Rect box;
+                const Rect want = objRect(obj("Cube"), 0);
+                const bool ok = coverageBox(box);
+                check(std::string(oc.name) + ": the cube drawn where the camera projects it",
+                      ok && std::abs(box.x0 - want.x0) <= 2 && std::abs(box.x1 - want.x1) <= 2 && std::abs(box.y0 - want.y0) <= 2 && std::abs(box.y1 - want.y1) <= 2,
+                      fmt("drawn %d %d - %d %d, projected %d %d - %d %d", box.x0, box.y0, box.x1, box.y1, want.x0, want.y0, want.x1, want.y1));
+            }
+            return 1;
+        });
+    }
+    add("cameras", [this] { a.select(-1); a.setViewAxis(VCAM_TOP); return 3; });
+    add("cameras", [this] {
+        const float2 s = centre(obj("Sphere"));
+        return click(s.x, s.y);
+    });
+    add("cameras", [this] {
+        check("top: a click picks the object under the mouse", selIs({obj("Sphere")}), selText());
+        a.select(-1);
+        const Camera& c = a.m_scene.camera;
+        v["yaw"] = c.yaw; v["pitch"] = c.pitch; v["tx"] = c.target.x; v["tz"] = c.target.z;
+        float2 p;
+        emptyPoint(p);
+        return drag(p.x, p.y, p.x + 80, p.y + 50, 1);
+    });
+    add("cameras", [this] {
+        const Camera& c = a.m_scene.camera;
+        check("top: a right drag pans (an orthographic view does not tumble)",
+              c.yaw == (float)v["yaw"] && c.pitch == (float)v["pitch"] && std::hypot(c.target.x - v["tx"], c.target.z - v["tz"]) > 0.05f,
+              fmt("target moved %.3f", std::hypot(c.target.x - v["tx"], c.target.z - v["tz"])));
+        v["oh"] = c.orthoHeight;
+        v["dist"] = c.distance;
+        float2 p;
+        emptyPoint(p);
+        events.push_back([=](ImGuiIO&) { mx = p.x; my = p.y; });
+        events.push_back([](ImGuiIO& io) { io.AddMouseWheelEvent(0, 2); });
+        return queued();
+    });
+    add("cameras", [this] {
+        const Camera& c = a.m_scene.camera;
+        check("top: the wheel changes the size of the view", c.orthoHeight < v["oh"] * 0.95 && c.distance == (float)v["dist"],
+              fmt("view size %.2f -> %.2f", v["oh"], c.orthoHeight));
+        v["tx"] = c.target.x; v["tz"] = c.target.z; v["oh"] = c.orthoHeight;
+        a.select(-1);
+        a.setViewAxis(VCAM_PERSP);
+        return 2;
+    });
+    add("cameras", [this] {
+        const Camera& c = a.m_scene.camera;
+        check("persp: its own camera, as before the orthographic views",
+              !c.ortho && c.yaw == cam0.yaw && c.pitch == cam0.pitch && c.distance == cam0.distance && length(c.target - cam0.target) < 1e-5f);
+        a.setViewAxis(VCAM_TOP);
+        return 2;
+    });
+    add("cameras", [this] {
+        const Camera& c = a.m_scene.camera;
+        check("top: kept as it was panned and zoomed", c.ortho && c.target.x == (float)v["tx"] && c.target.z == (float)v["tz"] && c.orthoHeight == (float)v["oh"]);
+        return clickItem("vmPersp");
+    });
+
+    // ================================================================= cameras: camera objects, RenderCam, icons, preview
+    add("cameras", [this] {
+        check("Persp button: back to persp", a.m_panes[a.m_activePane].cam == VCAM_PERSP && !a.m_scene.camera.ortho);
+        v["undo"] = (double)a.m_undo.size();
+        const int idx = a.createCameraFromView(false);
+        const Object& o = a.m_scene.objects[idx];
+        const Camera c = a.cameraOfObject(o), &vc = a.m_scene.camera;
+        float3 r1, u1, f1, r2, u2, f2;
+        c.basis(r1, u1, f1);
+        vc.basis(r2, u2, f2);
+        check("Camera from View: a camera object where the view is (position, direction, lens)",
+              o.camera && o.mesh < 0 && length(c.eye() - vc.eye()) < 1e-3f * vc.distance && dot(f1, f2) > 0.9999f && dot(u1, u2) > 0.9999f &&
+                  std::fabs(c.fovY - vc.fovY) < 1e-6f && std::fabs(c.distance - vc.distance) < 1e-4f,
+              fmt("%s, eye off by %.5f", o.name.c_str(), length(c.eye() - vc.eye())));
+        check("the first camera of the scene is the render camera", o.camRender && a.renderCamera() == idx);
+        check("Camera from View: selected, undoable", a.m_selected == idx && a.m_undo.size() == (size_t)v["undo"] + 1);
+        a.m_scene.camera.yaw += 0.6f;   // the render camera from another view
+        a.cameraChanged();
+        return 2;
+    });
+    add("cameras", [this] {
+        const int idx = a.createCameraFromView(true), first = obj("Camera");
+        const Object& o = a.m_scene.objects[idx];
+        check("Render Camera from View: the render camera now, the only one",
+              o.name == "RenderCam" && o.camRender && a.renderCamera() == idx && first >= 0 && !a.m_scene.objects[first].camRender);
+        v["pyaw"] = a.m_scene.camera.yaw;
+        a.select(-1);
+        return clickItem("vmRenderCam");
+    });
+    add("cameras", [this] {
+        const int rc = obj("RenderCam");
+        const ViewPane& p = a.m_panes[a.m_activePane];
+        const Object& o = a.m_scene.objects[rc];
+        check("RenderCam button: the view looks through the render camera",
+              p.cam == VCAM_OBJECT && p.object == o.id && length(a.m_scene.camera.eye() - o.position) < 1e-3f && a.paneCameraName(a.m_activePane) == "RenderCam");
+        v["rx"] = o.position.x; v["ry"] = o.position.y; v["rz"] = o.position.z;
+        float2 q;
+        emptyPoint(q);
+        return drag(q.x, q.y, q.x + 90, q.y, 1);   // tumble through it
+    });
+    add("cameras", [this] {
+        const Object& o = a.m_scene.objects[obj("RenderCam")];
+        const float moved = length(o.position - float3((float)v["rx"], (float)v["ry"], (float)v["rz"]));
+        check("navigating through the render camera moves it", moved > 0.05f && length(a.m_scene.camera.eye() - o.position) < 1e-3f, fmt("moved %.3f", moved));
+        return clickItem("vmPersp");
+    });
+    add("cameras", [this] {
+        check("Persp button: persp back where it was", a.m_panes[a.m_activePane].cam == VCAM_PERSP && std::fabs(a.m_scene.camera.yaw - (float)v["pyaw"]) < 1e-6f);
+        // the first camera (made at the starting view), from behind: the view pulled back along the same line
+        a.m_scene.camera = cam0;
+        a.m_scene.camera.distance *= 1.6f;
+        a.cameraChanged();
+        return 2;
+    });
+    add("cameras", [this] {
+        std::vector<std::pair<float3, float3>> lines;
+        const int ci = obj("Camera");
+        float2 s0, s1;
+        if (ci < 0 || !a.cameraIcon(ci, lines) || lines.empty() || !a.project(lines[0].first, s0) || !a.project(lines[0].second, s1)) {
+            check("camera icon on screen", false);
+            return 1;
+        }
+        return click((s0.x + s1.x) * 0.5f, (s0.y + s1.y) * 0.5f);
+    });
+    add("cameras", [this] {
+        check("a click on a camera icon selects the camera", a.m_selected == obj("Camera"), selText());
+        return 4;
+    });
+    add("cameras", [this] {
+        img[0] = extraView(kPreviewSlot);
+        const ScreenRect& pr = a.m_previewRc;
+        check("the selected camera in the preview", a.previewCamera() == obj("Camera") && a.m_previewShown && pr.w > 100);
+        check("the preview at the bottom right of the view",
+              pr.x + pr.w > a.m_rcView.x + a.m_rcView.w * 0.8f && pr.y + pr.h > a.m_rcView.y + a.m_rcView.h * 0.8f && pr.x > a.m_rcView.x + a.m_rcView.w * 0.4f);
+        const double sd = lumSpread(img[0]);
+        check("the preview shows the picture of the camera (its size, not a flat colour)", img[0].ok() && img[0].w == (uint32_t)pr.w && img[0].h == (uint32_t)pr.h && sd > 6,
+              fmt("%u x %u, spread %.1f", img[0].w, img[0].h, sd));
+        return clickItem("camPreviewPin");
+    });
+    add("cameras", [this] {
+        check("pin: the preview keeps this camera", a.m_previewPin == a.m_scene.objects[obj("Camera")].id);
+        a.select(obj("Cube"));
+        return 3;
+    });
+    add("cameras", [this] {
+        check("pinned: the preview stays when another object is selected", a.previewCamera() == obj("Camera") && a.m_previewShown);
+        a.select(obj("RenderCam"));
+        return 3;
+    });
+    add("cameras", [this] {
+        check("pinned: another camera selected does not replace it", a.previewCamera() == obj("Camera"));
+        return clickItem("camPreviewPin");
+    });
+    add("cameras", [this] {
+        check("unpinned: the preview follows the selected camera", a.m_previewPin == 0 && a.previewCamera() == obj("RenderCam"));
+        return 3;
+    });
+    add("cameras", [this] {
+        const Img im = extraView(kPreviewSlot);
+        const double d = im.ok() && img[0].ok() && im.w == img[0].w && im.h == img[0].h ? meanAbsDiff(im, img[0]) : 99;
+        check("the preview picture changes with the camera", d > 3, fmt("mean difference %.1f", d));
+        return clickItem("camPreviewLook");
+    });
+    add("cameras", [this] {
+        const ViewPane& p = a.m_panes[a.m_activePane];
+        check("Look Through button of the preview", p.cam == VCAM_OBJECT && p.object == a.m_scene.objects[obj("RenderCam")].id);
+        check("no preview of the camera the view looks through", a.previewCamera() < 0);
+        a.m_atl.inspectorTab = 0;   // Actor: the camera inspector
+        return 3;
+    });
+    add("cameras", [this] { return clickItem("Render Camera"); });
+    add("cameras", [this] { check("Inspector: Render Camera off", a.renderCamera() < 0); return clickItem("Render Camera"); });
+    add("cameras", [this] {
+        check("Inspector: Render Camera on", a.renderCamera() == obj("RenderCam"));
+        v["fov"] = a.m_scene.objects[obj("RenderCam")].camFovY;
+        a.m_scene.objects[obj("RenderCam")].camFovY = radians(20.0f);   // its lens edited (the inspector), the view follows
+        return 2;
+    });
+    add("cameras", [this] {
+        check("the view follows the lens of the camera it looks through", std::fabs(a.m_scene.camera.fovY - radians(20.0f)) < 1e-5f);
+        a.m_scene.objects[obj("RenderCam")].camFovY = (float)v["fov"];
+        a.select(obj("RenderCam"));
+        a.deleteSelected();
+        return 2;
+    });
+    add("cameras", [this] {
+        check("the camera the view looked through deleted: back to persp",
+              obj("RenderCam") < 0 && a.m_panes[a.m_activePane].cam == VCAM_PERSP && !a.m_scene.camera.ortho && a.renderCamera() < 0);
+        a.undo();
+        return 2;
+    });
+    add("cameras", [this] {
+        const int rc = obj("RenderCam");
+        check("undo: the render camera back", rc >= 0 && a.m_scene.objects[rc].camRender && a.renderCamera() == rc);
+        a.select(rc);
+        a.duplicateSelected();
+        const int copy = a.m_selected;
+        check("Duplicate of the render camera: a camera, not a second render camera",
+              copy >= 0 && copy != rc && a.m_scene.objects[copy].camera && !a.m_scene.objects[copy].camRender && a.renderCamera() == obj("RenderCam"));
+        // a colour or a preset on a selected camera: no material changes (a camera has none)
+        std::vector<float3> before;
+        for (const Material& m : a.m_scene.materials) before.push_back(m.baseColor);
+        a.setColor(5);
+        a.setPreset(2);
+        bool same = before.size() == a.m_scene.materials.size();
+        for (size_t i = 0; same && i < before.size(); ++i) same = length(before[i] - a.m_scene.materials[i].baseColor) < 1e-6f;
+        check("a colour on a selected camera changes no material", same);
+        return 1;
+    });
+    add("cameras", [this] {
+        // .wzx: the camera objects saved and read back
+        Object& rc = a.m_scene.objects[obj("RenderCam")];
+        rc.camFovY = radians(28.0f);
+        rc.camAspect = 2.0f;
+        rc.camDistance = 7.5f;
+        const float3 rpos = rc.position;
+        Object& cm = a.m_scene.objects[obj("Camera")];
+        cm.camOrtho = true;
+        cm.camOrthoHeight = 12.5f;
+        wchar_t tmp[MAX_PATH];
+        GetTempPathW(MAX_PATH, tmp);
+        const std::wstring file = std::wstring(tmp) + L"wzx_selftest_cameras.wzx";
+        const bool ok = a.saveSceneFile(file) && a.loadSceneFile(file);
+        DeleteFileW(file.c_str());
+        const int r2 = obj("RenderCam"), c2 = obj("Camera");
+        bool same = ok && r2 >= 0 && c2 >= 0;
+        if (same) {
+            const Object& x = a.m_scene.objects[r2];
+            const Object& y = a.m_scene.objects[c2];
+            same = x.camera && x.camRender && std::fabs(x.camFovY - radians(28.0f)) < 1e-4f && std::fabs(x.camAspect - 2.0f) < 1e-4f &&
+                   std::fabs(x.camDistance - 7.5f) < 1e-4f && length(x.position - rpos) < 1e-3f && y.camera && !y.camRender && y.camOrtho &&
+                   std::fabs(y.camOrthoHeight - 12.5f) < 1e-4f && a.renderCamera() == r2;
+        }
+        check(".wzx: the camera objects saved and read back (lens, render camera)", same);
+        fresh();
+        return 3;
+    });
+
+    // ================================================================= split views: layouts, the active pane, Space
+    add("layouts", [this] {
+        fresh();
+        a.select(-1);
+        cam0 = a.m_scene.camera;
+        v["vw"] = a.m_rcView.w;
+        v["vh"] = a.m_rcView.h;
+        return clickItem("atlLayout");
+    });
+    add("layouts", [this] { return clickItem("       Four (2 x 2)"); });
+    add("layouts", [this] {
+        const auto& P = a.m_panes;
+        check("Layout menu: Four (2 x 2): top, persp / front, side",
+              a.m_layout == 3 && P.size() == 4 && P[0].cam == VCAM_TOP && P[1].cam == VCAM_PERSP && P[2].cam == VCAM_FRONT && P[3].cam == VCAM_SIDE);
+        check("2 x 2: the active pane stays on persp, as it was", a.m_activePane == 1 && !a.m_scene.camera.ortho && a.m_scene.camera.yaw == cam0.yaw);
+        check("2 x 2: the active pane is a quarter of the view",
+              std::fabs(a.m_rcView.w - (v["vw"] + 2) / 2) < 6 && std::fabs(a.m_rcView.h - (v["vh"] + 2) / 2) < 6,
+              fmt("%.0f x %.0f of %.0f x %.0f", a.m_rcView.w, a.m_rcView.h, v["vw"], v["vh"]));
+        return 4;
+    });
+    add("layouts", [this] {
+        bool ok = true;
+        std::string info;
+        for (int i : {0, 2, 3}) {
+            img[i] = extraView(i);
+            const ScreenRect& rc = a.m_panes[i].rc;
+            ok = ok && img[i].ok() && img[i].w == (uint32_t)(rc.w - 2) && img[i].h == (uint32_t)(rc.h - 2) && lumSpread(img[i]) > 6;
+            info += fmt("%u x %u  ", img[i].w, img[i].h);
+        }
+        check("2 x 2: the other three panes drawn, at their size", ok, info);
+        check("2 x 2: top, front and side are different pictures", meanAbsDiff(img[0], img[2]) > 2 && meanAbsDiff(img[2], img[3]) > 2 && meanAbsDiff(img[0], img[3]) > 2);
+        a.activatePane(0);
+        return 4;
+    });
+    add("layouts", [this] {
+        // the top pane drawn by the main renderer now: the same picture as when it was another pane
+        const Img im = view();
+        const double d = im.ok() && im.w == img[0].w && im.h == img[0].h ? meanAbsDiff(im, img[0]) : 99;
+        check("a pane shows the same picture as the main view of its camera", d < 2.5, fmt("mean difference %.2f (%u x %u, %u x %u)", d, im.w, im.h, img[0].w, img[0].h));
+        check("the persp pane keeps its camera meanwhile", length(a.paneCamera(1).eye() - cam0.eye()) < 1e-4f && !a.paneCamera(1).ortho);
+        a.activatePane(1);
+        return 3;
+    });
+    add("layouts", [this] {
+        // a click on the cube in the front pane: that pane active, the cube selected there (Maya)
+        float2 s;
+        if (!paneScr(2, objCentre(obj("Cube")), s)) { check("the cube in the front pane", false); return 1; }
+        return click(s.x, s.y);
+    });
+    add("layouts", [this] {
+        check("a click in another pane makes it the active one", a.m_activePane == 2 && a.m_scene.camera.ortho && a.paneCameraName(2) == "front");
+        check("... and selects there", selIs({obj("Cube")}), selText());
+        return 4;
+    });
+    add("layouts", [this] {
+        // the selection glow in the other panes too: the top pane against its picture without a selection
+        const Img im = extraView(0);
+        const int n = diffCount(img[0], im, 12);
+        check("the selection shows in the other panes (glow)", n > 40, fmt("%d pixels", n));
+        // Space over the side pane: alone in the view
+        const ScreenRect& rc = a.m_panes[3].rc;
+        events.push_back([=](ImGuiIO&) { mx = rc.x + rc.w * 0.5f; my = rc.y + rc.h * 0.5f; });
+        events.push_back([](ImGuiIO&) {});
+        key(ImGuiKey_Space);
+        return queued() + 2;
+    });
+    add("layouts", [this] {
+        check("Space: the pane under the mouse alone in the view", a.m_paneMax && a.m_activePane == 3 && a.m_rcView.w > v["vw"] * 0.95,
+              fmt("max %d, pane %d, %.0f px wide", (int)a.m_paneMax, a.m_activePane, a.m_rcView.w));
+        return key(ImGuiKey_Space);
+    });
+    add("layouts", [this] {
+        check("Space again: the layout back", !a.m_paneMax && a.m_panes.size() == 4 && a.m_activePane == 3 && a.m_rcView.w < v["vw"] * 0.6);
+        return clickItem("atlLayout");
+    });
+    add("layouts", [this] { return clickItem("       Sixteen (4 x 4)"); });
+    add("layouts", [this] {
+        check("Layout menu: Sixteen (4 x 4)", a.m_layout == 5 && a.m_panes.size() == 16);
+        v["gpu"] = 0;
+        v["frames"] = 0;
+        return 6;
+    });
+    add("layouts", [this] {
+        v["gpu"] += a.m_frameMs;   // (the whole frame: the other panes are not in the GPU timer of the main view)
+        v["frames"] += 1;
+        if (v["frames"] < 20) return -1;
+        int drawn = 0;
+        for (int i = 0; i < 16; ++i)
+            if (i != a.m_activePane && extraView(i).ok()) ++drawn;
+        check("4 x 4: the 15 other panes drawn", drawn == 15, fmt("%d", drawn));
+        note(fmt("frame time with 16 panes: %.1f ms", v["gpu"] / v["frames"]));
+        // the cameras of the layout: the seven built-in ones (and again)
+        bool cams = true;
+        for (int k = 0; k < VCAM_COUNT; ++k) cams = cams && a.m_panes[k].cam == (k == 0 ? VCAM_TOP : k == 1 ? VCAM_PERSP : k == 2 ? VCAM_FRONT : k == 3 ? VCAM_SIDE : k);
+        check("4 x 4: the built-in cameras in the panes", cams);
+        return clickItem("atlLayout");
+    });
+    add("layouts", [this] { return clickItem("       Single"); });
+    add("layouts", [this] {
+        check("Layout menu: Single, on the camera of the active pane", a.m_panes.size() == 1 && a.m_layout == 0);
+        check("Single: the view takes the whole area again", std::fabs(a.m_rcView.w - v["vw"]) < 2 && std::fabs(a.m_rcView.h - v["vh"]) < 2);
+        a.setViewAxis(VCAM_PERSP);
+        a.setLayout(3);   // Play in a layout
+        a.m_game->requestPlay();
+        return 6;
+    });
+    add("layouts", [this] {
+        check("Play in a 2 x 2 layout: the other panes still drawn", a.m_game->playing() && extraView(0).ok() && extraView(2).ok());
+        a.m_game->requestPlay();
+        return 3;
+    });
+    add("layouts", [this] { check("Stop", !a.m_game->playing()); fresh(); return 3; });
+
     // ================================================================= Village scene: the RTS placement and Play with the new tools
     // (Play writes the Village graph, game/main.graph.json: its bytes are put back afterwards)
     add("village", [this] {
@@ -1615,6 +2043,24 @@ void App::SelfTest::build() {
     add("village", [this] {
         check("Village: Stop gives the scene back", !a.m_game->playing() && a.m_scene.objects.size() == (size_t)v["objects"],
               fmt("%d objects, %d before", (int)a.m_scene.objects.size(), (int)v["objects"]));
+        // Play from the top view: the RTS camera is a perspective one, it takes persp meanwhile and gives top back
+        a.setViewAxis(VCAM_TOP);
+        a.m_game->requestPlay();
+        return 30;
+    });
+    add("village", [this] {
+        if (a.m_game->playing() && !a.m_game->rtsCameraOn()) a.m_game->setRtsCamera(true);   // (a graph without the RTS camera node)
+        return 3;
+    });
+    add("village", [this] {
+        check("Play with the RTS camera from the top view: it looks through persp", a.m_game->playing() && a.m_panes[a.m_activePane].cam == VCAM_PERSP && !a.m_scene.camera.ortho);
+        a.m_game->requestPlay();
+        return 4;
+    });
+    add("village", [this] {
+        const float3 f = forward();
+        check("Stop: the top view back, still looking down", !a.m_game->playing() && a.m_panes[a.m_activePane].cam == VCAM_TOP && a.m_scene.camera.ortho && f.y < -0.999f,
+              fmt("camera %d, forward y %.3f", a.m_panes[a.m_activePane].cam, f.y));
         fresh();
         return 3;
     });
