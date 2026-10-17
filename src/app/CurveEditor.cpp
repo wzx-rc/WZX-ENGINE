@@ -364,7 +364,7 @@ void CurveEditor::enterPoints() {
     m_obj = a.m_selected;
     a.m_multi.clear();
     m_sel.clear();
-    m_dragging = m_marquee = m_pendingFree = m_pulling = false;
+    m_dragging = m_marquee = m_pendingFree = m_pulling = m_manipHidden = false;
     a.status(L"Edit Points: click or drag a rectangle to select, drag to move");
     a.markDirty();
 }
@@ -375,7 +375,7 @@ void CurveEditor::exitMode() {
     m_mode = MODE_NONE;
     m_obj = -1;
     m_sel.clear();
-    m_dragging = m_marquee = m_pendingFree = m_pulling = m_filleting = m_filletTool = false;
+    m_dragging = m_marquee = m_pendingFree = m_pulling = m_filleting = m_filletTool = m_manipHidden = false;
     m_drawStep = 0;
     m_hoverAxis = -1;
 }
@@ -422,7 +422,7 @@ CurveData CurveEditor::drawShape(float3& pos, float4& rot) const {
         break;
     case CSHAPE_SQUARE: {
         float w = std::fabs(d.x), dd = std::fabs(d.z);
-        if (ImGui::GetIO().KeyShift) w = dd = std::max(w, dd);   // Shift: a square
+        if (mouse().shift) w = dd = std::max(w, dd);   // Shift: a square
         pos = m_drawStart + float3(d.x < 0 ? -w : w, 0, d.z < 0 ? -dd : dd) * 0.5f;
         p.width = std::max(w, 0.01f);
         p.depth = std::max(dd, 0.01f);
@@ -551,6 +551,7 @@ bool CurveEditor::keys() {
         if (io.KeyCtrl && pressed(ImGuiKey_A)) {
             m_sel.clear();
             for (int i = 0; i < a.m_scene.objects[m_obj].curve.count(); ++i) m_sel.push_back({i, PART_POINT});
+            m_manipHidden = false;
             return true;
         }
     }
@@ -559,16 +560,38 @@ bool CurveEditor::keys() {
 
 // --------------------------------------------------------------------------- mouse
 
-bool CurveEditor::input(bool inView, bool placing) {
+CurveEditor::MouseState CurveEditor::mouse() const {
+    float2 tm;   // --curve-test capture: the mouse held on a scene point
+    if (m_testMouse && a.project(m_testMouseAt, tm)) { MouseState m; m.x = tm.x; m.y = tm.y; return m; }
+    if (m_useFake) return m_fake;
     ImGuiIO& io = ImGui::GetIO();
-    const float mx = io.MousePos.x, my = io.MousePos.y;
+    MouseState m;
+    m.x = io.MousePos.x;
+    m.y = io.MousePos.y;
+    m.down = io.MouseDown[0];
+    m.clicked = ImGui::IsMouseClicked(0);
+    m.dbl = ImGui::IsMouseDoubleClicked(0);
+    m.shift = io.KeyShift;
+    m.ctrl = io.KeyCtrl;
+    m.alt = io.KeyAlt;
+    return m;
+}
+
+bool CurveEditor::manipulatorShown() const {
+    return m_mode == MODE_POINTS && !m_sel.empty() && !m_manipHidden && !m_pendingFree && !m_pulling && !m_filletTool && !m_filleting;
+}
+
+bool CurveEditor::input(bool inView, bool placing) {
+    const MouseState ms = mouse();
+    const float mx = ms.x, my = ms.y;
+    if (m_useFake) inView = a.m_rcView.contains(mx, my);
     validate();
     m_snap.on = false;   // set again below (or by the creation preview) when a snap is under the mouse
     if (placing) {
         if (m_mode != MODE_NONE) exitMode();
         return false;
     }
-    const bool alt = io.KeyAlt, shift = io.KeyShift, clicked = inView && ImGui::IsMouseClicked(0) && !alt;
+    const bool alt = ms.alt, shift = ms.shift, clicked = inView && ms.clicked && !alt;
     const bool snapOn = ImGui::IsKeyDown(ImGuiKey_X);
 
     if (m_mode == MODE_CREATE) {
@@ -588,7 +611,7 @@ bool CurveEditor::input(bool inView, bool placing) {
             }
         }
         if (m_draftDrag) {
-            if (!io.MouseDown[0]) m_draftDrag = false;
+            if (!ms.down) m_draftDrag = false;
             else if (m_createType == CURVE_BEZIER && !m_draft.points.empty() && std::hypot(mx - m_pressAt.x, my - m_pressAt.y) > 3.0f * a.m_dpi) {
                 const float3 A = m_draft.points.back();
                 float3 h;
@@ -611,7 +634,7 @@ bool CurveEditor::input(bool inView, bool placing) {
         }
         if (m_drawStep == 1) {
             if (ok) { m_drawCur = p; m_drawCur.y = m_drawStart.y; }
-            if (!io.MouseDown[0]) {
+            if (!ms.down) {
                 const bool dragged = std::hypot(mx - m_pressAt.x, my - m_pressAt.y) > 4.0f * a.m_dpi;
                 if (!dragged) { m_drawCur = m_drawStart; finishDraw(); }
                 else if (needsSecondSize(m_drawShape)) {
@@ -648,7 +671,7 @@ bool CurveEditor::input(bool inView, bool placing) {
         if (m_filleting) {   // fillet drag: the radius grows when the mouse goes up
             CurveData& cc = a.m_scene.objects[m_obj].curve;
             const float r = std::max(0.0f, m_filletPx0 - my) * worldPerPixel(m_filletAt);
-            if (!io.MouseDown[0]) {
+            if (!ms.down) {
                 m_filleting = false;
                 if (m_filletR <= 0 && !a.m_undo.empty()) a.m_undo.pop_back();   // no fillet: nothing to undo
                 else a.status(L"Fillet applied");
@@ -661,7 +684,7 @@ bool CurveEditor::input(bool inView, bool placing) {
             return true;
         }
         if (m_dragging) {
-            if (!io.MouseDown[0]) {
+            if (!ms.down) {
                 m_dragging = false;
                 if (!m_dragMoved && !a.m_undo.empty()) a.m_undo.pop_back();
             } else updateDrag(mx, my);
@@ -670,7 +693,7 @@ bool CurveEditor::input(bool inView, bool placing) {
         if (m_pulling) {   // Ctrl+drag from a point: symmetric tangents follow the mouse
             Object& o = a.m_scene.objects[m_obj];
             CurveData& cc = o.curve;
-            if (!io.MouseDown[0] || m_pullIndex >= cc.count()) { m_pulling = false; return true; }
+            if (!ms.down || m_pullIndex >= cc.count()) { m_pulling = false; return true; }
             if (std::hypot(mx - m_pressAt.x, my - m_pressAt.y) > 3.0f * a.m_dpi) {
                 const float3 A = toWorld(o, cc.points[m_pullIndex]);
                 float3 h;
@@ -687,17 +710,19 @@ bool CurveEditor::input(bool inView, bool placing) {
             return true;
         }
         if (m_pendingFree) {
-            if (!io.MouseDown[0]) m_pendingFree = false;
+            if (!ms.down) { m_pendingFree = false; m_manipHidden = false; }   // a click: the point is selected, its manipulator shows
             else if (std::hypot(mx - m_pressAt.x, my - m_pressAt.y) > 4.0f * a.m_dpi) {
                 m_pendingFree = false;
+                m_manipHidden = true;   // dragged directly: the point follows the mouse, no manipulator
                 beginDrag(3, m_pressAt.x, m_pressAt.y);
                 updateDrag(mx, my);
             }
             return true;
         }
         if (m_marquee) {
-            if (io.MouseDown[0]) return true;
+            if (ms.down) return true;
             m_marquee = false;
+            m_manipHidden = false;
             float x0 = std::min(m_marq0.x, mx), x1 = std::max(m_marq0.x, mx), y0 = std::min(m_marq0.y, my), y1 = std::max(m_marq0.y, my);
             if (!shift) m_sel.clear();
             if (x1 - x0 < 4 * a.m_dpi && y1 - y0 < 4 * a.m_dpi) return true;   // simple click in the void: clears
@@ -731,11 +756,12 @@ bool CurveEditor::input(bool inView, bool placing) {
             const bool onPoint = pickPoint(mx, my, it);
             // Cavalry-style tangents (Bezier): double-click a point = corner <-> smooth; Ctrl+drag a tangent end =
             // break it; Ctrl+drag a point = pull new symmetric tangents out of it
-            if (onPoint && bez && it.part == PART_POINT && ImGui::IsMouseDoubleClicked(0)) { m_pendingFree = false; toggleCorner(it.index); return true; }
-            if (onPoint && bez && io.KeyCtrl) {
+            if (onPoint && bez && it.part == PART_POINT && ms.dbl) { m_pendingFree = false; m_manipHidden = false; toggleCorner(it.index); return true; }
+            if (onPoint && bez && ms.ctrl) {
                 if (it.part != PART_POINT) {
                     a.pushUndo();
                     cc.broken[it.index] = 1;
+                    m_manipHidden = true;
                     m_sel = {it};
                     beginDrag(3, mx, my);
                     a.status(L"Tangent broken: the two handles move independently");
@@ -743,17 +769,19 @@ bool CurveEditor::input(bool inView, bool placing) {
                     a.pushUndo();
                     m_sel = {it};
                     m_pulling = true;
+                    m_manipHidden = true;
                     m_pullIndex = it.index;
                     m_pressAt = float2(mx, my);
                 }
                 return true;
             }
-            if (m_hoverAxis >= 0) { beginDrag(m_hoverAxis, mx, my); return true; }
-            if (io.KeyCtrl) { insertPointAt(mx, my); return true; }
+            if (m_hoverAxis >= 0 && m_hoverAxis < 3) { beginDrag(m_hoverAxis, mx, my); return true; }   // an arrow
+            if (ms.ctrl) { insertPointAt(mx, my); return true; }
             if (onPoint) {
                 if (shift) {
                     auto f = std::find_if(m_sel.begin(), m_sel.end(), [&](const Item& s) { return s.index == it.index && s.part == it.part; });
                     if (f != m_sel.end()) m_sel.erase(f); else m_sel.push_back(it);
+                    m_manipHidden = false;
                 } else {
                     if (!isSelected(it)) m_sel = {it};
                     m_pendingFree = true;   // press and drag: moves the points freely
@@ -761,6 +789,7 @@ bool CurveEditor::input(bool inView, bool placing) {
                 }
                 return true;
             }
+            if (m_hoverAxis == 3) { beginDrag(3, mx, my); return true; }   // the ring around the selection (not on a point)
             m_marquee = true;
             m_marq0 = float2(mx, my);
         }
@@ -774,7 +803,7 @@ bool CurveEditor::input(bool inView, bool placing) {
     if (a.gizmoHit(mx, my, axis, rotate)) return false;
     int ci = pickCurve(mx, my);
     if (ci < 0) return false;
-    if (ImGui::IsMouseDoubleClicked(0)) {   // double-click on a curve: edit its points
+    if (ms.dbl) {   // double-click on a curve: edit its points
         a.select(ci);
         enterPoints();
         return true;
@@ -794,16 +823,16 @@ bool CurveEditor::input(bool inView, bool placing) {
 
 int CurveEditor::manipulatorHit(float mx, float my) const {
     float3 pv;
-    if (!selectionPivot(pv)) return -1;
+    if (!manipulatorShown() || !selectionPivot(pv)) return -1;
     float2 pc;
     if (!a.project(pv, pc)) return -1;
     if (std::hypot(mx - pc.x, my - pc.y) < 12 * a.m_dpi) return 3;   // ring around the node: free move
     float s = a.gizmoScale(pv), best = 10.0f * a.m_dpi;
     int hit = -1;
-    for (int k = 0; k < 3; ++k) {
-        float2 p1;
-        if (!a.project(pv + axisVec(k) * (1.1f * s), p1)) continue;
-        float d = distSeg(mx, my, pc, p1);
+    for (int k = 0; k < 3; ++k) {   // the arrows, from where they are drawn (a little away from the node)
+        float2 p0, p1;
+        if (!a.project(pv + axisVec(k) * (0.22f * s), p0) || !a.project(pv + axisVec(k) * (1.1f * s), p1)) continue;
+        float d = distSeg(mx, my, p0, p1);
         if (d < best) { best = d; hit = k; }
     }
     return hit;
@@ -985,6 +1014,7 @@ void CurveEditor::insertPointAt(float mx, float my) {
     a.pushUndo();
     insertCurvePoint(c, after, q);
     m_sel = {{after + 1, PART_POINT}};
+    m_manipHidden = false;
     a.markDirty();
     a.status(L"Point inserted");
 }
@@ -1080,7 +1110,7 @@ float3 CurveEditor::createTarget(float mx, float my, bool& ok) {
     if (findSnap(mx, my, hit)) { m_snap = hit; m_snap.on = true; ok = true; return hit.p; }
     if (!ok) return p;
     if (ImGui::IsKeyDown(ImGuiKey_X)) p = snap(p);
-    if (ImGui::GetIO().KeyShift && !m_draft.points.empty()) {   // ortho: along X or Z from the last point
+    if (mouse().shift && !m_draft.points.empty()) {   // ortho: along X or Z from the last point
         const float3 last = m_draft.points.back();
         if (std::fabs(p.x - last.x) >= std::fabs(p.z - last.z)) p.z = last.z; else p.x = last.x;
         p.y = last.y;
@@ -1132,7 +1162,8 @@ bool CurveEditor::parseCoord(const char* text, float3& out) const {
     }
     if (v.size() == 1) {   // distance towards the mouse
         if (!haveLast) return false;
-        ImVec2 m = ImGui::GetIO().MousePos;
+        const MouseState mm = mouse();
+        ImVec2 m(mm.x, mm.y);
         float3 g;
         if (!groundPoint(m.x, m.y, last.y, g)) return false;
         float3 dir = g - last;
@@ -1315,7 +1346,7 @@ void CurveEditor::drawPoints(ImDrawList* dl, const Object& o) const {
 
 void CurveEditor::drawManipulator(ImDrawList* dl) const {
     float3 pv;
-    if (!selectionPivot(pv)) return;
+    if (!manipulatorShown() || !selectionPivot(pv)) return;
     float2 pc;
     if (!a.project(pv, pc)) return;
     const float d = a.m_dpi, s = a.gizmoScale(pv);
@@ -1339,12 +1370,10 @@ void CurveEditor::drawManipulator(ImDrawList* dl) const {
 }
 
 void CurveEditor::drawDraft(ImDrawList* dl) {
-    ImGuiIO& io = ImGui::GetIO();
     const float d = a.m_dpi;
     CurveData c = m_draft;
-    float mx = io.MousePos.x, my = io.MousePos.y;
-    float2 tm;   // --curve-test capture: the mouse held on a scene point
-    if (m_testMouse && a.project(m_testMouseAt, tm)) { mx = tm.x; my = tm.y; }
+    const MouseState ms = mouse();   // real or scripted mouse (the --curve-test capture holds it on a scene point)
+    const float mx = ms.x, my = ms.y;
     bool hoverFirst = false;
     // preview of the next point under the mouse
     if (!m_draftDrag && a.m_rcView.contains(mx, my)) {
@@ -1420,7 +1449,8 @@ void CurveEditor::draw(ImDrawList* dl) {
         drawManipulator(dl);
         if (m_dragging) drawSnap(dl);
         if (m_marquee) {
-            ImVec2 m = ImGui::GetIO().MousePos;
+            const MouseState mm = mouse();
+            ImVec2 m(mm.x, mm.y);
             ImVec2 p0(std::min(m_marq0.x, m.x), std::min(m_marq0.y, m.y)), p1(std::max(m_marq0.x, m.x), std::max(m_marq0.y, m.y));
             dl->AddRectFilled(p0, p1, (kCurveOn & 0x00FFFFFFu) | 0x1C000000u);
             dashedLine(dl, p0, ImVec2(p1.x, p0.y), kCurveOn, 1.0f * d, 4 * d, 3 * d); dashedLine(dl, ImVec2(p1.x, p0.y), p1, kCurveOn, 1.0f * d, 4 * d, 3 * d);
@@ -1471,15 +1501,52 @@ void CurveEditor::draw(ImDrawList* dl) {
 
 // --------------------------------------------------------------------------- test (--curve-test report.txt)
 
+void CurveEditor::testCheck(bool ok, const std::string& what) {
+    m_reportText += (ok ? "OK    " : "FAIL  ") + what + "\n";
+    if (!ok) ++m_fails;
+}
+
+void CurveEditor::writeReport() {
+    std::string t = m_reportText + (m_fails ? "FAILED: " : "ALL PASSED: ") + std::to_string(m_fails) + " failure(s)\n";
+    FILE* f = _wfopen(testReport.c_str(), L"w");
+    if (f) { fputs(t.c_str(), f); fclose(f); }
+}
+
+// Window image at the end of this frame (the automatic capture of App::frame), then the editor closes.
+void CurveEditor::capture(const std::wstring& png) {
+    a.m_opt.shotPath = png;
+    a.m_opt.shotViewport = false;
+    a.m_opt.shotSpp = 1;
+}
+
 void CurveEditor::beginFrame() {
     if (testReport.empty()) return;
-    if (++m_testFrame == 3) runTest();
+    ++m_testFrame;
+    if (m_testFrame == 3) {
+        runTest();
+        if (m_script.empty() && a.m_opt.shotPath.empty()) a.m_running = false;   // nothing left to do or to show
+        return;
+    }
+    if (m_testFrame > 3 && m_scriptPos < m_script.size()) {   // scripted mouse of this frame, after the checks of the last one
+        Step st = m_script[m_scriptPos++];
+        if (st.before) st.before();
+        float2 sp;
+        if (a.project(st.at, sp)) {
+            m_fake = MouseState();
+            m_fake.x = sp.x + st.dx;
+            m_fake.y = sp.y + st.dy;
+            m_fake.down = st.down;
+            m_fake.clicked = st.clicked;
+            m_useFake = true;
+        }
+    }
+    if (m_testFrame > 900) { testCheck(false, "The scripted test did not finish"); writeReport(); a.m_running = false; }
 }
 
 void CurveEditor::runTest() {
-    std::ostringstream r;
-    int fails = 0;
-    auto check = [&](bool ok, const std::string& what) { r << (ok ? "OK    " : "FAIL  ") << what << "\n"; if (!ok) ++fails; };
+    m_reportText.clear();
+    m_fails = 0;
+    auto check = [&](bool ok, const std::string& what) { testCheck(ok, what); };
     Scene& sc = a.m_scene;
     const float g = grid();
     auto lastObj = [&]() -> Object& { return sc.objects[a.m_selected]; };
@@ -1823,9 +1890,93 @@ void CurveEditor::runTest() {
             }
         }
     }
-    r << (fails ? "FAILED: " : "ALL PASSED: ") << fails << " failure(s)\n";
-    FILE* f = _wfopen(testReport.c_str(), L"w");
-    if (f) { fputs(r.str().c_str(), f); fclose(f); }
+    // Interactions with the scripted mouse, one step per frame (WZX_CURVE_VIEW = drag, filletdrag, or none; without
+    // --shot, the capture is the report path with .png): pressing on a point and dragging at once moves it without
+    // manipulator, a click selects it with its manipulator, the fillet tool never shows the manipulator.
+    const std::string scr = getenv("WZX_CURVE_VIEW") ? getenv("WZX_CURVE_VIEW") : "";
+    if (a.m_opt.shotPath.empty() && (scr.empty() || scr == "drag" || scr == "filletdrag")) {
+        std::filesystem::path png(testReport);
+        png.replace_extension(L".png");
+        const std::wstring shot = png.wstring();
+        int bz = -1, rect = -1;
+        for (int i = 0; i < (int)sc.objects.size(); ++i) {
+            const CurveData& c = sc.objects[i].curve;
+            if (bz < 0 && c.type == CURVE_BEZIER && c.shape.type == CSHAPE_NONE) bz = i;
+            if (rect < 0 && c.type == CURVE_LINEAR && c.closed && c.shape.type == CSHAPE_NONE) rect = i;
+        }
+        const bool fil = scr == "filletdrag";
+        const int obj = fil ? rect : bz;
+        if (obj >= 0) {
+            exitMode();
+            a.select(obj);
+            a.frameSelection();
+            sc.camera.pitch = radians(fil ? 70.0f : 62.0f);
+            sc.camera.yaw = radians(fil ? 5.0f : 8.0f);
+            if (!fil) sc.camera.distance *= 0.75f;
+            a.cameraChanged();
+            enterPoints();
+            const Object& o = sc.objects[obj];
+            const float3 P0 = o.transform().point(o.curve.points[0]), P1 = o.transform().point(o.curve.points[1]);
+            auto step = [&](const float3& at, float dx, float dy, bool down, bool clicked, std::function<void()> before = nullptr) {
+                Step st;
+                st.at = at;
+                st.dx = dx;
+                st.dy = dy;
+                st.down = down;
+                st.clicked = clicked;
+                st.before = before;
+                m_script.push_back(st);
+            };
+            // where point i of the edited curve is on screen now, compared to where P was plus an offset
+            auto followsMouse = [this, obj](int i, const float3& P, float dy) {
+                const Object& ob = a.m_scene.objects[obj];
+                float2 s0, s1;
+                return a.project(P, s0) && a.project(ob.transform().point(ob.curve.points[i]), s1) && std::hypot(s1.x - s0.x, s1.y - (s0.y + dy)) < 1.5f;
+            };
+            if (fil) {
+                step(P1, 0, 0, false, false, [this] { m_filletTool = true; });
+                step(P1, 0, 0, true, true);
+                step(P1, 0, -20, true, false);
+                step(P1, 0, -40, true, false, [this, obj] {
+                    testCheck(m_filleting && !manipulatorShown() && a.m_scene.objects[obj].curve.count() == 5 && m_filletR > 0,
+                              "Fillet tool: dragging up rounds the corner live, no manipulator");
+                });
+                step(P1, 0, -55, true, false, [this, shot] { writeReport(); capture(shot); });
+            } else {
+                step(P1, 0, 0, false, false);   // the mouse over a point, nothing selected
+                step(P1, 0, 0, true, true);     // press on it
+                step(P1, 0, -14, true, false, [this] {
+                    testCheck(m_pendingFree && !manipulatorShown() && isSelected({1, PART_POINT}), "Press on a point: selected, no manipulator yet");
+                });
+                step(P1, 0, -30, true, false);
+                step(P1, 0, -48, true, false, [this, followsMouse, P1] {
+                    testCheck(m_dragging && !manipulatorShown() && followsMouse(1, P1, -30.0f), "Point dragged at once: it follows the mouse, no manipulator");
+                });
+                if (scr == "drag") step(P1, 0, -60, true, false, [this, shot] { writeReport(); capture(shot); });
+                else {
+                    step(P1, 0, -60, false, false);   // release (where the last move left the point)
+                    step(P0, 0, 0, false, false, [this, followsMouse, P1] {
+                        testCheck(!m_dragging && !manipulatorShown() && isSelected({1, PART_POINT}) && followsMouse(1, P1, -48.0f),   // the release adds no move
+                                  "Released after a direct drag: the point stays selected, still no manipulator");
+                    });
+                    step(P0, 0, 0, true, true);     // a click on another point
+                    step(P0, 0, 0, false, false, [this] { testCheck(m_pendingFree && !manipulatorShown(), "Click on a point (button down): no manipulator yet"); });
+                    step(P0, 0, 0, false, false, [this, obj, P0, shot] {
+                        const Object& ob = a.m_scene.objects[obj];
+                        testCheck(manipulatorShown() && m_sel.size() == 1 && m_sel[0].index == 0 && m_sel[0].part == PART_POINT &&
+                                  length(ob.transform().point(ob.curve.points[0]) - P0) < 1e-5f,
+                                  "Click on a point (released): selected, not moved, manipulator shown");
+                        m_filletTool = true;
+                        testCheck(!manipulatorShown(), "Fillet tool on: the manipulator is hidden");
+                        m_filletTool = false;
+                        writeReport();
+                        capture(shot);   // the clicked point with its manipulator
+                    });
+                }
+            }
+        }
+    }
+    writeReport();
 }
 
 } // namespace app

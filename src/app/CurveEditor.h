@@ -4,6 +4,7 @@
 // duplicate, delete, groups and the Scene Manager work as for the meshes.
 #pragma once
 #include "App.h"
+#include <functional>
 
 namespace app {
 
@@ -75,8 +76,27 @@ private:
     std::vector<int> m_filletIdx;
     float m_filletPx0 = 0, m_filletR = 0, m_filletRadius = 0.5f;
     float3 m_filletAt{0, 0, 0};
+    // manipulator of the points: shown after a click on a point; hidden while a point is dragged directly (press and
+    // move: the point follows the mouse), after such a drag, and with the fillet tool
+    bool m_manipHidden = false;
+    bool manipulatorShown() const;
+
+    // mouse seen by the tools: ImGui's, or the scripted mouse of --curve-test (interactions tested frame by frame)
+    struct MouseState { float x = 0, y = 0; bool down = false, clicked = false, dbl = false, shift = false, ctrl = false, alt = false; };
+    MouseState mouse() const;
+    MouseState m_fake;
+    bool m_useFake = false;
     bool m_testMouse = false;          // --curve-test capture: mouse held on m_testMouseAt
     float3 m_testMouseAt{0, 0, 0};
+    // scripted frames: the mouse of each frame (a world point + a pixel offset) and checks run before it
+    struct Step { float3 at{0, 0, 0}; float dx = 0, dy = 0; bool down = false, clicked = false; std::function<void()> before; };
+    std::vector<Step> m_script;
+    size_t m_scriptPos = 0;
+    std::string m_reportText;
+    int m_fails = 0;
+    void testCheck(bool ok, const std::string& what);
+    void writeReport();
+    void capture(const std::wstring& png);   // the window image of this frame, then the editor closes
     // Rhino-style precision: object snaps (osnap), ortho (Shift) and typed coordinates while drawing
     enum Snap { SNAP_END = 0, SNAP_POINT, SNAP_MID, SNAP_CENTER, SNAP_NEAR, SNAP_COUNT };
     bool m_osnap = true;
