@@ -48,6 +48,30 @@ float DepthOf(float3 p) {
 // coverage of a line lying at d pixels (about 1 pixel wide, antialiased)
 float LineCov(float d, float width) { return saturate(width * 0.5 + 0.5 - d); }
 
+// World axes: a line, then a small arrow head on the positive side, from kArrowBase of the axis length to its end.
+static const float kArrowBase = 0.93, kArrowHalf = 0.018;   // arrow start and half width (fractions of the axis length)
+
+// opacity along an axis (x = distance / axis length): the line fades to 45 % before the arrow, the arrow carries the
+// gradient on to its tip; the negative side fades out
+float AxisFade(float x) {
+    if (x < 0.0) return 1.0 - smoothstep(0.85, 1.0, -x);
+    if (x < kArrowBase) return lerp(1.0, 0.45, smoothstep(0.5, kArrowBase, x));
+    return lerp(0.45, 0.25, saturate((x - kArrowBase) / (1.0 - kArrowBase)));
+}
+
+// coverage (x) and opacity (y) of an axis lying on the ground: u along it, v across (world units), fwU / fwV their
+// size of a pixel
+float2 GroundAxis(float u, float v, float fwU, float fwV) {
+    float L = G.axisLen, x = u / L;
+    float cov = LineCov(abs(v) / fwV, 1.4) * (x <= 1.0 ? 1.0 : 0.0);
+    if (x > kArrowBase - 0.02 && x < 1.02) {   // flat arrow head on the ground
+        float hw = kArrowHalf * L * saturate((1.0 - x) / (1.0 - kArrowBase));
+        float outside = max((abs(v) - hw) / fwV, max((u - L) / fwU, (kArrowBase * L - u) / fwU));
+        cov = max(cov, saturate(0.5 - outside));
+    }
+    return float2(cov, AxisFade(x));
+}
+
 GridPixel PSGrid(GridOut i) {
     float3 rd = normalize(R.camFwd + R.camRight * (i.ndc.x * R.aspect * R.tanHalfFovY) + R.camUp * (i.ndc.y * R.tanHalfFovY));
     float3 ro = R.camPos;
@@ -71,10 +95,9 @@ GridPixel PSGrid(GridOut i) {
         float a = max(minor * 0.2, major * 0.4) * G.opacity;
         float3 c = float3(0.58, 0.63, 0.72);
         // axes on the ground, X (z = 0) red and Z (x = 0) blue, as long as the Y axis (labels at the ends: AtelierUI)
-        float ax = LineCov(abs(p.z) / fw.y, 1.4) * (1.0 - smoothstep(0.85, 1.0, abs(p.x) / G.axisLen));
-        float az = LineCov(abs(p.x) / fw.x, 1.4) * (1.0 - smoothstep(0.85, 1.0, abs(p.z) / G.axisLen));
-        if (ax > 0.01) { c = lerp(c, float3(0.93, 0.36, 0.36), ax); a = max(a, ax * 0.9); }
-        if (az > 0.01) { c = lerp(c, float3(0.36, 0.56, 0.98), az); a = max(a, az * 0.9); }
+        float2 ax = GroundAxis(p.x, p.z, fw.x, fw.y), az = GroundAxis(p.z, p.x, fw.y, fw.x);
+        if (ax.x > 0.01) { c = lerp(c, float3(0.93, 0.36, 0.36), ax.x); a = lerp(a, ax.y * 0.9, ax.x); }
+        if (az.x > 0.01) { c = lerp(c, float3(0.36, 0.56, 0.98), az.x); a = lerp(a, az.y * 0.9, az.x); }
         // fade towards the horizon and far away
         float horizon = smoothstep(0.0, 0.28, abs(rd.y));
         a *= horizon;
@@ -94,7 +117,13 @@ GridPixel PSGrid(GridOut i) {
             float3 q = float3(0, s, 0);
             float3 rp = ro + rd * max(dot(q - ro, rd), 0.0);
             float dist = length(rp - q), tq = max(dot(q - ro, rd), 1e-4);
-            float cov = LineCov(dist / (tq * G.pixelAngle), 1.4) * (1.0 - smoothstep(0.85, 1.0, s / G.axisLen));
+            float pixW = tq * G.pixelAngle, x = s / G.axisLen;
+            float cov = LineCov(dist / pixW, 1.4);
+            if (x > kArrowBase) {   // arrow head: the outline of a cone, facing the camera
+                float hw = kArrowHalf * G.axisLen * saturate((1.0 - x) / (1.0 - kArrowBase));
+                cov = max(cov, saturate(0.5 - (dist - hw) / pixW));
+            }
+            cov *= AxisFade(x);
             float dq = DepthOf(q);
             if (cov > 0.01 && tr > 0 && (col.a < 0.01 || dq < depth)) {
                 col = float4(float3(0.42, 0.86, 0.5), cov * 0.95);

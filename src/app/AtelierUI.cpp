@@ -1187,7 +1187,7 @@ void App::atlViewport(float x, float y, float w, float h) {
     {
         float3 cr, cu, cf;
         m_scene.camera.basis(cr, cu, cf);
-        const float hs = 18 * s;
+        const float hs = 11 * s;   // half size of the cube; the axes reach 3.4 times further, ended by a lettered disc
         ImVec2 c(r.x + r.w - 56 * s, r.y + 58 * s);
         auto scr = [&](const float3& v) { return ImVec2(c.x + dot(v, cr) * hs, c.y - dot(v, cu) * hs); };
         R cubeR = {c.x - 48 * s, c.y - 48 * s, 96 * s, 96 * s};
@@ -1197,13 +1197,22 @@ void App::atlViewport(float x, float y, float w, float h) {
         const ImU32 axCol[3] = {IM_COL32(236, 110, 110, 255), IM_COL32(120, 214, 140, 255), IM_COL32(100, 156, 245, 255)};
         const char* axName[3] = {"X", "Y", "Z"};
         auto unit = [](int a) { return float3(a == 0 ? 1.0f : 0.0f, a == 1 ? 1.0f : 0.0f, a == 2 ? 1.0f : 0.0f); };
+        const float disc = 7.0f * s;
+        int hotAxis = -1;
+        for (int a = 0; a < 3 && hov; ++a) {
+            ImVec2 e = scr(unit(a) * 3.4f);
+            if (std::hypot(m.x - e.x, m.y - e.y) < disc + 1.5f * s) hotAxis = a;
+        }
         auto drawAxis = [&](int a, bool front) {
             float3 v = unit(a);
-            ImVec2 p0 = scr(v * 1.0f), p1 = scr(v * 1.85f), pl = scr(v * 2.35f);
-            ImU32 col = front ? axCol[a] : Fade(axCol[a], 90);
-            dl->AddLine(p0, p1, col, 1.2f * s);
+            ImVec2 p0 = scr(v * 1.0f), e = scr(v * 3.4f);
+            ImU32 col = front ? axCol[a] : Fade(axCol[a], 110);
+            // the line stops at the disc
+            float dx = e.x - p0.x, dy = e.y - p0.y, l = std::max(std::hypot(dx, dy), 1e-3f);
+            if (l > disc) dl->AddLine(p0, ImVec2(e.x - dx / l * disc, e.y - dy / l * disc), col, 1.3f * s);
+            dl->AddCircleFilled(e, disc, hotAxis == a ? IM_COL32(255, 255, 255, 255) : col, 24);
             ImVec2 ts = TextSize(axName[a], 9);
-            Text(pl.x - ts.x * 0.5f, pl.y - ts.y * 0.5f, axName[a], col, 9);
+            TextBold(e.x - ts.x * 0.5f, e.y - ts.y * 0.5f, axName[a], IM_COL32(22, 24, 30, front ? 255 : 170), 9);
         };
         for (int a = 0; a < 3; ++a) if (dot(unit(a), cf) > 0) drawAxis(a, false);   // axes going away: behind the cube
         // faces turned to the camera (a convex cube: they do not overlap on screen)
@@ -1231,7 +1240,8 @@ void App::atlViewport(float x, float y, float w, float h) {
             dl->AddPolyline(q, 4, IM_COL32(220, 226, 238, in ? 230 : 150), ImDrawFlags_Closed, 1.0f * s);
         }
         for (int a = 0; a < 3; ++a) if (dot(unit(a), cf) <= 0) drawAxis(a, true);
-        if (hov) Tip(hotFace >= 0 ? "Look along this face" : "View cube");
+        if (hotAxis >= 0) hotFace = hotAxis * 2;   // a disc: the view from that axis (as its face)
+        if (hov) Tip(hotFace >= 0 ? "Look along this axis" : "View cube");
         if (clicked && hotFace >= 0) {
             // +X right, -X left, +Y top, -Y bottom, +Z front, -Z back (the camera sits on the face's side)
             Camera& cam = m_scene.camera;
@@ -1247,7 +1257,7 @@ void App::atlViewport(float x, float y, float w, float h) {
     // labels at the ends of the world axes of the editor grid
     if (m_rs.editorGrid > 0 && m_rs.raster) {
         const float L = m_rs.editorGridAxis;
-        const float3 ends[3] = {float3(L * 1.04f, 0, 0), float3(0, L * 1.06f, 0), float3(0, 0, L * 1.04f)};
+        const float3 ends[3] = {float3(L * 1.07f, 0, 0), float3(0, L * 1.09f, 0), float3(0, 0, L * 1.07f)};   // past the arrows (EditorGrid.hlsl)
         const ImU32 cols[3] = {IM_COL32(238, 96, 96, 235), IM_COL32(110, 220, 130, 235), IM_COL32(96, 146, 252, 235)};
         const char* names[3] = {"X", "Y", "Z"};
         for (int a = 0; a < 3; ++a) {
