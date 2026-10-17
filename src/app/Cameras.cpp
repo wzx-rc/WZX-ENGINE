@@ -248,7 +248,7 @@ void App::demoCameras() {
         m_scene.camera = c;
     };
     aim(keep.target + r * (0.3f * d) - f * (0.2f * d) + float3(0, 0.14f * d, 0));
-    createCameraFromView(true);
+    m_scene.objects[createCameraFromView(true)].camFovY = radians(58.0f);   // a wide lens: the whole scene from there
     aim(keep.target - r * (0.3f * d) - f * (0.05f * d) + float3(0, 0.2f * d, 0));
     createCameraFromView(false);
     m_scene.camera = keep;
