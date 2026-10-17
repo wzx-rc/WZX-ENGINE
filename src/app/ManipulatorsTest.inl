@@ -222,6 +222,90 @@ void App::gizmoScript() {
         markingSelect(1);
         check("marking menu Q: Deselect", m_selected < 0, "");
     }
+    // Advanced Scale: two new cubes (1 unit), the box handles dragged by script
+    {
+        const int A = app::addPrimitive(m_scene, PRIM_CUBE, float3(30.0f, 0.0f, 0.0f));
+        const int B = app::addPrimitive(m_scene, PRIM_CUBE, float3(32.0f, 0.0f, 0.0f));
+        outlinerIds();
+        m_renderer.setScene(m_scene);
+        auto selSet = [&](std::vector<int> v) { select(-1); select(v[0]); m_multi.assign(v.begin() + 1, v.end()); };
+        auto handleIndex = [](int sx, int sy, int sz) { return (sx + 1) * 9 + (sy + 1) * 3 + (sz + 1); };
+        // drag of a handle by px pixels away from the box centre on screen (mods: 1 Shift, 2 Alt)
+        auto drag = [&](int h, float px, int mods) {
+            AdvBox b;
+            if (!advScaleBox(b)) return false;
+            int s[3] = {h / 9 - 1, (h / 3) % 3 - 1, h % 3 - 1};
+            float3 p = b.c;
+            for (int k = 0; k < 3; ++k) p = p + b.ax[k] * (s[k] * b.h[k]);
+            float2 sp, sc;
+            if (!project(p, sp) || !project(b.c, sc)) return false;
+            float dx = sp.x - sc.x, dy = sp.y - sc.y, l = std::max(std::hypot(dx, dy), 1e-3f);
+            m_advMods = mods;
+            advScaleBegin(h, b, sp.x, sp.y);
+            for (int i = 1; i <= 8; ++i) advScaleDrag(sp.x + dx / l * px * i / 8, sp.y + dy / l * px * i / 8);
+            m_adv.active = false;
+            m_advMods = -1;
+            return true;
+        };
+        auto box = [&]() { AdvBox b; advScaleBox(b); return b; };
+        m_advScale = true;
+        m_magnet = false;
+
+        selSet({A});
+        AdvBox b0 = box();
+        const float minX0 = b0.c.x - b0.h.x;
+        drag(handleIndex(1, 0, 0), 60, 0);
+        AdvBox b1 = box();
+        const float3 s1 = m_scene.objects[A].scale;
+        check("adv scale +X face: only X grows", s1.x > 1.05f && std::fabs(s1.y - 1) < 1e-4f && std::fabs(s1.z - 1) < 1e-4f, fmt("s=%.3f %.3f %.3f", s1.x, s1.y, s1.z));
+        check("adv scale +X face: the -X face stays", std::fabs((b1.c.x - b1.h.x) - minX0) < 1e-3f, fmt("minX %.4f -> %.4f", minX0, b1.c.x - b1.h.x));
+
+        b0 = box();
+        drag(handleIndex(1, 0, 0), 40, 2);   // Alt: both sides
+        b1 = box();
+        check("adv scale Alt: the centre stays", length(b1.c - b0.c) < 1e-3f && b1.h.x > b0.h.x * 1.02f, fmt("dc=%.5f", length(b1.c - b0.c)));
+
+        b0 = box();
+        const float3 sBefore = m_scene.objects[A].scale;
+        drag(handleIndex(0, 1, 0), 50, 1);   // Shift: uniform, from the top face
+        b1 = box();
+        const float3 s2 = m_scene.objects[A].scale;
+        const float kx = s2.x / sBefore.x, ky = s2.y / sBefore.y, kz = s2.z / sBefore.z;
+        check("adv scale Shift: uniform", ky > 1.02f && std::fabs(kx - ky) < 1e-3f && std::fabs(kz - ky) < 1e-3f, fmt("k=%.3f %.3f %.3f", kx, ky, kz));
+        check("adv scale Shift: the bottom face stays", std::fabs((b1.c.y - b1.h.y) - (b0.c.y - b0.h.y)) < 1e-3f, "");
+
+        b0 = box();
+        const float3 opp0 = b0.c - b0.ax[0] * b0.h.x - b0.ax[1] * b0.h.y - b0.ax[2] * b0.h.z;
+        drag(handleIndex(1, 1, 1), 50, 0);   // corner
+        b1 = box();
+        const float3 opp1 = b1.c - b1.ax[0] * b1.h.x - b1.ax[1] * b1.h.y - b1.ax[2] * b1.h.z;
+        check("adv scale corner: the opposite corner stays", length(opp1 - opp0) < 2e-3f && b1.h.x > b0.h.x && b1.h.y > b0.h.y,
+              fmt("moved %.5f", length(opp1 - opp0)));
+
+        // two objects, one turned by 90 degrees: world box, each one along its own axes
+        Object& oa = m_scene.objects[A];
+        oa.scale = float3(1, 1, 1);
+        oa.rot = qAxisAngle(float3(0, 1, 0), kPi * 0.5f);
+        oa.useRot = true;
+        m_scene.objects[B].scale = float3(1, 1, 1);
+        selSet({A, B});
+        b0 = box();
+        const float minX = b0.c.x - b0.h.x;
+        drag(handleIndex(1, 0, 0), 60, 0);
+        b1 = box();
+        const float3 sa = m_scene.objects[A].scale, sb = m_scene.objects[B].scale;
+        check("adv scale 2 objects: world box, -X face stays", std::fabs((b1.c.x - b1.h.x) - minX) < 1e-3f, fmt("minX %.4f -> %.4f", minX, b1.c.x - b1.h.x));
+        check("adv scale 2 objects: the turned one grows along its local Z", sa.z > 1.02f && std::fabs(sa.x - 1) < 1e-4f && sb.x > 1.02f && std::fabs(sb.z - 1) < 1e-4f,
+              fmt("A=%.3f %.3f %.3f", sa.x, sa.y, sa.z));
+        check("adv scale 2 objects: the same factor", std::fabs(sa.z - sb.x) < 1e-3f, fmt("%.4f %.4f", sa.z, sb.x));
+
+        selSet({A});
+        const float3 su = m_scene.objects[A].scale;
+        drag(handleIndex(0, 0, 1), 40, 0);
+        undo();
+        check("adv scale undo", length(m_scene.objects[A].scale - su) < 1e-5f, "");
+        m_advScale = false;
+    }
     {   // viewport anti-aliasing: the MSAA sample counts this GPU supports
         std::string aa = "msaa supported:";
         for (uint32_t n : {2u, 4u, 8u, 16u}) if (m_renderer.msaaSupported(n)) aa += " x" + std::to_string(n);

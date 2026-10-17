@@ -73,7 +73,7 @@ void planeAxes(int h, int& u, int& v) { int n = h - MH_YZ; u = (n + 1) % 3; v = 
 // --------------------------------------------------------------------------- frame, size, targets
 
 bool App::gizmoShown() const {
-    if (!m_showGizmo || m_selected < 0 || m_selected >= (int)m_scene.objects.size()) return false;
+    if (m_advScale || !m_showGizmo || m_selected < 0 || m_selected >= (int)m_scene.objects.size()) return false;   // (Advanced Scale on: its box instead)
     if (m_tool != TOOL_MOVE && m_tool != TOOL_ROTATE && m_tool != TOOL_SCALE) return false;
     return !(m_game && (m_game->placementMode() || m_game->playing()));
 }
@@ -573,6 +573,7 @@ static std::vector<MMItem> markingItems(App& app, int tool, int& axisMode, bool&
         snprintf(buf, sizeof buf, "Step %g", stepScale);
         v.push_back({2, buf, false, [&stepScale] { stepScale = stepScale <= 0.1f ? 0.25f : stepScale <= 0.25f ? 0.5f : 0.1f; }});
         v.push_back({3, "Reset Scale", false, [=] { resetOp(2); }});
+        v.push_back({6, "Advanced Scale (Alt+T)", false, [=] { selectOp(4); }});   // bounding box scaling (AdvancedScale.cpp)
     }
     (void)app;
     return v;
@@ -585,6 +586,7 @@ static int mmDirOf(float dx, float dy) {
 }
 
 void App::markingSelect(int op) {
+    if (op == 4) { setAdvScale(true); return; }   // R menu: Advanced Scale
     std::vector<int> v;
     auto pickable = [&](const Object& o) { return o.visible && o.selectable && !o.ghost && !o.group && o.part != "GROUND" && o.part != "WALL"; };
     std::vector<int> cur = selectionAll();

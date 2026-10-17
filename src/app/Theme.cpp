@@ -562,6 +562,24 @@ void loadSettings(const std::wstring& file) {
         else if (k == "graphOutlineWeight") g_settings.graphOutlineWeight = std::clamp((float)atof(v.c_str()), 0.1f, 3.0f);
         else if (k == "graphSelectColor") { if (parseVec(v, c, 4)) g_settings.graphSelectColor = ImVec4(c[0], c[1], c[2], 1); }
         else if (k == "graphOutputHeight") g_settings.graphOutputHeight = std::clamp((float)atof(v.c_str()), 70.0f, 2000.0f);
+        else if (k.rfind("advScale.", 0) == 0) {   // Advanced Scale tool
+            AdvScaleOptions& a = g_settings.advScale;
+            const std::string n = k.substr(9);
+            const float x = (float)atof(v.c_str());
+            if (n == "handleSize") a.handleSize = std::clamp(x, 3.0f, 20.0f);
+            else if (n == "interactDist") a.interactDist = std::clamp(x, 3.0f, 40.0f);
+            else if (n == "snapRadius") a.snapRadius = std::clamp(x, 5.0f, 200.0f);
+            else if (n == "flatThreshold") a.flatThreshold = std::clamp(x, 0.0f, 0.5f);
+            else if (n == "menuOffset") a.menuOffset = std::clamp(x, 0.0f, 500.0f);
+            else if (n == "showHints") a.showHints = v != "0";
+            else if (parseVec(v, c, 4)) {
+                ImVec4 col(c[0], c[1], c[2], c[3]);
+                if (n == "colorEdge") a.colorEdge = col;
+                else if (n == "colorFace") a.colorFace = col;
+                else if (n == "colorEdgeHandle") a.colorEdgeHandle = col;
+                else if (n == "colorCorner") a.colorCorner = col;
+            }
+        }
         else if (k.rfind("grid.", 0) == 0) {   // editor grid (Grid Options)
             GridOptions& g = g_settings.grid;
             const std::string n = k.substr(5);
@@ -619,6 +637,11 @@ void saveSettings(const std::wstring& file) {
       << "\ngrid.widthGrid=" << g.widthGrid << "\ngrid.widthSub=" << g.widthSub << "\ngrid.widthAxis=" << g.widthAxis
       << "\ngrid.opacity=" << g.opacity << "\ngrid.colorGrid=" << col(g.colorGrid) << "\ngrid.colorSub=" << col(g.colorSub)
       << "\ngrid.colorX=" << col(g.colorX) << "\ngrid.colorY=" << col(g.colorY) << "\ngrid.colorZ=" << col(g.colorZ) << "\n";
+    const AdvScaleOptions& as = s.advScale;   // Advanced Scale tool
+    f << "advScale.colorEdge=" << col(as.colorEdge) << "\nadvScale.colorFace=" << col(as.colorFace)
+      << "\nadvScale.colorEdgeHandle=" << col(as.colorEdgeHandle) << "\nadvScale.colorCorner=" << col(as.colorCorner)
+      << "\nadvScale.handleSize=" << as.handleSize << "\nadvScale.interactDist=" << as.interactDist << "\nadvScale.snapRadius=" << as.snapRadius
+      << "\nadvScale.flatThreshold=" << as.flatThreshold << "\nadvScale.menuOffset=" << as.menuOffset << "\nadvScale.showHints=" << (as.showHints ? 1 : 0) << "\n";
 }
 
 } // namespace th

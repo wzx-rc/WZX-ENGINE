@@ -362,8 +362,41 @@ private:
     std::vector<int> gizmoTargets() const;
     bool markingMenuInput(bool inView);
     void drawMarkingMenu(ImDrawList* dl);
-    void markingSelect(int op);   // 0 all, 1 none, 2 invert, 3 hierarchy
+    void markingSelect(int op);   // 0 all, 1 none, 2 invert, 3 hierarchy, 4 Advanced Scale on
     void markingReset(int what);  // 0 position, 1 rotation, 2 scale
+    // Advanced Scale (AdvancedScale.cpp): bounding box scaling of the selection from its faces, edges and corners.
+    // A separate tool (Alt+T), the standard manipulators are unchanged. Handles: index (s0+1)*9 + (s1+1)*3 + (s2+1) of
+    // the side vector s in {-1, 0, 1}^3 of the box (one non-zero: face, two: edge, three: corner).
+    struct AdvBox { bool valid = false; float3 c, ax[3], h; int flatAxis = -1; };   // centre, axes, half sizes
+    struct AdvDrag {
+        bool active = false, moved = false;
+        int handle = -1;
+        int s[3] = {0, 0, 0};
+        AdvBox box0;
+        float3 p0, hit0, n;      // handle position at the press, press point on the drag plane, its normal
+        float t0 = 0;            // face handle: press parameter along the axis
+        bool snapped = false;    // vertex snapping (V) found a vertex this frame
+        float3 snapVertex;
+        struct Item { int obj; float3 pos; float4 rot; float3 scale; };
+        std::vector<Item> items;
+    };
+    bool m_advScale = false;             // the tool is on
+    bool m_advCorners = false;           // edge and corner handles without holding Ctrl (menu)
+    bool m_advShowInPlay = true;         // the box stays drawn while playing (menu "Show in Game View")
+    bool m_advPicking = false;           // eyedropper: the next click picks the orientation object
+    uint32_t m_advRefId = 0;             // object giving the orientation of the box of several objects (0 = world)
+    int m_advHover = -1;
+    bool m_showAdvSettings = false;      // Advanced Scale Settings window
+    AdvDrag m_adv;
+    bool advScaleBox(AdvBox& b);         // the bounding box of the selection
+    bool advScaleInput(bool inView);     // hover and drag of the handles; true while it uses the mouse
+    void advScaleBegin(int handle, const AdvBox& b, float mx, float my);
+    void advScaleDrag(float mx, float my);
+    int m_advMods = -1;                  // self-test: forced modifiers (1 Shift, 2 Alt), -1 = the keyboard
+    void drawAdvScale(ImDrawList* dl);
+    void drawAdvScaleMenu(float x, float y, float w, float h);   // menu and modifier hints of the viewport (AtelierUI.cpp)
+    void drawAdvScaleSettings();          // Advanced Scale Settings window (Editor.cpp)
+    void setAdvScale(bool on);
     // selection overlay (SelectionFx.cpp): white glow on the outline vertices, outline in the floor reflection
     struct SilEdge { float3 a, b, n0, n1; bool open = true; };   // mesh edge (object space) and its two face normals
     struct SilCache { bool built = false; uint32_t version = 0; size_t vertexCount = 0, indexCount = 0; float3 first; std::vector<SilEdge> edges; };

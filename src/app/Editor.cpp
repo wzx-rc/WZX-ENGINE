@@ -104,6 +104,7 @@ void App::drawEditor() {
     st.FontScaleMain = savedScale;
     if (m_showSettings) drawSettingsWindow();
     if (m_showGridOptions) drawGridOptionsWindow();
+    if (m_showAdvSettings) drawAdvScaleSettings();
     if (m_showShortcuts) drawShortcutsWindow();
     if (m_showAbout) drawAboutWindow();
 }
@@ -119,6 +120,63 @@ void App::toggleGrid() {
     g.visible = !g.visible;
     if (!m_themeTestOnly) th::saveSettings(m_exeDir + L"\\wzx_settings.ini");
     markDirty();
+}
+
+// Advanced Scale Settings: colours of the frame and of the handles, sizes in pixels, vertex snapping, flat mode, menu.
+void App::drawAdvScaleSettings() {
+    const float d = m_dpi;
+    ImGui::SetNextWindowSize(ImVec2(440 * d, 0), ImGuiCond_Appearing);
+    ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+    if (!ImGui::Begin("Advanced Scale Settings###advScaleSettings", &m_showAdvSettings, ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoCollapse)) {
+        ImGui::End();
+        return;
+    }
+    AdvScaleOptions& a = th::settings().advScale;
+    bool changed = false;
+    const float labelW = 200 * d, fieldW = 190 * d;
+    auto section = [&](const char* title) {
+        ImGui::Spacing();
+        ImGui::TextColored(th::accentTextV(), "%s", title);
+        ImGui::Separator();
+    };
+    auto color = [&](const char* label, const char* id, ImVec4* v) {
+        propLabel(label, labelW);
+        changed |= ImGui::ColorEdit3(id, &v->x);
+    };
+    auto slider = [&](const char* label, const char* id, float* v, float lo, float hi, const char* fmt) {
+        propLabel(label, labelW);
+        ImGui::SetNextItemWidth(fieldW);
+        changed |= ImGui::SliderFloat(id, v, lo, hi, fmt);
+    };
+    section("Appearance");
+    color("Edge color", "##aEdge", &a.colorEdge);
+    color("Face handle color", "##aFace", &a.colorFace);
+    color("Edge handle color", "##aEdgeH", &a.colorEdgeHandle);
+    color("Corner handle color", "##aCorner", &a.colorCorner);
+    section("Viewport menu");
+    slider("Bottom offset", "##aOffset", &a.menuOffset, 0.0f, 300.0f, "%.0f px");
+    propLabel("Show modifier hints", labelW);
+    changed |= ImGui::Checkbox("##aHints", &a.showHints);
+    section("Point handles");
+    slider("Handle size", "##aSize", &a.handleSize, 3.0f, 20.0f, "%.1f px");
+    slider("Interaction distance", "##aDist", &a.interactDist, 3.0f, 40.0f, "%.0f px");
+    section("Vertex snapping");
+    slider("Screen snap radius", "##aSnap", &a.snapRadius, 5.0f, 200.0f, "%.0f px");
+    section("Flat mode");
+    slider("Flat mode threshold", "##aFlat", &a.flatThreshold, 0.0f, 0.5f, "%.2f");
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
+    if (ImGui::Button("Reset", ImVec2(120 * d, 0))) { a = AdvScaleOptions(); changed = true; }
+    ImGui::SameLine();
+    if (ImGui::Button("Close", ImVec2(120 * d, 0))) m_showAdvSettings = false;
+    ImGui::End();
+    static bool unsaved = false;   // saved once the edit is over
+    if (changed) unsaved = true;
+    if (unsaved && !ImGui::IsAnyItemActive()) {
+        if (!m_themeTestOnly) th::saveSettings(m_exeDir + L"\\wzx_settings.ini");
+        unsaved = false;
+    }
 }
 
 // Grid Options (Maya's option box of the grid): size, display, line thickness in pixels, colours. Changes apply live

@@ -48,6 +48,20 @@ struct GridOptions {
     ImVec4 colorX = ImVec4(0.93f, 0.36f, 0.36f, 0.90f), colorY = ImVec4(0.42f, 0.86f, 0.50f, 0.95f), colorZ = ImVec4(0.36f, 0.56f, 0.98f, 0.90f);
 };
 
+// Advanced Scale tool (bounding box scaling): its settings, saved with the UI settings.
+struct AdvScaleOptions {
+    ImVec4 colorEdge = ImVec4(0.10f, 0.78f, 0.95f, 1.0f);      // frame of the bounding box
+    ImVec4 colorFace = ImVec4(0.28f, 0.60f, 1.00f, 1.0f);      // handles at the centre of the faces (one axis)
+    ImVec4 colorEdgeHandle = ImVec4(0.20f, 0.86f, 0.82f, 1.0f);// handles on the edges (two axes)
+    ImVec4 colorCorner = ImVec4(0.50f, 0.86f, 0.32f, 1.0f);    // handles at the corners (three axes)
+    float handleSize = 7.0f;          // screen pixels
+    float interactDist = 10.0f;       // screen pixels: how close the cursor must be to a handle
+    float snapRadius = 25.0f;         // screen pixels: vertex snapping (V)
+    float flatThreshold = 0.05f;      // a side thinner than this fraction of the others: flat mode
+    float menuOffset = 10.0f;         // distance of the menu from the bottom of the viewport (pixels)
+    bool showHints = true;            // modifier hints at the bottom of the viewport
+};
+
 struct UiSettings {
     std::string theme = "Atelier";        // "Atelier" (Blue 01, main / accent colours), "Ambre" or "Corail" (fixed colours)
     bool light = false;
@@ -67,6 +81,7 @@ struct UiSettings {
     ImVec4 graphSelectColor = ImVec4(0.400f, 0.729f, 0.816f, 1.0f);   // Graph tab: outline of the selected node (cyan)
     float graphOutputHeight = 151.0f;     // Graph tab: height of the Output panel (DIPs), dragged from its top edge
     GridOptions grid;                     // editor grid of the viewport
+    AdvScaleOptions advScale;             // Advanced Scale tool
 };
 
 namespace th {

@@ -828,10 +828,12 @@ void App::handleShortcuts() {
     if (pressed(ImGuiKey_L)) setRenderMode(m_rs.ddgi ? 2 : 3);              // ray traced probe GI (DDGI) <-> progressive path tracing
     if (pressed(ImGuiKey_Delete) && !placing) deleteSelected();
     if (io.WantCaptureKeyboard && !ImGui::IsWindowFocused(ImGuiFocusedFlags_AnyWindow)) return;
-    if (pressed(ImGuiKey_Q)) m_tool = TOOL_SELECT;
-    if (pressed(ImGuiKey_W) || pressed(ImGuiKey_G)) m_tool = TOOL_MOVE;
-    if (pressed(ImGuiKey_E)) m_tool = TOOL_ROTATE;
-    if (pressed(ImGuiKey_R) && !placing) m_tool = TOOL_SCALE;
+    // Alt+T: Advanced Scale (bounding box scaling); Q / W / E / R go back to the standard tools
+    if (io.KeyAlt && pressed(ImGuiKey_T)) { if (!placing) setAdvScale(!m_advScale); return; }
+    if (pressed(ImGuiKey_Q)) { m_tool = TOOL_SELECT; setAdvScale(false); }
+    if (pressed(ImGuiKey_W) || pressed(ImGuiKey_G)) { m_tool = TOOL_MOVE; setAdvScale(false); }
+    if (pressed(ImGuiKey_E)) { m_tool = TOOL_ROTATE; setAdvScale(false); }
+    if (pressed(ImGuiKey_R) && !placing) { m_tool = TOOL_SCALE; setAdvScale(false); }
     if (pressed(ImGuiKey_F)) frameSelection();
     if (pressed(ImGuiKey_T)) m_turntable = !m_turntable;
     if (pressed(ImGuiKey_Escape)) select(-1);

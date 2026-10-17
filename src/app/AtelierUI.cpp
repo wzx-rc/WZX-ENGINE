@@ -1133,11 +1133,25 @@ void App::atlViewport(float x, float y, float w, float h) {
     bx -= 6 * s;
     if (Button("atlSnap", {right(28 * s), by, 28 * s, 24 * s}, "", Icon::Magnet, m_magnet, true)) m_magnet = !m_magnet;
     Tip("Snapping always on (else hold Shift while dragging): steps in the marking menu (W / E / R + left click)");
-    if (Button("atlScale", {right(28 * s), by, 28 * s, 24 * s}, "", Icon::Scale, m_tool == TOOL_SCALE, true)) m_tool = TOOL_SCALE;
+    {   // Advanced Scale: the three-colour button (face, edge and corner handles)
+        const R ab = {right(28 * s), by, 28 * s, 24 * s};
+        const bool clicked = Hit("atlAdvScale", ab);
+        const bool hov = ImGui::IsItemHovered();
+        Box(ab, m_advScale ? P().select : (hov ? P().hover : P().raised), 3, true);
+        const AdvScaleOptions& ao = th::settings().advScale;
+        const ImVec4 cols[3] = {ao.colorFace, ao.colorEdgeHandle, ao.colorCorner};
+        for (int i = 0; i < 3; ++i) {
+            const ImVec2 c(ab.x + ab.w * 0.5f + (i - 1) * 6.0f * s, ab.y + ab.h * 0.5f + (1 - i) * 3.0f * s);
+            dl->AddRectFilled(ImVec2(c.x - 2.5f * s, c.y - 2.5f * s), ImVec2(c.x + 2.5f * s, c.y + 2.5f * s), ImGui::ColorConvertFloat4ToU32(cols[i]));
+        }
+        if (clicked) setAdvScale(!m_advScale);
+        Tip("Advanced Scale: bounding box scaling (Alt+T)");
+    }
+    if (Button("atlScale", {right(28 * s), by, 28 * s, 24 * s}, "", Icon::Scale, m_tool == TOOL_SCALE && !m_advScale, true)) { m_tool = TOOL_SCALE; setAdvScale(false); }
     Tip("Scale (R)");
-    if (Button("atlRotate", {right(28 * s), by, 28 * s, 24 * s}, "", Icon::Rotate, m_tool == TOOL_ROTATE, true)) m_tool = TOOL_ROTATE;
+    if (Button("atlRotate", {right(28 * s), by, 28 * s, 24 * s}, "", Icon::Rotate, m_tool == TOOL_ROTATE && !m_advScale, true)) { m_tool = TOOL_ROTATE; setAdvScale(false); }
     Tip("Rotate (E)");
-    if (Button("atlMove", {right(28 * s), by, 28 * s, 24 * s}, "", Icon::Move, m_tool == TOOL_MOVE, true)) m_tool = TOOL_MOVE;
+    if (Button("atlMove", {right(28 * s), by, 28 * s, 24 * s}, "", Icon::Move, m_tool == TOOL_MOVE && !m_advScale, true)) { m_tool = TOOL_MOVE; setAdvScale(false); }
     Tip("Move (W)");
 
     // canvas
@@ -1288,6 +1302,7 @@ void App::atlViewport(float x, float y, float w, float h) {
         }
     }
     atlViewMenus(r.x + 10 * s, r.y + 10 * s);
+    drawAdvScaleMenu(r.x, r.y, r.w, r.h);   // Advanced Scale: menu (bottom left) and modifier hints
     // path tracing progress
     if (!m_rs.raster) {
         float prog = clampf((float)m_renderer.sampleCount() / m_rs.maxSamples, 0, 1);
@@ -1316,6 +1331,61 @@ void App::atlViewport(float x, float y, float w, float h) {
     Text(fr.x + fr.w - 290 * s, fr.y + 6 * s, info, P().muted, 9);
     static const char* modeNames[] = {"●  Real time", "●  Metal iOS", "●  Progressive PT", "●  GI probes"};
     Text(fr.x + fr.w - 116 * s, fr.y + 6 * s, modeNames[renderMode()], m_rs.raster ? kGreen : P().accent, 9);
+}
+
+// --------------------------------------------------------------------------- Advanced Scale menu
+
+// Menu of the Advanced Scale tool at the bottom left of the view (when an object is selected) and the modifier hints at
+// the bottom: Corner Handles, Show in Game View, the eyedropper of the box orientation (several objects) and its reset,
+// the settings.
+void App::drawAdvScaleMenu(float x, float y, float w, float h) {
+    if (!m_advScale) return;
+    const AdvScaleOptions& opt = th::settings().advScale;
+    if (opt.showHints) {
+        const char* keys[4] = {"Ctrl", "Shift", "Alt", "V"};
+        const char* what[4] = {"Corner Handles", "Uniform Scale", "2-Side Scale", "Vertex Snap"};
+        float total = 0;
+        for (int i = 0; i < 4; ++i) total += TextSize(keys[i], 10).x + TextSize(what[i], 10).x + 34 * s;
+        float hx = x + (w - total) * 0.5f, hy = y + h - 26 * s;
+        for (int i = 0; i < 4; ++i) {
+            const ImVec2 ks = TextSize(keys[i], 10);
+            Box({hx, hy, ks.x + 10 * s, 17 * s}, Fade(P().bg, 200), 3, true);
+            Text(hx + 5 * s, hy + 2 * s, keys[i], P().text, 10);
+            hx += ks.x + 16 * s;
+            Text(hx, hy + 2 * s, what[i], P().muted, 10);
+            hx += TextSize(what[i], 10).x + 18 * s;
+        }
+    }
+    if (m_selected < 0) return;
+    const float pw = 214 * s, ph = 96 * s;
+    const R pr = {x + 10 * s, y + h - opt.menuOffset * s - ph - (opt.showHints ? 26 * s : 0), pw, ph};
+    Box(pr, Fade(P().panel, 235), 4, true);
+    ImGui::SetNextItemAllowOverlap();   // (the widgets drawn over it stay clickable)
+    Hit("##advMenuBg", pr);             // the panel takes the clicks from the view
+    Text(pr.x + 10 * s, pr.y + 8 * s, "Advanced Scale", P().text, 11);
+    if (Button("advSettings", {pr.x + pw - 30 * s, pr.y + 5 * s, 22 * s, 20 * s}, "", Icon::Settings, m_showAdvSettings, true)) m_showAdvSettings = true;
+    Tip("Advanced Scale Settings");
+    auto check = [&](const char* id, const char* label, bool* v, float cy) {
+        ImGui::SetCursorScreenPos(ImVec2(pr.x + 9 * s, cy));
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(2 * s, 2 * s));
+        Check(id, v);
+        ImGui::PopStyleVar();
+        Text(pr.x + 32 * s, cy + 2 * s, label, P().text, 10.5f);
+    };
+    check("##advCorners", "Corner Handles", &m_advCorners, pr.y + 28 * s);
+    check("##advPlay", "Show in Game View", &m_advShowInPlay, pr.y + 48 * s);
+    // eyedropper: the orientation of the box of several objects; X: back to the world axes
+    std::string label = "Get Orientation";
+    if (m_advRefId) {
+        NodeRef n = findNode(m_advRefId);
+        if (n.kind == NODE_OBJECT) label = m_scene.objects[n.index].name;
+        else m_advRefId = 0;
+    }
+    const bool several = gizmoTargets().size() > 1 || (m_selected >= 0 && m_scene.objects[m_selected].group);
+    if (Button("advPick", {pr.x + 8 * s, pr.y + 70 * s, pw - 50 * s, 20 * s}, Fit(label, pw - 90 * s, 10).c_str(), Icon::Pin, m_advPicking, false, several)) m_advPicking = !m_advPicking;
+    Tip("Eyedropper: click an object, the box takes its orientation (several objects)");
+    if (Button("advWorld", {pr.x + pw - 38 * s, pr.y + 70 * s, 30 * s, 20 * s}, "x", Icon::World, false, true)) { m_advRefId = 0; m_advPicking = false; markDirty(); }
+    Tip("Box orientation: back to the world axes");
 }
 
 // --------------------------------------------------------------------------- menus inside the view
@@ -1417,6 +1487,13 @@ void App::atlViewMenus(float x, float y) {
         px += w + 6 * s;
     }
     if (m_frameCounter == 10 && m_opt.openMenu == "gridOptions") m_showGridOptions = true;   // --open-menu gridOptions: captures
+    if (m_frameCounter == 10 && m_opt.openMenu.rfind("advScale", 0) == 0) {   // --open-menu advScale[Corners|Multi]: captures
+        m_advScale = true;
+        m_advCorners = m_opt.openMenu == "advScaleCorners";
+        if (m_opt.openMenu == "advScaleMulti")
+            for (size_t i = 0; i < m_scene.objects.size(); ++i)
+                if ((int)i != m_selected && (m_scene.objects[i].name == "Sphere" || m_scene.objects[i].name == "Cylinder")) m_multi.push_back((int)i);
+    }
 }
 
 // --------------------------------------------------------------------------- bottom panel (former Atelier graph Output)
