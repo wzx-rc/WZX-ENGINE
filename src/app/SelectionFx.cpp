@@ -67,6 +67,7 @@ const std::vector<App::SilEdge>& App::silhouetteEdges(int mesh) {
 }
 
 void App::drawSelectionFx(ImDrawList* dl) {
+    m_fxStats = FxStats();
     if (m_rs.selectionStyle != 1 || m_selected < 0) return;
     if (m_game && (m_game->playing() || m_game->playerMode())) return;
     const float3 eye = m_scene.camera.eye();
@@ -178,7 +179,10 @@ void App::drawSelectionFx(ImDrawList* dl) {
     // 3: the reflection, faint, under everything
     for (const auto& s : msegs) {
         int al = (int)(70 * refl * 0.5f * (s.first.a + s.second.a));
-        if (al > 2) dl->AddLine(ImVec2(s.first.p.x, s.first.p.y), ImVec2(s.second.p.x, s.second.p.y), IM_COL32(70, 150, 255, al), 1.5f * d);
+        if (al > 2) {
+            dl->AddLine(ImVec2(s.first.p.x, s.first.p.y), ImVec2(s.second.p.x, s.second.p.y), IM_COL32(70, 150, 255, al), 1.5f * d);
+            ++m_fxStats.mirrorLines;
+        }
     }
     {
         std::set<std::pair<int, int>> seen;
@@ -188,6 +192,7 @@ void App::drawSelectionFx(ImDrawList* dl) {
             if (k < 0.02f) continue;
             dl->AddCircleFilled(ImVec2(m.p.x, m.p.y), 2.0f * d, IM_COL32(200, 225, 255, (int)(24 * k)), 10);
             dl->AddCircleFilled(ImVec2(m.p.x, m.p.y), 0.8f * d, IM_COL32(225, 238, 255, (int)(110 * k)), 8);
+            ++m_fxStats.mirrorGlints;
         }
     }
     // creases of the selection, with the light running along the contour (as the outline of Tonemap.hlsl)
@@ -203,9 +208,11 @@ void App::drawSelectionFx(ImDrawList* dl) {
             dl->AddLine(a, b, IM_COL32(77, 158, 255, (int)(38 * k)), 3.0f * d);
             dl->AddLine(a, b, IM_COL32(150, 205, 255, (int)(150 * k)), 1.0f * d);
         }
+        m_fxStats.creases = (int)creases.size();
     }
     // small soft glints on the vertices of the outline (about 2.5 px)
     unique(dots);
+    m_fxStats.glints = (int)dots.size();
     for (const float2& p : dots) {
         ImVec2 c(p.x, p.y);
         dl->AddCircleFilled(c, 2.6f * d, IM_COL32(190, 220, 255, 26), 12);

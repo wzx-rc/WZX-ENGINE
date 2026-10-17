@@ -75,8 +75,10 @@ bool Renderer::init(HWND hwnd, uint32_t width, uint32_t height, const std::wstri
     char dbg[8] = {};
     if (GetEnvironmentVariableA("VP3D_DEBUG", dbg, sizeof(dbg)) > 0) {
         ComPtr<ID3D12Debug> d;
-        if (SUCCEEDED(D3D12GetDebugInterface(IID_PPV_ARGS(&d)))) d->EnableDebugLayer();
-        factoryFlags = DXGI_CREATE_FACTORY_DEBUG;
+        if (SUCCEEDED(D3D12GetDebugInterface(IID_PPV_ARGS(&d)))) {   // (fails without the Windows "Graphics Tools")
+            d->EnableDebugLayer();
+            factoryFlags = DXGI_CREATE_FACTORY_DEBUG;
+        }
     }
     if (FAILED(CreateDXGIFactory2(factoryFlags, IID_PPV_ARGS(&m_factory)))) {
         if (error) *error = "CreateDXGIFactory2 failed";
@@ -101,6 +103,7 @@ bool Renderer::init(HWND hwnd, uint32_t width, uint32_t height, const std::wstri
         if (error) *error = "No GPU with DirectX Raytracing tier 1.1 found";
         return false;
     }
+    if (factoryFlags) m_device.As(&m_infoQueue);   // validation layer running: its messages are kept for the self-test
 
     D3D12_COMMAND_QUEUE_DESC qd = {};
     qd.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
@@ -1834,6 +1837,58 @@ bool Renderer::readBackBuffer(std::vector<uint8_t>& rgba, uint32_t& w, uint32_t&
         memcpy(&rgba[(size_t)y * w * 4], (uint8_t*)p + fp.Offset + (size_t)y * fp.Footprint.RowPitch, (size_t)w * 4);
     D3D12_RANGE wr = {0, 0};
     m_readback.res->Unmap(0, &wr);
+    return true;
+}
+
+bool Renderer::readSelectionCoverage(std::vector<uint8_t>& r8, uint32_t& w, uint32_t& h) {
+    if (!m_selCov) return false;
+    waitIdle();
+    D3D12_RESOURCE_DESC d = m_selCov->GetDesc();
+    w = (uint32_t)d.Width;
+    h = d.Height;
+    D3D12_PLACED_SUBRESOURCE_FOOTPRINT fp = {};
+    UINT64 total = 0;
+    m_device->GetCopyableFootprints(&d, 0, 1, 0, &fp, nullptr, nullptr, &total);
+    if (!m_readback.res || m_readback.size < total)
+        m_readback = createBuffer(total, D3D12_HEAP_TYPE_READBACK, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST);
+    beginCommands();
+    transition(m_selCov.Get(), D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_COPY_SOURCE);
+    D3D12_TEXTURE_COPY_LOCATION dl = {}, sl = {};
+    dl.pResource = m_readback.res.Get();
+    dl.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
+    dl.PlacedFootprint = fp;
+    sl.pResource = m_selCov.Get();
+    sl.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+    m_cmd->CopyTextureRegion(&dl, 0, 0, 0, &sl, nullptr);
+    transition(m_selCov.Get(), D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+    executeAndWait();
+    void* p = nullptr;
+    D3D12_RANGE r = {0, (SIZE_T)total};
+    if (FAILED(m_readback.res->Map(0, &r, &p))) return false;
+    r8.resize((size_t)w * h);
+    for (uint32_t y = 0; y < h; ++y) memcpy(&r8[(size_t)y * w], (uint8_t*)p + fp.Offset + (size_t)y * fp.Footprint.RowPitch, w);
+    D3D12_RANGE wr = {0, 0};
+    m_readback.res->Unmap(0, &wr);
+    return true;
+}
+
+bool Renderer::takeDebugMessages(std::vector<std::string>& messages, int& errors, int& warnings) {
+    errors = warnings = 0;
+    if (!m_infoQueue) return false;
+    const UINT64 n = m_infoQueue->GetNumStoredMessages();
+    for (UINT64 i = 0; i < n; ++i) {
+        SIZE_T len = 0;
+        if (FAILED(m_infoQueue->GetMessage(i, nullptr, &len)) || len == 0) continue;
+        std::vector<char> buf(len);
+        D3D12_MESSAGE* m = reinterpret_cast<D3D12_MESSAGE*>(buf.data());
+        if (FAILED(m_infoQueue->GetMessage(i, m, &len))) continue;
+        const bool err = m->Severity == D3D12_MESSAGE_SEVERITY_ERROR || m->Severity == D3D12_MESSAGE_SEVERITY_CORRUPTION;
+        if (err) ++errors;
+        else if (m->Severity == D3D12_MESSAGE_SEVERITY_WARNING) ++warnings;
+        else continue;
+        messages.push_back(std::string(err ? "error: " : "warning: ") + std::string(m->pDescription, m->DescriptionByteLength ? m->DescriptionByteLength - 1 : 0));
+    }
+    m_infoQueue->ClearStoredMessages();
     return true;
 }
 

@@ -4,6 +4,7 @@
 #include "imgui.h"
 #include "vp3d/Renderer.h"
 #include <windows.h>
+#include <functional>
 #include <vector>
 
 struct ImGui_ImplDX12_InitInfo;
@@ -30,6 +31,8 @@ public:
     ImFont* fontBold = nullptr;
     ImFont* fontSmall = nullptr;
     float dpi = 1.0f;
+    // Self-test: called between the platform backend and ImGui::NewFrame (scripted mouse and keys win over the OS ones).
+    std::function<void()> beforeNewFrame;
 
 private:
     struct Tex { ComPtr<ID3D12Resource> res; int slot = -1; };

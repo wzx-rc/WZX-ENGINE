@@ -129,6 +129,7 @@ void ImGuiLayer::onResize() { createRtvs(); }
 void ImGuiLayer::newFrame() {
     ImGui_ImplDX12_NewFrame();
     ImGui_ImplWin32_NewFrame();
+    if (beforeNewFrame) beforeNewFrame();
     ImGui::NewFrame();
 }
 

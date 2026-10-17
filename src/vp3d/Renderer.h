@@ -135,6 +135,11 @@ public:
     bool readViewport(std::vector<uint8_t>& rgba, uint32_t& w, uint32_t& h);
     // Debug: reads back the probe cube captures of the last frame (raster DDGI), radiance rgb + distance, as floats.
     bool readCapture(std::vector<float>& rgba, uint32_t& w, uint32_t& h);
+    // Self-test: the coverage of the selection of the last raster frame (R8, 255 = every sample of the pixel selected).
+    bool readSelectionCoverage(std::vector<uint8_t>& r8, uint32_t& w, uint32_t& h);
+    // Validation layer (VP3D_DEBUG set and the Windows "Graphics Tools" installed): false when it is not running.
+    // Otherwise the messages stored since the last call, errors and corruptions first counted in `errors`.
+    bool takeDebugMessages(std::vector<std::string>& messages, int& errors, int& warnings);
 
     // Baked probes (Lit mode). A bake runs the ray traced probe update for `frames` frames on the current scene, the
     // raster pass reading the probes meanwhile; readBakedProbes then returns the atlases to save them with the scene.
@@ -216,6 +221,7 @@ private:
 
     ComPtr<IDXGIFactory6> m_factory;
     ComPtr<ID3D12Device5> m_device;
+    ComPtr<ID3D12InfoQueue> m_infoQueue;   // validation layer messages (VP3D_DEBUG), see takeDebugMessages
     ComPtr<ID3D12CommandQueue> m_queue;
     ComPtr<ID3D12CommandAllocator> m_alloc;
     ComPtr<ID3D12GraphicsCommandList4> m_cmd;

@@ -15,8 +15,20 @@ Prérequis : Visual Studio 2022 Build Tools (C++), Windows SDK 10.0.22621+, GPU 
 `build.bat` compile tous les `.cpp` de `src\vp3d` et `src\app` et lie tous les `.obj` de `build\obj` :
 après la suppression d'un fichier source, supprimer aussi son `.obj` dans `build\obj`.
 
-Options : `--scene cornell|studio|lookdev`, `--hdri fichier.hdr|sky`, `--open scene.v3d.json`, `--view N`, `--select N`, `--tool 1|2`,
-`--quality 0|1`, `--raster 0|1`, `--shot fichier.png --spp N` (capture fenêtre puis quitte), `--shot-viewport fichier.png`.
+Options : `--scene cornell|studio|lookdev|concept`, `--hdri fichier.hdr|sky`, `--open scene.v3d.json`, `--view N`, `--select N`, `--tool 1|2|3`,
+`--quality 0|1`, `--raster 0|1`, `--aa 1|4|8|16`, `--shot fichier.png --spp N` (capture fenêtre puis quitte), `--shot-viewport fichier.png`.
+
+## Autotest de l'éditeur
+
+```
+tools\selftest.bat            compile, lance l'autotest et affiche le rapport (build\selftest_report.txt)
+tools\selftest.bat nobuild    sans recompiler ; "debug" en plus : couche de validation DirectX 12 (outils graphiques Windows)
+```
+L'éditeur s'ouvre et se pilote seul pendant une quinzaine de secondes (ne pas toucher la souris ni le clavier) : vrais
+clics et raccourcis sur l'interface (outils QWER, boutons, menus de la vue, Grid Options, cube de vue, sélection, marking
+menu, manipulateurs, Advanced Scale), images lues et mesurées (grille, wireframe, glow de sélection, MSAA x4 / x8 / x16,
+overlay du path tracing), Play du Village, changement de taille de fenêtre. Code : `src/app/SelfTest.cpp` et
+`src/app/ManipulatorsTest.inl` (`--gizmo-test rapport.txt` : la partie logique seule).
 
 ## Scènes
 

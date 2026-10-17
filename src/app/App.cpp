@@ -164,7 +164,7 @@ int App::run() {
     atelier::material::Shutdown();
     m_gui.shutdown();
     m_renderer.shutdown();
-    return 0;
+    return m_exitCode;
 }
 
 LRESULT App::wndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
@@ -582,6 +582,7 @@ void App::frame() {
     // Stability test (command line): camera and first object moved every frame, flicker statistics of the viewport.
     ++m_frameCounter;
     gizmoScript();
+    selfTestFrame();
     if (m_opt.sway > 0 || m_opt.anim) {
         const float t = (float)m_frameCounter * (2.0f * kPi / 120.0f);
         if (m_frameCounter <= 1) {
@@ -1192,6 +1193,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         else if (a == L"--raster") opt.raster = _wtoi(next().c_str()) != 0;
         else if (a == L"--open") opt.openPath = next();
         else if (a == L"--gizmo-test") opt.gizmoTest = next();
+        else if (a == L"--self-test") opt.selfTest = next();
         else if (a == L"--shot-seq") opt.shotSeq = _wtoi(next().c_str());
         else if (a == L"--aa") opt.aa = _wtoi(next().c_str());
         else if (a == L"--gizmo-demo") opt.gizmoDemo = next();

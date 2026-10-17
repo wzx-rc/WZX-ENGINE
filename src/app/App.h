@@ -8,6 +8,7 @@
 #include "atelier/material_host.h"
 #include "atelier/material_model.h"
 #include <map>
+#include <memory>
 #include "vp3d/Renderer.h"
 #include <string>
 #include <vector>
@@ -97,6 +98,7 @@ struct Options {
     bool raster = true;         // light raster viewport by default, P toggles path tracing
     std::wstring openPath;      // scene file to open at startup
     std::wstring gizmoTest;     // manipulator self-test: report written there, then exit (--gizmo-test)
+    std::wstring selfTest;      // editor self-test: report written there, then exit (--self-test, tools\selftest.bat)
     std::wstring gizmoDemo;     // "tool handle dx dy menuDir": frozen drag or marking menu for a capture (--gizmo-demo)
     std::string openMenu;       // test: view menu opened at startup for a capture (vmCamera, vmDisplay, vmRender, vmAxes)
     int shotSeq = 0;            // test: --shot-seq N saves N images (name_00.png...) one every 8 frames
@@ -404,6 +406,7 @@ private:
     std::map<int, SilCache> m_silCache;   // per mesh
     const std::vector<SilEdge>& silhouetteEdges(int mesh);
     void drawSelectionFx(ImDrawList* dl);
+    struct FxStats { int glints = 0, creases = 0, mirrorLines = 0, mirrorGlints = 0; } m_fxStats;   // last frame (self-test)
     void toggleGroundGrid();
     void marqueeInput();
 
@@ -446,7 +449,7 @@ private:
     bool m_showStats = true;
     bool m_showGizmo = true;
     bool m_showGridOptions = false; // Grid Options window (Shift+click on the Grid button)
-    void drawGridOptionsWindow();     // AtelierUI.cpp
+    void drawGridOptionsWindow();     // Editor.cpp
     void toggleGrid();                // Grid button: shows / hides the editor grid (Shift: options)
     int m_msaa = 4;               // viewport anti-aliasing: MSAA samples (1 off, 4, 8, 16; Display menu)
     size_t m_selSig = 0;          // selection signature: the glow animation restarts when it changes
@@ -464,6 +467,14 @@ private:
     int m_shotSeqDone = 0;       // --shot-seq: images saved
     void gizmoScript();          // --gizmo-demo / --gizmo-test (command line), called once per frame
     float2 gizmoHandlePoint(int handle);   // screen point on a handle of the current manipulator (tests)
+    float2 gizmoHandleDir(int handle, float2 at);   // screen direction to drag that handle along (tests)
+    int gizmoTestDrag(int tool, int handle, float px, bool snap, bool keep);   // scripted drag; returns the handle hit
+    std::string gizmoLogicTests(int& fails);   // logic checks of the manipulators and Advanced Scale (report lines)
+    // editor self-test (--self-test, SelfTest.cpp): logic, interface driven by scripted input, renders measured
+    struct SelfTest;
+    std::shared_ptr<SelfTest> m_selfTest;
+    void selfTestFrame();        // called once per frame
+    int m_exitCode = 0;          // of run(): 1 when the self-test failed
     std::vector<Snapshot> m_undo, m_redo;
     int m_viewMode = 0;
 
