@@ -12,14 +12,14 @@ namespace app {
 namespace {
 
 const ImU32 kAxisCol[3] = {IM_COL32(229, 72, 77, 255), IM_COL32(70, 167, 88, 255), IM_COL32(62, 142, 247, 255)};
-const ImU32 kCurve = IM_COL32(86, 152, 255, 255);        // unselected curve (Maya: dark blue, lighter here)
-const ImU32 kCurveSel = IM_COL32(98, 240, 150, 255);     // selected curve (Maya: light green)
-const ImU32 kCurveMulti = IM_COL32(236, 238, 242, 255);  // other curves of a multi-selection (Maya: white)
-const ImU32 kCv = IM_COL32(222, 86, 226, 255);           // control vertices (Maya: magenta)
-const ImU32 kEp = IM_COL32(110, 190, 255, 255);          // edit points
-const ImU32 kHandle = IM_COL32(176, 180, 192, 255);      // Bezier handles
-const ImU32 kPicked = IM_COL32(255, 214, 10, 255);       // selected points (Maya: yellow)
-const ImU32 kDraft = IM_COL32(255, 196, 64, 255);        // curve being created
+// visual language (anthracite background): pale cyan curves, silver handles, luminous active node
+const ImU32 kCurveOn = IM_COL32(132, 190, 210, 255);     // selected / active curve: pale cyan
+const ImU32 kCurveOff = IM_COL32(104, 150, 168, 150);    // inactive curve: the same cyan, discreet
+const ImU32 kCurveMulti = IM_COL32(170, 208, 222, 220);  // other curves of a multi-selection
+const ImU32 kHandle = IM_COL32(168, 172, 182, 255);      // silver: hollow nodes and dashed tangents
+const ImU32 kHull = IM_COL32(168, 172, 182, 120);        // CV hull
+const ImU32 kNodeFill = IM_COL32(24, 27, 32, 255);       // inside of a hollow node (anthracite)
+const ImU32 kNodeRing = IM_COL32(240, 250, 255, 255);    // ring of the active node
 
 float3 axisVec(int a) { return float3(a == 0 ? 1.0f : 0.0f, a == 1 ? 1.0f : 0.0f, a == 2 ? 1.0f : 0.0f); }
 ImVec2 iv(float2 p) { return ImVec2(p.x, p.y); }
@@ -213,7 +213,7 @@ bool CurveEditor::pickPoint(float mx, float my, Item& out) const {
         if (d < best) { best = d; out = it; found = true; }
     };
     for (int i = 0; i < c.count(); ++i) {
-        if (c.type == CURVE_BEZIER && i < (int)c.hin.size()) {
+        if (c.type == CURVE_BEZIER && i < (int)c.hin.size() && handlesShown(i)) {   // only the visible tangents
             test(c.hin[i], {i, PART_IN});
             test(c.hout[i], {i, PART_OUT});
         }
@@ -557,7 +557,7 @@ int CurveEditor::manipulatorHit(float mx, float my) const {
     if (!selectionPivot(pv)) return -1;
     float2 pc;
     if (!a.project(pv, pc)) return -1;
-    if (std::fabs(mx - pc.x) < 7 * a.m_dpi && std::fabs(my - pc.y) < 7 * a.m_dpi) return 3;
+    if (std::hypot(mx - pc.x, my - pc.y) < 12 * a.m_dpi) return 3;   // ring around the node: free move
     float s = a.gizmoScale(pv), best = 10.0f * a.m_dpi;
     int hit = -1;
     for (int k = 0; k < 3; ++k) {
@@ -729,14 +729,56 @@ void CurveEditor::menu(float menuScale) {
 }
 
 // --------------------------------------------------------------------------- drawing
+// Visual language of the WZX curves: pale cyan curve, silver hollow handles on dashed tangents, control points
+// larger than the tangent ends, luminous active node; inactive curves stay discreet.
 
-void CurveEditor::drawCurve(ImDrawList* dl, const Object& o, ImU32 col, float width) const {
+namespace {
+
+void dashedLine(ImDrawList* dl, ImVec2 a, ImVec2 b, ImU32 col, float width, float dash, float gap) {
+    float dx = b.x - a.x, dy = b.y - a.y, len = std::sqrt(dx * dx + dy * dy);
+    if (len < 1e-3f) return;
+    dx /= len;
+    dy /= len;
+    for (float t = 0; t < len; t += dash + gap) {
+        float e = std::min(t + dash, len);
+        dl->AddLine(ImVec2(a.x + dx * t, a.y + dy * t), ImVec2(a.x + dx * e, a.y + dy * e), col, width);
+    }
+}
+
+// soft halo: a few wide translucent strokes under a line / around a point
+void glowPolyline(ImDrawList* dl, const std::vector<ImVec2>& pts, ImU32 col, float width) {
+    for (int k = 3; k >= 1; --k)
+        dl->AddPolyline(pts.data(), (int)pts.size(), (col & 0x00FFFFFFu) | ((ImU32)(14 * (4 - k)) << 24), 0, width + 3.0f * k * width * 0.5f);
+}
+
+void hollowNode(ImDrawList* dl, ImVec2 p, float r, ImU32 ring, float d) {
+    dl->AddCircleFilled(p, r, kNodeFill, 20);
+    dl->AddCircle(p, r, ring, 20, 1.6f * d);
+}
+
+void activeNode(ImDrawList* dl, ImVec2 p, float r, float d) {
+    for (int k = 3; k >= 1; --k) dl->AddCircleFilled(p, r + 3.0f * k * d, (kCurveOn & 0x00FFFFFFu) | ((ImU32)(22 * (4 - k)) << 24), 28);
+    dl->AddCircleFilled(p, r, kCurveOn, 28);
+    dl->AddCircle(p, r, kNodeRing, 28, 2.0f * d);
+}
+
+} // namespace
+
+// a Bezier anchor shows its handles when it (or one of its handles) is selected
+bool CurveEditor::handlesShown(int i) const {
+    return isSelected({i, PART_POINT}) || isSelected({i, PART_IN}) || isSelected({i, PART_OUT});
+}
+
+void CurveEditor::drawCurve(ImDrawList* dl, const Object& o, ImU32 col, float width, bool glow) const {
     std::vector<float3> s;
     sampleCurve(o.curve, s);
     Affine xf = o.transform();
     std::vector<ImVec2> run;
     auto flush = [&]() {
-        if (run.size() >= 2) dl->AddPolyline(run.data(), (int)run.size(), col, 0, width);
+        if (run.size() >= 2) {
+            if (glow) glowPolyline(dl, run, col, width);
+            dl->AddPolyline(run.data(), (int)run.size(), col, 0, width);
+        }
         run.clear();
     };
     for (const float3& p : s) {
@@ -751,45 +793,38 @@ void CurveEditor::drawPoints(ImDrawList* dl, const Object& o) const {
     const CurveData& c = o.curve;
     const float d = a.m_dpi;
     auto P = [&](const float3& p, float2& s) { return a.project(toWorld(o, p), s); };
-    // CV hull
+    // CV hull: dashed, as the tangents
     if (c.type == CURVE_CV)
         for (int i = 0; i + 1 < c.count() + (c.closed ? 1 : 0); ++i) {
             float2 p0, p1;
-            if (P(c.points[i], p0) && P(c.points[(i + 1) % c.count()], p1)) dl->AddLine(iv(p0), iv(p1), (kCv & 0x00FFFFFF) | 0x70000000, 1.0f * d);
+            if (P(c.points[i], p0) && P(c.points[(i + 1) % c.count()], p1)) dashedLine(dl, iv(p0), iv(p1), kHull, 1.2f * d, 5 * d, 4 * d);
         }
-    // Bezier handles
+    // Bezier tangents of the selected anchors: dashed line, small silver hollow end
     if (c.type == CURVE_BEZIER && (int)c.hin.size() == c.count())
         for (int i = 0; i < c.count(); ++i) {
+            if (!handlesShown(i)) continue;
             float2 pa;
             if (!P(c.points[i], pa)) continue;
             for (int part : {(int)PART_IN, (int)PART_OUT}) {
                 const float3& h = part == PART_IN ? c.hin[i] : c.hout[i];
-                if (!c.closed && ((i == 0 && part == PART_IN) || (i == c.count() - 1 && part == PART_OUT)) && length(h - c.points[i]) < 1e-6f) continue;
+                if (length(h - c.points[i]) < 1e-6f) continue;
                 float2 ph;
                 if (!P(h, ph)) continue;
-                dl->AddLine(iv(pa), iv(ph), kHandle, 1.0f * d);
-                ImU32 hc = isSelected({i, part}) ? kPicked : kHandle;
-                dl->AddCircleFilled(iv(ph), 3.6f * d, hc, 12);
-                dl->AddCircle(iv(ph), 3.6f * d, IM_COL32(20, 20, 24, 200), 12, 1.0f);
+                dashedLine(dl, iv(pa), iv(ph), kHandle, 1.3f * d, 5 * d, 4 * d);
+                if (isSelected({i, part})) activeNode(dl, iv(ph), 4.0f * d, d);
+                else hollowNode(dl, iv(ph), 4.0f * d, kHandle, d);
             }
         }
+    // control points (larger than the tangent ends); the open ends are filled cyan dots
     for (int i = 0; i < c.count(); ++i) {
         float2 p;
         if (!P(c.points[i], p)) continue;
-        const bool sel = isSelected({i, PART_POINT});
-        const float r = (sel ? 4.2f : 3.4f) * d;
-        ImU32 col = sel ? kPicked : (c.type == CURVE_EP ? kEp : kCv);
-        if (c.type == CURVE_EP && !sel) {   // edit points: crosses
-            dl->AddLine(ImVec2(p.x - r, p.y - r), ImVec2(p.x + r, p.y + r), col, 1.8f * d);
-            dl->AddLine(ImVec2(p.x - r, p.y + r), ImVec2(p.x + r, p.y - r), col, 1.8f * d);
-        } else {
-            dl->AddRectFilled(ImVec2(p.x - r, p.y - r), ImVec2(p.x + r, p.y + r), col);
-            dl->AddRect(ImVec2(p.x - r, p.y - r), ImVec2(p.x + r, p.y + r), IM_COL32(20, 20, 24, 200), 0, 0, 1.0f);
-        }
-        if (i == 0) {   // first point: hollow box around it (curve direction)
-            float R = r + 3.0f * d;
-            dl->AddRect(ImVec2(p.x - R, p.y - R), ImVec2(p.x + R, p.y + R), col, 0, 0, 1.4f * d);
-        }
+        if (isSelected({i, PART_POINT})) { activeNode(dl, iv(p), 7.0f * d, d); continue; }
+        const bool end = !c.closed && (i == 0 || i == c.count() - 1);
+        if (end) {
+            dl->AddCircleFilled(iv(p), 5.5f * d, kCurveOn, 20);
+            if (i == 0) dl->AddCircle(iv(p), 8.5f * d, (kCurveOn & 0x00FFFFFFu) | 0x80000000u, 24, 1.2f * d);   // start of the curve
+        } else hollowNode(dl, iv(p), 5.5f * d, kHandle, d);
     }
 }
 
@@ -802,20 +837,20 @@ void CurveEditor::drawManipulator(ImDrawList* dl) const {
     for (int k = 0; k < 3; ++k) {
         bool lit = m_dragging ? m_dragAxis == k : m_hoverAxis == k;
         ImU32 c = lit ? IM_COL32(255, 255, 255, 255) : kAxisCol[k];
-        float2 pb, pt;
-        if (!a.project(pv + axisVec(k) * (0.85f * s), pb) || !a.project(pv + axisVec(k) * (1.1f * s), pt)) continue;
-        dl->AddLine(iv(pc), iv(pb), c, (lit ? 3.0f : 2.2f) * d);
+        float2 p0, pb, pt;
+        // starts a little away from the node so that the active point stays readable
+        if (!a.project(pv + axisVec(k) * (0.22f * s), p0) || !a.project(pv + axisVec(k) * (0.85f * s), pb) || !a.project(pv + axisVec(k) * (1.1f * s), pt)) continue;
+        dl->AddLine(iv(p0), iv(pb), c, (lit ? 2.6f : 1.8f) * d);
         float dx = pt.x - pb.x, dy = pt.y - pb.y, l = std::sqrt(dx * dx + dy * dy);
         if (l < 1e-3f) continue;
         dx /= l;
         dy /= l;
-        float hw = (lit ? 6.0f : 5.0f) * d;
+        float hw = (lit ? 5.5f : 4.5f) * d;
         dl->AddTriangleFilled(ImVec2(pt.x, pt.y), ImVec2(pb.x - dy * hw, pb.y + dx * hw), ImVec2(pb.x + dy * hw, pb.y - dx * hw), c);
     }
+    // free move: a thin ring around the node
     bool lit = m_dragging ? m_dragAxis == 3 : m_hoverAxis == 3;
-    float hs = 5.5f * d;
-    dl->AddRectFilled(ImVec2(pc.x - hs, pc.y - hs), ImVec2(pc.x + hs, pc.y + hs), lit ? IM_COL32(255, 230, 120, 120) : IM_COL32(255, 214, 10, 60));
-    dl->AddRect(ImVec2(pc.x - hs, pc.y - hs), ImVec2(pc.x + hs, pc.y + hs), lit ? IM_COL32(255, 255, 255, 255) : IM_COL32(255, 214, 10, 230), 0, 0, 1.5f * d);
+    dl->AddCircle(iv(pc), 11.0f * d, lit ? kNodeRing : (kNodeRing & 0x00FFFFFFu) | 0x70000000u, 32, (lit ? 2.0f : 1.2f) * d);
 }
 
 void CurveEditor::drawDraft(ImDrawList* dl) {
@@ -852,24 +887,31 @@ void CurveEditor::drawDraft(ImDrawList* dl) {
             float2 q;
             if (a.project(p, q)) run.push_back(iv(q));
         }
-        if (run.size() >= 2) dl->AddPolyline(run.data(), (int)run.size(), kDraft, 0, 2.0f * d);
+        if (run.size() >= 2) {
+            glowPolyline(dl, run, kCurveOn, 2.2f * d);
+            dl->AddPolyline(run.data(), (int)run.size(), kCurveOn, 0, 2.2f * d);
+        }
     }
-    for (int i = 0; i < m_draft.count(); ++i) {
+    const int last = m_draft.count() - 1;
+    for (int i = 0; i <= last; ++i) {
         float2 p;
         if (!a.project(m_draft.points[i], p)) continue;
-        if (m_createType == CURVE_BEZIER && i < (int)m_draft.hout.size() && length(m_draft.hout[i] - m_draft.points[i]) > 1e-5f) {
+        // the anchor being placed shows its tangent
+        if (m_createType == CURVE_BEZIER && i == last && i < (int)m_draft.hout.size() && length(m_draft.hout[i] - m_draft.points[i]) > 1e-5f) {
             float2 h0, h1;
             if (a.project(m_draft.hin[i], h0) && a.project(m_draft.hout[i], h1)) {
-                dl->AddLine(iv(h0), iv(h1), kHandle, 1.0f * d);
-                dl->AddCircleFilled(iv(h0), 3.2f * d, kHandle, 12);
-                dl->AddCircleFilled(iv(h1), 3.2f * d, kHandle, 12);
+                dashedLine(dl, iv(h0), iv(h1), kHandle, 1.3f * d, 5 * d, 4 * d);
+                hollowNode(dl, iv(h0), 4.0f * d, kHandle, d);
+                hollowNode(dl, iv(h1), 4.0f * d, kHandle, d);
             }
         }
-        float r = 3.4f * d;
-        dl->AddRectFilled(ImVec2(p.x - r, p.y - r), ImVec2(p.x + r, p.y + r), m_createType == CURVE_EP ? kEp : kCv);
-        if (i == 0 && hoverFirst) dl->AddCircle(iv(p), 9.0f * d, kPicked, 20, 2.0f * d);
+        if (i == last && !hoverFirst) activeNode(dl, iv(p), 6.0f * d, d);
+        else if (i == 0) dl->AddCircleFilled(iv(p), 5.5f * d, kCurveOn, 20);
+        else hollowNode(dl, iv(p), 5.0f * d, kHandle, d);
+        if (i == 0 && hoverFirst) dl->AddCircle(iv(p), 10.0f * d, kNodeRing, 24, 2.0f * d);
     }
 }
+
 
 void CurveEditor::draw(ImDrawList* dl) {
     validate();
@@ -880,9 +922,10 @@ void CurveEditor::draw(ImDrawList* dl) {
         if (!o.curve.valid() || !o.visible || o.ghost) continue;
         const bool primary = i == a.m_selected;
         const bool multi = std::find(a.m_multi.begin(), a.m_multi.end(), i) != a.m_multi.end();
-        ImU32 col = primary ? kCurveSel : multi ? kCurveMulti : kCurve;
-        if (m_mode == MODE_POINTS && i == m_obj) col = IM_COL32(150, 214, 255, 255);
-        drawCurve(dl, o, col, (primary || multi ? 2.6f : 2.0f) * d);
+        // active curve: pale cyan with a soft glow; inactive: the same hue, thinner and translucent
+        if (primary) drawCurve(dl, o, kCurveOn, 2.6f * d, true);
+        else if (multi) drawCurve(dl, o, kCurveMulti, 2.2f * d, false);
+        else drawCurve(dl, o, kCurveOff, 1.6f * d, false);
     }
     std::string hint;
     if (m_mode == MODE_POINTS && m_obj >= 0) {
@@ -891,8 +934,9 @@ void CurveEditor::draw(ImDrawList* dl) {
         if (m_marquee) {
             ImVec2 m = ImGui::GetIO().MousePos;
             ImVec2 p0(std::min(m_marq0.x, m.x), std::min(m_marq0.y, m.y)), p1(std::max(m_marq0.x, m.x), std::max(m_marq0.y, m.y));
-            dl->AddRectFilled(p0, p1, IM_COL32(255, 214, 10, 28));
-            dl->AddRect(p0, p1, IM_COL32(255, 214, 10, 200), 0, 0, 1.0f * d);
+            dl->AddRectFilled(p0, p1, (kCurveOn & 0x00FFFFFFu) | 0x1C000000u);
+            dashedLine(dl, p0, ImVec2(p1.x, p0.y), kCurveOn, 1.0f * d, 4 * d, 3 * d); dashedLine(dl, ImVec2(p1.x, p0.y), p1, kCurveOn, 1.0f * d, 4 * d, 3 * d);
+            dashedLine(dl, p1, ImVec2(p0.x, p1.y), kCurveOn, 1.0f * d, 4 * d, 3 * d); dashedLine(dl, ImVec2(p0.x, p1.y), p0, kCurveOn, 1.0f * d, 4 * d, 3 * d);
         }
         hint = "Edit Points  ·  " + std::to_string(m_sel.size()) + " selected  ·  X: grid snap  ·  Ctrl+click: insert  ·  Del: delete  ·  F8: exit";
     } else if (m_mode == MODE_CREATE) {
@@ -1114,12 +1158,23 @@ void CurveEditor::runTest() {
             cam.distance *= 0.82f;
             a.cameraChanged();
         }
+        // close-up for the capture (environment WZX_CURVE_VIEW = bezier or cv), else the Bezier curve in this framing
+        const char* view = getenv("WZX_CURVE_VIEW");
+        const bool cvView = view && std::string(view) == "cv", close = view && *view;
         int b = -1;
-        for (int i : curves) if (sc.objects[i].curve.type == CURVE_BEZIER) b = i;
+        for (int i : curves) if (sc.objects[i].curve.type == (cvView ? CURVE_CV : CURVE_BEZIER)) b = i;
         if (b >= 0) {
+            if (close) {
+                a.select(b);
+                a.frameSelection();
+                sc.camera.pitch = radians(62.0f);
+                sc.camera.yaw = radians(8.0f);
+                sc.camera.distance *= 0.75f;
+                a.cameraChanged();
+            }
             a.select(b);
             enterPoints();
-            m_sel = {{1, PART_POINT}};
+            m_sel = {{cvView ? 2 : 1, PART_POINT}};
         }
         a.markDirty();
     }

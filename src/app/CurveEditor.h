@@ -85,7 +85,8 @@ private:
     void finishCreate();
     void cancelCreate();
     int addCurveObject(const CurveData& local, const float3& pos, const std::string& name);
-    void drawCurve(ImDrawList* dl, const Object& o, ImU32 col, float width) const;
+    void drawCurve(ImDrawList* dl, const Object& o, ImU32 col, float width, bool glow) const;
+    bool handlesShown(int i) const;   // Bezier: tangents of the selected anchors only
     void drawPoints(ImDrawList* dl, const Object& o) const;
     void drawManipulator(ImDrawList* dl) const;
     void drawDraft(ImDrawList* dl);
