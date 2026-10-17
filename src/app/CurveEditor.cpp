@@ -284,6 +284,7 @@ void CurveEditor::startCreate(int type) {
     m_createType = type;
     m_draft = CurveData();
     m_draft.type = type;
+    m_coordBuf[0] = 0;
     m_draftDrag = false;
     a.status(type == CURVE_BEZIER
         ? L"Bezier tool: click to place an anchor, drag to pull its handles"
@@ -392,6 +393,26 @@ bool CurveEditor::keys() {
         else if (m_mode == MODE_NONE) enterPoints();
         return true;
     }
+    if ((m_mode == MODE_CREATE || m_mode == MODE_POINTS) && pressed(ImGuiKey_O)) {
+        m_osnap = !m_osnap;
+        a.status(m_osnap ? L"Osnap on" : L"Osnap off");
+        return true;
+    }
+    if (m_mode == MODE_CREATE && !io.KeyCtrl) {   // typing a coordinate opens the field with these characters
+        bool typed = false;
+        for (ImWchar ch : io.InputQueueCharacters)
+            if (ch < 128 && strchr("0123456789-.@<", (char)ch) && strlen(m_coordBuf) + 1 < sizeof(m_coordBuf)) {
+                size_t n = strlen(m_coordBuf);
+                m_coordBuf[n] = (char)ch;
+                m_coordBuf[n + 1] = 0;
+                typed = true;
+            }
+        if (typed) {
+            io.InputQueueCharacters.resize(0);
+            m_coordFocus = true;
+            return true;
+        }
+    }
     if (m_mode == MODE_CREATE) {
         if (pressed(ImGuiKey_Enter) || pressed(ImGuiKey_KeypadEnter)) { finishCreate(); return true; }
         if (pressed(ImGuiKey_Escape)) { cancelCreate(); return true; }
@@ -429,6 +450,7 @@ bool CurveEditor::input(bool inView, bool placing) {
     ImGuiIO& io = ImGui::GetIO();
     const float mx = io.MousePos.x, my = io.MousePos.y;
     validate();
+    m_snap.on = false;   // set again below (or by the creation preview) when a snap is under the mouse
     if (placing) {
         if (m_mode != MODE_NONE) exitMode();
         return false;
@@ -438,23 +460,16 @@ bool CurveEditor::input(bool inView, bool placing) {
 
     if (m_mode == MODE_CREATE) {
         if (clicked) {
-            float3 p;
-            if (groundPoint(mx, my, 0.0f, p)) {
-                if (snapOn) p = snap(p);
-                bool closeIt = false;
-                if (m_draft.count() >= 3) {   // click on the first point: closes the curve
-                    float2 s0;
-                    if (a.project(m_draft.points[0], s0) && std::hypot(s0.x - mx, s0.y - my) < 9.0f * a.m_dpi) closeIt = true;
-                }
-                if (closeIt) { m_draft.closed = true; finishCreate(); return true; }
-                if (m_draft.points.empty() || length(p - m_draft.points.back()) > 1e-4f) {
-                    m_draft.points.push_back(p);
-                    if (m_createType == CURVE_BEZIER) {
-                        m_draft.hin.push_back(p);
-                        m_draft.hout.push_back(p);
-                        m_draft.broken.push_back(0);
-                    }
-                }
+            bool closeIt = false;
+            if (m_draft.count() >= 3) {   // click on the first point: closes the curve
+                float2 s0;
+                if (a.project(m_draft.points[0], s0) && std::hypot(s0.x - mx, s0.y - my) < 9.0f * a.m_dpi) closeIt = true;
+            }
+            if (closeIt) { m_draft.closed = true; finishCreate(); return true; }
+            bool ok = false;
+            float3 p = createTarget(mx, my, ok);   // osnap, grid (X), ortho (Shift)
+            if (ok) {
+                draftAdd(p);
                 m_draftDrag = true;
                 m_pressAt = float2(mx, my);
             }
@@ -660,6 +675,8 @@ void CurveEditor::updateDrag(float mx, float my) {
         float t = dot(m_dragPivot - ro, m_dragDir) / den;
         delta = ro + rd * t - m_dragHit0;
         if (snapOn) delta = snap(m_dragPivot + delta) - m_dragPivot;
+        SnapHit hit;   // osnap: the dragged point lands exactly on the snapped point
+        if (findSnap(mx, my, hit)) { m_snap = hit; m_snap.on = true; delta = hit.p - m_dragPivot; }
     }
     Object& o = a.m_scene.objects[m_obj];
     CurveData& c = o.curve;
@@ -788,6 +805,208 @@ void CurveEditor::insertPointAt(float mx, float my) {
     a.status(L"Point inserted");
 }
 
+// --------------------------------------------------------------------------- precision (Rhino style)
+
+namespace {
+const char* kSnapNames[] = {"End", "Point", "Mid", "Center", "Near"};
+}
+
+// Object snap under the mouse: end > point > mid > center > near (the first kind found within reach wins).
+// In point mode the edited curve only offers its unselected points (the rest moves with the drag).
+bool CurveEditor::findSnap(float mx, float my, SnapHit& out) const {
+    if (!m_osnap) return false;
+    const float reach = 12.0f * a.m_dpi, nearReach = 8.0f * a.m_dpi;
+    int bestKind = SNAP_COUNT;
+    float bestD = 1e30f;
+    auto consider = [&](const float3& w, int kind, float r) {
+        if (!(m_snapMask & (1 << kind)) || kind > bestKind) return;
+        float2 s;
+        if (!a.project(w, s)) return;
+        float d = std::hypot(s.x - mx, s.y - my);
+        if (d > r || (kind == bestKind && d >= bestD)) return;
+        bestKind = kind;
+        bestD = d;
+        out.p = w;
+        out.kind = kind;
+    };
+    std::vector<float3> s;
+    const auto& objs = a.m_scene.objects;
+    for (int i = 0; i < (int)objs.size(); ++i) {
+        const Object& o = objs[i];
+        if (!o.curve.valid() || !o.visible || o.ghost) continue;
+        const CurveData& c = o.curve;
+        const Affine xf = o.transform();
+        const bool own = m_mode == MODE_POINTS && i == m_obj;
+        const int n = c.count();
+        for (int k = 0; k < n; ++k) {
+            if (own && isSelected({k, PART_POINT})) continue;
+            const bool end = !c.closed && (k == 0 || k == n - 1);
+            consider(xf.point(c.points[k]), end ? SNAP_END : SNAP_POINT, reach);
+        }
+        if (own) continue;
+        sampleCurve(c, s);
+        if (s.size() < 2) continue;
+        if (!c.closed) { consider(xf.point(s.front()), SNAP_END, reach); consider(xf.point(s.back()), SNAP_END, reach); }
+        // middle of the curve (arc length), and of each segment of a linear curve
+        std::vector<float> acc(s.size(), 0.0f);
+        for (size_t k = 1; k < s.size(); ++k) acc[k] = acc[k - 1] + length(s[k] - s[k - 1]);
+        const float half = acc.back() * 0.5f;
+        for (size_t k = 1; k < s.size(); ++k)
+            if (acc[k] >= half) {
+                float seg = acc[k] - acc[k - 1];
+                consider(xf.point(lerp(s[k - 1], s[k], seg > 1e-9f ? (half - acc[k - 1]) / seg : 0.0f)), SNAP_MID, reach);
+                break;
+            }
+        if (c.type == CURVE_LINEAR)
+            for (int k = 0; k + 1 < n + (c.closed ? 1 : 0); ++k) consider(xf.point((c.points[k] + c.points[(k + 1) % n]) * 0.5f), SNAP_MID, reach);
+        // centre: the origin of a primitive, the average of a closed curve
+        if (c.shape.type != CSHAPE_NONE && c.shape.type != CSHAPE_LINE) consider(xf.point(float3(0)), SNAP_CENTER, reach);
+        else if (c.closed) {
+            float3 sum(0);
+            for (size_t k = 0; k + 1 < s.size(); ++k) sum += s[k];
+            consider(xf.point(sum / (float)(s.size() - 1)), SNAP_CENTER, reach);
+        }
+        // near: the closest point of the curve on screen
+        if (m_snapMask & (1 << SNAP_NEAR) && bestKind >= SNAP_NEAR) {
+            float2 prev;
+            bool hasPrev = false;
+            for (size_t k = 0; k < s.size(); ++k) {
+                float2 q;
+                bool ok = a.project(xf.point(s[k]), q);
+                if (ok && hasPrev) {
+                    float dx = q.x - prev.x, dy = q.y - prev.y, l2 = dx * dx + dy * dy;
+                    float t = l2 > 1e-6f ? clampf(((mx - prev.x) * dx + (my - prev.y) * dy) / l2, 0, 1) : 0;
+                    consider(xf.point(lerp(s[k - 1], s[k], t)), SNAP_NEAR, nearReach);
+                }
+                prev = q;
+                hasPrev = ok;
+            }
+        }
+    }
+    // the points already placed by the creation tool (the first one closes the curve, see input)
+    if (m_mode == MODE_CREATE)
+        for (int k = m_draft.count() >= 3 ? 1 : 0; k < m_draft.count(); ++k) consider(m_draft.points[k], SNAP_POINT, reach);
+    return bestKind < SNAP_COUNT;
+}
+
+float3 CurveEditor::createTarget(float mx, float my, bool& ok) {
+    float3 p;
+    ok = groundPoint(mx, my, 0.0f, p);
+    SnapHit hit;
+    if (findSnap(mx, my, hit)) { m_snap = hit; m_snap.on = true; ok = true; return hit.p; }
+    if (!ok) return p;
+    if (ImGui::IsKeyDown(ImGuiKey_X)) p = snap(p);
+    if (ImGui::GetIO().KeyShift && !m_draft.points.empty()) {   // ortho: along X or Z from the last point
+        const float3 last = m_draft.points.back();
+        if (std::fabs(p.x - last.x) >= std::fabs(p.z - last.z)) p.z = last.z; else p.x = last.x;
+        p.y = last.y;
+    }
+    return p;
+}
+
+void CurveEditor::draftAdd(const float3& p) {
+    if (!m_draft.points.empty() && length(p - m_draft.points.back()) <= 1e-4f) return;
+    m_draft.points.push_back(p);
+    if (m_createType == CURVE_BEZIER) {
+        m_draft.hin.push_back(p);
+        m_draft.hout.push_back(p);
+        m_draft.broken.push_back(0);
+    }
+}
+
+// Typed point (Rhino / CAD style): "x, z" (on the ground), "x, y, z", "@dx, dz" or "@dx, dy, dz" (relative to the
+// last point, also "r dx, dz"), "d<angle" (distance and angle in degrees from the last point, on the ground: 0 = +X,
+// 90 = -Z), or a single distance along the direction of the mouse.
+bool CurveEditor::parseCoord(const char* text, float3& out) const {
+    std::string t(text);
+    for (char& ch : t) if (ch == ';') ch = ',';
+    size_t b = t.find_first_not_of(" \t");
+    if (b == std::string::npos) return false;
+    t = t.substr(b);
+    bool rel = false;
+    if (t[0] == '@' || t[0] == 'r' || t[0] == 'R') { rel = true; t = t.substr(1); }
+    const bool haveLast = !m_draft.points.empty();
+    const float3 last = haveLast ? m_draft.points.back() : float3(0);
+    size_t lt = t.find('<');
+    if (lt != std::string::npos) {
+        char* e = nullptr;
+        float dist = strtof(t.c_str(), &e), ang = strtof(t.c_str() + lt + 1, nullptr);
+        if (e == t.c_str()) return false;
+        out = last + float3(dist * std::cos(radians(ang)), 0, -dist * std::sin(radians(ang)));
+        return true;
+    }
+    std::vector<float> v;
+    const char* p = t.c_str();
+    while (*p) {
+        while (*p == ' ' || *p == ',' || *p == '\t') ++p;
+        if (!*p) break;
+        char* e = nullptr;
+        float f = strtof(p, &e);
+        if (e == p) return false;
+        v.push_back(f);
+        p = e;
+    }
+    if (v.size() == 1) {   // distance towards the mouse
+        if (!haveLast) return false;
+        ImVec2 m = ImGui::GetIO().MousePos;
+        float3 g;
+        if (!groundPoint(m.x, m.y, last.y, g)) return false;
+        float3 dir = g - last;
+        dir.y = 0;
+        if (length(dir) < 1e-6f) dir = float3(1, 0, 0);
+        out = last + normalize(dir) * v[0];
+        return true;
+    }
+    float3 q = v.size() == 2 ? float3(v[0], 0, v[1]) : v.size() == 3 ? float3(v[0], v[1], v[2]) : float3(0);
+    if (v.size() < 2 || v.size() > 3) return false;
+    out = rel ? last + q : q;
+    return true;
+}
+
+void CurveEditor::drawSnap(ImDrawList* dl) const {
+    if (!m_snap.on) return;
+    float2 s;
+    if (!a.project(m_snap.p, s)) return;
+    const float d = a.m_dpi, r = 6.0f * d;
+    const ImU32 c = IM_COL32(132, 190, 210, 255);
+    dl->AddRect(ImVec2(s.x - r, s.y - r), ImVec2(s.x + r, s.y + r), c, 0, 0, 1.6f * d);
+    dl->AddCircleFilled(ImVec2(s.x, s.y), 2.2f * d, c, 12);
+    const char* label = kSnapNames[std::clamp(m_snap.kind, 0, (int)SNAP_COUNT - 1)];
+    ImVec2 ts = ImGui::CalcTextSize(label);
+    ImVec2 at(s.x + 11 * d, s.y - ts.y - 6 * d);
+    dl->AddRectFilled(ImVec2(at.x - 4 * d, at.y - 2 * d), ImVec2(at.x + ts.x + 4 * d, at.y + ts.y + 2 * d), IM_COL32(18, 20, 24, 210), 3 * d);
+    dl->AddText(at, c, label);
+}
+
+namespace {
+int coordCaret(ImGuiInputTextCallbackData* data) {
+    bool* once = (bool*)data->UserData;
+    if (*once) {
+        data->CursorPos = data->SelectionStart = data->SelectionEnd = data->BufTextLen;
+        *once = false;
+    }
+    return 0;
+}
+}
+
+// Coordinate field of the creation tools, above the hint (typing a digit, '-', '.', '@' or '<' starts it).
+void CurveEditor::drawCoordField() {
+    const float d = a.m_dpi, w = 300 * d;
+    ImGui::SetCursorScreenPos(ImVec2(a.m_rcView.x + (a.m_rcView.w - w) * 0.5f, a.m_rcView.b() - 104 * d));
+    ImGui::SetNextItemWidth(w);
+    if (m_coordFocus) { ImGui::SetKeyboardFocusHere(); m_coordFocus = false; m_coordCaretEnd = true; }
+    if (ImGui::InputTextWithHint("##crvCoord", "Type a point: x, z   @dx, dz   dist<angle", m_coordBuf, sizeof(m_coordBuf),
+                                 ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_CallbackAlways, coordCaret, &m_coordCaretEnd)) {
+        float3 p;
+        if (!m_coordBuf[0]) finishCreate();   // Enter on an empty field: the curve is finished
+        else if (parseCoord(m_coordBuf, p)) {
+            draftAdd(p);
+            m_coordBuf[0] = 0;
+            m_coordFocus = true;   // ready for the next point
+        } else a.status(L"Coordinates not understood (x, z  ·  x, y, z  ·  @dx, dz  ·  dist<angle)", 2);
+    }
+}
+
 // --------------------------------------------------------------------------- menu
 
 void CurveEditor::menu(float menuScale) {
@@ -800,6 +1019,17 @@ void CurveEditor::menu(float menuScale) {
     ImGui::Separator();
     for (int sh = CSHAPE_LINE; sh < CSHAPE_COUNT; ++sh)
         if (ImGui::MenuItem(curveShapeName(sh))) addPrimitive(sh);
+    ImGui::Separator();
+    if (ImGui::BeginMenu("Osnap")) {   // Rhino-style object snaps of the curve tools
+        ImGui::SetWindowFontScale(menuScale);
+        ImGui::MenuItem("Osnap", "O", &m_osnap);
+        ImGui::Separator();
+        for (int k = 0; k < SNAP_COUNT; ++k) {
+            bool on = (m_snapMask >> k) & 1;
+            if (ImGui::MenuItem(kSnapNames[k], nullptr, &on, m_osnap)) m_snapMask ^= 1 << k;
+        }
+        ImGui::EndMenu();
+    }
     ImGui::Separator();
     const bool curveSel = a.m_selected >= 0 && a.m_scene.objects[a.m_selected].curve.valid();
     if (ImGui::MenuItem("Edit Points", "F8", m_mode == MODE_POINTS, curveSel)) { if (m_mode == MODE_POINTS) exitMode(); else enterPoints(); }
@@ -935,17 +1165,20 @@ void CurveEditor::drawDraft(ImDrawList* dl) {
     ImGuiIO& io = ImGui::GetIO();
     const float d = a.m_dpi;
     CurveData c = m_draft;
-    const float mx = io.MousePos.x, my = io.MousePos.y;
+    float mx = io.MousePos.x, my = io.MousePos.y;
+    float2 tm;   // --curve-test capture: the mouse held on a scene point
+    if (m_testMouse && a.project(m_testMouseAt, tm)) { mx = tm.x; my = tm.y; }
     bool hoverFirst = false;
     // preview of the next point under the mouse
     if (!m_draftDrag && a.m_rcView.contains(mx, my)) {
-        float3 p;
-        if (groundPoint(mx, my, 0.0f, p)) {
-            if (ImGui::IsKeyDown(ImGuiKey_X)) p = snap(p);
+        bool ok = false;
+        float3 p = createTarget(mx, my, ok);   // same target as the click: osnap, grid (X), ortho (Shift)
+        if (ok) {
             float2 s0;
             if (c.count() >= 3 && a.project(c.points[0], s0) && std::hypot(s0.x - mx, s0.y - my) < 9.0f * d) {
                 c.closed = true;
                 hoverFirst = true;
+                m_snap.on = false;   // the close ring is shown instead
             } else {
                 c.points.push_back(p);
                 if (c.type == CURVE_BEZIER) { c.hin.push_back(p); c.hout.push_back(p); c.broken.push_back(0); }
@@ -1009,6 +1242,7 @@ void CurveEditor::draw(ImDrawList* dl) {
     if (m_mode == MODE_POINTS && m_obj >= 0) {
         drawPoints(dl, objs[m_obj]);
         drawManipulator(dl);
+        if (m_dragging) drawSnap(dl);
         if (m_marquee) {
             ImVec2 m = ImGui::GetIO().MousePos;
             ImVec2 p0(std::min(m_marq0.x, m.x), std::min(m_marq0.y, m.y)), p1(std::max(m_marq0.x, m.x), std::max(m_marq0.y, m.y));
@@ -1016,10 +1250,12 @@ void CurveEditor::draw(ImDrawList* dl) {
             dashedLine(dl, p0, ImVec2(p1.x, p0.y), kCurveOn, 1.0f * d, 4 * d, 3 * d); dashedLine(dl, ImVec2(p1.x, p0.y), p1, kCurveOn, 1.0f * d, 4 * d, 3 * d);
             dashedLine(dl, p1, ImVec2(p0.x, p1.y), kCurveOn, 1.0f * d, 4 * d, 3 * d); dashedLine(dl, ImVec2(p0.x, p1.y), p0, kCurveOn, 1.0f * d, 4 * d, 3 * d);
         }
-        hint = "Edit Points  ·  " + std::to_string(m_sel.size()) + " selected  ·  X: grid snap  ·  Ctrl+click curve: insert  ·  Ctrl+drag tangent: break  ·  Double-click: corner / smooth  ·  F8: exit";
+        hint = "Edit Points  ·  " + std::to_string(m_sel.size()) + " selected  ·  Osnap " + std::string(m_osnap ? "on" : "off") + " (O)  ·  X: grid  ·  Ctrl+click curve: insert  ·  Ctrl+drag tangent: break  ·  Double-click: corner / smooth  ·  F8: exit";
     } else if (m_mode == MODE_CREATE) {
         drawDraft(dl);
-        hint = std::string(curveTypeName(m_createType)) + " Tool  ·  " + std::to_string(m_draft.count()) + " points  ·  X: grid snap  ·  Enter: finish  ·  Backspace: undo point  ·  Esc: cancel";
+        drawSnap(dl);
+        drawCoordField();
+        hint = std::string(curveTypeName(m_createType)) + " Tool  ·  " + std::to_string(m_draft.count()) + " points  ·  Osnap " + (m_osnap ? "on" : "off") + " (O)  ·  Shift: ortho  ·  X: grid  ·  type coordinates  ·  Enter: finish  ·  Esc: cancel";
     }
     if (!hint.empty()) {
         ImVec2 ts = ImGui::CalcTextSize(hint.c_str());
@@ -1140,6 +1376,38 @@ void CurveEditor::runTest() {
         buildCurveShape(c);
         check(c.count() == 12 && c.shape.type == CSHAPE_CIRCLE, "Circle: 12 sections after the parameter change");
     }
+    // Rhino-style precision: object snaps and typed coordinates
+    {
+        auto snapAt = [&](const float3& w, SnapHit& hit) {
+            float2 sp;
+            return a.project(w, sp) && findSnap(sp.x, sp.y, hit);
+        };
+        SnapHit hit;
+        const Object& cvo = sc.objects[cv];
+        const float3 end = cvo.transform().point(cvo.curve.points.back());
+        check(snapAt(end, hit) && hit.kind == SNAP_END && length(hit.p - end) < 1e-4f, "Osnap End on the last point of the CV curve");
+        const Object& lo = sc.objects[lin];
+        const float3 mid = lo.transform().point((lo.curve.points[0] + lo.curve.points[1]) * 0.5f);
+        check(snapAt(mid, hit) && hit.kind == SNAP_MID && length(hit.p - mid) < 1e-4f, "Osnap Mid on a segment of the linear curve");
+        const Object& co = sc.objects[prims[CSHAPE_CIRCLE - 1]];
+        check(snapAt(co.position, hit) && hit.kind == SNAP_CENTER && length(hit.p - co.position) < 1e-4f, "Osnap Center of the circle");
+        m_osnap = false;
+        check(!snapAt(end, hit), "Osnap off (O)");
+        m_osnap = true;
+        startCreate(CURVE_LINEAR);
+        float3 p0 = base + float3(0, 0, -14), q;
+        draftAdd(p0);
+        bool okRel = parseCoord("@4, 0", q) && length(q - (p0 + float3(4, 0, 0))) < 1e-5f;
+        draftAdd(q);
+        bool okPolar = parseCoord("3<90", q) && length(q - (p0 + float3(4, 0, -3))) < 1e-4f;
+        draftAdd(q);
+        float3 abs3;
+        bool okAbs = parseCoord("1.5, 2, -3", abs3) && length(abs3 - float3(1.5f, 2, -3)) < 1e-5f;
+        bool okBad = !parseCoord("abc", abs3);
+        finishCreate();
+        check(okRel && okPolar && okAbs && okBad, "Typed coordinates: @dx, dz  ·  dist<angle  ·  x, y, z  ·  error refused");
+        check(sc.objects[a.m_selected].curve.count() == 3, "Curve drawn from typed coordinates (3 points)");
+    }
     // point editing
     {
         a.select(cv);
@@ -1255,7 +1523,7 @@ void CurveEditor::runTest() {
         }
         // close-up for the capture (environment WZX_CURVE_VIEW = bezier or cv), else the Bezier curve in this framing
         const char* view = getenv("WZX_CURVE_VIEW");
-        const bool cvView = view && std::string(view) == "cv", close = view && *view;
+        const bool cvView = view && std::string(view) == "cv", close = cvView || (view && std::string(view) == "bezier");
         int b = -1;
         for (int i : curves) if (sc.objects[i].curve.type == (cvView ? CURVE_CV : CURVE_BEZIER)) b = i;
         if (b >= 0) {
@@ -1272,6 +1540,27 @@ void CurveEditor::runTest() {
             m_sel = {{cvView ? 2 : 1, PART_POINT}};
         }
         a.markDirty();
+    }
+    // capture of the creation tool (WZX_CURVE_VIEW = create): an EP curve being drawn, the mouse held on the end
+    // of the CV curve (osnap End), a typed coordinate in the field
+    {
+        const char* view = getenv("WZX_CURVE_VIEW");
+        if (view && std::string(view) == "create") {
+            int cvo = -1;
+            for (int i = 0; i < (int)sc.objects.size(); ++i) if (sc.objects[i].curve.type == CURVE_CV && sc.objects[i].curve.shape.type == CSHAPE_NONE) { cvo = i; break; }
+            exitMode();
+            a.select(-1);
+            if (cvo >= 0) {
+                const Object& o = sc.objects[cvo];
+                m_testMouseAt = o.transform().point(o.curve.points.back());
+                m_testMouse = true;
+                startCreate(CURVE_EP);
+                draftAdd(m_testMouseAt + float3(10, 0, 2));
+                draftAdd(m_testMouseAt + float3(7, 0, -3));
+                draftAdd(m_testMouseAt + float3(3, 0, 1));
+                snprintf(m_coordBuf, sizeof(m_coordBuf), "@4, 0");
+            }
+        }
     }
     r << (fails ? "FAILED: " : "ALL PASSED: ") << fails << " failure(s)\n";
     FILE* f = _wfopen(testReport.c_str(), L"w");

@@ -64,6 +64,15 @@ private:
     bool m_marquee = false;
     float2 m_marq0{0, 0};
     int m_testFrame = 0;
+    bool m_testMouse = false;          // --curve-test capture: mouse held on m_testMouseAt
+    float3 m_testMouseAt{0, 0, 0};
+    // Rhino-style precision: object snaps (osnap), ortho (Shift) and typed coordinates while drawing
+    enum Snap { SNAP_END = 0, SNAP_POINT, SNAP_MID, SNAP_CENTER, SNAP_NEAR, SNAP_COUNT };
+    bool m_osnap = true;
+    int m_snapMask = (1 << SNAP_COUNT) - 1;
+    struct SnapHit { bool on = false; float3 p{0, 0, 0}; int kind = 0; } m_snap;
+    char m_coordBuf[96] = {};
+    bool m_coordFocus = false, m_coordCaretEnd = false;
 
     // helpers
     float grid() const;
@@ -97,6 +106,12 @@ private:
     void drawManipulator(ImDrawList* dl) const;
     void drawDraft(ImDrawList* dl);
     void runTest();
+    bool findSnap(float mx, float my, SnapHit& out) const;
+    float3 createTarget(float mx, float my, bool& ok);   // creation: ground point, osnap, grid (X), ortho (Shift)
+    void draftAdd(const float3& p);
+    bool parseCoord(const char* text, float3& out) const;
+    void drawSnap(ImDrawList* dl) const;
+    void drawCoordField();
 };
 
 } // namespace app
