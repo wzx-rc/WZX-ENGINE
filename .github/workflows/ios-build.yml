@@ -2,14 +2,15 @@
 # Runs on a GitHub macOS runner and produces an unsigned .ipa artifact.
 # Signing happens on the PC with Sideloadly (free Apple ID) or, later, with an Apple Developer account for TestFlight.
 # Rendering: the Lit renderer (src/lit) on Diligent Engine, Vulkan translated to Metal by MoltenVK.
-# Test build: the game of the editor (Studio scene, graph game/main.graph.json, houses of assets/HOUSE, HUD).
+# The game: game/export, written by the editor (Build > iOS: game.json, scene.wzx, graph.json, files of the scene);
+# without it, the built-in Studio game (graph game/main.graph.json, houses of assets/HOUSE, HUD).
 name: iOS build
 
 on:
   workflow_dispatch:
   push:
-    branches: [claude/project-thread-bzoypd]
-    paths: [player/**, src/vp3d/**, src/lit/**, src/game/**, src/app/Content.*, game/**, assets/HOUSE/**, third_party/imgui/**, .github/workflows/ios-build.yml]
+    branches: [claude/project-thread-bzoypd, build-wzx]
+    paths: [player/**, src/vp3d/**, src/lit/**, src/game/**, src/app/Content.*, src/app/WzxRead.*, src/app/Json.h, game/**, assets/HOUSE/**, third_party/imgui/**, .github/workflows/ios-build.yml]
 
 env:
   MOLTENVK_VERSION: v1.4.1
@@ -59,6 +60,7 @@ jobs:
           test -n "$APP" || { echo "No .app built"; find build/ios -name "*.app"; exit 1; }
           # the game must be inside the app: graph, house model, shaders
           test -f "$APP/game/main.graph.json" && test -d "$APP/assets/HOUSE" && test -d "$APP/shaders" || { ls -R "$APP"; exit 1; }
+          if [ -f game/export/game.json ]; then test -f "$APP/game.json" && test -f "$APP/scene.wzx" || { ls -R "$APP"; exit 1; }; fi
           mkdir -p build/Payload
           cp -R "$APP" build/Payload/
           (cd build && zip -qr WZXPlayer-unsigned.ipa Payload)

@@ -1,20 +1,83 @@
 #include "Player.h"
 #include "app/Content.h"
+#include "app/WzxRead.h"
 #include "vp3d/EnvImage.h"
 
 #include "imgui.h"
 
+#include <cstdio>
 #include <filesystem>
 #include <fstream>
+#include <sstream>
+
+namespace fs = std::filesystem;
 
 namespace player {
+
+namespace {
+
+std::string readText(const fs::path& p) {
+    std::ifstream f(p, std::ios::binary);
+    if (!f) return std::string();
+    std::stringstream ss;
+    ss << f.rdbuf();
+    return ss.str();
+}
+
+} // namespace
 
 bool Player::init(Diligent::IRenderDevice* device, Diligent::IDeviceContext* context, Diligent::IEngineFactory* factory,
                   Diligent::TEXTURE_FORMAT outputFormat, const std::string& shaderDirs, const Options& options,
                   std::string* error) {
     m_settings = lit::Settings();
     std::string hdri = options.hdri;
-    if (options.scene == "cornell") {
+    std::string graphText;          // the graph of a scene file (empty: game/main.graph.json)
+    app::Json village;              // the village of a scene file
+    bool baked = options.bakedProbes;
+    std::string probeFile = (fs::path(options.dataDir) / "game" / "probes" / (options.scene + ".probes")).u8string();
+    const bool sceneFile = options.scene == "game" || (options.scene.size() > 4 && options.scene.substr(options.scene.size() - 4) == ".wzx");
+    if (sceneFile) {
+        // A build folder (game.json -> scene.wzx and graph.json, as the exported Windows game reads it) or a .wzx file.
+        // Paths in the scene are relative to the data folder.
+        fs::path data = fs::u8path(options.dataDir);
+        fs::path scenePath = fs::u8path(options.scene), graphPath;
+        if (options.scene == "game") {
+            app::Json cfg;
+            app::Json::parse(readText(data / "game.json"), cfg);
+            scenePath = fs::u8path(cfg["scene"].str("scene.wzx"));
+            graphPath = data / fs::u8path(cfg["graph"].str("graph.json"));
+        }
+        if (scenePath.is_relative()) scenePath = data / scenePath;
+        app::Json j;
+        if (!app::Json::parse(readText(scenePath), j) || j["format"].str() != "wzx-scene") {
+            if (error) *error = "Scene not found or not a .wzx scene: " + scenePath.u8string();
+            return false;
+        }
+        app::WzxRead rd;
+        app::readWzxScene(j, m_scene, [&](const std::string& p) {
+            fs::path f = fs::u8path(p);
+            return (f.is_relative() ? data / f : f).wstring();
+        }, scenePath.stem().u8string(), rd);
+        for (const std::string& w : rd.warnings) std::fprintf(stderr, "%s\n", w.c_str());
+        const app::Json& r = j["render"];   // the editor's raster settings that Lit has
+        m_settings.exposure = (float)r["exposure"].num(m_settings.exposure);
+        m_settings.vignette = (float)r["vignette"].num(m_settings.vignette);
+        m_settings.tonemapper = (int)r["tonemapper"].num(m_settings.tonemapper);
+        m_settings.lightScale = (float)r["lightScale"].num(m_settings.lightScale);
+        if (r["hdriSun"].type == app::Json::Bool) m_settings.envSun = r["hdriSun"].b;
+        if (r["bakedProbes"].type == app::Json::Bool) baked = baked && r["bakedProbes"].b;
+        const app::Json& h = j["environment"]["hdri"];
+        if (hdri.empty()) {
+            if (h.type != app::Json::String || h.s.empty()) hdri = "none";
+            else if (h.s == "sky") hdri = "sky";
+            else hdri = (fs::u8path(h.s).is_relative() ? data / fs::u8path(h.s) : fs::u8path(h.s)).u8string();
+        }
+        if (j["probes"].type == app::Json::String) probeFile = (data / fs::u8path(j["probes"].s)).u8string();
+        if (!graphPath.empty()) graphText = readText(graphPath);
+        if (graphText.empty() && j["graph"].type == app::Json::Object) graphText = app::jsonText(j["graph"]);
+        if (graphText.empty()) graphText = "{\"format\": \"wzx-graph\", \"version\": 1, \"nodes\": [], \"links\": []}";
+        village = j["village"];
+    } else if (options.scene == "cornell") {
         // Cornell Box with the editor settings for it (App::loadScene): exposure 1, vignette 0.10, ACES, no HDRI.
         app::buildCornellBox(m_scene);
         m_settings.exposure = 1.0f;
@@ -48,19 +111,18 @@ bool Player::init(Diligent::IRenderDevice* device, Diligent::IDeviceContext* con
         }
         if (!ok) return false;
         m_scene.env.hdri = img;
-        if (options.scene == "lookdev") m_scene.env.hdriRotation = app::lookDevHdriRotation(*img);
-    }
+        if (options.scene == "lookdev") m_scene.env.hdriRotation = app::lookDevHdriRotation(*img);    }
     m_settings.ddgi = options.ddgi;
     m_settings.ddgiView = options.ddgiView;
     m_settings.ddgiProbeBudget = options.ddgiProbes;
     m_settings.showProbes = options.showProbes;
-    m_settings.bakedProbes = options.bakedProbes;
+    m_settings.bakedProbes = baked;
     m_home = m_scene.camera;
     if (!m_renderer.init(device, context, factory, shaderDirs, outputFormat, error)) return false;
-    if (options.bakedProbes) {   // probes baked by the editor for this scene (after the renderer exists)
-        vp3d::lit::BakedProbes baked;
-        if (vp3d::lit::loadBakedProbes(std::filesystem::path(options.dataDir) / "game" / "probes" / (options.scene + ".probes"), baked))
-            m_renderer.setBakedProbes(baked);
+    if (baked) {   // probes baked by the editor for this scene (after the renderer exists)
+        vp3d::lit::BakedProbes probes;
+        if (vp3d::lit::loadBakedProbes(fs::u8path(probeFile), probes))
+            m_renderer.setBakedProbes(probes);
     }
 
     // Dear ImGui: the HUD of the game
@@ -88,9 +150,10 @@ bool Player::init(Diligent::IRenderDevice* device, Diligent::IDeviceContext* con
     if (!font) io.Fonts->AddFontDefaultVector();
     if (!m_gui.init(device, context, outputFormat, error)) return false;
 
-    if (options.scene == "studio" && options.game) {
+    if ((options.scene == "studio" || sceneFile) && options.game) {
         m_game = std::make_unique<Game>();
-        if (!m_game->init(&m_scene, options.dataDir, options.uiScale, options.touch, error)) return false;
+        if (!m_game->init(&m_scene, options.dataDir, options.uiScale, options.touch, error, graphText)) return false;
+        if (village.type == app::Json::Array) m_game->loadVillage(village);
     }
     return true;
 }

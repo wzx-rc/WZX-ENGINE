@@ -49,7 +49,7 @@ fs::path u8(const std::string& s) { return fs::u8path(s); }
 
 // --------------------------------------------------------------------------- setup
 
-bool Game::init(Scene* scene, const std::string& dataDir, float uiScale, bool touch, std::string* error) {
+bool Game::init(Scene* scene, const std::string& dataDir, float uiScale, bool touch, std::string* error, const std::string& graphText) {
     m_scene = scene;
     m_dataDir = dataDir;
     m_s = uiScale;
@@ -58,15 +58,19 @@ bool Game::init(Scene* scene, const std::string& dataDir, float uiScale, bool to
     const Camera& c = m_scene->camera;
     m_cam.reset(c.target, c.yaw, std::min(c.distance, m_cam.maxDistance));   // framed as the first view of the editor
 
-    std::ifstream f(u8(dataDir + "/game/main.graph.json"), std::ios::binary);
-    if (!f) {
-        if (error) *error = "Game graph not found: " + dataDir + "/game/main.graph.json";
-        return false;
+    std::string text = graphText;
+    if (text.empty()) {
+        std::ifstream f(u8(dataDir + "/game/main.graph.json"), std::ios::binary);
+        if (!f) {
+            if (error) *error = "Game graph not found: " + dataDir + "/game/main.graph.json";
+            return false;
+        }
+        std::stringstream ss;
+        ss << f.rdbuf();
+        text = ss.str();
     }
-    std::stringstream ss;
-    ss << f.rdbuf();
     std::string err;
-    if (!m_graph.fromJson(ss.str(), &err)) {
+    if (!m_graph.fromJson(text, &err)) {
         if (error) *error = "Game graph not loaded: " + err;
         return false;
     }
@@ -84,8 +88,10 @@ void Game::frame(float dt, float viewW, float viewH, const CameraControls& cc) {
     // the HUD of the previous frame tells whether the pointer is on it
     playInput();
     m_rt.tick(dt);
-    updateRtsCamera(dt, cc);
-    if (m_rtsCam) updateSun();
+    if (m_rtsCam) {   // as the editor (GameHost::update): the scene camera stays until the graph turns the RTS camera on
+        updateRtsCamera(dt, cc);
+        updateSun();
+    }
     updatePlacement(dt);
 
     m_buildHud = false;
@@ -516,6 +522,16 @@ void Game::updatePlacement(float dt) {
         toast("House removed");
     }
     m_build.simulate(dt, m_buildHover);
+    syncBuildings();
+}
+
+void Game::loadVillage(const app::Json& list) {
+    m_build.clear();
+    for (const app::Json& e : list.a) {
+        const std::string type = e["type"].str();
+        for (int k = 0; k < (int)m_build.types().size(); ++k)
+            if (m_build.types()[k].name == type) m_build.place(k, Cell{(int)e["cell"][0].num(0), (int)e["cell"][1].num(0)}, (int)e["rot"].num(0));
+    }
     syncBuildings();
 }
 

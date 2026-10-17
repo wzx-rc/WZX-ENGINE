@@ -7,6 +7,7 @@
 #include "Theme.h"
 #include "atelier/material_host.h"
 #include "atelier/material_model.h"
+#include <functional>
 #include <map>
 #include "vp3d/Renderer.h"
 #include <string>
@@ -227,12 +228,13 @@ private:
 
     std::map<uint32_t, HierXf> m_hierCache;  // world transforms of the last frame (children follow their parent)
 
-    // scene files: .wzx (SceneWzx.cpp), the old .v3d.json (SceneIO.cpp: written for the Build and the player, read as an import)
+    // scene files: .wzx (SceneWzx.cpp, reader shared with the player in WzxRead.cpp), the old .v3d.json (SceneIO.cpp, import)
     bool saveSceneFile(const std::wstring& path);   // by extension (.wzx, else .v3d.json); the document is unchanged
     bool loadSceneFile(const std::wstring& path);   // .wzx, or an old .v3d.json (import); becomes the document
     bool saveLegacySceneFile(const std::wstring& path);
     bool loadLegacySceneFile(const Json& j, const std::wstring& path);
-    std::string wzxSceneJson(bool withCamera) const;
+    // mapPath: optional rewrite of every file path written (the Build points them at its copies)
+    std::string wzxSceneJson(bool withCamera, const std::function<std::string(const std::string&)>& mapPath = {}) const;
     void loadWzxScene(const Json& j, const std::wstring& path);
     void importMeshFile(const std::wstring& path);   // OBJ as a new object, its path kept in the scene
     std::wstring projectRoot() const;

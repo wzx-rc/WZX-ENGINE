@@ -97,8 +97,9 @@ using namespace Diligent;
     NSString* res = [[NSBundle mainBundle] resourcePath];
     NSString* shaders = [res stringByAppendingPathComponent:@"shaders"];
     player::Options opt;
-    opt.scene = "studio";
     opt.dataDir = res.UTF8String;    // game/ and assets/ are copied into the app
+    // the game exported by the editor (game.json, scene.wzx...) when the app has one, else the built-in Studio
+    opt.scene = [[NSFileManager defaultManager] fileExistsAtPath:[res stringByAppendingPathComponent:@"game.json"]] ? "game" : "studio";
     opt.uiScale = (float)self.view.contentScaleFactor;
     opt.touch = true;
     std::string err;

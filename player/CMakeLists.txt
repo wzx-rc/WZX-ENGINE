@@ -38,6 +38,7 @@ add_library(wzx_engine STATIC
     ${WZX_ROOT}/src/vp3d/AssetImport.cpp
     ${WZX_ROOT}/src/vp3d/LitPrep.cpp
     ${WZX_ROOT}/src/app/Content.cpp
+    ${WZX_ROOT}/src/app/WzxRead.cpp
     ${WZX_ROOT}/src/lit/LitRenderer.cpp
     ${WZX_ROOT}/src/game/Graph.cpp
     ${WZX_ROOT}/src/game/NodeLib.cpp
@@ -69,6 +70,9 @@ endif()
 set(WZX_GAME_FILES ${WZX_ROOT}/game/main.graph.json)
 file(GLOB WZX_HOUSE_FILES ${WZX_ROOT}/assets/HOUSE/*)
 file(GLOB WZX_PROBE_FILES ${WZX_ROOT}/game/probes/*.probes)   # probes baked by the editor (Lit reads them as they are)
+# The game exported by the editor (Build, platform iOS): game.json, scene.wzx, graph.json and the files of the scene.
+# Copied as it is beside the executable; the player then plays that scene instead of the built-in Studio.
+set(WZX_GAME_DIR ${WZX_ROOT}/game/export CACHE PATH "Game exported by the editor (Build > iOS)")
 set(WZX_PLAYER_SOURCES src/Player.cpp src/Game.cpp src/ImGuiDiligent.cpp)
 function(wzx_copy_data target)
     add_custom_command(TARGET ${target} POST_BUILD
@@ -79,6 +83,10 @@ function(wzx_copy_data target)
         add_custom_command(TARGET ${target} POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:${target}>/game/probes
             COMMAND ${CMAKE_COMMAND} -E copy_if_different ${WZX_PROBE_FILES} $<TARGET_FILE_DIR:${target}>/game/probes)
+    endif()
+    if(EXISTS ${WZX_GAME_DIR}/game.json)
+        add_custom_command(TARGET ${target} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_directory ${WZX_GAME_DIR} $<TARGET_FILE_DIR:${target}>)
     endif()
 endfunction()
 
