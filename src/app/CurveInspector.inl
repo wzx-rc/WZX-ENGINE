@@ -72,6 +72,18 @@ void CurveEditor::inspector(float x, float& y, float w) {
     }
     if (Button("crvRev", {x + bw + 6 * s, y, bw, 27 * s}, "Reverse", Icon::Refresh)) { A.pushUndo(); reverseCurve(c); m_sel.clear(); A.markDirty(); }
     y += 35 * s;
+    if (m_mode == MODE_POINTS) {   // fillet (3ds Max Editable Spline): rounds the corners of the points
+        Label(x, y, "FILLET");
+        y += 24 * s;
+        if (Button("crvFilletTool", {x, y, w, 27 * s}, m_filletTool ? "Fillet Tool: drag a point up (Esc ends)" : "Fillet Tool (drag a point up)", Icon::Curve, m_filletTool))
+            m_filletTool = !m_filletTool;
+        y += 37 * s;
+        bool fa = false;
+        SliderRow("##crvFilletR", "Radius", x, y, w, &m_filletRadius, 0.01f, 20.0f, "%.2f", fa);
+        if (Button("crvFilletApply", {x, y, w, 27 * s}, "Fillet Selected Points", Icon::Curve, false, false, !selectedAnchors().empty()))
+            applyFillet(m_filletRadius);
+        y += 39 * s;
+    }
     {
         static float rebuildN = 8;
         SliderRow("##crvRebuildN", "Rebuild Points", x, y, w, &rebuildN, 2, 64, "%.0f", act);

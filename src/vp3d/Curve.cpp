@@ -332,4 +332,89 @@ CurveData makeCurveShape(int shape) {
     return c;
 }
 
+
+CurveData filletCurve(const CurveData& in, const std::vector<int>& pts, float radius) {
+    CurveData c = in;
+    const int n = c.count();
+    if (radius <= 0 || pts.empty() || n < 3) return c;
+    if (c.type == CURVE_LINEAR) {   // straight segments: Bezier handles on the chords
+        c.type = CURVE_BEZIER;
+        c.hin.assign(n, float3(0));
+        c.hout.assign(n, float3(0));
+        c.broken.assign(n, 1);
+        for (int i = 0; i < n; ++i) {
+            const float3 p = c.points[i];
+            const bool hasPrev = c.closed || i > 0, hasNext = c.closed || i < n - 1;
+            c.hin[i] = hasPrev ? p + (c.points[(i - 1 + n) % n] - p) * (1.0f / 3.0f) : p;
+            c.hout[i] = hasNext ? p + (c.points[(i + 1) % n] - p) * (1.0f / 3.0f) : p;
+        }
+    } else if (c.type != CURVE_BEZIER) convertCurve(c, CURVE_BEZIER);
+    bezierFixArrays(c);
+    std::vector<char> sel(n, 0);
+    for (int i : pts) if (i >= 0 && i < n) sel[i] = 1;
+    // segment i -> i+1 straight: both handles on the chord
+    auto straight = [&](int i) {
+        int j = (i + 1) % n;
+        float3 d = c.points[j] - c.points[i];
+        float L = length(d);
+        if (L < 1e-6f) return true;
+        d = d / L;
+        auto on = [&](const float3& h, const float3& base) { float3 v = h - base; float l = length(v); return l < 1e-6f || length(cross(v / l, d)) < 1e-3f; };
+        return on(c.hout[i], c.points[i]) && on(c.hin[j], c.points[j]);
+    };
+    struct Fil { bool on = false; float3 p1, p2, in1, out1, in2, out2; };
+    std::vector<Fil> f(n);
+    for (int i = 0; i < n; ++i) {
+        if (!sel[i] || (!c.closed && (i == 0 || i == n - 1))) continue;
+        const int ip = (i - 1 + n) % n, inx = (i + 1) % n;
+        const float3 p = c.points[i];
+        float3 a = c.hin[i] - p, b = c.hout[i] - p;
+        if (length(a) < 1e-6f) a = c.points[ip] - p;
+        if (length(b) < 1e-6f) b = c.points[inx] - p;
+        a = normalize(a);
+        b = normalize(b);
+        const float th = std::acos(clampf(dot(a, b), -1.0f, 1.0f));   // angle between the two segments
+        if (th < 1e-3f || th > kPi - 1e-3f) continue;               // folded back or straight: nothing to round
+        const float dp = length(c.points[ip] - p), dn = length(c.points[inx] - p);
+        const bool pEnd = sel[ip] && (c.closed || ip > 0), nEnd = sel[inx] && (c.closed || inx < n - 1);
+        const float lim = std::min(dp * (pEnd ? 0.5f : 0.98f), dn * (nEnd ? 0.5f : 0.98f));
+        const float t = std::min(radius / std::tan(th * 0.5f), lim);   // distance from the corner to the arc ends
+        const float r = t * std::tan(th * 0.5f);
+        const float k = 4.0f / 3.0f * std::tan((kPi - th) * 0.25f) * r;  // Bezier handle of a circular arc
+        Fil& F = f[i];
+        F.on = true;
+        F.p1 = p + a * t;
+        F.p2 = p + b * t;
+        F.in1 = F.p1 + a * ((dp - t) / 3.0f);
+        F.out1 = F.p1 - a * k;
+        F.in2 = F.p2 - b * k;
+        F.out2 = F.p2 + b * ((dn - t) / 3.0f);
+    }
+    CurveData out = c;
+    out.points.clear();
+    out.hin.clear();
+    out.hout.clear();
+    out.broken.clear();
+    std::vector<char> outStraight;   // the segment leaving this new point lies on an original straight segment
+    for (int i = 0; i < n; ++i) {
+        const bool st = (c.closed || i < n - 1) && straight(i);
+        if (f[i].on) {
+            out.points.push_back(f[i].p1); out.hin.push_back(f[i].in1); out.hout.push_back(f[i].out1); out.broken.push_back(0); outStraight.push_back(0);
+            out.points.push_back(f[i].p2); out.hin.push_back(f[i].in2); out.hout.push_back(f[i].out2); out.broken.push_back(0); outStraight.push_back(st);
+        } else {
+            out.points.push_back(c.points[i]); out.hin.push_back(c.hin[i]); out.hout.push_back(c.hout[i]); out.broken.push_back(c.broken[i]); outStraight.push_back(st);
+        }
+    }
+    const int m = out.count();
+    for (int k = 0; k < m; ++k) {
+        if (!outStraight[k] || (!out.closed && k == m - 1)) continue;
+        const int j = (k + 1) % m;
+        out.hout[k] = out.points[k] + (out.points[j] - out.points[k]) * (1.0f / 3.0f);
+        out.hin[j] = out.points[j] + (out.points[k] - out.points[j]) * (1.0f / 3.0f);
+    }
+    out.type = CURVE_BEZIER;
+    out.shape.type = CSHAPE_NONE;
+    return out;
+}
+
 } // namespace vp3d

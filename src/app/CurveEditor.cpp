@@ -375,8 +375,118 @@ void CurveEditor::exitMode() {
     m_mode = MODE_NONE;
     m_obj = -1;
     m_sel.clear();
-    m_dragging = m_marquee = m_pendingFree = m_pulling = false;
+    m_dragging = m_marquee = m_pendingFree = m_pulling = m_filleting = m_filletTool = false;
+    m_drawStep = 0;
     m_hoverAxis = -1;
+}
+
+// --------------------------------------------------------------------------- primitives drawn with the mouse (3ds Max)
+
+namespace {
+// second size after the drag: star and spiral inner radius, helix height, arc sweep
+bool needsSecondSize(int shape) { return shape == CSHAPE_STAR || shape == CSHAPE_SPIRAL || shape == CSHAPE_HELIX || shape == CSHAPE_ARC; }
+}
+
+float CurveEditor::worldPerPixel(const float3& p) const {
+    float3 r, u, f;
+    a.m_scene.camera.basis(r, u, f);
+    float z = std::max(dot(p - a.m_scene.camera.eye(), f), 0.01f);
+    return 2.0f * z * std::tan(a.m_scene.camera.fovY * 0.5f) / std::max(a.m_rcView.h, 1.0f);
+}
+
+void CurveEditor::startDraw(int shape) {
+    exitMode();
+    a.select(-1);
+    m_mode = MODE_DRAW;
+    m_drawShape = shape;
+    m_drawStep = 0;
+    a.status(std::wstring(L"Draw a ") + fromUtf8(curveShapeName(shape)) + L": press and drag in the viewport (a simple click: default size)");
+}
+
+// The primitive as drawn so far: its points (local), its position and its rotation around Y.
+CurveData CurveEditor::drawShape(float3& pos, float4& rot) const {
+    CurveData c = makeCurveShape(m_drawShape);   // default sections, turns...
+    CurveShapeParams& p = c.shape;
+    float3 d = m_drawCur - m_drawStart;
+    d.y = 0;
+    const float L = length(d);
+    pos = m_drawStart;
+    rot = qIdentity();
+    if (L < 1e-4f) return c;   // a click: default size
+    const float dirAngle = std::atan2(-d.z, d.x);   // rotation around Y that turns +X towards the drag
+    switch (m_drawShape) {
+    case CSHAPE_LINE:
+        pos = (m_drawStart + m_drawCur) * 0.5f;
+        p.width = L;
+        rot = qAxisAngle(float3(0, 1, 0), dirAngle);
+        break;
+    case CSHAPE_SQUARE: {
+        float w = std::fabs(d.x), dd = std::fabs(d.z);
+        if (ImGui::GetIO().KeyShift) w = dd = std::max(w, dd);   // Shift: a square
+        pos = m_drawStart + float3(d.x < 0 ? -w : w, 0, d.z < 0 ? -dd : dd) * 0.5f;
+        p.width = std::max(w, 0.01f);
+        p.depth = std::max(dd, 0.01f);
+        break;
+    }
+    case CSHAPE_ARC:
+        p.radius = L;
+        p.sweep = m_drawStep == 2 ? m_draw2 : 180.0f;
+        rot = qAxisAngle(float3(0, 1, 0), dirAngle);
+        break;
+    case CSHAPE_HELIX:
+        p.radius = L;
+        p.height = m_drawStep == 2 ? m_draw2 : 0.0f;
+        break;
+    case CSHAPE_SPIRAL:
+        p.radius = L;
+        p.radius2 = m_drawStep == 2 ? std::min(m_draw2, L) : 0.0f;
+        break;
+    case CSHAPE_STAR:
+        p.radius = L;
+        p.radius2 = m_drawStep == 2 ? std::max(m_draw2, 0.01f) : L * 0.5f;
+        break;
+    default:   // circle
+        p.radius = L;
+        break;
+    }
+    buildCurveShape(c);
+    return c;
+}
+
+void CurveEditor::finishDraw() {
+    float3 pos;
+    float4 rot;
+    CurveData c = drawShape(pos, rot);
+    m_mode = MODE_NONE;
+    m_drawStep = 0;
+    int idx = addCurveObject(c, pos, curveShapeName(m_drawShape));
+    Object& o = a.m_scene.objects[idx];
+    o.rot = rot;
+    o.useRot = true;
+    if (a.m_tool == TOOL_SELECT) a.m_tool = TOOL_MOVE;
+    a.status(std::wstring(L"Curve primitive drawn: ") + fromUtf8(curveShapeName(m_drawShape)), 1);
+}
+
+// --------------------------------------------------------------------------- fillet
+
+std::vector<int> CurveEditor::selectedAnchors() const {
+    std::vector<int> v;
+    for (const Item& it : m_sel)
+        if (it.part == PART_POINT && std::find(v.begin(), v.end(), it.index) == v.end()) v.push_back(it.index);
+    return v;
+}
+
+void CurveEditor::applyFillet(float radius) {
+    if (m_obj < 0) return;
+    std::vector<int> idx = selectedAnchors();
+    if (idx.empty()) { a.status(L"Select the points to fillet", 2); return; }
+    CurveData& c = a.m_scene.objects[m_obj].curve;
+    a.pushUndo();
+    const int before = c.count();
+    c = filletCurve(c, idx, radius);
+    m_sel.clear();
+    a.markDirty();
+    a.status(std::to_wstring(c.count() - before) + L" point(s) added by the fillet");
 }
 
 // --------------------------------------------------------------------------- keys
@@ -393,7 +503,9 @@ bool CurveEditor::keys() {
         else if (m_mode == MODE_NONE) enterPoints();
         return true;
     }
-    if ((m_mode == MODE_CREATE || m_mode == MODE_POINTS) && pressed(ImGuiKey_O)) {
+    if (m_mode == MODE_DRAW && pressed(ImGuiKey_Escape)) { exitMode(); a.status(L"Drawing cancelled"); return true; }
+    if (m_mode == MODE_DRAW && pressed(ImGuiKey_Delete)) return true;
+    if (m_mode != MODE_NONE && pressed(ImGuiKey_O)) {
         m_osnap = !m_osnap;
         a.status(m_osnap ? L"Osnap on" : L"Osnap off");
         return true;
@@ -430,7 +542,8 @@ bool CurveEditor::keys() {
     }
     if (m_mode == MODE_POINTS) {
         if (pressed(ImGuiKey_Escape)) {
-            if (!m_sel.empty()) m_sel.clear();
+            if (m_filletTool) { m_filletTool = false; a.status(L"Fillet tool off"); }
+            else if (!m_sel.empty()) m_sel.clear();
             else { exitMode(); a.status(L"Object mode"); }
             return true;
         }
@@ -489,7 +602,64 @@ bool CurveEditor::input(bool inView, bool placing) {
         return true;
     }
 
+    if (m_mode == MODE_DRAW) {   // primitive drawn with the mouse (3ds Max): press, drag, (move, click)
+        bool ok = false;
+        float3 p = createTarget(mx, my, ok);   // osnap, grid (X)
+        if (m_drawStep == 0) {
+            if (clicked && ok) { m_drawStart = m_drawCur = p; m_drawStep = 1; m_pressAt = float2(mx, my); }
+            return true;
+        }
+        if (m_drawStep == 1) {
+            if (ok) { m_drawCur = p; m_drawCur.y = m_drawStart.y; }
+            if (!io.MouseDown[0]) {
+                const bool dragged = std::hypot(mx - m_pressAt.x, my - m_pressAt.y) > 4.0f * a.m_dpi;
+                if (!dragged) { m_drawCur = m_drawStart; finishDraw(); }
+                else if (needsSecondSize(m_drawShape)) {
+                    m_drawStep = 2;
+                    m_drawPx0 = my;
+                    float3 d = m_drawCur - m_drawStart;
+                    d.y = 0;
+                    m_draw2 = m_drawShape == CSHAPE_STAR ? length(d) * 0.5f : m_drawShape == CSHAPE_ARC ? 180.0f : 0.0f;
+                } else finishDraw();
+            }
+            return true;
+        }
+        // step 2: the second size follows the mouse, a click ends
+        float3 g;
+        if (m_drawShape == CSHAPE_HELIX) m_draw2 = std::max(0.0f, m_drawPx0 - my) * worldPerPixel(m_drawStart);
+        else if (groundPoint(mx, my, m_drawStart.y, g)) {
+            if (snapOn) g = snap(g);
+            float3 v = g - m_drawStart;
+            v.y = 0;
+            if (m_drawShape == CSHAPE_ARC) {
+                float3 d = m_drawCur - m_drawStart;
+                float4 r = qAxisAngle(float3(0, 1, 0), std::atan2(-d.z, d.x));
+                float3 l = qRot(qConj(r), v);
+                float ang = degrees(std::atan2(l.z, l.x));
+                if (ang < 0) ang += 360.0f;
+                m_draw2 = std::max(ang, 1.0f);
+            } else m_draw2 = length(v);
+        }
+        if (clicked) finishDraw();
+        return true;
+    }
+
     if (m_mode == MODE_POINTS) {
+        if (m_filleting) {   // fillet drag: the radius grows when the mouse goes up
+            CurveData& cc = a.m_scene.objects[m_obj].curve;
+            const float r = std::max(0.0f, m_filletPx0 - my) * worldPerPixel(m_filletAt);
+            if (!io.MouseDown[0]) {
+                m_filleting = false;
+                if (m_filletR <= 0 && !a.m_undo.empty()) a.m_undo.pop_back();   // no fillet: nothing to undo
+                else a.status(L"Fillet applied");
+                m_sel.clear();
+            } else if (r != m_filletR) {
+                m_filletR = r;
+                cc = filletCurve(m_filletBase, m_filletIdx, r);
+                a.markDirty();
+            }
+            return true;
+        }
         if (m_dragging) {
             if (!io.MouseDown[0]) {
                 m_dragging = false;
@@ -543,6 +713,20 @@ bool CurveEditor::input(bool inView, bool placing) {
         if (clicked) {
             CurveData& cc = a.m_scene.objects[m_obj].curve;
             const bool bez = cc.type == CURVE_BEZIER;
+            if (m_filletTool) {   // fillet tool: press on a point (the selected points are filleted with it) and drag up
+                Item it;
+                if (pickPoint(mx, my, it) && it.part == PART_POINT) {
+                    m_filletIdx = selectedAnchors();
+                    if (!isSelected(it)) { m_filletIdx = {it.index}; m_sel = {it}; }
+                    m_filletBase = cc;
+                    m_filletAt = toWorld(a.m_scene.objects[m_obj], cc.points[it.index]);
+                    m_filletPx0 = my;
+                    m_filletR = 0;
+                    m_filleting = true;
+                    a.pushUndo();
+                }
+                return true;
+            }
             Item it;
             const bool onPoint = pickPoint(mx, my, it);
             // Cavalry-style tangents (Bezier): double-click a point = corner <-> smooth; Ctrl+drag a tangent end =
@@ -1018,7 +1202,7 @@ void CurveEditor::menu(float menuScale) {
     if (ImGui::MenuItem("Linear Curve Tool")) startCreate(CURVE_LINEAR);
     ImGui::Separator();
     for (int sh = CSHAPE_LINE; sh < CSHAPE_COUNT; ++sh)
-        if (ImGui::MenuItem(curveShapeName(sh))) addPrimitive(sh);
+        if (ImGui::MenuItem(curveShapeName(sh))) startDraw(sh);   // drawn with the mouse (3ds Max)
     ImGui::Separator();
     if (ImGui::BeginMenu("Osnap")) {   // Rhino-style object snaps of the curve tools
         ImGui::SetWindowFontScale(menuScale);
@@ -1038,7 +1222,7 @@ void CurveEditor::menu(float menuScale) {
 
 // --------------------------------------------------------------------------- drawing
 // Visual language of the WZX curves: pale cyan curve, silver hollow handles on dashed tangents, control points
-// larger than the tangent ends, luminous active node; inactive curves stay discreet.
+// larger than the tangent ends, filled active node; inactive curves stay discreet (no glow).
 
 namespace {
 
@@ -1053,11 +1237,6 @@ void dashedLine(ImDrawList* dl, ImVec2 a, ImVec2 b, ImU32 col, float width, floa
     }
 }
 
-// soft halo: a few wide translucent strokes under a line / around a point
-void glowPolyline(ImDrawList* dl, const std::vector<ImVec2>& pts, ImU32 col, float width) {
-    for (int k = 3; k >= 1; --k)
-        dl->AddPolyline(pts.data(), (int)pts.size(), (col & 0x00FFFFFFu) | ((ImU32)(14 * (4 - k)) << 24), 0, width + 3.0f * k * width * 0.5f);
-}
 
 void hollowNode(ImDrawList* dl, ImVec2 p, float r, ImU32 ring, float d) {
     dl->AddCircleFilled(p, r, kNodeFill, 20);
@@ -1065,7 +1244,6 @@ void hollowNode(ImDrawList* dl, ImVec2 p, float r, ImU32 ring, float d) {
 }
 
 void activeNode(ImDrawList* dl, ImVec2 p, float r, float d) {
-    for (int k = 3; k >= 1; --k) dl->AddCircleFilled(p, r + 3.0f * k * d, (kCurveOn & 0x00FFFFFFu) | ((ImU32)(22 * (4 - k)) << 24), 28);
     dl->AddCircleFilled(p, r, kCurveOn, 28);
     dl->AddCircle(p, r, kNodeRing, 28, 2.0f * d);
 }
@@ -1077,14 +1255,13 @@ bool CurveEditor::handlesShown(int i) const {
     return isSelected({i, PART_POINT}) || isSelected({i, PART_IN}) || isSelected({i, PART_OUT});
 }
 
-void CurveEditor::drawCurve(ImDrawList* dl, const Object& o, ImU32 col, float width, bool glow) const {
+void CurveEditor::drawCurve(ImDrawList* dl, const Object& o, ImU32 col, float width) const {
     std::vector<float3> s;
     sampleCurve(o.curve, s);
     Affine xf = o.transform();
     std::vector<ImVec2> run;
     auto flush = [&]() {
         if (run.size() >= 2) {
-            if (glow) glowPolyline(dl, run, col, width);
             dl->AddPolyline(run.data(), (int)run.size(), col, 0, width);
         }
         run.clear();
@@ -1199,7 +1376,6 @@ void CurveEditor::drawDraft(ImDrawList* dl) {
             if (a.project(p, q)) run.push_back(iv(q));
         }
         if (run.size() >= 2) {
-            glowPolyline(dl, run, kCurveOn, 1.6f * d);
             dl->AddPolyline(run.data(), (int)run.size(), kCurveOn, 0, 1.6f * d);
         }
     }
@@ -1233,10 +1409,10 @@ void CurveEditor::draw(ImDrawList* dl) {
         if (!o.curve.valid() || !o.visible || o.ghost) continue;
         const bool primary = i == a.m_selected;
         const bool multi = std::find(a.m_multi.begin(), a.m_multi.end(), i) != a.m_multi.end();
-        // active curve: pale cyan with a soft glow; inactive: the same hue, thinner and translucent
-        if (primary) drawCurve(dl, o, kCurveOn, 1.6f * d, true);
-        else if (multi) drawCurve(dl, o, kCurveMulti, 1.3f * d, false);
-        else drawCurve(dl, o, kCurveOff, 1.0f * d, false);
+        // active curve: pale cyan, no glow; inactive: the same hue, thinner and translucent
+        if (primary) drawCurve(dl, o, kCurveOn, 1.6f * d);
+        else if (multi) drawCurve(dl, o, kCurveMulti, 1.3f * d);
+        else drawCurve(dl, o, kCurveOff, 1.0f * d);
     }
     std::string hint;
     if (m_mode == MODE_POINTS && m_obj >= 0) {
@@ -1251,6 +1427,34 @@ void CurveEditor::draw(ImDrawList* dl) {
             dashedLine(dl, p1, ImVec2(p0.x, p1.y), kCurveOn, 1.0f * d, 4 * d, 3 * d); dashedLine(dl, ImVec2(p0.x, p1.y), p0, kCurveOn, 1.0f * d, 4 * d, 3 * d);
         }
         hint = "Edit Points  ·  " + std::to_string(m_sel.size()) + " selected  ·  Osnap " + std::string(m_osnap ? "on" : "off") + " (O)  ·  X: grid  ·  Ctrl+click curve: insert  ·  Ctrl+drag tangent: break  ·  Double-click: corner / smooth  ·  F8: exit";
+        if (m_filletTool) {
+            char b[96];
+            snprintf(b, sizeof(b), "Fillet  ·  drag a point upwards  ·  radius %.2f  ·  Esc: end the tool", m_filleting ? m_filletR : 0.0f);
+            hint = b;
+        }
+    } else if (m_mode == MODE_DRAW) {
+        drawSnap(dl);
+        if (m_drawStep > 0) {
+            float3 pos;
+            float4 rot;
+            Object tmp;
+            tmp.curve = drawShape(pos, rot);
+            tmp.position = pos;
+            tmp.rot = rot;
+            tmp.useRot = true;
+            drawCurve(dl, tmp, kCurveOn, 1.6f * d);
+            float2 s0, s1;   // the size being dragged: dashed from the press point
+            if (a.project(m_drawStart, s0) && a.project(m_drawCur, s1)) {
+                dashedLine(dl, iv(s0), iv(s1), kHandle, 1.2f * d, 5 * d, 4 * d);
+                dl->AddCircleFilled(iv(s0), 3.0f * d, kCurveOn, 12);
+            }
+        }
+        const char* name = curveShapeName(m_drawShape);
+        static const char* second[] = {"", "", "", "", "move to set the sweep, click", "move up to set the height, click", "move to set the inner radius, click", "move to set the inner radius, click"};
+        hint = std::string(name) + "  ·  " + (m_drawStep == 0 ? std::string("press and drag (click: default size)")
+                                             : m_drawStep == 1 ? std::string(m_drawShape == CSHAPE_SQUARE ? "drag the corner (Shift: square)" : "drag the size")
+                                                               : std::string(second[std::clamp(m_drawShape, 0, 7)])) +
+               "  ·  X: grid  ·  Osnap (O)  ·  Esc: cancel";
     } else if (m_mode == MODE_CREATE) {
         drawDraft(dl);
         drawSnap(dl);
@@ -1408,6 +1612,42 @@ void CurveEditor::runTest() {
         check(okRel && okPolar && okAbs && okBad, "Typed coordinates: @dx, dz  ·  dist<angle  ·  x, y, z  ·  error refused");
         check(sc.objects[a.m_selected].curve.count() == 3, "Curve drawn from typed coordinates (3 points)");
     }
+    // primitives drawn with the mouse (3ds Max) and fillet
+    {
+        auto drawn = [&](int shape, const float3& from, const float3& to, float second) -> Object& {
+            startDraw(shape);
+            m_drawStart = from;
+            m_drawCur = to;
+            m_drawStep = second >= 0 ? 2 : 1;
+            m_draw2 = second;
+            finishDraw();
+            return lastObj();
+        };
+        Object& ci = drawn(CSHAPE_CIRCLE, base + float3(20, 0, 0), base + float3(23, 0, 0), -1);
+        check(std::fabs(ci.curve.shape.radius - 3.0f) < 1e-4f && length(ci.position - (base + float3(20, 0, 0))) < 1e-5f, "Drawn circle: centre at the press, radius = drag (3)");
+        Object& rc = drawn(CSHAPE_SQUARE, base + float3(20, 0, 6), base + float3(24, 0, 8), -1);
+        check(std::fabs(rc.curve.shape.width - 4) < 1e-4f && std::fabs(rc.curve.shape.depth - 2) < 1e-4f && length(rc.position - (base + float3(22, 0, 7))) < 1e-4f, "Drawn rectangle: corner to corner (4 x 2)");
+        Object& st = drawn(CSHAPE_STAR, base + float3(30, 0, 0), base + float3(34, 0, 0), 1.5f);
+        check(std::fabs(st.curve.shape.radius - 4) < 1e-4f && std::fabs(st.curve.shape.radius2 - 1.5f) < 1e-4f, "Drawn star: outer radius by the drag, inner radius by the second move");
+        Object& ln = drawn(CSHAPE_LINE, base + float3(20, 0, 12), base + float3(20, 0, 17), -1);
+        float3 e0 = ln.transform().point(ln.curve.points[0]), e1 = ln.transform().point(ln.curve.points[1]);
+        check(std::fabs(length(e1 - e0) - 5) < 1e-4f && std::min(length(e0 - (base + float3(20, 0, 12))), length(e1 - (base + float3(20, 0, 12)))) < 1e-4f, "Drawn line: from the press to the release");
+        CurveData sq = makeCurveShape(CSHAPE_SQUARE);   // 4 x 4
+        CurveData f1 = filletCurve(sq, {0, 1, 2, 3}, 1.0f);
+        const float want = 16.0f - 8.0f + 2 * kPi;
+        char b[128];
+        snprintf(b, sizeof(b), "Fillet r=1 on the 4 corners of a 4x4 square: 8 points, length %.3f (expected %.3f)", curveLength(f1), want);
+        check(f1.count() == 8 && f1.type == CURVE_BEZIER && std::fabs(curveLength(f1) - want) < 0.005f * want, b);
+        CurveData f2 = filletCurve(sq, {0, 1, 2, 3}, 50.0f);
+        snprintf(b, sizeof(b), "Fillet radius limited by the segments: length %.3f (circle of radius 2: %.3f)", curveLength(f2), 4 * kPi);
+        check(std::fabs(curveLength(f2) - 4 * kPi) < 0.01f * 4 * kPi, b);
+        CurveData f3 = filletCurve(sq, {1}, 1.0f);
+        std::vector<float3> s3;
+        sampleCurve(f3, s3);
+        bool straightKept = true;   // the untouched corners stay sharp, the segments straight
+        for (const float3& q : s3) straightKept &= std::fabs(std::fabs(q.x) - 2) < 1e-3f || std::fabs(std::fabs(q.z) - 2) < 1e-3f || (q.x > 0.99f && q.z < -0.99f);
+        check(f3.count() == 5 && straightKept, "Fillet of one corner: the rest of the square is unchanged");
+    }
     // point editing
     {
         a.select(cv);
@@ -1559,6 +1799,27 @@ void CurveEditor::runTest() {
                 draftAdd(m_testMouseAt + float3(7, 0, -3));
                 draftAdd(m_testMouseAt + float3(3, 0, 1));
                 snprintf(m_coordBuf, sizeof(m_coordBuf), "@4, 0");
+            }
+        }
+    }
+    // capture of the fillet (WZX_CURVE_VIEW = fillet): the linear rectangle with two filleted corners, in point mode
+    {
+        const char* view = getenv("WZX_CURVE_VIEW");
+        if (view && std::string(view) == "fillet") {
+            int li = -1;
+            for (int i = 0; i < (int)sc.objects.size(); ++i) if (sc.objects[i].curve.type == CURVE_LINEAR && sc.objects[i].curve.closed && sc.objects[i].curve.shape.type == CSHAPE_NONE) { li = i; break; }
+            if (li >= 0) {
+                exitMode();
+                a.select(li);
+                a.frameSelection();
+                sc.camera.pitch = radians(70.0f);
+                sc.camera.yaw = radians(5.0f);
+                a.cameraChanged();
+                enterPoints();
+                m_sel = {{1, PART_POINT}, {2, PART_POINT}};
+                applyFillet(1.5f);
+                m_sel = {{2, PART_POINT}};   // a point of the new arc
+                m_filletTool = true;
             }
         }
     }

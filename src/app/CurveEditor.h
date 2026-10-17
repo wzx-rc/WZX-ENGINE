@@ -28,6 +28,7 @@ public:
     // tools
     void startCreate(int type);
     void addPrimitive(int shape);
+    void startDraw(int shape);   // Create > Curve primitives: drawn in the viewport
     void enterPoints();
     void exitMode();
     bool editingPoints() const { return m_mode == MODE_POINTS; }
@@ -36,7 +37,7 @@ public:
     std::wstring testReport;                 // --curve-test: report file
 
 private:
-    enum Mode { MODE_NONE, MODE_CREATE, MODE_POINTS };
+    enum Mode { MODE_NONE, MODE_CREATE, MODE_POINTS, MODE_DRAW };
     enum Part { PART_POINT = 0, PART_IN = 1, PART_OUT = 2 };
     struct Item { int index; int part; };
     struct Start { Item item; float3 local; };
@@ -64,6 +65,16 @@ private:
     bool m_marquee = false;
     float2 m_marq0{0, 0};
     int m_testFrame = 0;
+    // primitives drawn with the mouse (3ds Max style): press, drag the first size, then move for the second one
+    int m_drawShape = 0, m_drawStep = 0;   // step 0 waits for the press, 1 drags, 2 sets the second size (click ends)
+    float3 m_drawStart{0, 0, 0}, m_drawCur{0, 0, 0};
+    float m_draw2 = 0, m_drawPx0 = 0;
+    // fillet (3ds Max): drag a point upwards, or a radius applied to the selected points
+    bool m_filletTool = false, m_filleting = false;
+    CurveData m_filletBase;
+    std::vector<int> m_filletIdx;
+    float m_filletPx0 = 0, m_filletR = 0, m_filletRadius = 0.5f;
+    float3 m_filletAt{0, 0, 0};
     bool m_testMouse = false;          // --curve-test capture: mouse held on m_testMouseAt
     float3 m_testMouseAt{0, 0, 0};
     // Rhino-style precision: object snaps (osnap), ortho (Shift) and typed coordinates while drawing
@@ -100,7 +111,7 @@ private:
     void finishCreate();
     void cancelCreate();
     int addCurveObject(const CurveData& local, const float3& pos, const std::string& name);
-    void drawCurve(ImDrawList* dl, const Object& o, ImU32 col, float width, bool glow) const;
+    void drawCurve(ImDrawList* dl, const Object& o, ImU32 col, float width) const;
     bool handlesShown(int i) const;   // Bezier: tangents of the selected anchors only
     void drawPoints(ImDrawList* dl, const Object& o) const;
     void drawManipulator(ImDrawList* dl) const;
@@ -112,6 +123,11 @@ private:
     bool parseCoord(const char* text, float3& out) const;
     void drawSnap(ImDrawList* dl) const;
     void drawCoordField();
+    CurveData drawShape(float3& pos, float4& rot) const;
+    void finishDraw();
+    float worldPerPixel(const float3& p) const;
+    std::vector<int> selectedAnchors() const;
+    void applyFillet(float radius);
 };
 
 } // namespace app

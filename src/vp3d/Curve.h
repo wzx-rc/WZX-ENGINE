@@ -63,6 +63,11 @@ void rebuildCurve(CurveData& c, int n);
 void insertCurvePoint(CurveData& c, int after, const float3& p);
 void eraseCurvePoint(CurveData& c, int i);
 
+// Fillet (3ds Max Editable Spline): each listed point becomes a circular arc of the given radius tangent to its two
+// segments (the radius shrinks when the segments are too short). The result is a Bezier curve; linear segments
+// stay straight. Open end points and straight points are left as they are.
+CurveData filletCurve(const CurveData& c, const std::vector<int>& points, float radius);
+
 // Builds the points of a primitive from c.shape (sets the type and closed flag of that primitive).
 void buildCurveShape(CurveData& c);
 CurveData makeCurveShape(int shape);
