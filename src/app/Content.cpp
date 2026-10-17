@@ -464,8 +464,8 @@ void buildConceptScene(Scene& s) {
         g.baseColor = float3(0.040f, 0.045f, 0.056f);
         applyPreset(g, PRESET_PLASTIC, 1.0f);
         g.subsurface = 0.0f;
-        g.roughness = 0.32f;
-        g.specular = 0.7f;
+        g.roughness = 0.18f;   // glossy: the shapes reflect in it (path tracing)
+        g.specular = 0.9f;
         Object o;
         o.name = "Floor";
         o.part = "GROUND";
@@ -531,8 +531,8 @@ void buildConceptScene(Scene& s) {
     s.sun.direction = normalize(float3(0.45f, 1.0f, 0.55f));   // towards the sun
     s.sun.color = float3(0.82f, 0.88f, 1.0f);
     s.sun.intensity = 1.1f;
-    light("Warm Back Left", {-9.0f, 4.0f, -1.0f}, {-2.5f, 0.0f, 3.0f}, 3.0f, float3(1.0f, 0.68f, 0.40f), 45.0f);
-    light("Warm Back", {-4.1f, 5.2f, -1.3f}, {1.5f, 0.0f, 3.5f}, 2.5f, float3(1.0f, 0.72f, 0.45f), 22.0f);
+    light("Warm Back Left", {-9.0f, 4.0f, -1.0f}, {-2.5f, 0.0f, 3.0f}, 6.0f, float3(1.0f, 0.68f, 0.40f), 11.0f);   // large: soft reflections
+    light("Warm Back", {-4.1f, 5.2f, -1.3f}, {1.5f, 0.0f, 3.5f}, 5.0f, float3(1.0f, 0.72f, 0.45f), 5.5f);
     light("Cool Fill", {0.0f, 9.0f, -2.0f}, {0.0f, 0.0f, 0.0f}, 6.0f, float3(0.55f, 0.68f, 1.0f), 2.5f);
 
     Camera& c = s.camera;

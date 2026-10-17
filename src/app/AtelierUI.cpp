@@ -1255,7 +1255,7 @@ void App::atlViewport(float x, float y, float w, float h) {
         }
     }
     // labels at the ends of the world axes of the editor grid
-    if (m_rs.editorGrid > 0 && m_rs.raster) {
+    if (m_rs.editorGrid > 0) {
         const float L = m_rs.editorGridAxis;
         const float3 ends[3] = {float3(L * 1.07f, 0, 0), float3(0, L * 1.09f, 0), float3(0, 0, L * 1.07f)};   // past the arrows (EditorGrid.hlsl)
         const ImU32 cols[3] = {IM_COL32(238, 96, 96, 235), IM_COL32(110, 220, 130, 235), IM_COL32(96, 146, 252, 235)};

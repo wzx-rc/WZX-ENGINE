@@ -1,22 +1,10 @@
 ﻿// Exposure, view transform (ACES / AgX / AgX Punchy / Standard), vignette, sRGB and selection outline.
 #include "Common.hlsli"
 
-struct TonemapConstants { uint denoisedSlot; uint raster; uint tonemapper; uint pad2; };
+struct TonemapConstants { uint denoisedSlot; uint raster; uint tonemapper; uint overlaySlot; };   // overlaySlot: 1 + slot of the editor overlay (grid, wireframe) drawn over the path traced image, 0 = none
 ConstantBuffer<TonemapConstants> T : register(b1);
 
 #include "ToneCurves.hlsli"
-
-// value noise for the selection glow
-float Hash21(float2 q) { return frac(sin(dot(q, float2(127.1, 311.7))) * 43758.5453); }
-float Noise2(float2 q) {
-    float2 i = floor(q), f = frac(q), u = f * f * (3.0 - 2.0 * f);
-    return lerp(lerp(Hash21(i), Hash21(i + float2(1, 0)), u.x), lerp(Hash21(i + float2(0, 1)), Hash21(i + float2(1, 1)), u.x), u.y);
-}
-float Fbm(float2 q) {
-    float v = 0.0, a = 0.5;
-    [unroll] for (int k = 0; k < 4; ++k) { v += a * Noise2(q); q = q * 2.03 + 17.1; a *= 0.5; }
-    return v;
-}
 
 [numthreads(8, 8, 1)]
 void main(uint3 id : SV_DispatchThreadID) {
@@ -34,6 +22,11 @@ void main(uint3 id : SV_DispatchThreadID) {
         float keepRaw = saturate((spp - 64.0) / 768.0);
         color = lerp(den, raw, keepRaw);
     }
+    // editor overlay (grid, wireframe) drawn by the raster pass over the path traced image, premultiplied alpha
+    if (T.overlaySlot != 0) {
+        float4 ov = gTex[T.overlaySlot - 1][p];
+        color = color * (1.0 - ov.a) + ov.rgb;
+    }
     color *= F.exposure;
 
     float2 uv = (float2(p) + 0.5) / float2(F.resolution);
@@ -48,9 +41,8 @@ void main(uint3 id : SV_DispatchThreadID) {
     else mapped = ACESFitted(color);
     float3 c = ToSRGB(mapped);
 
-    // Selection: blue glow with a light running along the contour and small VFX strands on top (selStyle 1, animated
-    // by selAge = seconds since the selection changed) or the yellow
-    // outline (2px).
+    // Selection: thin blue glow with a light running along the contour (selStyle 1, animated by selAge = seconds since
+    // the selection changed) or the yellow outline (2px).
     uint sel = F.selectedInstance;
     if ((sel != 0 || F.selMoreCount != 0) && F.selStyle == 1) {
         bool centerSel = IsSelected((uint)(alb.w + 0.5));
@@ -58,19 +50,15 @@ void main(uint3 id : SV_DispatchThreadID) {
         float age = F.selAge;
         float grow = smoothstep(0.0, 0.5, age);           // the glow opens when the object is selected
         float flash = exp(-age * 3.0);                    // and flashes once
-        float2 uvn = float2(p) / float(F.resolution.y) * 55.0;   // noise space: the same look at any resolution
-        // two layers of noise drifting up and sideways (rising strands, like a spell aura)
-        float n1 = Fbm(uvn * float2(1.0, 0.55) + float2(0.0, age * 1.2));
-        float n2 = Fbm(uvn * 1.9 + float2(-age * 0.5, age * 0.75) + 7.3);
         // light running along the contour: two soft spots turning around the centre of the selection
         float2 cv = float2(p) - float2(F.selCenterX, F.selCenterY);
         float run = 0.5 + 0.5 * cos(atan2(cv.y, cv.x) * 2.0 - age * 1.8);
         run = 0.3 + 0.7 * run * run;
         if (!centerSel) {
             // distance (pixels) to the nearest selected pixel, on rings of growing radius
-            const float radii[8] = {1.0, 2.0, 3.0, 4.0, 5.0, 6.5, 8.5, 11.0};
+            const float radii[4] = {1.0, 2.0, 3.0, 4.0};
             float dmin = 100.0;
-            [loop] for (int r = 0; r < 8 && dmin > 99.0; ++r) {
+            [loop] for (int r = 0; r < 4 && dmin > 99.0; ++r) {
                 [loop] for (int k = 0; k < 12; ++k) {
                     float an = (k + (r & 1) * 0.5) * 0.5235988;
                     int2 q = clamp(p + int2(round(float2(cos(an), sin(an)) * radii[r])), int2(0, 0), int2(F.resolution) - 1);
@@ -78,17 +66,9 @@ void main(uint3 id : SV_DispatchThreadID) {
                 }
             }
             if (dmin < 99.0) {
-                // main glow: linear falloff over a few pixels, brighter where the running light passes
-                float lin = saturate(1.0 - (dmin - 1.0) / (2.0 + 5.0 * grow));
-                float glowMain = lin * (0.22 + 0.38 * run) * (1.0 + 0.8 * flash);
-                // the VFX strands on top: smaller, at 30 %
-                float wisps = saturate((n1 * 0.75 + n2 * 0.5) * 2.2 - 0.9);
-                wisps = wisps * wisps * 2.4;
-                float aura = exp(-(dmin - 1.0) / (1.5 + 4.0 * grow)) * wisps * (1.0 - smoothstep(6.0, 11.0, dmin));
-                float2 sp = uvn * 1.3 + float2(0.0, age * 1.2);
-                float h = Hash21(floor(sp) + floor(age * 5.0) * 0.731);
-                float spark = step(0.962, h) * saturate(1.0 - length(frac(sp) - 0.5) * 4.0) * exp(-(dmin - 1.0) / (1.5 + 3.0 * grow));
-                c += glow * (glowMain + aura * 1.5 * 0.3) + core * spark * 0.3;
+                // glow: linear falloff over about 3 pixels, brighter where the running light passes
+                float lin = saturate(1.0 - (dmin - 1.0) / (1.0 + 2.0 * grow));
+                c += glow * lin * (0.22 + 0.38 * run) * (1.0 + 0.8 * flash);
                 // thin core line right on the silhouette, lit by the running light
                 if (dmin <= 1.0) c = lerp(c, core, 0.3 + 0.5 * run);
             }

@@ -237,6 +237,12 @@ bool Renderer::createRasterPipelines(std::string* error) {
     d.VS = {vsMain.data(), vsMain.size()};
     d.PS = {psMain.data(), psMain.size()};
     if (!make(d, m_psoMain, "main")) return false;
+    {   // depth only (editor overlay over the path traced image: the objects hide the grid and the back lines)
+        auto z = d;
+        z.BlendState.RenderTarget[0].RenderTargetWriteMask = 0;
+        z.PS = {nullptr, 0};
+        if (!make(z, m_psoDepth, "depth")) return false;
+    }
     blendOn(d);
     if (!make(d, m_psoTrans, "transparent")) return false;
     d.PS = {psGhost.data(), psGhost.size()};
@@ -413,7 +419,9 @@ void Renderer::createRasterTargets(uint32_t w, uint32_t h) {
 }
 
 void Renderer::recordRaster(const Scene& scene, const RenderSettings& rs, const ViewRect& vp, bool probeCapture, bool probes,
-                            bool shadow) {
+                            bool shadow, int overlaySlot) {
+    const bool overlay = overlaySlot >= 0;   // editor overlay only: grid and wireframe lines, for the path traced view
+    if (overlay) shadow = false;
     const Camera& cam = scene.camera;
     float3 r, u, f;
     cam.basis(r, u, f);
@@ -615,8 +623,13 @@ void Renderer::recordRaster(const Scene& scene, const RenderSettings& rs, const 
     D3D12_RECT msc = {0, 0, (LONG)vp.w, (LONG)vp.h};
     m_cmd->RSSetViewports(1, &mvp);
     m_cmd->RSSetScissorRects(1, &msc);
-    m_cmd->SetPipelineState(m_psoBg.Get());
-    m_cmd->DrawInstanced(3, 1, 0, 0);
+    if (overlay) {
+        const float clear0[4] = {0, 0, 0, 0};
+        m_cmd->ClearRenderTargetView(rtvBase, clear0, 0, nullptr);
+    } else {
+        m_cmd->SetPipelineState(m_psoBg.Get());
+        m_cmd->DrawInstanced(3, 1, 0, 0);
+    }
     // Wireframe only: the ground grid stays shaded, the other objects become lines with every edge visible.
     auto isGround = [&](const Draw& d) {
         return d.material < scene.materials.size() && (scene.materials[d.material].flags & MAT_FLAG_GRID);
@@ -629,7 +642,12 @@ void Renderer::recordRaster(const Scene& scene, const RenderSettings& rs, const 
         m_cmd->SetPipelineState(m_psoGrid.Get());
         m_cmd->DrawInstanced(3, 1, 0, 0);
     };
-    if (rs.wireframe == 1) {
+    if (overlay) {   // depth of the opaque objects, then the grid
+        m_cmd->SetPipelineState(m_psoDepth.Get());
+        for (const Draw& d : m_draws)
+            if (!(d.flags & 5u) && !isTransparent(d)) drawOne(d);
+        drawGrid();
+    } else if (rs.wireframe == 1) {
         m_cmd->SetPipelineState(m_psoMain.Get());
         for (const Draw& d : m_draws)
             if (!(d.flags & 5u) && isGround(d)) drawOne(d);
@@ -664,6 +682,14 @@ void Renderer::recordRaster(const Scene& scene, const RenderSettings& rs, const 
         m_cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
     }
 
+    if (overlay) {   // the overlay (premultiplied alpha) goes to its slot, composited by the tonemapper
+        transition(m_msaaColor.Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_RESOLVE_SOURCE);
+        transition(m_tex[overlaySlot].Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_RESOLVE_DEST);
+        m_cmd->ResolveSubresource(m_tex[overlaySlot].Get(), 0, m_msaaColor.Get(), 0, DXGI_FORMAT_R16G16B16A16_FLOAT);
+        transition(m_tex[overlaySlot].Get(), D3D12_RESOURCE_STATE_RESOLVE_DEST, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+        transition(m_msaaColor.Get(), D3D12_RESOURCE_STATE_RESOLVE_SOURCE, D3D12_RESOURCE_STATE_RENDER_TARGET);
+        return;
+    }
     // 3) resolve into the HDR slot read by the tonemapper
     transition(m_msaaColor.Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_RESOLVE_SOURCE);
     transition(m_tex[kTexDenoiseA].Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_RESOLVE_DEST);

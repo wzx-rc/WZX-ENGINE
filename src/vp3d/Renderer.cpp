@@ -1670,8 +1670,15 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
         denoisedSlot = 0xFFFFFFFF;
     }
 
+    // editor overlay (grid, wireframe) drawn by the raster pass into the denoise slot not holding the image
+    uint32_t overlay = 0;
+    if (m_psoDepth && (rs.editorGrid > 0 || rs.wireframe)) {
+        const uint32_t slot = (rs.denoise && denoisedSlot == TEX_DENOISE_A) ? TEX_DENOISE_B : TEX_DENOISE_A;
+        recordRaster(scene, rs, vp, false, false, false, (int)slot);
+        overlay = slot + 1;
+    }
     m_cmd->SetPipelineState(m_psoTonemap.Get());
-    uint32_t tc[4] = {rs.denoise ? denoisedSlot : 0xFFFFFFFFu, 0, (uint32_t)rs.tonemapper, 0};
+    uint32_t tc[4] = {rs.denoise ? denoisedSlot : 0xFFFFFFFFu, 0, (uint32_t)rs.tonemapper, overlay};
     m_cmd->SetComputeRoot32BitConstants(1, 4, tc, 0);
     m_cmd->Dispatch(gx, gy, 1);
     }

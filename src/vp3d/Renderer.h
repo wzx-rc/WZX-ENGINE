@@ -166,7 +166,7 @@ private:
     // probes: DDGI without ray tracing, the main pass reads the probe atlases (SRVs t4..t6) instead of the ambient.
     // shadow: draw the shadow map first (false when the capture pass of the same frame already drew it).
     void recordRaster(const Scene& scene, const RenderSettings& rs, const ViewRect& vp, bool probeCapture = false,
-                      bool probes = false, bool shadow = true);
+                      bool probes = false, bool shadow = true, int overlaySlot = -1);   // overlaySlot: grid + wireframe only, into that texture slot (path traced view)
     void ensureCapture(uint32_t slots);
     void createTargets(uint32_t w, uint32_t h);
     void uploadTextures(const Scene& scene);
@@ -293,7 +293,7 @@ private:
     // Raster viewport
     static constexpr uint32_t kShadowSize = 2048, kMsaa = 4;
     ComPtr<ID3D12RootSignature> m_rasterRoot;
-    ComPtr<ID3D12PipelineState> m_psoShadow, m_psoBg, m_psoMain, m_psoTrans, m_psoGhost, m_psoId, m_psoWire, m_psoGrid;
+    ComPtr<ID3D12PipelineState> m_psoShadow, m_psoBg, m_psoMain, m_psoTrans, m_psoGhost, m_psoId, m_psoWire, m_psoGrid, m_psoDepth;
     ComPtr<ID3D12DescriptorHeap> m_rtvHeap, m_dsvHeap;
     uint32_t m_rtvSize = 0, m_dsvSize = 0;
     ComPtr<ID3D12Resource> m_msaaColor, m_msaaDepth, m_idDepth, m_shadowMap;
