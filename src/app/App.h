@@ -98,6 +98,7 @@ struct Options {
     std::wstring openPath;      // scene file to open at startup
     std::wstring gizmoTest;     // manipulator self-test: report written there, then exit (--gizmo-test)
     std::wstring gizmoDemo;     // "tool handle dx dy menuDir": frozen drag or marking menu for a capture (--gizmo-demo)
+    std::string openMenu;       // test: view menu opened at startup for a capture (vmCamera, vmDisplay, vmRender, vmAxes)
     std::wstring hdri;          // HDRI to load at startup (file, or "sky" for the procedural sky)
     // DDGI probe GI (real-time mode)
     bool ddgi = false;          // start in the real-time probe GI mode
@@ -327,6 +328,7 @@ private:
     void atlTopBar(float x0, float y0, float width);
     void atlHierarchy(float x, float y, float w, float h);
     void atlViewport(float x, float y, float w, float h);
+    void atlViewMenus(float x, float y);   // camera, display, renderer and axes menus inside the view
     void atlContent(float x, float y, float w, float h);
     void atlInspector(float x, float y, float w, float h);
     void atlInspectorActor(float x, float y, float w, float h);
@@ -401,6 +403,9 @@ private:
     bool m_showGrid = true;
     bool m_showStats = true;
     bool m_showGizmo = true;
+    bool m_showEditorGrid = true; // ground grid of the editor (EditorGrid.hlsl)
+    size_t m_selSig = 0;          // selection signature: the glow animation restarts when it changes
+    double m_selSince = 0;
     int m_axisMode = 0;          // move / rotate axes: 0 world, 1 object, 2 parent (scale: always object)
     float m_stepMove = 1.0f, m_stepRotate = 15.0f, m_stepScale = 0.1f;   // increments (Shift, or Snapping on)
     bool m_snapAbsolute = false; // move increments land on the grid of the step instead of relative to the start

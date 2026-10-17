@@ -1113,20 +1113,10 @@ void App::atlViewport(float x, float y, float w, float h) {
     Glyph(Icon::ChevronRight, nx, hr.y + 13 * s, 9, P().muted);
     static const char* views[] = {"Perspective", "Front", "Back", "Left", "Right", "Top"};
     Text(nx + 16 * s, hr.y + 12 * s, std::string("Viewport · ") + views[std::clamp(m_viewMode, 0, 5)], P().muted, 11);
-    // tools (right to left): shading, view | stats, grid, frame | snapping, axes, scale, rotate, move
+    // tools (right to left): stats, grid, frame | snapping, scale, rotate, move. Camera, display, renderer and
+    // axes are menus inside the view (atlViewMenus).
     float bx = hr.x + hr.w - 8 * s, by = hr.y + 6 * s;
     auto right = [&](float bw) { bx -= bw; float r0 = bx; bx -= 6 * s; return r0; };
-    static const char* modes[] = {"Lit", "Metal iOS", "Progressive", "GI"};
-    int mode = renderMode();
-    if (Combo("atlShading", {right(118 * s), by, 118 * s, 24 * s}, mode, modes, 4, Icon::Sun)) setRenderMode(mode);
-    Tip("Lit: real-time raster · Metal iOS: Lit + GI probes without ray tracing, as the iOS build · Progressive: path tracing, exact, denoiser optional · GI: real-time probes (DDGI, ray traced)");
-    {
-        static const char* displays[] = {"Shaded", "Wireframe", "Wireframe Override"};
-        if (Combo("atlDisplay", {right(150 * s), by, 150 * s, 24 * s}, m_rs.wireframe, displays, 3, Icon::Cube)) markDirty();
-        Tip("Display: Shaded · Wireframe (edges only) · Wireframe Override (edges over the shaded view). Lit and Metal iOS modes");
-    }
-    if (Combo("atlView", {right(118 * s), by, 118 * s, 24 * s}, m_viewMode, views, 6, Icon::Camera)) setViewAxis(m_viewMode);
-    bx -= 6 * s;
     if (Button("atlStats", {right(28 * s), by, 28 * s, 24 * s}, "", Icon::Monitor, m_showStats, true)) m_showStats = !m_showStats;
     Tip("Viewport statistics");
     {
@@ -1146,12 +1136,6 @@ void App::atlViewport(float x, float y, float w, float h) {
     bx -= 6 * s;
     if (Button("atlSnap", {right(28 * s), by, 28 * s, 24 * s}, "", Icon::Magnet, m_magnet, true)) m_magnet = !m_magnet;
     Tip("Snapping always on (else hold Shift while dragging): steps in the marking menu (W / E / R + left click)");
-    {
-        float lx = right(76 * s);
-        static const char* kModes[] = {"World", "Object", "Parent"};
-        if (Button("atlSpace", {lx, by, 76 * s, 24 * s}, kModes[m_axisMode], Icon::World)) m_axisMode = (m_axisMode + 1) % 3;
-        Tip("Move / rotate axes: World, Object or Parent (scale: always Object)");
-    }
     if (Button("atlScale", {right(28 * s), by, 28 * s, 24 * s}, "", Icon::Scale, m_tool == TOOL_SCALE, true)) m_tool = TOOL_SCALE;
     Tip("Scale (R)");
     if (Button("atlRotate", {right(28 * s), by, 28 * s, 24 * s}, "", Icon::Rotate, m_tool == TOOL_ROTATE, true)) m_tool = TOOL_ROTATE;
@@ -1181,7 +1165,7 @@ void App::atlViewport(float x, float y, float w, float h) {
     else if (tris >= 10000) snprintf(triText, sizeof(triText), "%.1f k", tris / 1e3);
     else snprintf(triText, sizeof(triText), "%zu", tris);
     if (m_showStats) {
-        R st = {r.x + r.w - 165 * s, r.y + 12 * s, 151 * s, 113 * s};
+        R st = {r.x + r.w - 165 * s, r.y + 116 * s, 151 * s, 113 * s};   // under the view cube
         Box(st, P().minimap, 4, true);
         Text(st.x + 10 * s, st.y + 10 * s, "VIEWPORT", P().accent, 9);
         char v[5][32];
@@ -1197,22 +1181,68 @@ void App::atlViewport(float x, float y, float w, float h) {
             Text(st.x + 92 * s, st.y + (30 + i * 16) * s, v[i], P().text, 9);
         }
     }
-    // orientation axes, turned with the camera (Y up)
+    // view cube (top right): turns with the camera, world axes X / Y / Z; a click on a face looks along it
     {
         float3 cr, cu, cf;
         m_scene.camera.basis(cr, cu, cf);
-        ImVec2 o(r.x + 36 * s, r.y + r.h - 32 * s);
-        const ImU32 cols[] = {IM_COL32(222, 110, 121, 255), IM_COL32(136, 199, 150, 255), IM_COL32(113, 168, 233, 255)};
-        const char* names[] = {"X", "Y", "Z"};
-        for (int a = 0; a < 3; ++a) {
-            float3 av(a == 0 ? 1.0f : 0.0f, a == 1 ? 1.0f : 0.0f, a == 2 ? 1.0f : 0.0f);
-            ImVec2 e(o.x + dot(av, cr) * 24 * s, o.y - dot(av, cu) * 24 * s);
-            dl->AddLine(o, e, cols[a], 2 * s);
-            dl->AddCircleFilled(e, 3 * s, cols[a]);
-            Text(e.x + (e.x >= o.x ? 4 : -10) * s, e.y - 6 * s, names[a], cols[a], 9);
+        const float hs = 18 * s;
+        ImVec2 c(r.x + r.w - 56 * s, r.y + 58 * s);
+        auto scr = [&](const float3& v) { return ImVec2(c.x + dot(v, cr) * hs, c.y - dot(v, cu) * hs); };
+        R cubeR = {c.x - 48 * s, c.y - 48 * s, 96 * s, 96 * s};
+        bool clicked = Hit("##viewCube", cubeR);
+        bool hov = ImGui::IsItemHovered();
+        ImVec2 m = ImGui::GetIO().MousePos;
+        const ImU32 axCol[3] = {IM_COL32(236, 110, 110, 255), IM_COL32(120, 214, 140, 255), IM_COL32(100, 156, 245, 255)};
+        const char* axName[3] = {"X", "Y", "Z"};
+        auto unit = [](int a) { return float3(a == 0 ? 1.0f : 0.0f, a == 1 ? 1.0f : 0.0f, a == 2 ? 1.0f : 0.0f); };
+        auto drawAxis = [&](int a, bool front) {
+            float3 v = unit(a);
+            ImVec2 p0 = scr(v * 1.0f), p1 = scr(v * 1.85f), pl = scr(v * 2.35f);
+            ImU32 col = front ? axCol[a] : Fade(axCol[a], 90);
+            dl->AddLine(p0, p1, col, 1.2f * s);
+            ImVec2 ts = TextSize(axName[a], 9);
+            Text(pl.x - ts.x * 0.5f, pl.y - ts.y * 0.5f, axName[a], col, 9);
+        };
+        for (int a = 0; a < 3; ++a) if (dot(unit(a), cf) > 0) drawAxis(a, false);   // axes going away: behind the cube
+        // faces turned to the camera (a convex cube: they do not overlap on screen)
+        int hotFace = -1;
+        for (int f = 0; f < 6; ++f) {
+            int a = f / 2;
+            float sg = (f & 1) ? -1.0f : 1.0f;
+            float3 n = unit(a) * sg;
+            if (dot(n, cf) > -0.02f) continue;
+            float3 u = unit((a + 1) % 3), v = unit((a + 2) % 3);
+            ImVec2 q[4] = {scr(n - u - v), scr(n + u - v), scr(n + u + v), scr(n - u + v)};
+            bool in = false;
+            if (hov) {
+                int pos = 0, neg = 0;
+                for (int i = 0; i < 4; ++i) {
+                    ImVec2 e0 = q[i], e1 = q[(i + 1) % 4];
+                    float cz = (e1.x - e0.x) * (m.y - e0.y) - (e1.y - e0.y) * (m.x - e0.x);
+                    if (cz > 0) ++pos; else if (cz < 0) ++neg;
+                }
+                in = pos == 0 || neg == 0;
+            }
+            if (in) hotFace = f;
+            float shade = 0.5f + 0.5f * -dot(n, cf);
+            dl->AddConvexPolyFilled(q, 4, in ? IM_COL32(90, 160, 255, 120) : IM_COL32(190, 200, 220, (int)(14 + 26 * shade)));
+            dl->AddPolyline(q, 4, IM_COL32(220, 226, 238, in ? 230 : 150), ImDrawFlags_Closed, 1.0f * s);
         }
-        dl->AddCircleFilled(o, 2.5f * s, P().text);
+        for (int a = 0; a < 3; ++a) if (dot(unit(a), cf) <= 0) drawAxis(a, true);
+        if (hov) Tip(hotFace >= 0 ? "Look along this face" : "View cube");
+        if (clicked && hotFace >= 0) {
+            // +X right, -X left, +Y top, -Y bottom, +Z front, -Z back (the camera sits on the face's side)
+            Camera& cam = m_scene.camera;
+            const float yaws[6] = {kPi * 0.5f, -kPi * 0.5f, cam.yaw, cam.yaw, 0.0f, kPi};
+            const float pitches[6] = {0, 0, radians(89.0f), radians(-89.0f), 0, 0};
+            const int modes[6] = {4, 3, 5, 0, 1, 2};
+            cam.yaw = yaws[hotFace];
+            cam.pitch = pitches[hotFace];
+            m_viewMode = modes[hotFace];
+            cameraChanged();
+        }
     }
+    atlViewMenus(r.x + 10 * s, r.y + 10 * s);
     // path tracing progress
     if (!m_rs.raster) {
         float prog = clampf((float)m_renderer.sampleCount() / m_rs.maxSamples, 0, 1);
@@ -1241,6 +1271,79 @@ void App::atlViewport(float x, float y, float w, float h) {
     Text(fr.x + fr.w - 290 * s, fr.y + 6 * s, info, P().muted, 9);
     static const char* modeNames[] = {"●  Real time", "●  Metal iOS", "●  Progressive PT", "●  GI probes"};
     Text(fr.x + fr.w - 116 * s, fr.y + 6 * s, modeNames[renderMode()], m_rs.raster ? kGreen : P().accent, 9);
+}
+
+// --------------------------------------------------------------------------- menus inside the view
+
+// Floating drop-down menus at the top left of the view: camera, display, renderer and manipulator axes.
+void App::atlViewMenus(float x, float y) {
+    const float menuScale = 1.4f * ts();
+    float px = x;
+    auto pill = [&](const char* id, const std::string& label, Icon icon, const char* tip) {
+        float w = TextSize(label, 12).x + 52 * s;
+        R b = {px, y, w, 24 * s};
+        if (DropButton(id, b, label.c_str(), icon) || (m_frameCounter == 10 && m_opt.openMenu == id)) ImGui::OpenPopup(id);   // --open-menu: captures
+        Tip(tip);
+        ImGui::SetNextWindowPos(ImVec2(px, y + 28 * s));
+        px += w + 6 * s;
+        bool open = ImGui::BeginPopup(id);
+        if (open) ImGui::SetWindowFontScale(menuScale);
+        return open;
+    };
+    static const char* views[] = {"Perspective", "Front", "Back", "Left", "Right", "Top"};
+    if (pill("vmCamera", views[std::clamp(m_viewMode, 0, 5)], Icon::Camera, "Camera")) {
+        for (int i = 0; i < 6; ++i)
+            if (ImGui::MenuItem(views[i], nullptr, m_viewMode == i)) { m_viewMode = i; setViewAxis(i); }
+        ImGui::Separator();
+        if (ImGui::MenuItem("Frame Selection", "F")) frameSelection();
+        ImGui::MenuItem("Turntable", "T", &m_turntable);
+        if (ImGui::MenuItem("Depth of Field", nullptr, m_scene.camera.dof)) { m_scene.camera.dof = !m_scene.camera.dof; cameraChanged(); }
+        ImGui::SetNextItemWidth(170 * s);
+        float fov = degrees(m_scene.camera.fovY);
+        if (ImGui::SliderFloat("Field of view", &fov, 10.0f, 100.0f, "%.0f°")) { m_scene.camera.fovY = radians(fov); cameraChanged(); }
+        ImGui::SetNextItemWidth(170 * s);
+        ImGui::SliderFloat("Navigation speed", &m_camSpeed, 0.1f, 5.0f, "%.1f");
+        ImGui::EndPopup();
+    }
+    static const char* displays[] = {"Shaded", "Wireframe", "Wireframe Override"};
+    if (pill("vmDisplay", displays[std::clamp(m_rs.wireframe, 0, 2)], Icon::Cube, "Display")) {
+        for (int i = 0; i < 3; ++i)
+            if (ImGui::MenuItem(displays[i], nullptr, m_rs.wireframe == i)) { m_rs.wireframe = i; markDirty(); }
+        ImGui::Separator();
+        if (ImGui::MenuItem("Grid", nullptr, m_showEditorGrid)) { m_showEditorGrid = !m_showEditorGrid; markDirty(); }
+        bool gridOn = false;
+        for (const Object& o : m_scene.objects)
+            if (o.part == "GROUND" && o.material >= 0 && o.material < (int)m_scene.materials.size()) gridOn = (m_scene.materials[o.material].flags & 1u) != 0;
+        if (ImGui::MenuItem("Ground Grid (scene)", nullptr, gridOn)) toggleGroundGrid();
+        ImGui::MenuItem("Manipulators", nullptr, &m_showGizmo);
+        ImGui::MenuItem("Statistics", nullptr, &m_showStats);
+        ImGui::Separator();
+        if (ImGui::MenuItem("Selection: Blue Glow", nullptr, m_rs.selectionStyle == 1)) { m_rs.selectionStyle = 1; markDirty(); }
+        if (ImGui::MenuItem("Selection: Outline", nullptr, m_rs.selectionStyle == 0)) { m_rs.selectionStyle = 0; markDirty(); }
+        ImGui::EndPopup();
+    }
+    static const char* modes[] = {"Lit", "Metal iOS", "Progressive", "GI"};
+    if (pill("vmRender", modes[std::clamp(renderMode(), 0, 3)], Icon::Sun,
+             "Renderer: Lit (real-time raster) · Metal iOS (Lit + GI probes, as the iOS build) · Progressive (path tracing) · GI (ray traced probes)")) {
+        for (int i = 0; i < 4; ++i)
+            if (ImGui::MenuItem(modes[i], nullptr, renderMode() == i)) setRenderMode(i);
+        ImGui::EndPopup();
+    }
+    static const char* axes[] = {"World", "Object", "Parent"};
+    if (pill("vmAxes", axes[std::clamp(m_axisMode, 0, 2)], Icon::World, "Manipulator axes and steps")) {
+        for (int i = 0; i < 3; ++i)
+            if (ImGui::MenuItem(axes[i], nullptr, m_axisMode == i)) m_axisMode = i;
+        ImGui::Separator();
+        ImGui::MenuItem("Snapping always (else Shift)", nullptr, &m_magnet);
+        ImGui::MenuItem("Snap to grid (absolute)", nullptr, &m_snapAbsolute);
+        ImGui::SetNextItemWidth(150 * s);
+        ImGui::SliderFloat("Move step", &m_stepMove, 0.05f, 10.0f, "%.2f", ImGuiSliderFlags_Logarithmic);
+        ImGui::SetNextItemWidth(150 * s);
+        ImGui::SliderFloat("Rotate step", &m_stepRotate, 1.0f, 90.0f, "%.0f°");
+        ImGui::SetNextItemWidth(150 * s);
+        ImGui::SliderFloat("Scale step", &m_stepScale, 0.01f, 1.0f, "%.2f");
+        ImGui::EndPopup();
+    }
 }
 
 // --------------------------------------------------------------------------- bottom panel (former Atelier graph Output)

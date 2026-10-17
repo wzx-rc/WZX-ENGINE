@@ -274,6 +274,17 @@ bool Renderer::createRasterPipelines(std::string* error) {
     d.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
     if (!make(d, m_psoProbeBg, "probe background")) return false;
 
+    // Editor ground grid (EditorGrid.hlsl): full screen, blended, at the depth of its lines (optional shaders)
+    std::vector<char> vsGrid, psGrid;
+    if (readBlob(m_shaderDir + L"\\EditorGrid_VSGrid.cso", vsGrid) && readBlob(m_shaderDir + L"\\EditorGrid_PSGrid.cso", psGrid)) {
+        d = ms();
+        d.VS = {vsGrid.data(), vsGrid.size()};
+        d.PS = {psGrid.data(), psGrid.size()};
+        d.InputLayout = {nullptr, 0};
+        blendOn(d);
+        if (!make(d, m_psoGrid, "editor grid")) return false;
+    }
+
     // Heaps and the shadow map (RTV 0-1 viewport and id, 2-4 probe capture; DSV 0-1 as before, 2 shadow, 3 capture)
     D3D12_DESCRIPTOR_HEAP_DESC hd = {};
     hd.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
@@ -610,14 +621,24 @@ void Renderer::recordRaster(const Scene& scene, const RenderSettings& rs, const 
     auto isGround = [&](const Draw& d) {
         return d.material < scene.materials.size() && (scene.materials[d.material].flags & MAT_FLAG_GRID);
     };
+    // editor grid after the opaque objects (they hide it), before the transparent ones
+    auto drawGrid = [&]() {
+        if (!m_psoGrid || rs.editorGrid <= 0) return;
+        float gc[4] = {rs.editorGrid, rs.editorGridAxis, 1.0f, 2.0f * t / std::max(1, vp.h)};
+        m_cmd->SetGraphicsRoot32BitConstants(7, 4, gc, 0);
+        m_cmd->SetPipelineState(m_psoGrid.Get());
+        m_cmd->DrawInstanced(3, 1, 0, 0);
+    };
     if (rs.wireframe == 1) {
         m_cmd->SetPipelineState(m_psoMain.Get());
         for (const Draw& d : m_draws)
             if (!(d.flags & 5u) && isGround(d)) drawOne(d);
+        drawGrid();
     } else {
     m_cmd->SetPipelineState(m_psoMain.Get());
     for (const Draw& d : m_draws)
         if (!(d.flags & 5u) && !isTransparent(d)) drawOne(d);
+    drawGrid();
     m_cmd->SetPipelineState(m_psoTrans.Get());
     for (const Draw& d : m_draws)
         if (!(d.flags & 5u) && isTransparent(d)) drawOne(d);

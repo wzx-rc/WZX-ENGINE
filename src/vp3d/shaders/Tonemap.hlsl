@@ -36,9 +36,44 @@ void main(uint3 id : SV_DispatchThreadID) {
     else mapped = ACESFitted(color);
     float3 c = ToSRGB(mapped);
 
-    // Selection outline (yellow, 2px).
+    // Selection: blue glow (selStyle 1, animated by selAge) or yellow outline (2px).
     uint sel = F.selectedInstance;
-    if (sel != 0 || F.selMoreCount != 0) {
+    if ((sel != 0 || F.selMoreCount != 0) && F.selStyle == 1) {
+        bool centerSel = IsSelected((uint)(alb.w + 0.5));
+        const float3 glow = float3(0.32, 0.64, 1.0);
+        float age = F.selAge;
+        float grow = smoothstep(0.0, 0.3, age);           // the halo opens when the object is selected
+        float flash = exp(-age * 4.0);                    // a short bright flash
+        float pulse = 0.92 + 0.08 * sin(age * 2.6);       // then breathes slowly
+        if (!centerSel) {
+            // distance (pixels) to the nearest selected pixel, on rings of growing radius
+            const float radii[6] = {1.0, 2.0, 3.0, 4.5, 6.5, 9.0};
+            float dmin = 100.0;
+            [loop] for (int r = 0; r < 6 && dmin > 99.0; ++r) {
+                [loop] for (int k = 0; k < 12; ++k) {
+                    float an = (k + (r & 1) * 0.5) * 0.5235988;
+                    int2 q = clamp(p + int2(round(float2(cos(an), sin(an)) * radii[r])), int2(0, 0), int2(F.resolution) - 1);
+                    if (IsSelected((uint)(gTex[SLOT_ALBEDO][q].w + 0.5))) { dmin = radii[r]; break; }
+                }
+            }
+            if (dmin < 99.0) {
+                float edge = dmin <= 1.0 ? 1.0 : 0.0;
+                float halo = exp(-(dmin - 1.0) / (0.8 + 3.4 * grow)) * (0.7 + 0.8 * flash) * pulse;
+                c = lerp(c, glow, saturate(max(edge * 0.9, halo)));
+                c += glow * edge * (0.25 + 0.5 * flash);
+            }
+        } else {
+            // inside: the silhouette pixels light up, a faint blue tint on the rest (stronger during the flash)
+            bool rim = false;
+            [unroll] for (int k = 0; k < 4; ++k) {
+                int2 o = k == 0 ? int2(1, 0) : k == 1 ? int2(-1, 0) : k == 2 ? int2(0, 1) : int2(0, -1);
+                int2 q = clamp(p + o, int2(0, 0), int2(F.resolution) - 1);
+                if (!IsSelected((uint)(gTex[SLOT_ALBEDO][q].w + 0.5))) rim = true;
+            }
+            if (rim) c = lerp(c, float3(0.78, 0.9, 1.0), 0.85);
+            else c = lerp(c, glow, 0.07 + 0.22 * flash);
+        }
+    } else if (sel != 0 || F.selMoreCount != 0) {
         uint center = (uint)(alb.w + 0.5);
         bool centerSel = IsSelected(center);
         int hits = 0;

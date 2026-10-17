@@ -38,6 +38,12 @@ struct RenderSettings {
     float lightScale = 1.0f;
     float vignette = 0.12f;
     bool raster = false;
+    // Editor overlays of the raster viewport: ground grid (smallest cell in scene units, 0 = off, see EditorGrid.hlsl),
+    // length of its Y axis, and the selection glow (style 1 = blue glow, 0 = yellow outline; age in seconds animates it).
+    float editorGrid = 0.0f;
+    float editorGridAxis = 10.0f;
+    int selectionStyle = 1;
+    float selectionAge = 10.0f;
     int tonemapper = 0;           // 0 ACES (Hill fit), 1 AgX, 2 AgX Punchy, 3 Standard (clip)          // light raster viewport instead of path tracing
     // Stable history (interactive, GI): the history is dropped when an object moves, edges are validated on the
     // pixel centre, the denoiser strength is bounded. Off = the previous behaviour (marks behind moved objects).
@@ -285,7 +291,7 @@ private:
     // Raster viewport
     static constexpr uint32_t kShadowSize = 2048, kMsaa = 4;
     ComPtr<ID3D12RootSignature> m_rasterRoot;
-    ComPtr<ID3D12PipelineState> m_psoShadow, m_psoBg, m_psoMain, m_psoTrans, m_psoGhost, m_psoId, m_psoWire;
+    ComPtr<ID3D12PipelineState> m_psoShadow, m_psoBg, m_psoMain, m_psoTrans, m_psoGhost, m_psoId, m_psoWire, m_psoGrid;
     ComPtr<ID3D12DescriptorHeap> m_rtvHeap, m_dsvHeap;
     uint32_t m_rtvSize = 0, m_dsvSize = 0;
     ComPtr<ID3D12Resource> m_msaaColor, m_msaaDepth, m_idDepth, m_shadowMap;

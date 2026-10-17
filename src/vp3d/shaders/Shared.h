@@ -86,7 +86,7 @@ struct FrameConstants {
     uint selectedInstance; float fireflyClamp; float sssScale; float gridScale;
     float denoiseStrength; float lightScale; float vignette; float bevelSamples;
 
-    uint selMoreCount; uint pad0; uint pad1; uint pad2;   // extra selected instances (multi-selection), instance id + 1
+    uint selMoreCount; float selAge; uint selStyle; uint pad2;   // extra selected instances (multi-selection), instance id + 1; selection glow: seconds since the selection changed, 1 = blue glow
     uint4 selMore[8];
 
     // Temporal reprojection: camera of the previous frame (the history holds that frame).

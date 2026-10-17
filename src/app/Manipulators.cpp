@@ -22,7 +22,7 @@ const ImU32 kViewCol = IM_COL32(150, 210, 222, 255);
 const ImU32 kBallCol = IM_COL32(200, 200, 200, 70);
 const int kRingSeg = 72;
 // geometry in units of the manipulator size (an axis is 1 long)
-const float kConeBase = 0.80f, kPlane0 = 0.22f, kPlane1 = 0.42f, kCube = 0.065f, kRing = 0.85f, kViewRing = 1.08f;
+const float kConeBase = 0.86f, kPlane0 = 0.40f, kPlane1 = 0.58f, kCube = 0.045f, kRing = 0.85f, kViewRing = 1.08f;
 
 float3 unitAxis(int a) { return float3(a == 0 ? 1.0f : 0.0f, a == 1 ? 1.0f : 0.0f, a == 2 ? 1.0f : 0.0f); }
 ImVec2 iv(float2 p) { return ImVec2(p.x, p.y); }
@@ -411,7 +411,7 @@ void App::drawGizmo(ImDrawList* dl) {
     float s = gizmoSize(pv);
     float2 pc;
     if (!project(pv, pc)) return;
-    const float d = m_dpi, thin = 1.4f * d, thick = 2.2f * d;
+    const float d = m_dpi, thin = 1.0f * d, thick = 1.6f * d;
     const GizmoDrag& g = m_gz;
     const bool dragging = g.active;
     const int last = m_gzLast[m_tool];
@@ -497,7 +497,7 @@ void App::drawGizmo(ImDrawList* dl) {
             float dx = pt.x - pb.x, dy = pt.y - pb.y, l = std::sqrt(dx * dx + dy * dy);
             if (l < 1e-3f) continue;
             dx /= l; dy /= l;
-            float hw = (lit ? 5.0f : 4.2f) * d;
+            float hw = (lit ? 3.6f : 3.0f) * d;
             ImVec2 tri[3] = {iv(pt), ImVec2(pb.x - dy * hw, pb.y + dx * hw), ImVec2(pb.x + dy * hw, pb.y - dx * hw)};
             dl->AddTriangleFilled(tri[0], tri[1], tri[2], c);
         }
@@ -507,7 +507,7 @@ void App::drawGizmo(ImDrawList* dl) {
             float k = dragging && g.handle == MH_CENTER ? g.value.x : 1.0f;
             drawBox(this, dl, pv, ax, kCube * 1.25f * s * std::min(k, 3.0f), lit ? kHot : kCenterCol, eye, &App::project);
         } else {
-            float hs = 5.0f * d;
+            float hs = 4.0f * d;
             dl->AddRectFilled(ImVec2(pc.x - hs, pc.y - hs), ImVec2(pc.x + hs, pc.y + hs), withAlpha(lit ? kHot : kCenterCol, lit ? 110 : 40));
             dl->AddRect(ImVec2(pc.x - hs, pc.y - hs), ImVec2(pc.x + hs, pc.y + hs), lit ? kHot : kCenterCol, 0, 0, thin);
         }

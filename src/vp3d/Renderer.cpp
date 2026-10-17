@@ -1490,6 +1490,8 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
     int selInst = (selectedObject >= 0 && selectedObject < (int)m_objectToInstance.size()) ? m_objectToInstance[selectedObject] : -1;
     fc.selectedInstance = (uint32_t)(selInst + 1);
     fc.selMoreCount = 0;
+    fc.selAge = rs.selectionAge;
+    fc.selStyle = (uint32_t)rs.selectionStyle;
     for (int o : m_extraSelection) {
         if (fc.selMoreCount >= 32 || o < 0 || o >= (int)m_objectToInstance.size() || m_objectToInstance[o] < 0) continue;
         reinterpret_cast<uint32_t*>(fc.selMore)[fc.selMoreCount++] = (uint32_t)(m_objectToInstance[o] + 1);

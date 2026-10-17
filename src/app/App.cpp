@@ -485,6 +485,17 @@ void App::frame() {
         m_viewportVisible = true;
     }
     outlinerSync();   // Scene Manager: ids, the children follow their parent (before the render)
+    {
+        // editor overlays: ground grid (not in Play or a built game) and the selection glow, restarted when the selection changes
+        size_t sig = (size_t)(m_selected + 1);
+        for (int i : m_multi) sig = sig * 1315423911u + (size_t)(i + 1);
+        double now = ImGui::GetTime();
+        if (sig != m_selSig) { m_selSig = sig; m_selSince = now; }
+        m_rs.selectionAge = (float)(now - m_selSince);
+        const bool game = m_game && (m_game->playing() || m_game->playerMode());
+        m_rs.editorGrid = m_showEditorGrid && !game ? std::max(m_scene.gridScale, 1e-3f) : 0.0f;
+        m_rs.editorGridAxis = std::max(m_scene.gridScale * 5.0f, m_scene.camera.distance * 0.45f);
+    }
     m_viewportRendered = false;
     if (m_workspace == 2 && m_matHost.want) {
         m_matHost.want = false;
@@ -1115,6 +1126,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         else if (a == L"--open") opt.openPath = next();
         else if (a == L"--gizmo-test") opt.gizmoTest = next();
         else if (a == L"--gizmo-demo") opt.gizmoDemo = next();
+        else if (a == L"--open-menu") { std::wstring m = next(); opt.openMenu = std::string(m.begin(), m.end()); }
         else if (a.size() > 5 && a.find(L".json") != std::wstring::npos) opt.openPath = a;
         else if (a.size() > 4 && _wcsicmp(a.c_str() + a.size() - 4, L".wzx") == 0) opt.openPath = a;
         else if (a == L"--shot") opt.shotPath = next();

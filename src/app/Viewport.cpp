@@ -7,7 +7,6 @@
 
 namespace app {
 
-static float3 axisVec(int a) { return float3(a == 0 ? 1.0f : 0.0f, a == 1 ? 1.0f : 0.0f, a == 2 ? 1.0f : 0.0f); }
 
 // 3D image + input + gizmo in a screen rectangle of the current window (Atelier Scene workspace).
 void App::viewportCanvas(ImVec2 p0, ImVec2 size) {
@@ -111,19 +110,6 @@ void App::viewportInput(bool hovered) {
             float k = cam.distance * std::tan(cam.fovY * 0.5f) * 2.0f / m_rcView.h * m_camSpeed;
             cam.target = cam.target - right * (dx * k) + up * (dy * k);
             cameraChanged();
-        }
-    }
-
-    // axis widget (bottom-left): click an axis to look along it
-    if (inView && !placing && ImGui::IsMouseClicked(0) && !alt) {
-        float3 r, u, f;
-        cam.basis(r, u, f);
-        float gx = m_rcView.x + 52 * m_dpi, gy = m_rcView.b() - 52 * m_dpi, L = 30 * m_dpi;
-        const int views[3] = {4, 5, 1};
-        for (int a = 0; a < 3; ++a) {
-            float3 av = axisVec(a);
-            float ex = gx + dot(av, r) * L, ey = gy - dot(av, u) * L;
-            if (std::hypot(mx - ex, my - ey) < 10 * m_dpi) { setViewAxis(views[a]); return; }
         }
     }
 
