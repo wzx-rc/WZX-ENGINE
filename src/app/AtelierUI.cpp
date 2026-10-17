@@ -1200,7 +1200,9 @@ void App::atlViewport(float x, float y, float w, float h) {
     // canvas: the panes of the layout (Panes.cpp). The active one is the renderer's image with the input, the tools and
     // the overlays below; drawPanes shows the others (raster views of their camera).
     const R area = {x, y + 40 * s, w, h - 40 * s - 27 * s};
-    paneInput(ImGui::IsWindowHovered() && !(m_game && (m_game->graphOpen() || m_game->rtsCameraOn())));
+    const bool canvasHovered = ImGui::IsWindowHovered() && !(m_game && (m_game->graphOpen() || m_game->rtsCameraOn()));
+    splitInput({area.x, area.y, area.w, area.h}, canvasHovered);   // the lines between the panes first
+    if (!m_splitHot) paneInput(canvasHovered);
     const ScreenRect ar = layoutPanes({area.x, area.y, area.w, area.h});
     R r = {ar.x, ar.y, ar.w, ar.h};
     drawPanes();
@@ -1225,9 +1227,10 @@ void App::atlViewport(float x, float y, float w, float h) {
     else snprintf(triText, sizeof(triText), "%zu", tris);
     const bool roomy = r.w > 330 * s && r.h > 210 * s;   // (a small pane of a layout: no view cube, no statistics)
     if (m_showStats && roomy && r.h > 300 * s) {
-        R st = {r.x + r.w - 165 * s, r.y + 116 * s, 151 * s, 129 * s};   // under the view cube
+        // (text at 11, as the panels: 9 was too small to read)
+        R st = {r.x + r.w - 214 * s, r.y + 116 * s, 200 * s, 158 * s};   // under the view cube
         Box(st, P().minimap, 4, true);
-        Text(st.x + 10 * s, st.y + 10 * s, "VIEWPORT", P().accent, 9);
+        Text(st.x + 12 * s, st.y + 11 * s, "VIEWPORT", P().accent, 10);
         char v[6][32];
         snprintf(v[0], 32, "%.0f FPS", 1000.0f / std::max(m_frameMs, 0.1f));
         snprintf(v[1], 32, "%.1f ms", m_frameMs);
@@ -1239,8 +1242,8 @@ void App::atlViewport(float x, float y, float w, float h) {
         if (aa > 1) snprintf(v[5], 32, m_renderer.msaaTemporal() ? "MSAA x%u (%ux2)" : "MSAA x%u", aa, aa / 2); else snprintf(v[5], 32, "Off");
         const char* names[] = {"Frame rate", "Frame time", m_rs.raster ? "GPU" : "Samples", "Triangles", "Objects · lights", "Anti-aliasing"};
         for (int i = 0; i < 6; ++i) {
-            Text(st.x + 10 * s, st.y + (30 + i * 16) * s, names[i], P().muted, 9);
-            Text(st.x + 92 * s, st.y + (30 + i * 16) * s, v[i], P().text, 9);
+            Text(st.x + 12 * s, st.y + (34 + i * 19) * s, names[i], P().muted, 11);
+            Text(st.x + 112 * s, st.y + (34 + i * 19) * s, v[i], P().text, 11);
         }
     }
     // view cube (top right): turns with the camera, world axes X / Y / Z; a click on a face looks along it
@@ -1338,7 +1341,7 @@ void App::atlViewport(float x, float y, float w, float h) {
     // labels at the ends of the world axes of the editor grid
     if (m_rs.editorGrid > 0 && th::settings().grid.axes && th::settings().grid.arrows) {
         const float L = m_rs.editorGridAxis;
-        const float3 ends[3] = {float3(L * 1.07f, 0, 0), float3(0, L * 1.09f, 0), float3(0, 0, L * 1.07f)};   // past the arrows (EditorGrid.hlsl)
+        const float3 ends[3] = {float3(L * 1.04f, 0, 0), float3(0, L * 1.05f, 0), float3(0, 0, L * 1.04f)};   // past the arrows (EditorGrid.hlsl)
         const ImU32 cols[3] = {IM_COL32(238, 96, 96, 235), IM_COL32(110, 220, 130, 235), IM_COL32(96, 146, 252, 235)};
         const char* names[3] = {"X", "Y", "Z"};
         for (int a = 0; a < 3; ++a) {
@@ -1359,6 +1362,7 @@ void App::atlViewport(float x, float y, float w, float h) {
     }
     drawCameraPreview(r.x, r.y, r.w, r.h);   // the selected (or pinned) camera, bottom right
     ImGui::PopClipRect();
+    drawViewMenu(ImGui::GetForegroundDrawList());   // Space held
     // footer (former Atelier graph Footer): state of the tools and of the renderer
     R fr = {x, area.y + area.h + 3 * s, w, 24 * s};
     if (P().skin == 2) afx::FloatBar(dl, fr.min(), fr.max(), s);   // Corail: floating status bar
@@ -1391,7 +1395,7 @@ void App::drawAdvScaleMenu(float x, float y, float w, float h) {
     const AdvScaleOptions& opt = th::settings().advScale;
     if (opt.showHints) {
         const char* keys[4] = {"Ctrl", "Shift", "Alt", "V"};
-        const char* what[4] = {"Corner Handles", "Uniform Scale", "2-Side Scale", "Vertex Snap"};
+        const char* what[4] = {"Edge Handles", "Uniform Scale", "2-Side Scale", "Vertex Snap"};
         float total = 0;
         for (int i = 0; i < 4; ++i) total += TextSize(keys[i], 10).x + TextSize(what[i], 10).x + 34 * s;
         float hx = x + (w - total) * 0.5f, hy = y + h - 26 * s;
@@ -1420,7 +1424,7 @@ void App::drawAdvScaleMenu(float x, float y, float w, float h) {
         ImGui::PopStyleVar();
         Text(pr.x + 32 * s, cy + 2 * s, label, P().text, 10.5f);
     };
-    check("##advCorners", "Corner Handles", &m_advCorners, pr.y + 28 * s);
+    check("##advCorners", "Edge Handles", &m_advCorners, pr.y + 28 * s);
     check("##advPlay", "Show in Game View", &m_advShowInPlay, pr.y + 48 * s);
     // eyedropper: the orientation of the box of several objects; X: back to the world axes
     std::string label = "Get Orientation";
@@ -1580,6 +1584,13 @@ void App::atlViewMenus(float x, float y, float room) {
     }
     if (m_frameCounter == 10 && m_opt.openMenu == "gridOptions") m_showGridOptions = true;   // --open-menu gridOptions: captures
     if (m_frameCounter == 10 && m_opt.openMenu.rfind("advScale", 0) == 0) advScaleDemo(m_opt.openMenu);   // --open-menu advScale...: captures
+    if (m_frameCounter == 10 && m_opt.openMenu == "viewMenu") {   // --open-menu viewMenu: the menu of Space held, for captures
+        m_vm = ViewMenu();
+        m_vm.down = m_vm.shown = true;
+        m_vm.x = m_rcView.x + m_rcView.w * 0.5f;
+        m_vm.y = m_rcView.y + m_rcView.h * 0.5f;
+        m_vm.pane = m_activePane;
+    }
 }
 
 // The cameras a pane can look through: persp, the orthographic ones, the camera objects of the scene (the render camera
@@ -1635,6 +1646,27 @@ void App::drawPanes() {
     }
     const ScreenRect& a = m_panes[m_activePane].rc;
     dl->AddRect(ImVec2(a.x, a.y), ImVec2(a.x + a.w, a.y + a.h), P().accent, 3 * s, 0, 1.5f * s);
+    // the lines between the panes: a grip of three dots in the middle of each piece (dragged to resize the panes), the
+    // line under the mouse or dragged lit
+    const ScreenRect& ar = m_paneArea;
+    const int cols = layoutCols(m_layout), rows = layoutRows(m_layout);
+    const ImU32 grip = Fade(P().text, 120), lit = P().accent;
+    for (int k = 1; k < cols; ++k) {
+        const float lx = std::floor(ar.x + splitAt(false, k) * ar.w) + 0.5f;
+        if (m_splitCol == k) dl->AddLine(ImVec2(lx, ar.y), ImVec2(lx, ar.y + ar.h), lit, 2.0f * s);
+        for (int r = 0; r < rows; ++r) {
+            const float cy = ar.y + (splitAt(true, r) + splitAt(true, r + 1)) * 0.5f * ar.h;
+            for (int dd = -1; dd <= 1; ++dd) dl->AddCircleFilled(ImVec2(lx, cy + dd * 5.0f * s), 1.3f * s, m_splitCol == k ? lit : grip, 8);
+        }
+    }
+    for (int k = 1; k < rows; ++k) {
+        const float ly = std::floor(ar.y + splitAt(true, k) * ar.h) + 0.5f;
+        if (m_splitRow == k) dl->AddLine(ImVec2(ar.x, ly), ImVec2(ar.x + ar.w, ly), lit, 2.0f * s);
+        for (int c = 0; c < cols; ++c) {
+            const float cx = ar.x + (splitAt(false, c) + splitAt(false, c + 1)) * 0.5f * ar.w;
+            for (int dd = -1; dd <= 1; ++dd) dl->AddCircleFilled(ImVec2(cx + dd * 5.0f * s, ly), 1.3f * s, m_splitRow == k ? lit : grip, 8);
+        }
+    }
 }
 
 // Preview of the selected (or pinned) camera at the bottom right of the active pane, as in Unreal: its picture with the

@@ -92,8 +92,14 @@ void App::drawSelectionFx(ImDrawList* dl) {
         aabbOf(o, o.position, objRot(o), b.mn, b.mx);
         boxes.push_back(b);
     }
+    // the grid plane (y = 0) hides what lies on its other side, seen from here: the editor grid shown, or a ground
+    bool gridPlane = m_rs.editorGrid > 0;
+    for (const Object& o : m_scene.objects)
+        if (o.part == "GROUND" && o.visible) gridPlane = true;
+    const float side = cam.ortho ? -cf.y : eye.y;   // > 0: the viewer above the grid (orthographic: looking down)
     // (from p towards the viewer; orthographic: along the view, the whole scene)
     auto hidden = [&](const float3& p, int skip) {
+        if (gridPlane && ((side > 1e-4f && p.y < -1e-3f) || (side < -1e-4f && p.y > 1e-3f))) return true;   // under the grid
         const float3 dir = cam.toViewer(p);
         const float tp = cam.ortho ? 1e6f : length(eye - p);
         if (tp < 1e-5f) return false;

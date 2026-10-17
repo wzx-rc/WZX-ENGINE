@@ -25,7 +25,8 @@ void App::viewportCanvas(ImVec2 p0, ImVec2 size) {
     // (a click that made this pane the active one: the view takes it, as the button, moved here, is hovered next frame)
     const bool clickedIn = m_paneClicked && m_rcView.contains(ImGui::GetIO().MousePos.x, ImGui::GetIO().MousePos.y);
     m_paneClicked = false;
-    bool hovered = (ImGui::IsItemHovered() || clickedIn) && !(m_game && (m_game->graphOpen() || m_game->rtsCameraOn()));   // the graph editor covers the view
+    // (the graph editor covers the view; a line between the panes or the view menu of Space take the mouse)
+    bool hovered = (ImGui::IsItemHovered() || clickedIn) && !(m_game && (m_game->graphOpen() || m_game->rtsCameraOn())) && !m_splitHot && !m_vm.down;
     ImDrawList* dl = ImGui::GetWindowDrawList();
     // the texture of the previous size is stretched for one frame when the panel is resized
     dl->AddImage(m_gui.viewportTexture(), p0, ImVec2(p0.x + size.x, p0.y + size.y));

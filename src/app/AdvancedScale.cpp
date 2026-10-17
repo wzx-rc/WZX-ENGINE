@@ -3,9 +3,9 @@
 //   - one object: the box is oriented on the object (its local box); several objects: on the world, or on the object
 //     picked with the eyedropper;
 //   - face handles (centre of each face): one axis, the opposite face stays fixed;
-//   - edge and corner handles (Ctrl held, or "Corner Handles" in the menu; they appear near the cursor): an edge scales
-//     two axes in their plane, a corner the three along the diagonal of the screen; the opposite edge or corner stays
-//     fixed;
+//   - corner handles (always shown) and edge handles (Ctrl held, or "Edge Handles" in the menu; they appear near the
+//     cursor): an edge scales two axes in their plane, a corner the three along the diagonal of the screen; the opposite
+//     edge or corner stays fixed;
 //   - Shift: uniform scale; Alt: both sides (around the centre); V: the handle snaps to the vertex nearest to the cursor
 //     (any object, even far away); Snapping on: the handle lands on the grid of the move step;
 //   - flat objects (a side thinner than the flat threshold): faces on four sides only, corners of the rectangle;
@@ -181,7 +181,7 @@ bool App::advScaleInput(bool inView) {
     if (!inView) { m_advHover = -1; return false; }
     if (!advScaleBox(b)) { m_advHover = -1; return false; }
     const AdvScaleOptions& opt = th::settings().advScale;
-    const bool corners = m_advCorners || io.KeyCtrl;
+    const bool edges = m_advCorners || io.KeyCtrl;   // (the corners are always there)
     const Camera& cam = m_scene.camera;
     int best = -1;
     float bestD = opt.interactDist * m_dpi;
@@ -192,8 +192,7 @@ bool App::advScaleInput(bool inView) {
         if (n == 0) continue;
         if (b.flatAxis >= 0) {
             if (s[b.flatAxis] != 0) continue;   // flat: the four sides and the corners of the rectangle
-            if (n == 2 && !corners) continue;
-        } else if (n > 1 && !corners) continue;
+        } else if (n == 2 && !edges) continue;
         float3 dir(0, 0, 0), p = b.c;
         for (int k = 0; k < 3; ++k) { p = p + b.ax[k] * (s[k] * b.h[k]); dir = dir + b.ax[k] * (float)s[k]; }
         float2 sp;
@@ -413,7 +412,7 @@ void App::drawAdvScale(ImDrawList* dl) {
         }
     if (playing) return;   // "Show in Game View": the frame only
 
-    const bool corners = m_advCorners || io.KeyCtrl;
+    const bool edges = m_advCorners || io.KeyCtrl;
     const float hs = opt.handleSize * 0.5f * d;
     for (int h = 0; h < 27; ++h) {
         int s[3];
@@ -423,16 +422,16 @@ void App::drawAdvScale(ImDrawList* dl) {
         bool isCorner = n == 3;
         if (b.flatAxis >= 0) {
             if (s[b.flatAxis] != 0) continue;
-            if (n == 2) { if (!corners) continue; isCorner = true; }
-        } else if (n > 1 && !corners) continue;
+            if (n == 2) isCorner = true;
+        } else if (n == 2 && !edges) continue;
         float3 p = b.c, dir(0, 0, 0);
         for (int k = 0; k < 3; ++k) { p = p + b.ax[k] * (s[k] * b.h[k]); dir = dir + b.ax[k] * (float)s[k]; }
         float2 sp;
         if (!project(p, sp)) continue;
         const bool dragged = m_adv.active && m_adv.handle == h, hover = !m_adv.active && m_advHover == h;
-        // edge and corner handles appear near the cursor
+        // the edge handles appear near the cursor; the corners are always shown
         float alpha = 1.0f;
-        if (n > 1 && !dragged && !hover && !m_gzDemo) {   // (captures: all shown)
+        if (n > 1 && !isCorner && !dragged && !hover && !m_gzDemo) {   // (captures: all shown)
             const float dist = std::hypot(io.MousePos.x - sp.x, io.MousePos.y - sp.y);
             alpha = clampf(1.0f - (dist - 30.0f * d) / (50.0f * d), 0.0f, 1.0f);
             if (alpha <= 0.01f) continue;

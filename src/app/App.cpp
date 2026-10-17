@@ -480,6 +480,7 @@ void App::frame() {
         drawEditor();
         drawSaveChangesPopup();
     }
+    spaceInput(!gameKeys && m_workspace == 0 && !(m_game && m_game->playerMode()));   // Space: the pane alone, or the view menu (held)
     storeActiveCamera();   // the other panes see this camera as it is now (a camera object: moved with the view)
     if (m_game) m_game->update(m_dt);
     updateDocState();
@@ -832,7 +833,6 @@ void App::handleShortcuts() {
     if (pressed(ImGuiKey_R) && !placing) { m_tool = TOOL_SCALE; setAdvScale(false); }
     if (pressed(ImGuiKey_F)) frameSelection();
     if (pressed(ImGuiKey_T)) m_turntable = !m_turntable;
-    if (pressed(ImGuiKey_Space) && !ImGui::IsAnyItemActive()) togglePaneMax();   // the pane under the mouse alone, and back (Maya)
     if (pressed(ImGuiKey_Escape)) select(-1);
     if (m_selected >= 0 && !placing && !ImGui::IsAnyItemActive()) {
         // Arrow keys move along the axis closest to the camera direction.

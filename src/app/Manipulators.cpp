@@ -22,7 +22,9 @@ const ImU32 kViewCol = IM_COL32(150, 210, 222, 255);
 const ImU32 kBallCol = IM_COL32(200, 200, 200, 70);
 const int kRingSeg = 72;
 // geometry in units of the manipulator size (an axis is 1 long)
-const float kConeBase = 0.86f, kPlane0 = 0.40f, kPlane1 = 0.58f, kCube = 0.045f, kRing = 0.85f, kViewRing = 1.08f;
+// (the plane squares sit far from the centre, at two thirds of the axes, as the reference of the user)
+const float kConeBase = 0.86f, kPlane0 = 0.60f, kPlane1 = 0.74f, kCube = 0.045f, kRing = 0.85f, kViewRing = 1.08f;
+const double kMarkingDelay = 0.2;   // seconds before the marking menu is drawn
 
 float3 unitAxis(int a) { return float3(a == 0 ? 1.0f : 0.0f, a == 1 ? 1.0f : 0.0f, a == 2 ? 1.0f : 0.0f); }
 ImVec2 iv(float2 p) { return ImVec2(p.x, p.y); }
@@ -119,7 +121,8 @@ int App::gizmoHit(float mx, float my) {
     float s = gizmoSize(pv);
     float2 pc;
     if (!project(pv, pc)) return MH_NONE;
-    const float d = m_dpi, lineTol = 7.0f * d;
+    // pre-selection zone: a handle within 10 px of the cursor is the one under it (highlighted, taken by a click)
+    const float d = m_dpi, lineTol = 10.0f * d;
     float3 toCam = m_scene.camera.toViewer(pv);
 
     if (m_tool == TOOL_ROTATE) {
@@ -146,9 +149,11 @@ int App::gizmoHit(float mx, float my) {
         return MH_NONE;
     }
 
-    // move / scale: centre first, then the plane squares, then the axes
+    // move / scale: centre first, then a plane square under the cursor, then the nearest square or axis within the zone
     if (std::hypot(mx - pc.x, my - pc.y) < 9.0f * d) return MH_CENTER;
     float3 viewDir = -toCam;
+    int best = MH_NONE;
+    float bd = lineTol;
     for (int h = MH_YZ; h <= MH_XY; ++h) {
         int u, v;
         planeAxes(h, u, v);
@@ -156,10 +161,13 @@ int App::gizmoHit(float mx, float my) {
         float2 q[4];
         bool ok = project(pv + ax[u] * (kPlane0 * s) + ax[v] * (kPlane0 * s), q[0]) && project(pv + ax[u] * (kPlane1 * s) + ax[v] * (kPlane0 * s), q[1]) &&
                   project(pv + ax[u] * (kPlane1 * s) + ax[v] * (kPlane1 * s), q[2]) && project(pv + ax[u] * (kPlane0 * s) + ax[v] * (kPlane1 * s), q[3]);
-        if (ok && inQuad(mx, my, q)) return h;
+        if (!ok) continue;
+        if (inQuad(mx, my, q)) return h;
+        for (int k = 0; k < 4; ++k) {
+            const float dd = distSeg(mx, my, q[k], q[(k + 1) % 4]);
+            if (dd < bd) { bd = dd; best = h; }
+        }
     }
-    int best = MH_NONE;
-    float bd = lineTol;
     for (int a = 0; a < 3; ++a) {
         float2 pt;
         if (!project(pv + ax[a] * s, pt)) continue;
@@ -635,7 +643,11 @@ bool App::markingMenuInput(bool inView) {
         mm.tool = tool;
         mm.x = io.MousePos.x;
         mm.y = io.MousePos.y;
+        mm.mx = mm.x;
+        mm.my = mm.y;
         mm.hover = -1;
+        mm.shown = false;
+        mm.t0 = ImGui::GetTime();
         return true;
     }
     mm.mx = io.MousePos.x;
@@ -656,6 +668,9 @@ bool App::markingMenuInput(bool inView) {
 
 void App::drawMarkingMenu(ImDrawList* dl) {
     if (!m_mm.open) return;
+    // drawn after a short delay (Maya): a quick flick does the item in its direction without showing the menu
+    if (!m_mm.shown && !m_gzDemo && ImGui::GetTime() - m_mm.t0 < kMarkingDelay) return;
+    m_mm.shown = true;
     const float d = m_dpi;
     ImVec2 c(m_mm.x, m_mm.y);
     auto items = markingItems(*this, m_mm.tool, m_axisMode, m_magnet, m_snapAbsolute, m_stepMove, m_stepRotate, m_stepScale, [](int) {}, [](int) {});

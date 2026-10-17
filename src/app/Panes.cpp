@@ -13,6 +13,13 @@ namespace {
 
 const int kCols[kLayoutCount] = {1, 2, 1, 2, 3, 4};
 const int kRows[kLayoutCount] = {1, 1, 2, 2, 3, 4};
+const double kViewMenuDelay = 0.2;   // seconds of Space held before the view menu is drawn (as the marking menus)
+
+// direction 0..7 (N, NE, E ... NW, clockwise) of a mouse offset
+int dirOf(float dx, float dy) {
+    const int d = (int)std::lround(std::atan2(dx, -dy) / (kPi / 4));
+    return (d + 8) % 8;
+}
 
 } // namespace
 
@@ -61,6 +68,7 @@ void App::setLayout(int l) {
 
 // The rectangles of the panes in the area of the view (a maximized pane: the whole area), the active one returned.
 ScreenRect App::layoutPanes(const ScreenRect& area) {
+    m_paneArea = area;
     const int n = (int)m_panes.size();
     if (n <= 1 || m_paneMax) {
         for (int i = 0; i < n; ++i) m_panes[i].rc = i == m_activePane ? area : ScreenRect{0, 0, 0, 0};
@@ -68,12 +76,63 @@ ScreenRect App::layoutPanes(const ScreenRect& area) {
     }
     const int cols = kCols[m_layout], rows = kRows[m_layout];
     const float gap = 3.0f * m_dpi;
-    const float cw = (area.w - gap * (cols - 1)) / cols, ch = (area.h - gap * (rows - 1)) / rows;
     for (int i = 0; i < n; ++i) {
         const int c = i % cols, r = i / cols;
-        m_panes[i].rc = {std::floor(area.x + c * (cw + gap)), std::floor(area.y + r * (ch + gap)), std::floor(cw), std::floor(ch)};
+        // the lines between the panes are the boundaries of the columns and rows (dragged: splitInput), the gap around them
+        const float x0 = area.x + splitAt(false, c) * area.w + (c > 0 ? gap * 0.5f : 0.0f);
+        const float x1 = area.x + splitAt(false, c + 1) * area.w - (c < cols - 1 ? gap * 0.5f : 0.0f);
+        const float y0 = area.y + splitAt(true, r) * area.h + (r > 0 ? gap * 0.5f : 0.0f);
+        const float y1 = area.y + splitAt(true, r + 1) * area.h - (r < rows - 1 ? gap * 0.5f : 0.0f);
+        m_panes[i].rc = {std::floor(x0), std::floor(y0), std::floor(x1) - std::floor(x0), std::floor(y1) - std::floor(y0)};
     }
     return m_panes[m_activePane].rc;
+}
+
+float App::splitAt(bool rows, int k) const {
+    const int n = rows ? kRows[m_layout] : kCols[m_layout];
+    if (k <= 0) return 0.0f;
+    if (k >= n) return 1.0f;
+    const float f = (rows ? m_splitY : m_splitX)[m_layout][k - 1];
+    return f > 0 ? f : (float)k / n;
+}
+
+// The lines between the panes: dragged with the left button, they resize the columns and rows (a pane keeps 60 px at
+// least); where two lines cross, both move; a double-click gives the equal split back. Before paneInput and the view:
+// the mouse on a line belongs to it.
+void App::splitInput(const ScreenRect& area, bool windowHovered) {
+    m_splitHot = false;
+    ImGuiIO& io = ImGui::GetIO();
+    const int cols = kCols[m_layout], rows = kRows[m_layout];
+    if (m_panes.size() <= 1 || m_paneMax) { m_splitDrag = false; m_splitCol = m_splitRow = 0; return; }
+    auto drag = [&](bool r, int k, float m) {   // boundary k of the rows or columns to the mouse, between its neighbours
+        const float len = r ? area.h : area.w, minF = std::min(60.0f * m_dpi / std::max(len, 1.0f), 0.2f);
+        const float f = clampf((m - (r ? area.y : area.x)) / std::max(len, 1.0f), splitAt(r, k - 1) + minF, splitAt(r, k + 1) - minF);
+        (r ? m_splitY : m_splitX)[m_layout][k - 1] = f;
+    };
+    if (m_splitDrag) {
+        if (!io.MouseDown[0]) { m_splitDrag = false; return; }
+        m_splitHot = true;
+        if (m_splitCol) drag(false, m_splitCol, io.MousePos.x);
+        if (m_splitRow) drag(true, m_splitRow, io.MousePos.y);
+        ImGui::SetMouseCursor(m_splitCol && m_splitRow ? ImGuiMouseCursor_ResizeAll : m_splitCol ? ImGuiMouseCursor_ResizeEW : ImGuiMouseCursor_ResizeNS);
+        return;
+    }
+    m_splitCol = m_splitRow = 0;
+    if (!windowHovered || ImGui::IsAnyItemActive() || m_gz.active || m_adv.active || m_mm.open || m_marq.active || m_vm.down) return;
+    const float mx = io.MousePos.x, my = io.MousePos.y, grab = 4.0f * m_dpi;
+    if (!area.contains(mx, my)) return;
+    for (int k = 1; k < cols; ++k)
+        if (std::fabs(mx - (area.x + splitAt(false, k) * area.w)) < grab) m_splitCol = k;
+    for (int k = 1; k < rows; ++k)
+        if (std::fabs(my - (area.y + splitAt(true, k) * area.h)) < grab) m_splitRow = k;
+    if (!m_splitCol && !m_splitRow) return;
+    m_splitHot = true;
+    ImGui::SetMouseCursor(m_splitCol && m_splitRow ? ImGuiMouseCursor_ResizeAll : m_splitCol ? ImGuiMouseCursor_ResizeEW : ImGuiMouseCursor_ResizeNS);
+    if (ImGui::IsMouseDoubleClicked(0)) {   // the equal split back
+        if (m_splitCol) m_splitX[m_layout][m_splitCol - 1] = 0;
+        if (m_splitRow) m_splitY[m_layout][m_splitRow - 1] = 0;
+        cameraChanged();
+    } else if (ImGui::IsMouseClicked(0)) m_splitDrag = true;
 }
 
 // Space: the pane under the mouse alone in the view, and back to the layout.
@@ -171,6 +230,102 @@ int App::previewCamera() const {
     const ViewPane& p = m_panes[m_activePane];
     if (p.cam == VCAM_OBJECT && p.object == m_scene.objects[idx].id) return -1;
     return idx;
+}
+
+// --------------------------------------------------------------------------- Space: the view menu
+
+// Top, side, front and persp around the centre (north, east, south, west), the camera objects on the diagonals (the
+// render camera first).
+std::vector<App::ViewMenuItem> App::viewMenuItems() const {
+    std::vector<ViewMenuItem> v = {{0, VCAM_TOP, 0, "Top"}, {2, VCAM_SIDE, 0, "Side"}, {4, VCAM_FRONT, 0, "Front"}, {6, VCAM_PERSP, 0, "Persp"}};
+    std::vector<int> cams;
+    const int rc = renderCamera();
+    if (rc >= 0) cams.push_back(rc);
+    for (size_t i = 0; i < m_scene.objects.size(); ++i)
+        if (m_scene.objects[i].camera && (int)i != rc) cams.push_back((int)i);
+    static const int diag[4] = {1, 7, 3, 5};   // NE, NW, SE, SW
+    for (size_t k = 0; k < cams.size() && k < 4; ++k) {
+        const Object& o = m_scene.objects[cams[k]];
+        v.push_back({diag[k], VCAM_OBJECT, o.id, o.name});
+    }
+    return v;
+}
+
+// Space pressed: the pane under the mouse is the one the menu acts on. Released: the item in the direction of the mouse
+// (also after a quick flick, the menu not drawn yet) makes that pane look through its camera; a tap (no item, menu
+// not shown) shows the pane alone, and back. A left click on an item chooses it too.
+void App::spaceInput(bool allowed) {
+    ImGuiIO& io = ImGui::GetIO();
+    ViewMenu& vm = m_vm;
+    if (!vm.down) {
+        if (!allowed || io.WantTextInput || io.KeyCtrl || io.KeyAlt || ImGui::IsAnyItemActive() || !ImGui::IsKeyPressed(ImGuiKey_Space, false)) return;
+        vm = ViewMenu();
+        vm.down = true;
+        vm.x = io.MousePos.x;
+        vm.y = io.MousePos.y;
+        vm.t0 = ImGui::GetTime();
+        vm.pane = m_activePane;
+        if (!m_paneMax)
+            for (int i = 0; i < (int)m_panes.size(); ++i)
+                if (m_panes[i].rc.w > 1 && m_panes[i].rc.contains(vm.x, vm.y)) vm.pane = i;
+        return;
+    }
+    if (m_opt.openMenu == "viewMenu") return;   // (captures: kept open)
+    const std::vector<ViewMenuItem> items = viewMenuItems();
+    const float dx = io.MousePos.x - vm.x, dy = io.MousePos.y - vm.y;
+    vm.hover = -1;
+    if (std::hypot(dx, dy) > 22.0f * m_dpi) {
+        const int dir = dirOf(dx, dy);
+        for (const ViewMenuItem& it : items)
+            if (it.dir == dir) vm.hover = dir;
+    }
+    if (ImGui::GetTime() - vm.t0 >= kViewMenuDelay) vm.shown = true;
+    const bool click = ImGui::IsMouseClicked(0) && vm.hover >= 0;
+    if (ImGui::IsKeyDown(ImGuiKey_Space) && !click) return;
+    vm.down = false;
+    if (vm.pane >= (int)m_panes.size()) return;
+    if (vm.hover >= 0) {
+        for (const ViewMenuItem& it : items)
+            if (it.dir == vm.hover) {
+                activatePane(vm.pane);
+                setPaneCamera(vm.pane, it.cam, it.object);
+                status(L"View: " + fromUtf8(it.label));
+            }
+    } else if (!vm.shown) {   // a tap
+        if (!m_paneMax) activatePane(vm.pane);
+        togglePaneMax(false);
+    }
+}
+
+void App::drawViewMenu(ImDrawList* dl) {
+    if (!m_vm.down || !m_vm.shown) return;
+    const float d = m_dpi;
+    const ImVec2 c(m_vm.x, m_vm.y), m = ImGui::GetIO().MousePos;
+    const ViewPane& p = m_panes[std::clamp(m_vm.pane, 0, (int)m_panes.size() - 1)];
+    dl->AddCircleFilled(c, 5 * d, IM_COL32(236, 236, 226, 200), 20);
+    dl->AddCircle(c, 22 * d, IM_COL32(236, 236, 226, 70), 40, 1.0f * d);
+    if (m_vm.hover >= 0) dl->AddLine(c, m, IM_COL32(255, 226, 102, 200), 1.2f * d);
+    const char* title = "Views";
+    const ImVec2 ts = ImGui::CalcTextSize(title);
+    dl->AddText(ImVec2(c.x - ts.x * 0.5f, c.y + 26 * d), IM_COL32(236, 236, 226, 160), title);
+    for (const ViewMenuItem& it : viewMenuItems()) {
+        const float a = it.dir * kPi / 4, rad = (it.dir & 1 ? 104.0f : 92.0f) * d;
+        const ImVec2 q(c.x + std::sin(a) * rad, c.y - std::cos(a) * rad * 0.82f);
+        const bool current = p.cam == it.cam && (it.cam != VCAM_OBJECT || p.object == it.object);
+        const std::string label = (current ? "\xE2\x80\xA2 " : "") + it.label;   // bullet: what the pane looks through
+        const ImVec2 sz = ImGui::CalcTextSize(label.c_str());
+        const float pw = sz.x + 18 * d, ph = sz.y + 8 * d;
+        const float x0 = std::sin(a) > 0.3f ? q.x - 8 * d : std::sin(a) < -0.3f ? q.x - pw + 8 * d : q.x - pw * 0.5f;
+        const ImVec2 b0(x0, q.y - ph * 0.5f), b1(x0 + pw, q.y + ph * 0.5f);
+        const bool hot = m_vm.hover == it.dir;
+        const bool camObj = it.cam == VCAM_OBJECT;   // camera objects: the colour of their icon (render camera orange)
+        const int ci = camObj ? cameraObject(it.object) : -1;
+        const ImU32 edge = hot ? IM_COL32(255, 226, 102, 255)
+                               : (ci >= 0 && m_scene.objects[ci].camRender ? IM_COL32(255, 196, 92, 200) : IM_COL32(110, 114, 124, 200));
+        dl->AddRectFilled(b0, b1, hot ? IM_COL32(255, 226, 102, 240) : IM_COL32(34, 36, 42, 235), ph * 0.5f);
+        dl->AddRect(b0, b1, edge, ph * 0.5f, 0, 1.0f * d);
+        dl->AddText(ImVec2(b0.x + 9 * d, b0.y + 4 * d), hot ? IM_COL32(28, 28, 30, 255) : IM_COL32(228, 228, 232, 255), label.c_str());
+    }
 }
 
 } // namespace app

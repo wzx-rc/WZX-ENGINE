@@ -391,7 +391,7 @@ private:
         std::vector<Item> items;
     };
     bool m_advScale = false;             // the tool is on
-    bool m_advCorners = false;           // edge and corner handles without holding Ctrl (menu)
+    bool m_advCorners = false;           // edge handles without holding Ctrl (menu "Edge Handles"; the corners are always shown)
     bool m_advShowInPlay = true;         // the box stays drawn while playing (menu "Show in Game View")
     bool m_advPicking = false;           // eyedropper: the next click picks the orientation object
     uint32_t m_advRefId = 0;             // object giving the orientation of the box of several objects (0 = world)
@@ -458,6 +458,23 @@ private:
     ScreenRect layoutPanes(const ScreenRect& area);
     void togglePaneMax(bool underMouse = true);   // (false: the active pane)
     void paneInput(bool windowHovered);
+    // the lines between the panes, dragged to resize them: boundaries of the columns and rows of each layout (fractions
+    // of the area, 0: the equal split); the line under the mouse or dragged (0: none, else 1 + its index)
+    float m_splitX[kLayoutCount][3] = {}, m_splitY[kLayoutCount][3] = {};
+    int m_splitCol = 0, m_splitRow = 0;
+    bool m_splitDrag = false;
+    bool m_splitHot = false;           // a line under the mouse or dragged: the panes and the view leave the mouse to it
+    ScreenRect m_paneArea;             // the area of the panes this frame (layoutPanes)
+    float splitAt(bool rows, int k) const;   // boundary k (0..n) of the columns or rows of the layout, 0..1
+    void splitInput(const ScreenRect& area, bool windowHovered);
+    // Space: a tap shows the pane under the mouse alone (and back); held, the view menu at the mouse (Maya's hotbox
+    // centre): top, front, side and persp around it, the camera objects on the diagonals; a quick flick chooses
+    // without showing it
+    struct ViewMenu { bool down = false, shown = false; int pane = 0, hover = -1; float x = 0, y = 0; double t0 = 0; } m_vm;
+    struct ViewMenuItem { int dir; int cam; uint32_t object; std::string label; };
+    std::vector<ViewMenuItem> viewMenuItems() const;
+    void spaceInput(bool allowed);   // after the editor of the frame (the view sees the menu open on the frame it closes)
+    void drawViewMenu(ImDrawList* dl);
     bool selectionInView(const Camera& c, float w, float h, float2& centre, float& radius) const;
     void renderPanes();
     int previewCamera() const;
@@ -525,7 +542,8 @@ private:
     GizmoDrag m_gz;
     int m_gzHover = MH_NONE;
     int m_gzLast[4] = {MH_NONE, MH_NONE, MH_NONE, MH_NONE};   // last used handle per tool (middle button, drawn yellow)
-    struct MarkingMenu { bool open = false; int tool = 0, hover = -1; float x = 0, y = 0, mx = 0, my = 0; } m_mm;
+    // (shown: drawn, after a short delay: a quick flick only does the item in its direction, as in Maya)
+    struct MarkingMenu { bool open = false, shown = false; int tool = 0, hover = -1; float x = 0, y = 0, mx = 0, my = 0; double t0 = 0; } m_mm;
     bool m_gzDemo = false;       // --gizmo-demo: a drag / marking menu frozen on screen for a capture
     int m_shotSeqDone = 0;       // --shot-seq: images saved
     void gizmoScript();          // --gizmo-demo / --gizmo-test (command line), called once per frame

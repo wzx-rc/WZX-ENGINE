@@ -67,7 +67,7 @@ float DepthOf(float3 p) {
 float LineCov(float d, float width) { width *= G.pixelScale; return saturate(width * 0.5 + 0.5 - d); }
 
 // World axes: a line, then a small arrow head on the positive side, from kArrowBase of the axis length to its end.
-static const float kArrowBase = 0.93, kArrowHalf = 0.018;   // arrow start and half width (fractions of the axis length)
+static const float kArrowBase = 0.9825, kArrowHalf = 0.0045;   // arrow start and half width (fractions of the axis length; a quarter of the first size)
 
 // opacity along an axis (x = distance / axis length): with the arrows, the line fades to 45 % before the arrow and the
 // arrow carries the gradient on to its tip; the negative side (and both sides without arrows) fades out at the end

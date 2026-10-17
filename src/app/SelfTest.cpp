@@ -970,6 +970,34 @@ void App::SelfTest::build() {
         check("drag of the centre cube: uniform scale", s.x > 1.05f && std::fabs(s.x - s.y) < 1e-5f && std::fabs(s.x - s.z) < 1e-5f, fmt("s=%.3f %.3f %.3f", s.x, s.y, s.z));
         return 1;
     });
+    // seen from the top: the plane square at two thirds of the axes; the pre-selection zone (a handle within 10 px)
+    add("manipulators", [this] { fresh(); a.select(obj("Cube")); a.m_tool = TOOL_MOVE; a.setViewAxis(VCAM_TOP); return 3; });
+    add("manipulators", [this] {
+        const Object& o = a.m_scene.objects[obj("Cube")];
+        float2 pc, px;
+        a.project(o.position, pc);
+        a.project(o.position + float3(1, 0, 0) * a.gizmoSize(o.position), px);
+        const float L = px.x - pc.x;
+        const float2 sq = a.gizmoHandlePoint(MH_XZ);
+        const float fx = (sq.x - pc.x) / std::max(L, 1.0f), fy = std::fabs(sq.y - pc.y) / std::max(L, 1.0f);
+        check("move: the plane square at two thirds of the axes", L > 20 && std::fabs(fx - 0.67f) < 0.03f && std::fabs(fy - 0.67f) < 0.03f,
+              fmt("%.2f, %.2f of the axis (%.0f px)", fx, fy, L));
+        v["L"] = L; v["pcx"] = pc.x; v["pcy"] = pc.y; v["sqx"] = sq.x; v["sqy"] = sq.y;
+        return moveTo(pc.x + 0.35f * L, pc.y + 9.0f * a.m_dpi);
+    });
+    add("manipulators", [this] {
+        check("9 px beside the X axis: pre-selected", a.m_gzHover == MH_X, fmt("hover %d", a.m_gzHover));
+        return moveTo((float)v["sqx"] + 0.07f * (float)v["L"] + 7.0f * a.m_dpi, (float)v["sqy"]);
+    });
+    add("manipulators", [this] {
+        check("7 px beside the plane square: pre-selected", a.m_gzHover == MH_XZ, fmt("hover %d", a.m_gzHover));
+        return moveTo((float)v["pcx"] + 0.35f * (float)v["L"], (float)v["pcy"] + 16.0f * a.m_dpi);
+    });
+    add("manipulators", [this] {
+        check("16 px from any handle: nothing", a.m_gzHover == MH_NONE, fmt("hover %d", a.m_gzHover));
+        a.setViewAxis(VCAM_PERSP);
+        return 1;
+    });
 
     // ================================================================= marking menu (hold the tool key + left button)
     auto gesture = [this](ImGuiKey k, float dx, float dy) {
@@ -985,6 +1013,7 @@ void App::SelfTest::build() {
     add("marking menu", [this] {
         check("W + left button: the menu opens", flag);
         check("W menu, up: World", a.m_axisMode == 0 && !a.m_mm.open);
+        check("a quick gesture: the result only, the menu not drawn (Maya)", !a.m_mm.shown);
         return 1;
     });
     add("marking menu", [this, gesture] { return gesture(ImGuiKey_W, 100, 0); });
@@ -1007,6 +1036,22 @@ void App::SelfTest::build() {
     add("marking menu", [this, gesture] { return gesture(ImGuiKey_Q, 0, 100); });
     add("marking menu", [this, release] { return release(ImGuiKey_Q); });
     add("marking menu", [this] { check("Q menu, down: Deselect", a.m_selected < 0); a.m_stepMove = 1.0f; return 1; });
+    // held still: the menu drawn after its delay; released at the centre, nothing chosen
+    add("marking menu", [this] {
+        v["axes"] = a.m_axisMode;
+        const float cx = a.m_rcView.x + a.m_rcView.w * 0.5f, cy = a.m_rcView.y + a.m_rcView.h * 0.62f;
+        events.push_back([=](ImGuiIO& io) { mx = cx; my = cy; mods = 0; io.AddKeyEvent(ImGuiKey_W, true); });
+        events.push_back([](ImGuiIO& io) { io.AddMouseButtonEvent(0, true); });
+        return queued();
+    });
+    add("marking menu", [this] { return a.m_mm.shown ? 1 : -1; });   // (its delay)
+    add("marking menu", [this] {
+        check("held still: the menu drawn after a short delay", a.m_mm.open && a.m_mm.shown);
+        events.push_back([](ImGuiIO& io) { io.AddMouseButtonEvent(0, false); });
+        events.push_back([](ImGuiIO& io) { io.AddKeyEvent(ImGuiKey_W, false); });
+        return queued();
+    });
+    add("marking menu", [this] { check("released at the centre: nothing chosen", !a.m_mm.open && a.m_axisMode == (int)v["axes"]); return 1; });
 
     // ================================================================= Advanced Scale with the mouse
     add("advanced scale", [this] { fresh(); a.select(obj("Cube")); a.m_tool = TOOL_SELECT; return key(ImGuiKey_T, 4); });
@@ -1075,11 +1120,19 @@ void App::SelfTest::build() {
         return moveTo(p.x, p.y);
     });
     add("advanced scale", [this] {
-        check("corner handle hidden without Ctrl", a.m_advHover != (int)v["h"]);
+        check("corner handle under the mouse without Ctrl (the corners are always shown)", a.m_advHover == (int)v["h"], fmt("hover %d", a.m_advHover));
+        float2 p;
+        int h = -1;
+        advHandle(1, 1, 0, p, &h);   // the +X +Y edge
+        v["h"] = h;
+        return moveTo(p.x, p.y);
+    });
+    add("advanced scale", [this] {
+        check("edge handle hidden without Ctrl", a.m_advHover != (int)v["h"]);
         return moveTo(mx, my, 2);
     });
     add("advanced scale", [this] {
-        check("Ctrl: corner handle under the mouse", a.m_advHover == (int)v["h"], fmt("hover %d", a.m_advHover));
+        check("Ctrl: edge handle under the mouse", a.m_advHover == (int)v["h"], fmt("hover %d", a.m_advHover));
         mods = 0;
         // V: towards the right side of the cylinder (the face goes to the level of its vertex)
         const Object& cy = a.m_scene.objects[obj("Cylinder")];
@@ -1109,8 +1162,8 @@ void App::SelfTest::build() {
         a.m_scene.objects[obj("Cube")].position = float3(0, 1, 0);
         return clickItem("##advCorners");
     });
-    add("advanced scale", [this] { check("Corner Handles checkbox: on", a.m_advCorners); return clickItem("##advCorners"); });
-    add("advanced scale", [this] { check("Corner Handles checkbox: off", !a.m_advCorners); return clickItem("##advPlay"); });
+    add("advanced scale", [this] { check("Edge Handles checkbox: on", a.m_advCorners); return clickItem("##advCorners"); });
+    add("advanced scale", [this] { check("Edge Handles checkbox: off", !a.m_advCorners); return clickItem("##advPlay"); });
     add("advanced scale", [this] { check("Show in Game View checkbox: off", !a.m_advShowInPlay); return clickItem("##advPlay"); });
     add("advanced scale", [this] {
         check("Show in Game View checkbox: on", a.m_advShowInPlay);
@@ -1457,8 +1510,20 @@ void App::SelfTest::build() {
             if (moving == 1) ++straight;
         }
         check("cube outline edges: its 12 edges (no diagonal)", e.size() == 12 && straight == 12, fmt("%d edges, %d along an axis", (int)e.size(), straight));
-        return 1;
+        // the cube sunk under the floor: its outline vertices are under the grid, seen from above: no glint
+        a.select(obj("Cube"));
+        v["cubeY"] = a.m_scene.objects[obj("Cube")].position.y;
+        a.m_scene.objects[obj("Cube")].position.y = -3.0f;
+        a.markDirty();
+        return 3;
     });
+    add("selection overlay", [this] {
+        check("glints of an object under the grid: hidden, seen from above", a.m_fxStats.glints == 0, fmt("%d glints", a.m_fxStats.glints));
+        a.m_scene.objects[obj("Cube")].position.y = (float)v["cubeY"];
+        a.markDirty();
+        return 3;
+    });
+    add("selection overlay", [this] { check("back over the grid: its glints again", a.m_fxStats.glints >= 4, fmt("%d glints", a.m_fxStats.glints)); return 1; });
 
     // ================================================================= anti-aliasing: selection coverage and edges
     auto covLevels = [this](int samples, const char* name) {
@@ -1964,6 +2029,85 @@ void App::SelfTest::build() {
     });
     add("layouts", [this] {
         check("Space again: the layout back", !a.m_paneMax && a.m_panes.size() == 4 && a.m_activePane == 3 && a.m_rcView.w < v["vw"] * 0.6);
+        // the vertical line between the panes, dragged 120 px to the right: the left column wider
+        const ScreenRect& ar = a.m_paneArea;
+        v["ly"] = ar.y + ar.h * 0.25f;
+        v["act"] = a.m_activePane;
+        v["sel"] = a.m_selected;
+        const float lx = ar.x + a.splitAt(false, 1) * ar.w;
+        return drag(lx, (float)v["ly"], lx + 120, (float)v["ly"]);
+    });
+    add("layouts", [this] {
+        const auto& P = a.m_panes;
+        check("drag of the line between the panes: the left column wider", P[0].rc.w > P[1].rc.w + 200 && P[2].rc.w == P[0].rc.w,
+              fmt("%.0f / %.0f px", P[0].rc.w, P[1].rc.w));
+        check("... the active pane and the selection unchanged", a.m_activePane == (int)v["act"] && a.m_selected == (int)v["sel"]);
+        const ScreenRect& ar = a.m_paneArea;
+        const float lx = ar.x + a.splitAt(false, 1) * ar.w;
+        return drag(lx, (float)v["ly"], ar.x + ar.w + 50, (float)v["ly"]);   // past the right edge
+    });
+    add("layouts", [this] {
+        check("a pane keeps 60 px at least", a.m_panes[1].rc.w >= 58 * a.m_dpi, fmt("%.0f px", a.m_panes[1].rc.w));
+        const ScreenRect& ar = a.m_paneArea;
+        return doubleClick(ar.x + a.splitAt(false, 1) * ar.w, (float)v["ly"]);
+    });
+    add("layouts", [this] {
+        check("double-click on the line: the equal split back", std::fabs(a.m_panes[0].rc.w - a.m_panes[1].rc.w) < 3,
+              fmt("%.0f / %.0f px", a.m_panes[0].rc.w, a.m_panes[1].rc.w));
+        // the horizontal line, 60 px up
+        const ScreenRect& ar = a.m_paneArea;
+        const float ly = ar.y + a.splitAt(true, 1) * ar.h, x = ar.x + ar.w * 0.25f;
+        return drag(x, ly, x, ly - 60);
+    });
+    add("layouts", [this] {
+        check("drag of the horizontal line: the top row lower", a.m_panes[0].rc.h < a.m_panes[2].rc.h - 80, fmt("%.0f / %.0f px", a.m_panes[0].rc.h, a.m_panes[2].rc.h));
+        a.m_splitY[a.m_layout][0] = 0;
+        // Space held over the top left pane: the view menu after its delay
+        const ScreenRect& rc = a.m_panes[0].rc;
+        const float cx = rc.x + rc.w * 0.5f, cy = rc.y + rc.h * 0.5f;
+        v["cx"] = cx;
+        v["cy"] = cy;
+        events.push_back([=](ImGuiIO& io) { mx = cx; my = cy; mods = 0; io.AddKeyEvent(ImGuiKey_Space, true); });
+        return queued();
+    });
+    add("layouts", [this] { return a.m_vm.shown ? 1 : -1; });   // (its delay)
+    add("layouts", [this] {
+        check("Space held: the view menu over the pane under the mouse", a.m_vm.down && a.m_vm.shown && a.m_vm.pane == 0);
+        const float cx = (float)v["cx"], cy = (float)v["cy"];
+        events.push_back([=](ImGuiIO&) { mx = cx; my = cy + 90; });
+        events.push_back([](ImGuiIO&) {});
+        events.push_back([](ImGuiIO& io) { io.AddKeyEvent(ImGuiKey_Space, false); });
+        return queued() + 1;
+    });
+    add("layouts", [this] {
+        check("released towards Front (below): that pane looks through front, active", a.m_panes[0].cam == VCAM_FRONT && a.m_activePane == 0 && !a.m_vm.down);
+        // a quick flick to the left: Persp, the menu not drawn
+        const float cx = (float)v["cx"], cy = (float)v["cy"];
+        events.push_back([=](ImGuiIO& io) { mx = cx; my = cy; io.AddKeyEvent(ImGuiKey_Space, true); });
+        events.push_back([=](ImGuiIO&) { mx = cx - 90; my = cy; });
+        events.push_back([](ImGuiIO& io) { io.AddKeyEvent(ImGuiKey_Space, false); });
+        return queued() + 1;
+    });
+    add("layouts", [this] {
+        check("a quick flick to the left: Persp, the menu not drawn", a.m_panes[0].cam == VCAM_PERSP && !a.m_vm.shown && !a.m_paneMax);
+        // a camera object: on the first diagonal (north east)
+        a.createCameraFromView(false);
+        a.select(-1);
+        const float cx = (float)v["cx"], cy = (float)v["cy"];
+        events.push_back([=](ImGuiIO& io) { mx = cx; my = cy; io.AddKeyEvent(ImGuiKey_Space, true); });
+        return queued();
+    });
+    add("layouts", [this] { return a.m_vm.shown ? 1 : -1; });
+    add("layouts", [this] {
+        const float cx = (float)v["cx"], cy = (float)v["cy"];
+        events.push_back([=](ImGuiIO&) { mx = cx + 70; my = cy - 70; });
+        events.push_back([](ImGuiIO&) {});
+        events.push_back([](ImGuiIO& io) { io.AddKeyEvent(ImGuiKey_Space, false); });
+        return queued() + 1;
+    });
+    add("layouts", [this] {
+        const int cam = obj("Camera");
+        check("Space menu, north east: the camera object of the scene", cam >= 0 && a.m_panes[0].cam == VCAM_OBJECT && a.m_panes[0].object == a.m_scene.objects[cam].id);
         return clickItem("atlLayout");
     });
     add("layouts", [this] { return clickItem("       Sixteen (4 x 4)"); });
