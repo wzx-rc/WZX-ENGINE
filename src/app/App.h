@@ -16,7 +16,7 @@
 namespace app {
 
 enum Tool { TOOL_SELECT, TOOL_MOVE, TOOL_ROTATE, TOOL_SCALE };
-enum SceneId { SCENE_CORNELL = 0, SCENE_STUDIO = 1, SCENE_LOOKDEV = 2 };
+enum SceneId { SCENE_CORNELL = 0, SCENE_STUDIO = 1, SCENE_LOOKDEV = 2, SCENE_CONCEPT = 3 };
 
 // Maya-style manipulator handles (Manipulators.cpp): axes, plane squares (2 axes, named by their normal), centre
 // anchor, rotate view ring and trackball.
@@ -99,6 +99,7 @@ struct Options {
     std::wstring gizmoTest;     // manipulator self-test: report written there, then exit (--gizmo-test)
     std::wstring gizmoDemo;     // "tool handle dx dy menuDir": frozen drag or marking menu for a capture (--gizmo-demo)
     std::string openMenu;       // test: view menu opened at startup for a capture (vmCamera, vmDisplay, vmRender, vmAxes)
+    int shotSeq = 0;            // test: --shot-seq N saves N images (name_00.png...) one every 8 frames
     std::wstring hdri;          // HDRI to load at startup (file, or "sky" for the procedural sky)
     // DDGI probe GI (real-time mode)
     bool ddgi = false;          // start in the real-time probe GI mode
@@ -416,6 +417,7 @@ private:
     int m_gzLast[4] = {MH_NONE, MH_NONE, MH_NONE, MH_NONE};   // last used handle per tool (middle button, drawn yellow)
     struct MarkingMenu { bool open = false; int tool = 0, hover = -1; float x = 0, y = 0, mx = 0, my = 0; } m_mm;
     bool m_gzDemo = false;       // --gizmo-demo: a drag / marking menu frozen on screen for a capture
+    int m_shotSeqDone = 0;       // --shot-seq: images saved
     void gizmoScript();          // --gizmo-demo / --gizmo-test (command line), called once per frame
     float2 gizmoHandlePoint(int handle);   // screen point on a handle of the current manipulator (tests)
     std::vector<Snapshot> m_undo, m_redo;

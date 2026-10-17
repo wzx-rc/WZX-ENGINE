@@ -68,10 +68,11 @@ GridPixel PSGrid(GridOut i) {
         float2 d1 = abs(frac(p.xz / c1 + 0.5) - 0.5) * c1 / fw;
         float minor = max(LineCov(d0.x, 1.0), LineCov(d0.y, 1.0)) * (1.0 - fade);
         float major = max(LineCov(d1.x, 1.0), LineCov(d1.y, 1.0));
-        float a = max(minor * 0.32, major * 0.6) * G.opacity;
-        float3 c = float3(0.62, 0.66, 0.74);
-        // axes on the ground: X (z = 0) red, Z (x = 0) blue
-        float ax = LineCov(abs(p.z) / fw.y, 1.4), az = LineCov(abs(p.x) / fw.x, 1.4);
+        float a = max(minor * 0.2, major * 0.4) * G.opacity;
+        float3 c = float3(0.58, 0.63, 0.72);
+        // axes on the ground, X (z = 0) red and Z (x = 0) blue, as long as the Y axis (labels at the ends: AtelierUI)
+        float ax = LineCov(abs(p.z) / fw.y, 1.4) * (1.0 - smoothstep(0.85, 1.0, abs(p.x) / G.axisLen));
+        float az = LineCov(abs(p.x) / fw.x, 1.4) * (1.0 - smoothstep(0.85, 1.0, abs(p.z) / G.axisLen));
         if (ax > 0.01) { c = lerp(c, float3(0.93, 0.36, 0.36), ax); a = max(a, ax * 0.9); }
         if (az > 0.01) { c = lerp(c, float3(0.36, 0.56, 0.98), az); a = max(a, az * 0.9); }
         // fade towards the horizon and far away

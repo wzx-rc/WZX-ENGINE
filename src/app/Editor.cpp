@@ -75,6 +75,12 @@ void drawAssetThumb(ImDrawList* dl, int kind, int index, ImVec2 p0, ImVec2 p1, f
             const ImU32 cols[5] = {IM_COL32(150, 150, 150, 255), IM_COL32(215, 220, 228, 255), IM_COL32(150, 200, 230, 170),
                                    IM_COL32(255, 200, 110, 255), IM_COL32(236, 214, 170, 255)};
             for (int k = 0; k < 5; ++k) dl->AddCircleFilled(ImVec2(c.x + (k - 2) * s * 0.5f, c.y), s * 0.22f, cols[k]);
+        } else if (index == SCENE_CONCEPT) {   // sphere, glowing cube, cylinder on a dark floor
+            dl->AddRectFilled(ImVec2(c.x - s * 1.3f, c.y + s * 0.2f), ImVec2(c.x + s * 1.3f, c.y + s), IM_COL32(24, 28, 36, 255), 3 * d);
+            dl->AddCircleFilled(ImVec2(c.x - s * 0.8f, c.y + s * 0.05f), s * 0.3f, IM_COL32(120, 124, 132, 255));
+            dl->AddRectFilled(ImVec2(c.x - s * 0.25f, c.y - s * 0.2f), ImVec2(c.x + s * 0.25f, c.y + s * 0.3f), IM_COL32(110, 116, 128, 255));
+            dl->AddRect(ImVec2(c.x - s * 0.27f, c.y - s * 0.22f), ImVec2(c.x + s * 0.27f, c.y + s * 0.32f), IM_COL32(90, 160, 255, 255), 0, 0, 1.2f * d);
+            dl->AddRectFilled(ImVec2(c.x + s * 0.6f, c.y - s * 0.3f), ImVec2(c.x + s * 1.0f, c.y + s * 0.2f), IM_COL32(110, 114, 122, 255));
         } else {
             for (int k = -2; k <= 2; ++k) dl->AddLine(ImVec2(c.x + k * s * 0.5f, c.y - s), ImVec2(c.x + k * s * 0.5f, c.y + s), IM_COL32(90, 96, 108, 255));
             for (int k = -1; k <= 1; ++k) dl->AddLine(ImVec2(c.x - s * 1.3f, c.y + k * s * 0.5f), ImVec2(c.x + s * 1.3f, c.y + k * s * 0.5f), IM_COL32(90, 96, 108, 255));

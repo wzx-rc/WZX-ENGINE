@@ -656,8 +656,8 @@ void Renderer::recordRaster(const Scene& scene, const RenderSettings& rs, const 
             memcpy(dc.rows, d.xf.m, sizeof(dc.rows));
             dc.materialId = d.material;
             dc.id = d.id;
-            dc.alpha = rs.wireframe == 1 ? 0.75f : 0.02f;   // line grey level
-            dc.flags = d.flags;
+            dc.alpha = rs.wireframe == 1 ? 0.75f : 0.62f;   // line grey level
+            dc.flags = d.flags | (rs.wireframe == 2 ? 8u : 0u);   // over the shaded view: faint light lines (PSWire)
             m_cmd->SetGraphicsRoot32BitConstants(1, 16, &dc, 0);
             m_cmd->DrawIndexedInstanced(g.lineCount, 1, g.lineOffset, (INT)g.vertexOffset, 0);
         }

@@ -375,6 +375,7 @@ std::vector<Asset> assetList() {
     a.push_back({2, SCENE_CORNELL, "Cornell Box", "Scene", "Scenes"});
     a.push_back({2, SCENE_STUDIO, "Village", "Scene", "Scenes"});
     a.push_back({2, SCENE_LOOKDEV, "LookDev", "Scene", "Scenes"});
+    a.push_back({2, SCENE_CONCEPT, "Concept", "Scene", "Scenes"});
     return a;
 }
 
@@ -551,6 +552,7 @@ void App::atlTopBar(float x0, float y0, float width) {
                 if (ImGui::MenuItem("Cornell Box Scene", "F1", m_sceneId == SCENE_CORNELL)) m_pendingScene = SCENE_CORNELL;
                 if (ImGui::MenuItem("Village Scene", "F2", m_sceneId == SCENE_STUDIO)) m_pendingScene = SCENE_STUDIO;
                 if (ImGui::MenuItem("LookDev Scene", "F3", m_sceneId == SCENE_LOOKDEV)) m_pendingScene = SCENE_LOOKDEV;
+                if (ImGui::MenuItem("Concept Scene", "F4", m_sceneId == SCENE_CONCEPT)) m_pendingScene = SCENE_CONCEPT;
                 ImGui::Separator();
                 if (ImGui::MenuItem("Build…", "F7") && m_game) m_game->openBuildWindow();
                 ImGui::Separator();
@@ -672,8 +674,8 @@ void App::atlHierarchy(float x, float y, float w, float h) {
     g_labelRight = px + pw;
     Label(px, py, "SCENES");
     py += 21 * s;
-    const char* scenes[] = {"Cornell Box", "Village", "LookDev"};
-    for (int i = 0; i < 3; ++i) {
+    const char* scenes[] = {"Cornell Box", "Village", "LookDev", "Concept"};
+    for (int i = 0; i < 4; ++i) {
         char id[16];
         snprintf(id, sizeof(id), "scene%d", i);
         if (Button(id, {px, py, pw, 26 * s}, scenes[i], i == 0 ? Icon::Cube : Icon::Sun, m_sceneId == i) && m_sceneId != i) m_pendingScene = i;
@@ -1240,6 +1242,19 @@ void App::atlViewport(float x, float y, float w, float h) {
             cam.pitch = pitches[hotFace];
             m_viewMode = modes[hotFace];
             cameraChanged();
+        }
+    }
+    // labels at the ends of the world axes of the editor grid
+    if (m_rs.editorGrid > 0 && m_rs.raster) {
+        const float L = m_rs.editorGridAxis;
+        const float3 ends[3] = {float3(L * 1.04f, 0, 0), float3(0, L * 1.06f, 0), float3(0, 0, L * 1.04f)};
+        const ImU32 cols[3] = {IM_COL32(238, 96, 96, 235), IM_COL32(110, 220, 130, 235), IM_COL32(96, 146, 252, 235)};
+        const char* names[3] = {"X", "Y", "Z"};
+        for (int a = 0; a < 3; ++a) {
+            float2 sp;
+            if (!project(ends[a], sp) || sp.x < r.x || sp.y < r.y || sp.x > r.x + r.w || sp.y > r.y + r.h) continue;
+            ImVec2 ts = TextSize(names[a], 14);
+            Text(sp.x - ts.x * 0.5f, sp.y - ts.y * 0.5f, names[a], cols[a], 14);
         }
     }
     atlViewMenus(r.x + 10 * s, r.y + 10 * s);
@@ -2128,7 +2143,7 @@ void App::atlInspectorWorld(float x, float y, float w, float) {
     Text(x, y, m_scene.name.empty() ? "Scene" : m_scene.name, P().text, 15);
     y += 25 * s;
     Text(x, y, !m_docPath.empty() ? "File · " + toUtf8(m_docName) + (m_docDirty ? " (modified)" : "")
-               : m_sceneId == SCENE_CORNELL ? "Test scene · Cornell Box" : m_sceneId == SCENE_LOOKDEV ? "Test scene · LookDev" : (m_sceneId == SCENE_STUDIO ? "Test scene · Village (RTS)" : "New scene"), P().muted, 11);
+               : m_sceneId == SCENE_CORNELL ? "Test scene · Cornell Box" : m_sceneId == SCENE_LOOKDEV ? "Test scene · LookDev" : m_sceneId == SCENE_CONCEPT ? "Test scene · Concept" : (m_sceneId == SCENE_STUDIO ? "Test scene · Village (RTS)" : "New scene"), P().muted, 11);
     y += 41 * s;
     Label(x, y, "SCENE PROPERTIES");
     y += 24 * s;

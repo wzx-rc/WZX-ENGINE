@@ -325,10 +325,12 @@ void App::status(const std::wstring& text, int level) {
 }
 
 void App::loadScene(int id, bool newScene) {
+    const int previous = m_sceneId;
     m_sceneId = id;
-    m_probeKey = id == SCENE_CORNELL ? "cornell" : (id == SCENE_LOOKDEV ? "lookdev" : "studio");
+    m_probeKey = id == SCENE_CORNELL ? "cornell" : (id == SCENE_LOOKDEV ? "lookdev" : (id == SCENE_CONCEPT ? "concept" : "studio"));
     if (id == SCENE_CORNELL) buildCornellBox(m_scene);
     else if (id == SCENE_LOOKDEV) buildLookDevScene(m_scene);
+    else if (id == SCENE_CONCEPT) buildConceptScene(m_scene);
     else buildStudioScene(m_scene);
     m_hdriPath.clear();   // the new scene has no HDRI (LookDev gets one below)
     m_selected = -1;
@@ -343,6 +345,13 @@ void App::loadScene(int id, bool newScene) {
     if (id == SCENE_CORNELL) m_scene.env.ambient = float3(0.16f, 0.15f, 0.13f);
     m_rs.vignette = id == SCENE_CORNELL ? 0.10f : 0.18f;
     m_tool = id == SCENE_CORNELL ? TOOL_SELECT : TOOL_MOVE;
+    // Concept: the reference picture, the cube selected and the edges of the shapes drawn over them
+    if (id == SCENE_CONCEPT) {
+        m_rs.vignette = 0.32f;
+        m_rs.wireframe = 2;
+        for (size_t i = 0; i < m_scene.objects.size(); ++i)
+            if (m_scene.objects[i].name == "Cube") m_selected = (int)i;
+    } else if (previous == SCENE_CONCEPT && m_rs.wireframe == 2) m_rs.wireframe = 0;
     m_gz = GizmoDrag();
     if (id == SCENE_LOOKDEV) setHdri(m_lastHdri.empty() ? defaultHdri() : m_lastHdri);
     m_renderer.setScene(m_scene);
@@ -494,7 +503,7 @@ void App::frame() {
         m_rs.selectionAge = (float)(now - m_selSince);
         const bool game = m_game && (m_game->playing() || m_game->playerMode());
         m_rs.editorGrid = m_showEditorGrid && !game ? std::max(m_scene.gridScale, 1e-3f) : 0.0f;
-        m_rs.editorGridAxis = std::max(m_scene.gridScale * 5.0f, m_scene.camera.distance * 0.45f);
+        m_rs.editorGridAxis = std::max(m_scene.gridScale * 2.5f, m_scene.camera.distance * 0.45f);
     }
     m_viewportRendered = false;
     if (m_workspace == 2 && m_matHost.want) {
@@ -573,6 +582,20 @@ void App::frame() {
     // Automated capture (command line): window image once the viewport has enough samples.
     // (stability tests reset the accumulation every frame: their capture comes at frame shotSpp)
     const bool moving = m_opt.sway > 0 || m_opt.anim;
+    // --shot-seq N: N window images, one every 8 frames (animations such as the selection glow), then exit
+    if (!m_opt.shotPath.empty() && m_opt.shotSeq > 0) {
+        if (m_frameCounter > 12 && m_frameCounter % 8 == 0) {
+            std::vector<uint8_t> img;
+            uint32_t w, h;
+            std::wstring base = m_opt.shotPath.substr(0, m_opt.shotPath.find_last_of(L'.'));
+            wchar_t num[16];
+            swprintf_s(num, L"_%02d.png", m_shotSeqDone);
+            if (m_renderer.readBackBuffer(img, w, h)) savePng(base + num, img, w, h);
+            if (++m_shotSeqDone >= m_opt.shotSeq) m_running = false;
+        }
+        m_renderer.present(true);
+        return;
+    }
     if (!m_opt.shotPath.empty() && (moving ? m_frameCounter >= m_opt.shotSpp : ((int)m_renderer.sampleCount() >= m_opt.shotSpp || !m_viewportRendered)) && m_frameCounter > (m_opt.gizmoDemo.empty() ? 6 : 12)) {
         std::vector<uint8_t> img;
         uint32_t w, h;
@@ -758,6 +781,7 @@ void App::handleShortcuts() {
         else if (sel.empty()) m_pendingScene = SCENE_STUDIO;
     }
     if (pressed(ImGuiKey_F3)) m_pendingScene = SCENE_LOOKDEV;
+    if (pressed(ImGuiKey_F4)) m_pendingScene = SCENE_CONCEPT;
     if (pressed(ImGuiKey_F12)) saveScreenshot(false);
     if (pressed(ImGuiKey_P)) setRenderMode(m_rs.raster ? 2 : 0);            // Lit <-> progressive path tracing
     if (pressed(ImGuiKey_L)) setRenderMode(m_rs.ddgi ? 2 : 3);              // ray traced probe GI (DDGI) <-> progressive path tracing
@@ -1119,12 +1143,13 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
     for (int i = 1; i < argc; ++i) {
         std::wstring a = argv[i];
         auto next = [&]() -> std::wstring { return i + 1 < argc ? std::wstring(argv[++i]) : std::wstring(); };
-        if (a == L"--scene") { std::wstring sc = next(); opt.scene = (sc == L"studio" || sc == L"village") ? app::SCENE_STUDIO : (sc == L"lookdev" ? app::SCENE_LOOKDEV : app::SCENE_CORNELL); }
+        if (a == L"--scene") { std::wstring sc = next(); opt.scene = (sc == L"studio" || sc == L"village") ? app::SCENE_STUDIO : ((sc == L"lookdev" ? app::SCENE_LOOKDEV : (sc == L"concept" ? app::SCENE_CONCEPT : app::SCENE_CORNELL))); }
         else if (a == L"--hdri") opt.hdri = next();
         else if (a == L"--tab") opt.inspectorTab = _wtoi(next().c_str());
         else if (a == L"--raster") opt.raster = _wtoi(next().c_str()) != 0;
         else if (a == L"--open") opt.openPath = next();
         else if (a == L"--gizmo-test") opt.gizmoTest = next();
+        else if (a == L"--shot-seq") opt.shotSeq = _wtoi(next().c_str());
         else if (a == L"--gizmo-demo") opt.gizmoDemo = next();
         else if (a == L"--open-menu") { std::wstring m = next(); opt.openMenu = std::string(m.begin(), m.end()); }
         else if (a.size() > 5 && a.find(L".json") != std::wstring::npos) opt.openPath = a;
