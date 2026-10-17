@@ -59,6 +59,8 @@ private:
     std::vector<Start> m_dragStart;
     bool m_dragMoved = false;
     bool m_pendingFree = false;        // pressed on a point: a drag moves it freely
+    bool m_pulling = false;            // Ctrl+drag from a Bezier point: pulls symmetric tangents
+    int m_pullIndex = -1;
     bool m_marquee = false;
     float2 m_marq0{0, 0};
     int m_testFrame = 0;
@@ -81,6 +83,10 @@ private:
     void updateDrag(float mx, float my);
     void applyDelta(const float3& worldDelta);
     void deleteSelectedPoints();
+    // Bezier tangent of a point: 0 smooth (aligned), 1 broken (independent), 2 corner (no tangent)
+    int tangentMode(const CurveData& c, int i) const;
+    void setTangentMode(int i, int mode);
+    void toggleCorner(int i);
     void insertPointAt(float mx, float my);
     void finishCreate();
     void cancelCreate();

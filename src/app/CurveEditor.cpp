@@ -363,7 +363,7 @@ void CurveEditor::enterPoints() {
     m_obj = a.m_selected;
     a.m_multi.clear();
     m_sel.clear();
-    m_dragging = m_marquee = m_pendingFree = false;
+    m_dragging = m_marquee = m_pendingFree = m_pulling = false;
     a.status(L"Edit Points: click or drag a rectangle to select, drag to move");
     a.markDirty();
 }
@@ -374,7 +374,7 @@ void CurveEditor::exitMode() {
     m_mode = MODE_NONE;
     m_obj = -1;
     m_sel.clear();
-    m_dragging = m_marquee = m_pendingFree = false;
+    m_dragging = m_marquee = m_pendingFree = m_pulling = false;
     m_hoverAxis = -1;
 }
 
@@ -482,6 +482,25 @@ bool CurveEditor::input(bool inView, bool placing) {
             } else updateDrag(mx, my);
             return true;
         }
+        if (m_pulling) {   // Ctrl+drag from a point: symmetric tangents follow the mouse
+            Object& o = a.m_scene.objects[m_obj];
+            CurveData& cc = o.curve;
+            if (!io.MouseDown[0] || m_pullIndex >= cc.count()) { m_pulling = false; return true; }
+            if (std::hypot(mx - m_pressAt.x, my - m_pressAt.y) > 3.0f * a.m_dpi) {
+                const float3 A = toWorld(o, cc.points[m_pullIndex]);
+                float3 h;
+                if (groundPoint(mx, my, A.y, h)) {
+                    if (ImGui::IsKeyDown(ImGuiKey_X)) h = snap(h);
+                    const float3 ld = toLocalDir(o, h - A);
+                    cc.hout[m_pullIndex] = cc.points[m_pullIndex] + ld;
+                    cc.hin[m_pullIndex] = cc.points[m_pullIndex] - ld;
+                    cc.broken[m_pullIndex] = 0;
+                    cc.shape.type = CSHAPE_NONE;
+                    a.markDirty();
+                }
+            }
+            return true;
+        }
         if (m_pendingFree) {
             if (!io.MouseDown[0]) m_pendingFree = false;
             else if (std::hypot(mx - m_pressAt.x, my - m_pressAt.y) > 4.0f * a.m_dpi) {
@@ -507,10 +526,32 @@ bool CurveEditor::input(bool inView, bool placing) {
         }
         m_hoverAxis = inView ? manipulatorHit(mx, my) : -1;
         if (clicked) {
+            CurveData& cc = a.m_scene.objects[m_obj].curve;
+            const bool bez = cc.type == CURVE_BEZIER;
+            Item it;
+            const bool onPoint = pickPoint(mx, my, it);
+            // Cavalry-style tangents (Bezier): double-click a point = corner <-> smooth; Ctrl+drag a tangent end =
+            // break it; Ctrl+drag a point = pull new symmetric tangents out of it
+            if (onPoint && bez && it.part == PART_POINT && ImGui::IsMouseDoubleClicked(0)) { m_pendingFree = false; toggleCorner(it.index); return true; }
+            if (onPoint && bez && io.KeyCtrl) {
+                if (it.part != PART_POINT) {
+                    a.pushUndo();
+                    cc.broken[it.index] = 1;
+                    m_sel = {it};
+                    beginDrag(3, mx, my);
+                    a.status(L"Tangent broken: the two handles move independently");
+                } else {
+                    a.pushUndo();
+                    m_sel = {it};
+                    m_pulling = true;
+                    m_pullIndex = it.index;
+                    m_pressAt = float2(mx, my);
+                }
+                return true;
+            }
             if (m_hoverAxis >= 0) { beginDrag(m_hoverAxis, mx, my); return true; }
             if (io.KeyCtrl) { insertPointAt(mx, my); return true; }
-            Item it;
-            if (pickPoint(mx, my, it)) {
+            if (onPoint) {
                 if (shift) {
                     auto f = std::find_if(m_sel.begin(), m_sel.end(), [&](const Item& s) { return s.index == it.index && s.part == it.part; });
                     if (f != m_sel.end()) m_sel.erase(f); else m_sel.push_back(it);
@@ -655,6 +696,43 @@ void CurveEditor::applyDelta(const float3& worldDelta) {
     c.shape.type = CSHAPE_NONE;
     m_dragging = false;
     a.markDirty();
+}
+
+int CurveEditor::tangentMode(const CurveData& c, int i) const {
+    if (c.type != CURVE_BEZIER || i < 0 || i >= c.count() || i >= (int)c.hin.size()) return 0;
+    if (length(c.hin[i] - c.points[i]) < 1e-5f && length(c.hout[i] - c.points[i]) < 1e-5f) return 2;
+    return i < (int)c.broken.size() && c.broken[i] ? 1 : 0;
+}
+
+// Smooth: the in tangent is aligned on the out one (its length kept); a corner gets automatic tangents.
+// Broken: the handles move independently. Corner: both handles on the point (sharp angle).
+void CurveEditor::setTangentMode(int i, int mode) {
+    if (m_obj < 0) return;
+    CurveData& c = a.m_scene.objects[m_obj].curve;
+    if (c.type != CURVE_BEZIER || i < 0 || i >= c.count()) return;
+    bezierFixArrays(c);
+    const int was = tangentMode(c, i);
+    if (mode == 2) { c.hin[i] = c.hout[i] = c.points[i]; c.broken[i] = 0; }
+    else if (was == 2) { bezierAutoHandles(c, i); c.broken[i] = mode == 1 ? 1 : 0; }
+    else if (mode == 1) c.broken[i] = 1;
+    else {
+        c.broken[i] = 0;
+        float3 out = c.hout[i] - c.points[i];
+        float lenIn = length(c.hin[i] - c.points[i]);
+        if (length(out) > 1e-6f) c.hin[i] = c.points[i] - normalize(out) * lenIn;
+    }
+    c.shape.type = CSHAPE_NONE;
+    a.markDirty();
+}
+
+void CurveEditor::toggleCorner(int i) {
+    if (m_obj < 0) return;
+    const CurveData& c = a.m_scene.objects[m_obj].curve;
+    a.pushUndo();
+    const bool corner = tangentMode(c, i) == 2;
+    setTangentMode(i, corner ? 0 : 2);
+    m_sel = {{i, PART_POINT}};
+    a.status(corner ? L"Smooth point" : L"Corner point");
 }
 
 void CurveEditor::deleteSelectedPoints() {
@@ -888,8 +966,8 @@ void CurveEditor::drawDraft(ImDrawList* dl) {
             if (a.project(p, q)) run.push_back(iv(q));
         }
         if (run.size() >= 2) {
-            glowPolyline(dl, run, kCurveOn, 2.2f * d);
-            dl->AddPolyline(run.data(), (int)run.size(), kCurveOn, 0, 2.2f * d);
+            glowPolyline(dl, run, kCurveOn, 1.6f * d);
+            dl->AddPolyline(run.data(), (int)run.size(), kCurveOn, 0, 1.6f * d);
         }
     }
     const int last = m_draft.count() - 1;
@@ -923,9 +1001,9 @@ void CurveEditor::draw(ImDrawList* dl) {
         const bool primary = i == a.m_selected;
         const bool multi = std::find(a.m_multi.begin(), a.m_multi.end(), i) != a.m_multi.end();
         // active curve: pale cyan with a soft glow; inactive: the same hue, thinner and translucent
-        if (primary) drawCurve(dl, o, kCurveOn, 2.6f * d, true);
-        else if (multi) drawCurve(dl, o, kCurveMulti, 2.2f * d, false);
-        else drawCurve(dl, o, kCurveOff, 1.6f * d, false);
+        if (primary) drawCurve(dl, o, kCurveOn, 1.6f * d, true);
+        else if (multi) drawCurve(dl, o, kCurveMulti, 1.3f * d, false);
+        else drawCurve(dl, o, kCurveOff, 1.0f * d, false);
     }
     std::string hint;
     if (m_mode == MODE_POINTS && m_obj >= 0) {
@@ -938,7 +1016,7 @@ void CurveEditor::draw(ImDrawList* dl) {
             dashedLine(dl, p0, ImVec2(p1.x, p0.y), kCurveOn, 1.0f * d, 4 * d, 3 * d); dashedLine(dl, ImVec2(p1.x, p0.y), p1, kCurveOn, 1.0f * d, 4 * d, 3 * d);
             dashedLine(dl, p1, ImVec2(p0.x, p1.y), kCurveOn, 1.0f * d, 4 * d, 3 * d); dashedLine(dl, ImVec2(p0.x, p1.y), p0, kCurveOn, 1.0f * d, 4 * d, 3 * d);
         }
-        hint = "Edit Points  ·  " + std::to_string(m_sel.size()) + " selected  ·  X: grid snap  ·  Ctrl+click: insert  ·  Del: delete  ·  F8: exit";
+        hint = "Edit Points  ·  " + std::to_string(m_sel.size()) + " selected  ·  X: grid snap  ·  Ctrl+click curve: insert  ·  Ctrl+drag tangent: break  ·  Double-click: corner / smooth  ·  F8: exit";
     } else if (m_mode == MODE_CREATE) {
         drawDraft(dl);
         hint = std::string(curveTypeName(m_createType)) + " Tool  ·  " + std::to_string(m_draft.count()) + " points  ·  X: grid snap  ·  Enter: finish  ·  Backspace: undo point  ·  Esc: cancel";
@@ -1104,6 +1182,23 @@ void CurveEditor::runTest() {
         m_dragging = false;
         float3 a0 = normalize(c.hout[1] - c.points[1]), b0 = normalize(c.points[1] - c.hin[1]);
         check(length(a0 - b0) < 1e-4f && std::fabs(length(c.hin[1] - c.points[1]) - lenIn) < 1e-4f, "Bezier: smooth handles stay aligned, the other keeps its length");
+        exitMode();
+    }
+    // Cavalry-style tangent modes
+    {
+        a.select(bez);
+        enterPoints();
+        CurveData& c = sc.objects[bez].curve;
+        toggleCorner(1);
+        check(tangentMode(c, 1) == 2 && length(c.hin[1] - c.points[1]) < 1e-6f, "Double-click: corner point (no tangent)");
+        toggleCorner(1);
+        check(tangentMode(c, 1) == 0 && length(c.hout[1] - c.points[1]) > 1e-3f, "Double-click again: smooth point (automatic tangents)");
+        setTangentMode(1, 1);
+        check(tangentMode(c, 1) == 1, "Broken tangent");
+        c.hin[1] = c.points[1] + float3(0, 0, 2);
+        setTangentMode(1, 0);
+        float3 o0 = normalize(c.hout[1] - c.points[1]), i0 = normalize(c.points[1] - c.hin[1]);
+        check(tangentMode(c, 1) == 0 && length(o0 - i0) < 1e-4f, "Smooth again: the tangents are aligned");
         exitMode();
     }
     // conversions

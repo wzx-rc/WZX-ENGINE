@@ -155,14 +155,21 @@ void CurveEditor::inspector(float x, float& y, float w) {
         } else if (pact) A.pushUndo();
         y += 41 * s;
         if (c.type == CURVE_BEZIER) {
-            bool brk = first.index < (int)c.broken.size() && c.broken[first.index];
-            ImGui::SetCursorScreenPos(ImVec2(x, y));
-            if (Check("Broken handles", &brk)) {
-                A.pushUndo();
-                for (const Item& it : m_sel) if (it.index < (int)c.broken.size()) c.broken[it.index] = brk ? 1 : 0;
+            // tangent of the selected points (Cavalry style): Smooth, Broken or Corner
+            Text(x, y, "Tangent", P().muted, 11);
+            y += 19 * s;
+            const int cur = tangentMode(c, first.index);
+            const char* names[] = {"Smooth", "Broken", "Corner"};
+            const float tw = (w - 12 * s) / 3;
+            for (int m = 0; m < 3; ++m) {
+                std::string id = std::string("crvTan") + names[m];
+                if (Button(id.c_str(), {x + m * (tw + 6 * s), y, tw, 27 * s}, names[m], m == 2 ? Icon::Move : Icon::Curve, cur == m)) {
+                    A.pushUndo();
+                    for (const Item& it : m_sel) setTangentMode(it.index, m);
+                }
             }
-            y += 32 * s;
-            if (Button("crvSmooth", {x, y, w, 27 * s}, "Smooth Handles", Icon::Refresh)) {
+            y += 37 * s;
+            if (Button("crvSmooth", {x, y, w, 27 * s}, "Auto Tangents", Icon::Refresh)) {
                 A.pushUndo();
                 for (const Item& it : m_sel) { bezierAutoHandles(c, it.index); if (it.index < (int)c.broken.size()) c.broken[it.index] = 0; }
                 c.shape.type = CSHAPE_NONE;
