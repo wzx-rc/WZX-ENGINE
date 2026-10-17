@@ -1,5 +1,5 @@
-// Selection overlay of the editor, over the 2 px flowing blue line of the tonemapper (Tonemap.hlsl):
-//   - a small white glow (4 px) on each vertex of the outline,
+// Selection overlay of the editor, over the soft blue edge glow of the tonemapper (Tonemap.hlsl):
+//   - a small soft glint on each vertex of the outline,
 //   - the outline seen in the reflection of a glossy floor (the selection mirrored under y = 0).
 // The outline is the set of silhouette edges of the selected meshes, found on the CPU: an edge between a face turned
 // to the camera and a face turned away (or a border edge). Edges are welded by position and cached per mesh.
@@ -172,7 +172,7 @@ void App::drawSelectionFx(ImDrawList* dl) {
     };
     // 3: the reflection, faint, under everything
     for (const auto& s : msegs) {
-        int al = (int)(110 * refl * 0.5f * (s.first.a + s.second.a));
+        int al = (int)(70 * refl * 0.5f * (s.first.a + s.second.a));
         if (al > 2) dl->AddLine(ImVec2(s.first.p.x, s.first.p.y), ImVec2(s.second.p.x, s.second.p.y), IM_COL32(70, 150, 255, al), 1.5f * d);
     }
     {
@@ -181,18 +181,17 @@ void App::drawSelectionFx(ImDrawList* dl) {
             if (!seen.insert({(int)std::lround(m.p.x * 0.5f), (int)std::lround(m.p.y * 0.5f)}).second) continue;
             float k = refl * m.a;
             if (k < 0.02f) continue;
-            dl->AddCircleFilled(ImVec2(m.p.x, m.p.y), 3.0f * d, IM_COL32(255, 255, 255, (int)(30 * k)), 12);
-            dl->AddCircleFilled(ImVec2(m.p.x, m.p.y), 1.1f * d, IM_COL32(255, 255, 255, (int)(150 * k)), 8);
+            dl->AddCircleFilled(ImVec2(m.p.x, m.p.y), 2.0f * d, IM_COL32(200, 225, 255, (int)(24 * k)), 10);
+            dl->AddCircleFilled(ImVec2(m.p.x, m.p.y), 0.8f * d, IM_COL32(225, 238, 255, (int)(110 * k)), 8);
         }
     }
-    // 2: white glow of 4 px on the vertices of the outline
+    // small soft glints on the vertices of the outline (about 2.5 px)
     unique(dots);
     for (const float2& p : dots) {
         ImVec2 c(p.x, p.y);
-        dl->AddCircleFilled(c, 4.0f * d, IM_COL32(255, 255, 255, 34), 16);
-        dl->AddCircleFilled(c, 2.8f * d, IM_COL32(255, 255, 255, 60), 14);
-        dl->AddCircleFilled(c, 1.8f * d, IM_COL32(255, 255, 255, 120), 12);
-        dl->AddCircleFilled(c, 1.0f * d, IM_COL32(255, 255, 255, 240), 8);
+        dl->AddCircleFilled(c, 2.6f * d, IM_COL32(190, 220, 255, 26), 12);
+        dl->AddCircleFilled(c, 1.7f * d, IM_COL32(210, 230, 255, 60), 10);
+        dl->AddCircleFilled(c, 0.9f * d, IM_COL32(235, 244, 255, 190), 8);
     }
 }
 

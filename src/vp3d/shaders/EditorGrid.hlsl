@@ -19,6 +19,8 @@ struct GridConstants {
     float axisLen;     // length of the Y axis
     float opacity;     // line opacity
     float pixelAngle;  // view angle of one pixel (radians): line widths in pixels
+    float pixelScale;  // render pixels per screen pixel (supersampling): the widths are screen pixels
+    float3 pad;
 };
 ConstantBuffer<GridConstants> G : register(b3);
 
@@ -46,7 +48,7 @@ float DepthOf(float3 p) {
 }
 
 // coverage of a line lying at d pixels (about 1 pixel wide, antialiased)
-float LineCov(float d, float width) { return saturate(width * 0.5 + 0.5 - d); }
+float LineCov(float d, float width) { width *= G.pixelScale; return saturate(width * 0.5 + 0.5 - d); }
 
 // World axes: a line, then a small arrow head on the positive side, from kArrowBase of the axis length to its end.
 static const float kArrowBase = 0.93, kArrowHalf = 0.018;   // arrow start and half width (fractions of the axis length)

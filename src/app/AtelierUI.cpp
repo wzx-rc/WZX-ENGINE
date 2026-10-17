@@ -1345,6 +1345,13 @@ void App::atlViewMenus(float x, float y) {
         ImGui::Separator();
         if (ImGui::MenuItem("Selection: Blue Glow", nullptr, m_rs.selectionStyle == 1)) { m_rs.selectionStyle = 1; markDirty(); }
         if (ImGui::MenuItem("Selection: Outline", nullptr, m_rs.selectionStyle == 0)) { m_rs.selectionStyle = 0; markDirty(); }
+        ImGui::Separator();
+        if (ImGui::BeginMenu("Anti-aliasing")) {
+            ImGui::SetWindowFontScale(menuScale);
+            if (ImGui::MenuItem("Standard (MSAA 4x)", nullptr, m_aaQuality == 0)) { m_aaQuality = 0; markDirty(); }
+            if (ImGui::MenuItem("High (MSAA 4x + supersampling 2x)", nullptr, m_aaQuality == 1)) { m_aaQuality = 1; markDirty(); }
+            ImGui::EndMenu();
+        }
         ImGui::EndPopup();
     }
     static const char* modes[] = {"Lit", "Metal iOS", "Progressive", "GI"};

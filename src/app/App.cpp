@@ -133,6 +133,7 @@ bool App::init(HINSTANCE inst, const Options& opt) {
     if (!opt.hdri.empty()) setHdri(opt.hdri);
     if (opt.select >= 0 && opt.select < (int)m_scene.objects.size()) m_selected = opt.select;
     if (opt.tool >= 0 && opt.tool <= TOOL_SCALE) m_tool = (Tool)opt.tool;
+    if (opt.aa >= 0) m_aaQuality = opt.aa ? 1 : 0;
     m_game = new GameHost(*this);   // node graph, Play, builds, command API
     m_game->init();
     if (m_pendingVillage.type == Json::Array) {   // the scene opened from the command line has a village
@@ -491,6 +492,7 @@ void App::frame() {
         ImVec2 ds = ImGui::GetIO().DisplaySize;
         m_rcView = {0, 0, ds.x, ds.y};
         m_vpPx = {0, 0, std::max(16, (int)ds.x), std::max(16, (int)ds.y)};
+        m_rs.pixelScale = 1.0f;
         m_viewportVisible = true;
     }
     outlinerSync();   // Scene Manager: ids, the children follow their parent (before the render)
@@ -1172,6 +1174,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         else if (a == L"--open") opt.openPath = next();
         else if (a == L"--gizmo-test") opt.gizmoTest = next();
         else if (a == L"--shot-seq") opt.shotSeq = _wtoi(next().c_str());
+        else if (a == L"--aa") opt.aa = _wtoi(next().c_str());
         else if (a == L"--gizmo-demo") opt.gizmoDemo = next();
         else if (a == L"--open-menu") { std::wstring m = next(); opt.openMenu = std::string(m.begin(), m.end()); }
         else if (a.size() > 5 && a.find(L".json") != std::wstring::npos) opt.openPath = a;

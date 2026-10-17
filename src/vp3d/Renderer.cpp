@@ -1495,6 +1495,7 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
     fc.selCenterY = rs.selectionCenter.y;
     fc.selRadius = rs.selectionRadius;
     fc.selStyle = (uint32_t)rs.selectionStyle;
+    fc.selPixelScale = rs.pixelScale;
     for (int o : m_extraSelection) {
         if (fc.selMoreCount >= 32 || o < 0 || o >= (int)m_objectToInstance.size() || m_objectToInstance[o] < 0) continue;
         reinterpret_cast<uint32_t*>(fc.selMore)[fc.selMoreCount++] = (uint32_t)(m_objectToInstance[o] + 1);

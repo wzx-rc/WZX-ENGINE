@@ -637,8 +637,8 @@ void Renderer::recordRaster(const Scene& scene, const RenderSettings& rs, const 
     // editor grid after the opaque objects (they hide it), before the transparent ones
     auto drawGrid = [&]() {
         if (!m_psoGrid || rs.editorGrid <= 0) return;
-        float gc[4] = {rs.editorGrid, rs.editorGridAxis, 1.0f, 2.0f * t / std::max(1, vp.h)};
-        m_cmd->SetGraphicsRoot32BitConstants(7, 4, gc, 0);
+        float gc[8] = {rs.editorGrid, rs.editorGridAxis, 1.0f, 2.0f * t / std::max(1, vp.h), std::max(rs.pixelScale, 1.0f), 0, 0, 0};
+        m_cmd->SetGraphicsRoot32BitConstants(7, 8, gc, 0);
         m_cmd->SetPipelineState(m_psoGrid.Get());
         m_cmd->DrawInstanced(3, 1, 0, 0);
     };
