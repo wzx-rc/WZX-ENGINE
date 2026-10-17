@@ -252,6 +252,7 @@ bool App::gizmoInput(bool inView) {
         m_gzHover = MH_NONE;
         return false;
     }
+    if (m_gzDemo) return m_gz.active;
     float mx = io.MousePos.x, my = io.MousePos.y;
     GizmoDrag& g = m_gz;
     if (g.active) {
@@ -523,7 +524,7 @@ void App::drawGizmo(ImDrawList* dl) {
             if (g.handle == MH_FREE) snprintf(buf, sizeof buf, "free");
             else snprintf(buf, sizeof buf, "%+.1f°", v.x);
         } else snprintf(buf, sizeof buf, "x%.2f", g.handle == MH_Y ? v.y : (g.handle == MH_Z ? v.z : v.x));
-        ImVec2 m = ImGui::GetIO().MousePos;
+        ImVec2 m(g.prevMouse.x, g.prevMouse.y);
         ImVec2 ts = ImGui::CalcTextSize(buf);
         ImVec2 a(m.x + 16 * d, m.y + 14 * d);
         dl->AddRectFilled(ImVec2(a.x - 4 * d, a.y - 2 * d), ImVec2(a.x + ts.x + 4 * d, a.y + ts.y + 2 * d), IM_COL32(20, 22, 26, 190), 3 * d);
@@ -624,6 +625,7 @@ void App::markingReset(int what) {
 bool App::markingMenuInput(bool inView) {
     ImGuiIO& io = ImGui::GetIO();
     MarkingMenu& mm = m_mm;
+    if (m_gzDemo) return mm.open;
     if (!mm.open) {
         if (!inView || io.KeyAlt || io.KeyCtrl || io.WantTextInput || !ImGui::IsMouseClicked(0)) return false;
         const ImGuiKey keys[4] = {ImGuiKey_Q, ImGuiKey_W, ImGuiKey_E, ImGuiKey_R};
@@ -639,7 +641,9 @@ bool App::markingMenuInput(bool inView) {
         mm.hover = -1;
         return true;
     }
-    float dx = io.MousePos.x - mm.x, dy = io.MousePos.y - mm.y;
+    mm.mx = io.MousePos.x;
+    mm.my = io.MousePos.y;
+    float dx = mm.mx - mm.x, dy = mm.my - mm.y;
     mm.hover = std::hypot(dx, dy) > 22.0f * m_dpi ? mmDirOf(dx, dy) : -1;
     if (!io.MouseDown[0]) {
         mm.open = false;
@@ -659,7 +663,7 @@ void App::drawMarkingMenu(ImDrawList* dl) {
     ImVec2 c(m_mm.x, m_mm.y);
     auto items = markingItems(*this, m_mm.tool, m_axisMode, m_magnet, m_snapAbsolute, m_stepMove, m_stepRotate, m_stepScale, [](int) {}, [](int) {});
     static const char* names[4] = {"Select", "Move", "Rotate", "Scale"};
-    ImVec2 m = ImGui::GetIO().MousePos;
+    ImVec2 m(m_mm.mx, m_mm.my);
     dl->AddCircleFilled(c, 5 * d, IM_COL32(236, 236, 226, 200), 20);
     dl->AddCircle(c, 22 * d, IM_COL32(236, 236, 226, 70), 40, 1.0f * d);
     if (m_mm.hover >= 0) dl->AddLine(c, m, IM_COL32(255, 226, 102, 200), 1.2f * d);
@@ -681,5 +685,7 @@ void App::drawMarkingMenu(ImDrawList* dl) {
         dl->AddText(ImVec2(b0.x + 9 * d, b0.y + 4 * d), hot ? IM_COL32(28, 28, 30, 255) : IM_COL32(228, 228, 232, 255), label.c_str());
     }
 }
+
+#include "ManipulatorsTest.inl"
 
 } // namespace app

@@ -520,6 +520,7 @@ void App::frame() {
 
     // Stability test (command line): camera and first object moved every frame, flicker statistics of the viewport.
     ++m_frameCounter;
+    gizmoScript();
     if (m_opt.sway > 0 || m_opt.anim) {
         const float t = (float)m_frameCounter * (2.0f * kPi / 120.0f);
         if (m_frameCounter <= 1) {
@@ -561,7 +562,7 @@ void App::frame() {
     // Automated capture (command line): window image once the viewport has enough samples.
     // (stability tests reset the accumulation every frame: their capture comes at frame shotSpp)
     const bool moving = m_opt.sway > 0 || m_opt.anim;
-    if (!m_opt.shotPath.empty() && (moving ? m_frameCounter >= m_opt.shotSpp : ((int)m_renderer.sampleCount() >= m_opt.shotSpp || !m_viewportRendered)) && m_frameCounter > 6) {
+    if (!m_opt.shotPath.empty() && (moving ? m_frameCounter >= m_opt.shotSpp : ((int)m_renderer.sampleCount() >= m_opt.shotSpp || !m_viewportRendered)) && m_frameCounter > (m_opt.gizmoDemo.empty() ? 6 : 12)) {
         std::vector<uint8_t> img;
         uint32_t w, h;
         bool ok = m_opt.shotViewport ? m_renderer.readViewport(img, w, h) : m_renderer.readBackBuffer(img, w, h);
@@ -1112,6 +1113,8 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         else if (a == L"--tab") opt.inspectorTab = _wtoi(next().c_str());
         else if (a == L"--raster") opt.raster = _wtoi(next().c_str()) != 0;
         else if (a == L"--open") opt.openPath = next();
+        else if (a == L"--gizmo-test") opt.gizmoTest = next();
+        else if (a == L"--gizmo-demo") opt.gizmoDemo = next();
         else if (a.size() > 5 && a.find(L".json") != std::wstring::npos) opt.openPath = a;
         else if (a.size() > 4 && _wcsicmp(a.c_str() + a.size() - 4, L".wzx") == 0) opt.openPath = a;
         else if (a == L"--shot") opt.shotPath = next();

@@ -96,6 +96,8 @@ struct Options {
     int quality = 1;
     bool raster = true;         // light raster viewport by default, P toggles path tracing
     std::wstring openPath;      // scene file to open at startup
+    std::wstring gizmoTest;     // manipulator self-test: report written there, then exit (--gizmo-test)
+    std::wstring gizmoDemo;     // "tool handle dx dy menuDir": frozen drag or marking menu for a capture (--gizmo-demo)
     std::wstring hdri;          // HDRI to load at startup (file, or "sky" for the procedural sky)
     // DDGI probe GI (real-time mode)
     bool ddgi = false;          // start in the real-time probe GI mode
@@ -407,7 +409,10 @@ private:
     GizmoDrag m_gz;
     int m_gzHover = MH_NONE;
     int m_gzLast[4] = {MH_NONE, MH_NONE, MH_NONE, MH_NONE};   // last used handle per tool (middle button, drawn yellow)
-    struct MarkingMenu { bool open = false; int tool = 0, hover = -1; float x = 0, y = 0; } m_mm;
+    struct MarkingMenu { bool open = false; int tool = 0, hover = -1; float x = 0, y = 0, mx = 0, my = 0; } m_mm;
+    bool m_gzDemo = false;       // --gizmo-demo: a drag / marking menu frozen on screen for a capture
+    void gizmoScript();          // --gizmo-demo / --gizmo-test (command line), called once per frame
+    float2 gizmoHandlePoint(int handle);   // screen point on a handle of the current manipulator (tests)
     std::vector<Snapshot> m_undo, m_redo;
     int m_viewMode = 0;
 
