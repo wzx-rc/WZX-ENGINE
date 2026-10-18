@@ -180,6 +180,28 @@ void CurveEditor::inspector(float x, float& y, float w) {
                 if (n != m.sides) { m.sides = n; A.markDirty(); }
             }
             if (SliderRow("##crvMeshAngle", "Angle", x, y, w, &ang, -180, 180, "%.0f", act) && ang != m.angle) { m.angle = ang; A.markDirty(); }
+            // rings along the curve (corners are always kept, with a mitre joint)
+            Text(x, y, "Distribution", P().muted, 11);
+            y += 19 * s;
+            {
+                static const char* dist[] = {"Curve Steps", "Even Spacing", "Adaptive"};
+                int dm = std::clamp(m.distribution, 0, 2);
+                if (Combo("##crvMeshDist", {x, y, w, 27 * s}, dm, dist, 3, Icon::Curve) && dm != m.distribution) { A.pushUndo(); m.distribution = dm; A.markDirty(); }
+            }
+            y += 37 * s;
+            if (m.distribution == 1) {
+                float sg = (float)m.segments;
+                if (SliderRow("##crvMeshSeg", "Segments", x, y, w, &sg, 2, 512, "%.0f", act)) {
+                    const int n = std::clamp((int)std::lround(sg), 2, 512);
+                    if (n != m.segments) { m.segments = n; A.markDirty(); }
+                }
+            } else if (m.distribution == 2) {
+                float aa = m.adaptiveAngle;
+                if (SliderRow("##crvMeshAdapt", "Angle per Segment", x, y, w, &aa, 1, 45, "%.1f", act) && aa != m.adaptiveAngle) { m.adaptiveAngle = aa; A.markDirty(); }
+            } else {
+                Text(x, y, "Rings follow Display Smoothness", P().muted, 10);
+                y += 22 * s;
+            }
             if (!c.closed) {
                 bool caps = m.caps;
                 ImGui::SetCursorScreenPos(ImVec2(x, y));

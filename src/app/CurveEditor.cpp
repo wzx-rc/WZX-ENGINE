@@ -84,7 +84,7 @@ Json curveToJson(const CurveData& c) {
         for (uint8_t k : c.broken) b.a.push_back(jbool(k != 0));
         j.o["broken"] = b;
     }
-    if (c.mesh.enabled || c.mesh.radius != CurveMesh().radius || c.mesh.sides != CurveMesh().sides || c.mesh.angle != 0.0f || !c.mesh.caps) {
+    if (c.mesh.enabled || c.mesh.radius != CurveMesh().radius || c.mesh.sides != CurveMesh().sides || c.mesh.angle != 0.0f || !c.mesh.caps || c.mesh.distribution != 0) {
         Json m;   // tube swept along the curve (3ds Max "Rendering")
         m.type = Json::Object;
         m.o["enabled"] = jbool(c.mesh.enabled);
@@ -92,6 +92,9 @@ Json curveToJson(const CurveData& c) {
         m.o["sides"] = jnum(c.mesh.sides);
         m.o["angle"] = jnum(c.mesh.angle);
         m.o["caps"] = jbool(c.mesh.caps);
+        m.o["distribution"] = jnum(c.mesh.distribution);
+        m.o["segments"] = jnum(c.mesh.segments);
+        m.o["adaptiveAngle"] = jnum(c.mesh.adaptiveAngle);
         j.o["mesh"] = m;
     }
     if (c.frames.show) {
@@ -143,6 +146,9 @@ bool curveFromJson(const Json& j, CurveData& c) {
         c.mesh.sides = std::clamp((int)mj["sides"].num(c.mesh.sides), 3, 64);
         c.mesh.angle = (float)mj["angle"].num(0);
         c.mesh.caps = !(mj["caps"].type == Json::Bool && !mj["caps"].b);
+        c.mesh.distribution = std::clamp((int)mj["distribution"].num(0), 0, 2);
+        c.mesh.segments = std::clamp((int)mj["segments"].num(c.mesh.segments), 1, 4096);
+        c.mesh.adaptiveAngle = (float)mj["adaptiveAngle"].num(c.mesh.adaptiveAngle);
     }
     const Json& fj = j["frames"];
     if (fj.type == Json::Object) {
@@ -542,6 +548,9 @@ uint64_t curveSignature(const CurveData& c) {
     mix(&c.mesh.sides, sizeof(int));
     mix(&c.mesh.angle, sizeof(float));
     mix(&c.mesh.caps, sizeof(bool));
+    mix(&c.mesh.distribution, sizeof(int));
+    mix(&c.mesh.segments, sizeof(int));
+    mix(&c.mesh.adaptiveAngle, sizeof(float));
     return h;
 }
 }
@@ -2009,6 +2018,49 @@ void CurveEditor::runTest() {
             co.curve.mesh.enabled = false;
             syncMeshes();
             check(co.mesh == -1, "Mesh disabled: no tube");
+            // corners: mitre joints (the section stretched on the bisector plane, the normals of each side)
+            {
+                CurveData sq = makeCurveShape(CSHAPE_SQUARE);   // 4 x 4, linear, closed
+                sq.mesh.enabled = true;
+                sq.mesh.radius = 0.2f;
+                sq.mesh.sides = 8;
+                const MeshData tm = makeCurveTube(sq);
+                const float3 corner = sq.points[1];
+                float reach = 0;
+                bool finite = !tm.vertices.empty();
+                for (const Vertex& v : tm.vertices) {
+                    if (length(v.pos - corner) < 0.5f) reach = std::max(reach, length(v.pos - corner));
+                    finite = finite && std::isfinite(v.nrm.x) && std::fabs(length(v.nrm) - 1) < 1e-3f;
+                }
+                snprintf(b, sizeof(b), "Tube on a square: mitre corners (corner reach %.3f = radius x 1.414: %.3f), clean normals", reach, 0.2f * 1.41421f);
+                check(finite && std::fabs(reach - 0.2f * 1.41421f) < 0.01f, b);
+                // distribution: even spacing and adaptive
+                CurveData ci = makeCurveShape(CSHAPE_CIRCLE);
+                ci.mesh.enabled = true;
+                ci.mesh.sides = 8;
+                ci.mesh.distribution = 1;
+                ci.mesh.segments = 40;
+                const int ringsEven = (int)makeCurveTube(ci).vertices.size() / 9;
+                ci.mesh.distribution = 2;
+                ci.mesh.adaptiveAngle = 30;
+                const int ringsAdapt = (int)makeCurveTube(ci).vertices.size() / 9;
+                sq.mesh.distribution = 2;
+                const int ringsSquare = (int)makeCurveTube(sq).vertices.size() / 9;
+                snprintf(b, sizeof(b), "Distribution: even 40 segments = %d rings, adaptive 30 degrees = %d rings, adaptive square = %d rings", ringsEven, ringsAdapt, ringsSquare);
+                check(ringsEven == 41 && ringsAdapt >= 12 && ringsAdapt <= 16 && ringsSquare <= 10, b);
+                // the lens of two circles (the case of the report): two sharp tips
+                std::vector<CurveData> lens;
+                std::string e2;
+                if (curveBoolean(makeCurveShape(CSHAPE_CIRCLE), moved(makeCurveShape(CSHAPE_CIRCLE), float3(2, 0, 0)), CURVE_INTERSECT, lens, e2)) {
+                    lens[0].mesh.enabled = true;
+                    lens[0].mesh.radius = 0.3f;
+                    lens[0].mesh.distribution = 2;
+                    const MeshData lm = makeCurveTube(lens[0]);
+                    bool ok3 = !lm.vertices.empty();
+                    for (const Vertex& v : lm.vertices) ok3 = ok3 && std::isfinite(v.pos.x) && std::isfinite(v.nrm.x) && std::fabs(length(v.nrm) - 1) < 1e-3f;
+                    check(ok3, "Tube on the lens of two circles: tips with mitre joints, clean normals");
+                } else check(false, "Lens for the tube test: " + e2);
+            }
         }
 
         // frames
@@ -2225,6 +2277,30 @@ void CurveEditor::runTest() {
                 a.cameraChanged();
                 a.select(shown[0]);   // a curve with its tube: the MESH section in the inspector
                 a.m_tool = TOOL_SELECT;
+            }
+        } else if (v == "lens") {   // the case of the report: a tube on the lens of two circles, in wireframe
+            exitMode();
+            const float3 at = base + float3(0, 0, 34);
+            const int ci = addCurveObject(makeCurveShape(CSHAPE_CIRCLE), at, "Circle");
+            const int cj = addCurveObject(makeCurveShape(CSHAPE_CIRCLE), at + float3(2, 0, 0), "Circle");
+            a.m_selected = ci;
+            a.m_multi = {cj};
+            if (runBoolean(CURVE_INTERSECT, cj)) {
+                CurveData& c = sc.objects[a.m_selected].curve;
+                c.mesh.enabled = true;
+                c.mesh.radius = 0.3f;
+                c.mesh.sides = 16;
+                c.mesh.distribution = 1;
+                c.mesh.segments = 48;
+                syncMeshes();
+                a.m_multi.clear();
+                a.frameSelection();
+                sc.camera.pitch = radians(50.0f);
+                sc.camera.yaw = radians(30.0f);
+                sc.camera.distance *= 0.7f;
+                a.cameraChanged();
+                a.m_tool = TOOL_SELECT;
+                if (getenv("WZX_CURVE_WIRE")) a.m_rs.wireframe = 1;   // the rings of the tube
             }
         } else if (v == "boolean") {
             exitMode();

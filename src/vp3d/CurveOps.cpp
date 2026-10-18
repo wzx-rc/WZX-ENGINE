@@ -15,45 +15,49 @@ float3 rotateAround(const float3& v, const float3& axis, float angle) {
     return qRot(qAxisAngle(axis, angle), v);
 }
 
-} // namespace
+// a corner: the polyline turns by more than 20 degrees at a point (linear curves, Boolean tips, Bezier corners)
+const float kCornerCos = 0.9397f;
 
-void curveFrames(const CurveData& c, std::vector<float3>& pos, std::vector<float3>& fwd, std::vector<float3>& up,
-                 std::vector<float3>& side, std::vector<float>* arcLength) {
-    pos.clear();
-    fwd.clear();
-    up.clear();
-    side.clear();
-    std::vector<float3> s;
-    sampleCurve(c, s);
-    for (const float3& p : s)   // no zero-length step (the tangent would be undefined)
-        if (pos.empty() || length(p - pos.back()) > 1e-6f) pos.push_back(p);
-    const bool closed = c.closed && pos.size() > 3 && length(pos.front() - pos.back()) < 1e-4f;
-    if (closed) pos.back() = pos.front();
-    const int n = (int)pos.size();
-    if (n < 2) { pos.clear(); return; }
-    // tangents: central differences (a closed curve wraps around its seam)
+void dedupe(std::vector<float3>& v) {
+    std::vector<float3> o;
+    for (const float3& p : v) if (o.empty() || length(p - o.back()) > 1e-6f) o.push_back(p);
+    v.swap(o);
+}
+
+// directions of the segments before and after point i (closed: wraps around, the last point repeats the first)
+void segmentDirs(const std::vector<float3>& P, bool closed, int i, float3& tin, float3& tout) {
+    const int n = (int)P.size();
+    const int m = closed ? n - 1 : n;
+    if (closed) {
+        const int k = i % m;
+        tin = normalize(P[k] - P[(k - 1 + m) % m]);
+        tout = normalize(P[(k + 1) % m] - P[k]);
+        return;
+    }
+    tout = i + 1 < n ? normalize(P[i + 1] - P[i]) : normalize(P[i] - P[i - 1]);
+    tin = i > 0 ? normalize(P[i] - P[i - 1]) : tout;
+}
+
+// Rotation minimizing frames along a polyline (closed: the last point repeats the first). The forward vector is the
+// bisector of the two segments at each point: at a corner it is the normal of the mitre plane.
+void polyFrames(const std::vector<float3>& P, bool closed, float angleDeg, std::vector<float3>& fwd, std::vector<float3>& up,
+                std::vector<float3>& side, std::vector<float>& arc) {
+    const int n = (int)P.size();
     fwd.resize(n);
     for (int i = 0; i < n; ++i) {
         float3 a, b;
-        if (closed) {
-            const int m = n - 1;   // the last sample repeats the first
-            a = pos[(i - 1 + m) % m];
-            b = pos[(i + 1) % m];
-        } else {
-            a = pos[std::max(i - 1, 0)];
-            b = pos[std::min(i + 1, n - 1)];
-        }
-        fwd[i] = normalize(b - a);
+        segmentDirs(P, closed, i, a, b);
+        const float3 s = a + b;
+        fwd[i] = length(s) > 1e-6f ? normalize(s) : b;
     }
-    if (closed) fwd[n - 1] = fwd[0];
     // first up vector: +Y made perpendicular to the tangent (+X when the curve starts vertically)
     float3 u0 = float3(0, 1, 0) - fwd[0] * dot(float3(0, 1, 0), fwd[0]);
     if (length(u0) < 1e-3f) u0 = float3(1, 0, 0) - fwd[0] * dot(float3(1, 0, 0), fwd[0]);
     up.resize(n);
     up[0] = normalize(u0);
-    // rotation minimizing frames by double reflection (Wang, Juttler, Zheng, Liu 2008)
+    // double reflection (Wang, Juttler, Zheng, Liu 2008)
     for (int i = 0; i + 1 < n; ++i) {
-        const float3 v1 = pos[i + 1] - pos[i];
+        const float3 v1 = P[i + 1] - P[i];
         const float c1 = dot(v1, v1);
         float3 rL = up[i], tL = fwd[i];
         if (c1 > 1e-12f) {
@@ -66,19 +70,110 @@ void curveFrames(const CurveData& c, std::vector<float3>& pos, std::vector<float
         r = r - fwd[i + 1] * dot(r, fwd[i + 1]);
         up[i + 1] = length(r) > 1e-6f ? normalize(r) : up[i];
     }
-    std::vector<float> arc(n, 0.0f);
-    for (int i = 1; i < n; ++i) arc[i] = arc[i - 1] + length(pos[i] - pos[i - 1]);
+    arc.assign(n, 0.0f);
+    for (int i = 1; i < n; ++i) arc[i] = arc[i - 1] + length(P[i] - P[i - 1]);
     // closed curve: the frames come back turned by some angle; that twist is spread along the curve
-    if (closed && arc.back() > 0) {
+    if (closed && n > 1 && arc.back() > 0) {
         const float3 a = up[n - 1], b = up[0], t = fwd[0];
         const float twist = std::atan2(dot(cross(a, b), t), dot(a, b));
         for (int i = 1; i < n; ++i) up[i] = normalize(rotateAround(up[i], fwd[i], twist * arc[i] / arc.back()));
         up[n - 1] = up[0];
     }
-    if (c.mesh.angle != 0.0f)
-        for (int i = 0; i < n; ++i) up[i] = normalize(rotateAround(up[i], fwd[i], radians(c.mesh.angle)));
+    if (angleDeg != 0.0f)
+        for (int i = 0; i < n; ++i) up[i] = normalize(rotateAround(up[i], fwd[i], radians(angleDeg)));
     side.resize(n);
     for (int i = 0; i < n; ++i) side[i] = normalize(cross(up[i], fwd[i]));   // X = Y x Z: side, up, forward
+}
+
+bool isClosedPolyline(const CurveData& c, const std::vector<float3>& P) {
+    return c.closed && P.size() > 3 && length(P.front() - P.back()) < 1e-4f;
+}
+
+// Points of the tube along the curve, by c.mesh.distribution: 0 the curve samples (Display Smoothness), 1 evenly
+// spaced (mesh.segments in all, corners kept), 2 adaptive (a ring each time the curve has turned by mesh.adaptiveAngle,
+// corners kept, straight parts in one segment).
+std::vector<float3> tubePoints(const CurveData& c, std::vector<char>& corner) {
+    // corners are found on a dense sampling of the curve (a coarse sampling of a smooth curve also turns a lot
+    // between two points, it is not a corner)
+    std::vector<float3> s;
+    CurveData dense = c;
+    dense.steps = std::clamp(c.steps * 4, 32, 256);
+    sampleCurve(dense, s);
+    dedupe(s);
+    const bool closed = isClosedPolyline(c, s);
+    if (closed) s.back() = s.front();
+    const int n = (int)s.size();
+    std::vector<int> cuts{0};
+    std::vector<float3> corners;
+    for (int i = 0; i < n && n >= 3; ++i) {
+        if (!closed && (i == 0 || i == n - 1)) continue;
+        if (closed && i == n - 1) continue;   // the seam is point 0
+        float3 a, b;
+        segmentDirs(s, closed, i, a, b);
+        if (dot(a, b) < kCornerCos) {
+            corners.push_back(s[i]);
+            if (i > 0) cuts.push_back(i);
+        }
+    }
+    cuts.push_back(n - 1);
+    auto isCorner = [&](const float3& p) {
+        for (const float3& q : corners) if (length(p - q) < 1e-5f) return true;
+        return false;
+    };
+    std::vector<float3> out;
+    if (c.mesh.distribution == 0 || n < 3) {   // the curve samples (Display Smoothness)
+        sampleCurve(c, out);
+        dedupe(out);
+        if (isClosedPolyline(c, out)) out.back() = out.front();
+    } else {
+        std::vector<float> arc(n, 0.0f);
+        for (int i = 1; i < n; ++i) arc[i] = arc[i - 1] + length(s[i] - s[i - 1]);
+        out.push_back(s[0]);
+        for (size_t r = 0; r + 1 < cuts.size(); ++r) {
+            const int i0 = cuts[r], i1 = cuts[r + 1];
+            if (c.mesh.distribution == 1) {   // evenly spaced, the count shared by length
+                const float L = arc[i1] - arc[i0];
+                const int cnt = std::max(1, (int)std::lround(std::max(c.mesh.segments, 1) * L / std::max(arc.back(), 1e-6f)));
+                int k = i0;
+                for (int j = 1; j < cnt; ++j) {
+                    const float target = arc[i0] + L * j / cnt;
+                    while (k + 1 < i1 && arc[k + 1] < target) ++k;
+                    const float seg = arc[k + 1] - arc[k];
+                    out.push_back(lerp(s[k], s[k + 1], seg > 1e-9f ? clampf((target - arc[k]) / seg, 0, 1) : 0.0f));
+                }
+            } else {   // adaptive: a point each time the direction has turned by the tolerance
+                const float tol = radians(std::clamp(c.mesh.adaptiveAngle, 0.5f, 45.0f));
+                float turned = 0;
+                for (int i = i0 + 1; i < i1; ++i) {
+                    float3 a, b;
+                    segmentDirs(s, closed, i, a, b);
+                    turned += std::acos(clampf(dot(a, b), -1, 1));
+                    if (turned >= tol) { out.push_back(s[i]); turned = 0; }
+                }
+            }
+            out.push_back(s[i1]);
+        }
+    }
+    corner.assign(out.size(), 0);
+    for (size_t i = 0; i < out.size(); ++i) corner[i] = isCorner(out[i]) ? 1 : 0;
+    if (!closed && !corner.empty()) corner.front() = corner.back() = 0;   // the ends of an open curve: caps
+    return out;
+}
+
+} // namespace
+
+void curveFrames(const CurveData& c, std::vector<float3>& pos, std::vector<float3>& fwd, std::vector<float3>& up,
+                 std::vector<float3>& side, std::vector<float>* arcLength) {
+    fwd.clear();
+    up.clear();
+    side.clear();
+    sampleCurve(c, pos);
+    dedupe(pos);
+    if (pos.size() < 2) { pos.clear(); return; }
+    const bool closed = isClosedPolyline(c, pos);
+    if (closed) pos.back() = pos.front();
+    std::vector<float> arc;
+    polyFrames(pos, closed, c.mesh.angle, fwd, up, side, arc);
     if (arcLength) *arcLength = arc;
 }
 
@@ -86,41 +181,66 @@ void curveFrames(const CurveData& c, std::vector<float3>& pos, std::vector<float
 
 MeshData makeCurveTube(const CurveData& c) {
     MeshData m;
-    std::vector<float3> P, T, U, S;
-    std::vector<float> arc;
-    curveFrames(c, P, T, U, S, &arc);
+    std::vector<char> cornerAt;
+    const std::vector<float3> P = tubePoints(c, cornerAt);
     const int n = (int)P.size();
     if (n < 2) return m;
+    const bool closed = isClosedPolyline(c, P);
+    std::vector<float3> T, U, S;
+    std::vector<float> arc;
+    polyFrames(P, closed, c.mesh.angle, T, U, S, arc);
     const int sides = std::clamp(c.mesh.sides, 3, 64);
     const float r = std::max(c.mesh.radius, 1e-4f);
     const float circ = 2.0f * kPi * r;
-    // rings of sides + 1 vertices (the last one repeats the first for the texture seam)
-    for (int i = 0; i < n; ++i)
+    // rings of sides + 1 vertices (the last repeats the first for the texture seam). A corner gets two rings at the
+    // same place, on its mitre plane (the section stretched along the bend), each with the normals of its own side.
+    std::vector<int> ringIn(n), ringOut(n);
+    int rings = 0;
+    auto addRing = [&](int i, const float3& normalAxis, bool corner, const float3& tin, const float3& tout) {
+        const float cosHalf = std::max(dot(T[i], tin), 0.2f);
+        float3 bend = tout - tin;
+        bend = bend - T[i] * dot(bend, T[i]);
+        const bool bent = corner && length(bend) > 1e-6f;
+        if (bent) bend = normalize(bend);
         for (int k = 0; k <= sides; ++k) {
             const float a = 2.0f * kPi * k / sides;
-            const float3 d = U[i] * std::cos(a) + S[i] * std::sin(a);
-            m.vertices.push_back({P[i] + d * r, d, float2(k / (float)sides, arc[i] / circ)});
+            float3 off = (U[i] * std::cos(a) + S[i] * std::sin(a)) * r;
+            if (bent) off = off + bend * (dot(off, bend) * (1.0f / cosHalf - 1.0f));
+            float3 nrm = off - normalAxis * dot(off, normalAxis);
+            nrm = length(nrm) > 1e-9f ? normalize(nrm) : normalize(off);
+            m.vertices.push_back({P[i] + off, nrm, float2(k / (float)sides, arc[i] / circ)});
         }
-    auto vid = [&](int i, int k) { return (uint32_t)(i * (sides + 1) + k); };
+        return rings++;
+    };
+    for (int i = 0; i < n; ++i) {
+        float3 tin, tout;
+        segmentDirs(P, closed, i, tin, tout);
+        const bool end = !closed && (i == 0 || i == n - 1);
+        const bool corner = !end && cornerAt[i] && dot(tin, tout) < 0.99999f;   // a corner of the curve itself
+        if (corner) {
+            ringIn[i] = addRing(i, tin, true, tin, tout);
+            ringOut[i] = addRing(i, tout, true, tin, tout);
+        } else ringIn[i] = ringOut[i] = addRing(i, T[i], false, tin, tout);
+    }
+    auto vid = [&](int ring, int k) { return (uint32_t)(ring * (sides + 1) + k); };
     // winding: the first face must look outwards (its normal along the vertex normal)
     bool flip = false;
     {
-        const float3 a = m.vertices[vid(0, 0)].pos, b = m.vertices[vid(0, 1)].pos, d = m.vertices[vid(1, 0)].pos;
-        flip = dot(cross(b - a, d - a), m.vertices[vid(0, 0)].nrm) > 0;
+        const float3 a = m.vertices[vid(ringOut[0], 0)].pos, b = m.vertices[vid(ringOut[0], 1)].pos, d = m.vertices[vid(ringIn[1], 0)].pos;
+        flip = dot(cross(b - a, d - a), m.vertices[vid(ringOut[0], 0)].nrm) > 0;
     }
-    for (int i = 0; i + 1 < n; ++i)
+    for (int i = 0; i + 1 < n; ++i) {
+        const int r0 = ringOut[i], r1 = ringIn[i + 1];
         for (int k = 0; k < sides; ++k) {
-            const uint32_t a = vid(i, k), b = vid(i, k + 1), cc = vid(i + 1, k + 1), d = vid(i + 1, k);
+            const uint32_t a = vid(r0, k), b = vid(r0, k + 1), cc = vid(r1, k + 1), d = vid(r1, k);
             if (flip) { m.addTri(a, d, cc); m.addTri(a, cc, b); }
             else { m.addTri(a, b, cc); m.addTri(a, cc, d); }
+            m.edges.push_back(a); m.edges.push_back(d);   // wireframe: along the curve
         }
-    // wireframe: rings and lines along the curve
-    for (int i = 0; i < n; ++i)
-        for (int k = 0; k < sides; ++k) { m.edges.push_back(vid(i, k)); m.edges.push_back(vid(i, k + 1)); }
-    for (int i = 0; i + 1 < n; ++i)
-        for (int k = 0; k < sides; ++k) { m.edges.push_back(vid(i, k)); m.edges.push_back(vid(i + 1, k)); }
+    }
+    for (int i = 0; i < n; ++i)   // wireframe: one ring per point
+        for (int k = 0; k < sides; ++k) { m.edges.push_back(vid(ringOut[i], k)); m.edges.push_back(vid(ringOut[i], k + 1)); }
     // caps of an open curve: flat discs facing out
-    const bool closed = c.closed && length(P.front() - P.back()) < 1e-4f;
     if (!closed && c.mesh.caps)
         for (int e = 0; e < 2; ++e) {
             const int i = e == 0 ? 0 : n - 1;

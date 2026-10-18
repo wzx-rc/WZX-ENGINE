@@ -34,6 +34,11 @@ struct CurveMesh {
     int sides = 12;
     float angle = 0.0f;      // degrees: turns the tube section (and the frames) around the curve
     bool caps = true;        // open curve: closes both ends
+    // rings along the curve: 0 the curve samples (Display Smoothness), 1 evenly spaced (segments in all), 2 adaptive
+    // (a ring each time the curve turns by adaptiveAngle degrees, straight parts in one piece); corners always kept
+    int distribution = 0;
+    int segments = 64;
+    float adaptiveAngle = 8.0f;
 };
 
 // Display of the frames along the curve: forward (tangent), up (normal) and side vectors, the rotation an object
