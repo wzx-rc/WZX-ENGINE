@@ -328,14 +328,14 @@ void App::gizmoDrag(float mx, float my, bool snap) {
             if (!g.pivotEdit)
                 for (const auto& it : g.items) skip.push_back(it.obj);
             float3 vtx;
-            if (nearestVertex(mx, my, skip, th::settings().snap.vertexRadius, vtx)) {
+            if (nearestVertex(mx, my, skip, 1e6f, vtx)) {   // (as Maya: the vertex nearest to the cursor, however far)
                 const float3 dv = vtx - g.pivot;
                 if (g.handle == MH_CENTER) world = dv;
                 else if (g.handle <= MH_Z) c[g.handle] = dot(dv, g.ax[g.handle]);
                 else { int a, b; planeAxes(g.handle, a, b); c[a] = dot(dv, g.ax[a]); c[b] = dot(dv, g.ax[b]); }
                 onVertex = true;
             }
-            else return;   // no vertex in reach: the pivot stays on the last one (no free move while V is held)
+            else return;   // no vertex at all: the pivot stays (no free move while V is held)
         }
         if (snap && !onVertex) {
             const bool worldAxes = m_axisMode == 0 || g.handle == MH_CENTER;
