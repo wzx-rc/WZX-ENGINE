@@ -2100,6 +2100,7 @@ void App::SelfTest::build() {
         check("Place: the sphere rests on the top of the cube", std::fabs(mn.y - (float)v["top"]) < 0.02f && std::hypot(sp.position.x - cube.x, sp.position.z - cube.z) < 0.6f,
               fmt("bottom %.3f, top of the cube %.3f", mn.y, v["top"]));
         check("Place: the sphere selected, one undo step", a.m_selected == obj("Sphere") && a.m_undo.size() == 1, fmt("%d undo steps", (int)a.m_undo.size()));
+        check("Place: its pivot (the manipulator) at the contact point", std::fabs(sp.position.y - (float)v["top"]) < 0.02f, fmt("pivot y %.3f", sp.position.y));
         a.m_surfacePlace = false;
         // Center Pivot: the pivot at the centre of the geometry, the geometry does not move
         const Object& cy = a.m_scene.objects[obj("Cylinder")];
@@ -2148,20 +2149,16 @@ void App::SelfTest::build() {
               fmt("pivot %.2f %.2f %.2f", cy.pivot.x, cy.pivot.y, cy.pivot.z));
         check("Center Pivot: the geometry stays", still);
         fresh();
-        // D held: Edit Pivot meanwhile
+        // D: a switch in and out of Edit Pivot
         a.select(obj("Cube"));
         a.m_tool = TOOL_ROTATE;
-        events.push_back([](ImGuiIO& io) { io.AddKeyEvent(ImGuiKey_D, true); });
-        events.push_back([](ImGuiIO&) {});
-        return queued() + 1;
+        return key(ImGuiKey_D) + 1;
     });
     add("snapping", [this] {
-        check("D held: Edit Pivot, the move manipulator", a.pivotEditing() && a.m_tool == TOOL_MOVE);
-        events.push_back([](ImGuiIO& io) { io.AddKeyEvent(ImGuiKey_D, false); });
-        events.push_back([](ImGuiIO&) {});
-        return queued() + 1;
+        check("D: Edit Pivot (it stays on once D is released), the move manipulator", a.pivotEditing() && a.m_tool == TOOL_MOVE);
+        return key(ImGuiKey_D) + 1;
     });
-    add("snapping", [this] { check("D released: the tool of before", !a.pivotEditing() && a.m_tool == TOOL_ROTATE); return 1; });
+    add("snapping", [this] { check("D again: out of Edit Pivot, the tool of before", !a.pivotEditing() && a.m_tool == TOOL_ROTATE); return 1; });
 
     // ================================================================= split views: layouts, the active pane, Space
     add("layouts", [this] {

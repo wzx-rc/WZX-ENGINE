@@ -25,7 +25,7 @@ const int kRingSeg = 72;
 // (the plane squares sit far from the centre, at two thirds of the axes, as the reference of the user)
 const float kConeBase = 0.86f, kPlane0 = 0.60f, kPlane1 = 0.74f, kCube = 0.045f, kRing = 0.85f, kViewRing = 1.08f;
 const double kMarkingDelay = 0.2;   // seconds before the marking menu is drawn
-const float kFlashTime = 0.6f;     // seconds the item chosen by a quick gesture stays shown
+const float kFlashTime = 0.35f;    // seconds the item chosen by a quick gesture stays shown
 
 float3 unitAxis(int a) { return float3(a == 0 ? 1.0f : 0.0f, a == 1 ? 1.0f : 0.0f, a == 2 ? 1.0f : 0.0f); }
 ImVec2 iv(float2 p) { return ImVec2(p.x, p.y); }
@@ -712,6 +712,7 @@ bool App::markingMenuInput(bool inView) {
                     if (!mm.shown) {   // a quick gesture: the chosen item shown for a moment
                         m_mmFlash.t = ImGui::GetTime();
                         m_mmFlash.label = it.label;
+                        m_mmFlash.centre = ImVec2(mm.x, mm.y);
                         pillRect(ImVec2(mm.x, mm.y), it.dir, it.label, m_dpi, m_mmFlash.b0, m_mmFlash.b1);
                     }
                     it.run();
@@ -748,7 +749,11 @@ void App::drawPill(ImDrawList* dl, ImVec2 b0, ImVec2 b1, const std::string& labe
 void App::drawRadialFlash(ImDrawList* dl, const RadialFlash& f) {
     const float t = (float)(ImGui::GetTime() - f.t);
     if (t < 0 || t > kFlashTime) return;
-    const float alpha = t < kFlashTime * 0.5f ? 1.0f : 1.0f - (t - kFlashTime * 0.5f) / (kFlashTime * 0.5f);
+    const float alpha = 1.0f - t / kFlashTime;   // fading from the start
+    // the line of the choice, from the centre of the menu to the item
+    const ImVec2 to((f.b0.x + f.b1.x) * 0.5f, (f.b0.y + f.b1.y) * 0.5f);
+    dl->AddLine(f.centre, to, IM_COL32(255, 226, 102, (int)(200 * alpha)), 1.2f * m_dpi);
+    dl->AddCircleFilled(f.centre, 4.0f * m_dpi, IM_COL32(236, 236, 226, (int)(200 * alpha)), 16);
     drawPill(dl, f.b0, f.b1, f.label, true, alpha, m_dpi, 0);
 }
 

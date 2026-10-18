@@ -300,6 +300,7 @@ void App::spaceInput(bool allowed) {
         if (!vm.shown) {   // a quick flick: the chosen item shown for a moment
             m_vmFlash.t = ImGui::GetTime();
             m_vmFlash.label = it.label;
+            m_vmFlash.centre = ImVec2(vm.x, vm.y);
             m_vmFlash.b0 = it.b0;
             m_vmFlash.b1 = it.b1;
         }

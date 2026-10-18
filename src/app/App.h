@@ -575,7 +575,7 @@ private:
     // (shown: drawn, after a short delay: a quick flick only does the item in its direction, as in Maya)
     struct MarkingMenu { bool open = false, shown = false; int tool = 0, hover = -1; float x = 0, y = 0, mx = 0, my = 0; double t0 = 0; } m_mm;
     // a quick gesture: the chosen item alone, lit for a moment (the marking menus, the view menu of Space)
-    struct RadialFlash { double t = -10; ImVec2 b0, b1; std::string label; };
+    struct RadialFlash { double t = -10; ImVec2 b0, b1, centre; std::string label; };   // (centre: of the menu, the line of the choice)
     RadialFlash m_mmFlash, m_vmFlash;
     static void pillRect(ImVec2 centre, int dir, const std::string& label, float dpi, ImVec2& b0, ImVec2& b1);
     static void drawPill(ImDrawList* dl, ImVec2 b0, ImVec2 b1, const std::string& label, bool hot, float alpha, float dpi, ImU32 edge);

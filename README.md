@@ -95,7 +95,7 @@ Comme dans Maya (`src/app/Cameras.cpp`, `src/app/Panes.cpp`) :
 - **V** maintenu pendant un déplacement : le pivot va sur le sommet le plus proche du curseur.
 - **Place** (icône de la barre) : un objet sélectionné glissé au clic gauche suit les surfaces de la scène (le sol à
   défaut), posé dessus, tourné vers la surface si l'option est cochée.
-- **Edit Pivot** : D maintenu (ou Insert jusqu'au prochain appui) ; le manipulateur de déplacement bouge le pivot, la
+- **Edit Pivot** : D ou Insert (interrupteur) ; le manipulateur de déplacement bouge le pivot, la
   géométrie reste. **Center Pivot** : Alt+Y (aussi dans le marking menu W, à gauche). Le pivot est enregistré dans
   le `.wzx`.
 

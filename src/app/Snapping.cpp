@@ -94,7 +94,7 @@ bool App::nearestVertex(float mx, float my, const std::vector<int>& skip, float 
 }
 
 // The snap points of the grid around the moved object (absolute snapping on, a move manipulator shown or a drag):
-// small dots on the ground, fading with the distance, the point the pivot lands on circled.
+// small dots at the height of the pivot (the points it lands on), fading with the distance.
 void App::drawSnapPoints(ImDrawList* dl) {
     m_snapShown = false;
     const SnapOptions& so = th::settings().snap;
@@ -138,9 +138,10 @@ void App::drawSnapPoints(ImDrawList* dl) {
     auto dot2 = [&](float x, float z) {
         float2 p;
         const float dd = std::hypot(x - c.x, z - c.z) / (s * (n + 0.5f));
-        if (dd > 1.0f || !project(float3(x, 0, z), p) || hidden(float3(x, 0, z))) return;
+        const float3 w(x, c.y, z);   // (at the height of the pivot: the points it lands on)
+        if (dd > 1.0f || !project(w, p) || hidden(w)) return;
         const int a = (int)(220 * (1.0f - dd * dd));
-        dl->AddCircleFilled(ImVec2(p.x, p.y), 2.2f * m_dpi, IM_COL32(120, 220, 255, a), 10);
+        dl->AddCircleFilled(ImVec2(p.x, p.y), 1.1f * m_dpi, IM_COL32(120, 220, 255, a), 8);
         m_snapShown = true;
     };
     for (int i = -n; i <= n; ++i)
@@ -153,11 +154,6 @@ void App::drawSnapPoints(ImDrawList* dl) {
                 dot2(x, z + 0.5f * s);
             }
         }
-    float2 t;
-    if (m_snapTargetOn && (m_gz.active || m_sd.active) && project(float3(m_snapTarget.x, 0, m_snapTarget.z), t)) {
-        dl->AddCircle(ImVec2(t.x, t.y), 6.0f * m_dpi, IM_COL32(255, 226, 102, 255), 20, 1.6f * m_dpi);
-        dl->AddCircleFilled(ImVec2(t.x, t.y), 2.4f * m_dpi, IM_COL32(255, 226, 102, 255), 10);
-    }
 }
 
 // The Snapping button: snapping always on / off; with Shift, its options.
@@ -197,6 +193,18 @@ bool App::surfacePlaceInput(bool inView, bool click) {
     m_sd.active = true;
     m_sd.objs = gizmoTargets();
     m_sd.lead = std::find(m_sd.objs.begin(), m_sd.objs.end(), pr.object) != m_sd.objs.end() ? pr.object : m_selected;
+    // the pivot at the contact point (the bottom of the geometry, in the middle): the manipulators, the scale and the
+    // rotation work from where the object rests (the geometry does not move; Center Pivot gives the centre back)
+    for (int i : m_sd.objs) {
+        Object& ob = m_scene.objects[i];
+        if (ob.mesh < 0 || ob.mesh >= (int)m_scene.meshes.size()) continue;
+        float3 a, b;
+        m_scene.meshes[ob.mesh].bounds(a, b);
+        const float3 base((a.x + b.x) * 0.5f, a.y, (a.z + b.z) * 0.5f);
+        ob.position = ob.transform().point(base);
+        ob.pivot = base;
+        hierRebase(ob.id);
+    }
     const float3 lp = m_scene.objects[m_sd.lead].position;
     for (int i : m_sd.objs) {
         m_sd.offs.push_back(m_scene.objects[i].position - lp);
@@ -277,12 +285,13 @@ void App::surfacePlaceDrag(float mx, float my) {
 
 // --------------------------------------------------------------------------- pivot
 
-// D held or Insert: Edit Pivot (the move manipulator moves the pivot); Alt+Y: Center Pivot.
+// D or Insert: in and out of Edit Pivot (the move manipulator moves the pivot); Alt+Y: Center Pivot.
 void App::pivotInput(bool allowed) {
     ImGuiIO& io = ImGui::GetIO();
     const bool keys = allowed && !io.WantTextInput;
-    m_pivotHold = keys && !io.KeyCtrl && !io.KeyAlt && ImGui::IsKeyDown(ImGuiKey_D) && m_selected >= 0;
-    if (keys && ImGui::IsKeyPressed(ImGuiKey_Insert, false)) m_pivotEdit = !m_pivotEdit;
+    m_pivotHold = false;
+    // D or Insert: a switch, in and out of Edit Pivot
+    if (keys && !io.KeyCtrl && !io.KeyAlt && (ImGui::IsKeyPressed(ImGuiKey_D, false) || ImGui::IsKeyPressed(ImGuiKey_Insert, false))) m_pivotEdit = !m_pivotEdit;
     if (keys && io.KeyAlt && ImGui::IsKeyPressed(ImGuiKey_Y, false)) centerPivot();
     // the move manipulator while the pivot is edited, the tool of before after
     if (pivotEditing() && m_pivotTool < 0 && !m_gz.active) {
