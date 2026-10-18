@@ -335,6 +335,7 @@ void App::gizmoDrag(float mx, float my, bool snap) {
                 else { int a, b; planeAxes(g.handle, a, b); c[a] = dot(dv, g.ax[a]); c[b] = dot(dv, g.ax[b]); }
                 onVertex = true;
             }
+            else return;   // no vertex in reach: the pivot stays on the last one (no free move while V is held)
         }
         if (snap && !onVertex) {
             const bool worldAxes = m_axisMode == 0 || g.handle == MH_CENTER;
