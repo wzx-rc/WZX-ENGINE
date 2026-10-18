@@ -84,6 +84,24 @@ Json curveToJson(const CurveData& c) {
         for (uint8_t k : c.broken) b.a.push_back(jbool(k != 0));
         j.o["broken"] = b;
     }
+    if (c.mesh.enabled || c.mesh.radius != CurveMesh().radius || c.mesh.sides != CurveMesh().sides || c.mesh.angle != 0.0f || !c.mesh.caps) {
+        Json m;   // tube swept along the curve (3ds Max "Rendering")
+        m.type = Json::Object;
+        m.o["enabled"] = jbool(c.mesh.enabled);
+        m.o["radius"] = jnum(c.mesh.radius);
+        m.o["sides"] = jnum(c.mesh.sides);
+        m.o["angle"] = jnum(c.mesh.angle);
+        m.o["caps"] = jbool(c.mesh.caps);
+        j.o["mesh"] = m;
+    }
+    if (c.frames.show) {
+        Json fr;   // display of the frames along the curve
+        fr.type = Json::Object;
+        fr.o["show"] = jbool(true);
+        fr.o["length"] = jnum(c.frames.length);
+        fr.o["count"] = jnum(c.frames.count);
+        j.o["frames"] = fr;
+    }
     if (c.shape.type != CSHAPE_NONE) {   // primitive: its parameters (the points above are kept as well)
         const CurveShapeParams& p = c.shape;
         Json s;
@@ -117,6 +135,20 @@ bool curveFromJson(const Json& j, CurveData& c) {
         for (const Json& b : j["broken"].a) c.broken.push_back(b.type == Json::Bool && b.b ? 1 : 0);
         if (c.hin.size() != c.points.size() || c.hout.size() != c.points.size()) { c.hin.clear(); c.hout.clear(); }
         bezierFixArrays(c);
+    }
+    const Json& mj = j["mesh"];
+    if (mj.type == Json::Object) {
+        c.mesh.enabled = mj["enabled"].type == Json::Bool && mj["enabled"].b;
+        c.mesh.radius = (float)mj["radius"].num(c.mesh.radius);
+        c.mesh.sides = std::clamp((int)mj["sides"].num(c.mesh.sides), 3, 64);
+        c.mesh.angle = (float)mj["angle"].num(0);
+        c.mesh.caps = !(mj["caps"].type == Json::Bool && !mj["caps"].b);
+    }
+    const Json& fj = j["frames"];
+    if (fj.type == Json::Object) {
+        c.frames.show = fj["show"].type == Json::Bool && fj["show"].b;
+        c.frames.length = (float)fj["length"].num(c.frames.length);
+        c.frames.count = std::clamp((int)fj["count"].num(c.frames.count), 2, 512);
     }
     const Json& s = j["shape"];
     if (s.type == Json::Object) {
@@ -191,6 +223,7 @@ bool CurveEditor::isSelected(Item it) const {
 // Keeps the state consistent with the scene (undo, deletion, another selection).
 void CurveEditor::validate() {
     const auto& objs = a.m_scene.objects;
+    if (m_mode == MODE_PICK && (a.m_selected < 0 || a.m_selected >= (int)objs.size() || !objs[a.m_selected].curve.valid())) { exitMode(); return; }
     if (m_mode == MODE_POINTS) {
         if (m_obj < 0 || m_obj >= (int)objs.size() || !objs[m_obj].curve.valid() || a.m_selected != m_obj) { exitMode(); return; }
         const CurveData& c = objs[m_obj].curve;
@@ -489,6 +522,154 @@ void CurveEditor::applyFillet(float radius) {
     a.status(std::to_wstring(c.count() - before) + L" point(s) added by the fillet");
 }
 
+// --------------------------------------------------------------------------- tube meshes
+
+namespace {
+// FNV-1a over the data the tube is built from
+uint64_t curveSignature(const CurveData& c) {
+    uint64_t h = 1469598103934665603ull;
+    auto mix = [&](const void* p, size_t n) {
+        const unsigned char* b = (const unsigned char*)p;
+        for (size_t i = 0; i < n; ++i) { h ^= b[i]; h *= 1099511628211ull; }
+    };
+    auto vecs = [&](const std::vector<float3>& v) { if (!v.empty()) mix(v.data(), v.size() * sizeof(float3)); };
+    mix(&c.type, sizeof(c.type));
+    mix(&c.closed, sizeof(c.closed));
+    mix(&c.steps, sizeof(c.steps));
+    vecs(c.points);
+    if (c.type == CURVE_BEZIER) { vecs(c.hin); vecs(c.hout); }
+    mix(&c.mesh.radius, sizeof(float));
+    mix(&c.mesh.sides, sizeof(int));
+    mix(&c.mesh.angle, sizeof(float));
+    mix(&c.mesh.caps, sizeof(bool));
+    return h;
+}
+}
+
+void CurveEditor::syncMeshes() {
+    Scene& s = a.m_scene;
+    bool changed = false;
+    for (int i = 0; i < (int)s.objects.size(); ++i) {
+        Object& o = s.objects[i];
+        if (!o.curve.valid()) continue;
+        if (!o.curve.mesh.enabled) {
+            if (o.mesh >= 0) { o.mesh = -1; changed = true; }
+            continue;
+        }
+        if (o.id == 0) { a.outlinerIds(); }   // the mesh is named after the object id
+        const std::string key = "CURVE_" + std::to_string(o.id);
+        const uint64_t sig = curveSignature(o.curve);
+        const bool owned = o.mesh >= 0 && o.mesh < (int)s.meshNames.size() && s.meshNames[o.mesh] == key;
+        auto it = m_meshSig.find(o.id);
+        if (owned && it != m_meshSig.end() && it->second == sig) continue;
+        MeshData m = makeCurveTube(o.curve);
+        m_meshSig[o.id] = sig;
+        changed = true;
+        if (m.indices.empty()) { o.mesh = -1; continue; }
+        const int found = owned ? o.mesh : s.findMesh(key);   // its earlier mesh (after an undo, a scene change) is reused
+        if (found >= 0) {
+            s.meshes[found] = std::move(m);
+            ++s.geometryVersion;
+            o.mesh = found;
+        } else o.mesh = s.addMesh(key, std::move(m));
+    }
+    if (changed) a.markDirty();
+}
+
+// Frames along a curve: side (X, red), up (Y, green) and forward (Z, blue), as the axes of the manipulators.
+void CurveEditor::drawFrames(ImDrawList* dl, const Object& o) const {
+    std::vector<float3> P, T, U, S;
+    std::vector<float> arc;
+    curveFrames(o.curve, P, T, U, S, &arc);
+    const int n = (int)P.size();
+    if (n < 2 || arc.back() <= 0) return;
+    const Affine xf = o.transform();
+    const float d = a.m_dpi, len = std::max(o.curve.frames.length, 1e-4f);
+    const int count = std::clamp(o.curve.frames.count, 2, 512);
+    const bool closed = o.curve.closed;
+    size_t k = 0;
+    for (int f = 0; f < count; ++f) {   // evenly spaced along the curve
+        const float target = arc.back() * f / (closed ? count : count - 1);
+        while (k + 2 < arc.size() && arc[k + 1] < target) ++k;
+        const float seg = arc[k + 1] - arc[k];
+        const float t = seg > 1e-9f ? clampf((target - arc[k]) / seg, 0, 1) : 0.0f;
+        const float3 p = lerp(P[k], P[k + 1], t);
+        const float3 axes[3] = {normalize(lerp(S[k], S[k + 1], t)), normalize(lerp(U[k], U[k + 1], t)), normalize(lerp(T[k], T[k + 1], t))};
+        float2 s0;
+        if (!a.project(xf.point(p), s0)) continue;
+        for (int ax = 0; ax < 3; ++ax) {
+            float2 s1;
+            if (!a.project(xf.point(p + axes[ax] * len), s1)) continue;
+            dl->AddLine(iv(s0), iv(s1), kAxisCol[ax], (ax == 1 ? 1.6f : 1.2f) * d);
+        }
+        dl->AddCircleFilled(iv(s0), 1.8f * d, kHandle, 8);
+    }
+}
+
+// --------------------------------------------------------------------------- booleans (3ds Max Editable Spline)
+
+namespace {
+const char* kBoolNames[] = {"Union", "Subtract", "Intersect"};
+}
+
+void CurveEditor::startBoolean(int op) {
+    Scene& s = a.m_scene;
+    if (a.m_selected < 0 || !s.objects[a.m_selected].curve.valid()) { a.status(L"Select the first curve of the Boolean", 2); return; }
+    if (!s.objects[a.m_selected].curve.closed) { a.status(L"The Boolean needs a closed curve (Closed in the inspector)", 2); return; }
+    if (m_mode != MODE_NONE) exitMode();
+    std::vector<int> others;   // a second curve already selected: used at once
+    for (int i : a.m_multi) if (i >= 0 && i < (int)s.objects.size() && s.objects[i].curve.valid()) others.push_back(i);
+    if (others.size() == 1) { runBoolean(op, others[0]); return; }
+    m_mode = MODE_PICK;
+    m_boolOp = op;
+    m_pickHover = -1;
+    a.status(std::wstring(fromUtf8(kBoolNames[std::clamp(op, 0, 2)])) + L": pick the second curve in the viewport (Esc: cancel)");
+}
+
+bool CurveEditor::runBoolean(int op, int other) {
+    Scene& s = a.m_scene;
+    const int ai = a.m_selected;
+    if (ai < 0 || other < 0 || other == ai || other >= (int)s.objects.size() || !s.objects[ai].curve.valid() || !s.objects[other].curve.valid()) return false;
+    const Object A = s.objects[ai], B = s.objects[other];
+    std::vector<CurveData> res;
+    std::string err;
+    if (!curveBoolean(transformCurve(A.curve, A.transform()), transformCurve(B.curve, B.transform()), op, res, err)) {
+        a.status(fromUtf8(err), 2);
+        return false;
+    }
+    a.pushUndo();
+    const Affine inv = A.transform().inverse();
+    auto localOf = [&](const CurveData& w) {
+        CurveData c = transformCurve(w, inv);   // in the space of the first curve: its transform is kept
+        c.steps = A.curve.steps;
+        c.mesh = A.curve.mesh;
+        c.frames = A.curve.frames;
+        return c;
+    };
+    s.objects[ai].curve = localOf(res[0]);
+    // the second curve is removed (3ds Max attaches it into the first one); its children go to its parent
+    for (Object& o : s.objects) if (o.parent == B.id && B.id) o.parent = B.parent;
+    s.objects.erase(s.objects.begin() + other);
+    const int first = other < ai ? ai - 1 : ai;
+    std::vector<int> extra;
+    for (size_t k = 1; k < res.size(); ++k) {   // more loops (shapes apart, a hole): curves next to the first one
+        Object e = A;
+        e.curve = localOf(res[k]);
+        e.id = 0;
+        e.mesh = -1;
+        e.name = a.uniqueNodeName(A.name);
+        if (A.material >= 0 && A.material < (int)s.materials.size()) e.material = s.addMaterial(s.materials[A.material]);
+        extra.push_back(s.addObject(e));
+    }
+    a.outlinerIds();
+    a.m_selected = first;
+    a.m_multi = extra;
+    a.m_outSel.clear();
+    a.markDirty();
+    a.status(std::wstring(fromUtf8(kBoolNames[std::clamp(op, 0, 2)])) + L" done: " + std::to_wstring(res.size()) + (res.size() > 1 ? L" curves" : L" curve"), 1);
+    return true;
+}
+
 // --------------------------------------------------------------------------- keys
 
 bool CurveEditor::keys() {
@@ -503,6 +684,7 @@ bool CurveEditor::keys() {
         else if (m_mode == MODE_NONE) enterPoints();
         return true;
     }
+    if (m_mode == MODE_PICK && pressed(ImGuiKey_Escape)) { exitMode(); a.status(L"Boolean cancelled"); return true; }
     if (m_mode == MODE_DRAW && pressed(ImGuiKey_Escape)) { exitMode(); a.status(L"Drawing cancelled"); return true; }
     if (m_mode == MODE_DRAW && pressed(ImGuiKey_Delete)) return true;
     if (m_mode != MODE_NONE && pressed(ImGuiKey_O)) {
@@ -621,6 +803,19 @@ bool CurveEditor::input(bool inView, bool placing) {
                     m_draft.hin.back() = A * 2.0f - h;
                 }
             }
+        }
+        return true;
+    }
+
+    if (m_mode == MODE_PICK) {   // Boolean: the second curve is picked in the viewport
+        m_pickHover = inView ? pickCurve(mx, my) : -1;
+        if (m_pickHover == a.m_selected) m_pickHover = -1;
+        if (clicked) {
+            if (m_pickHover >= 0) {
+                const int other = m_pickHover, op = m_boolOp;
+                exitMode();
+                runBoolean(op, other);
+            } else a.status(L"Pick a second closed curve (Esc: cancel)", 2);
         }
         return true;
     }
@@ -1440,10 +1635,14 @@ void CurveEditor::draw(ImDrawList* dl) {
         const bool multi = std::find(a.m_multi.begin(), a.m_multi.end(), i) != a.m_multi.end();
         // active curve: pale cyan, no glow; inactive: the same hue, thinner and translucent
         if (primary) drawCurve(dl, o, kCurveOn, 1.6f * d);
+        else if (m_mode == MODE_PICK && i == m_pickHover) drawCurve(dl, o, kNodeRing, 2.2f * d);   // the curve a click would pick
         else if (multi) drawCurve(dl, o, kCurveMulti, 1.3f * d);
         else drawCurve(dl, o, kCurveOff, 1.0f * d);
+        if (o.curve.frames.show) drawFrames(dl, o);
     }
     std::string hint;
+    if (m_mode == MODE_PICK)
+        hint = std::string(kBoolNames[std::clamp(m_boolOp, 0, 2)]) + "  ·  pick the second curve  ·  Esc: cancel";
     if (m_mode == MODE_POINTS && m_obj >= 0) {
         drawPoints(dl, objs[m_obj]);
         drawManipulator(dl);
@@ -1520,6 +1719,7 @@ void CurveEditor::capture(const std::wstring& png) {
 }
 
 void CurveEditor::beginFrame() {
+    syncMeshes();   // tube meshes of the curves, before the frame is rendered
     if (testReport.empty()) return;
     ++m_testFrame;
     if (m_testFrame == 3) {
@@ -1715,6 +1915,132 @@ void CurveEditor::runTest() {
         for (const float3& q : s3) straightKept &= std::fabs(std::fabs(q.x) - 2) < 1e-3f || std::fabs(std::fabs(q.z) - 2) < 1e-3f || (q.x > 0.99f && q.z < -0.99f);
         check(f3.count() == 5 && straightKept, "Fillet of one corner: the rest of the square is unchanged");
     }
+    // Booleans of closed curves (3ds Max Editable Spline), tube mesh along a curve, frames (normals / rotation)
+    {
+        auto moved = [](const CurveData& c, const float3& t) {
+            Affine xf;
+            xf.m[0][3] = t.x;
+            xf.m[1][3] = t.y;
+            xf.m[2][3] = t.z;
+            return transformCurve(c, xf);
+        };
+        auto total = [](const std::vector<CurveData>& v) { float s = 0; for (const CurveData& c : v) s += curveArea(c); return s; };
+        const CurveData sqA = makeCurveShape(CSHAPE_SQUARE), sqB = moved(makeCurveShape(CSHAPE_SQUARE), float3(2, 0, 2));
+        std::vector<CurveData> res;
+        std::string err;
+        char b[192];
+        bool ok = curveBoolean(sqA, sqB, CURVE_UNION, res, err);
+        snprintf(b, sizeof(b), "Union of two 4x4 squares overlapping 2x2: 1 linear curve of 8 points, area %.3f (28)", ok ? total(res) : 0.0f);
+        check(ok && res.size() == 1 && res[0].type == CURVE_LINEAR && res[0].count() == 8 && std::fabs(total(res) - 28) < 1e-3f, b);
+        ok = curveBoolean(sqA, sqB, CURVE_INTERSECT, res, err);
+        snprintf(b, sizeof(b), "Intersection of the squares: 4 points, area %.3f (4)", ok ? total(res) : 0.0f);
+        check(ok && res.size() == 1 && res[0].count() == 4 && std::fabs(total(res) - 4) < 1e-3f, b);
+        ok = curveBoolean(sqA, sqB, CURVE_SUBTRACT, res, err);
+        snprintf(b, sizeof(b), "Subtraction of the squares: an L of 6 points, area %.3f (12)", ok ? total(res) : 0.0f);
+        check(ok && res.size() == 1 && res[0].count() == 6 && std::fabs(total(res) - 12) < 1e-3f, b);
+        const CurveData c1 = makeCurveShape(CSHAPE_CIRCLE), c2 = moved(makeCurveShape(CSHAPE_CIRCLE), float3(2, 0, 0));
+        ok = curveBoolean(c1, c2, CURVE_UNION, res, err);
+        std::vector<CurveData> inter;
+        const bool ok2 = curveBoolean(c1, c2, CURVE_INTERSECT, inter, err);
+        // the expected union comes from the curves themselves: both circles minus their lens
+        const float expect = curveArea(c1) + curveArea(c2) - (ok2 ? total(inter) : 0.0f);
+        snprintf(b, sizeof(b), "Union of two circles: Bezier with %d points, area %.3f (both circles minus their lens: %.3f)", ok ? res[0].count() : 0, ok ? total(res) : 0.0f, expect);
+        check(ok && ok2 && res.size() == 1 && res[0].type == CURVE_BEZIER && res[0].count() <= 20 && std::fabs(total(res) - expect) < 0.002f * expect, b);
+        snprintf(b, sizeof(b), "Lens of the two circles: area %.3f (circle formula: 4.913)", ok2 ? total(inter) : 0.0f);
+        check(ok2 && inter.size() == 1 && std::fabs(total(inter) - 4.913f) < 0.02f * 4.913f, b);
+        CurveData big = makeCurveShape(CSHAPE_CIRCLE), hole = makeCurveShape(CSHAPE_CIRCLE);
+        big.shape.radius = 3;
+        buildCurveShape(big);
+        hole.shape.radius = 1;
+        buildCurveShape(hole);
+        ok = curveBoolean(big, hole, CURVE_SUBTRACT, res, err);
+        check(ok && res.size() == 2 && std::fabs(total(res) - (curveArea(big) + curveArea(hole))) < 0.01f,
+              "Subtraction of a circle inside another: the outline and the hole (2 curves)");
+        ok = curveBoolean(c1, moved(c1, float3(20, 0, 0)), CURVE_INTERSECT, res, err);
+        check(!ok && err.find("overlap") != std::string::npos, "Intersection of two curves apart: refused (" + err + ")");
+        ok = curveBoolean(c1, moved(c1, float3(1, 1, 0)), CURVE_UNION, res, err);
+        check(!ok && err.find("plane") != std::string::npos, "Curves in two different planes: refused (" + err + ")");
+        ok = curveBoolean(sqA, sc.objects[cv].curve, CURVE_UNION, res, err);
+        check(!ok, "Open curve: refused (" + err + ")");
+
+        // the editor: two curve objects, the first one takes the result, the second is removed, one undo step
+        const int s1 = addCurveObject(makeCurveShape(CSHAPE_SQUARE), base + float3(40, 0, 0), "BoolA");
+        const int s2 = addCurveObject(makeCurveShape(CSHAPE_SQUARE), base + float3(42, 0, 2), "BoolB");
+        const size_t before = sc.objects.size();
+        a.m_selected = s1;
+        a.m_multi = {s2};
+        startBoolean(CURVE_UNION);
+        {
+            const Object& ra = sc.objects[a.m_selected];
+            check(sc.objects.size() == before - 1 && ra.name == "BoolA" && std::fabs(curveArea(transformCurve(ra.curve, ra.transform())) - 28) < 1e-3f,
+                  "Union of two curve objects: the first takes the result, the second is removed");
+        }
+        a.undo();
+        check(sc.objects.size() == before && sc.objects[s2].name == "BoolB", "Undo of the Boolean brings the two curves back");
+        a.select(s1);
+        startBoolean(CURVE_SUBTRACT);
+        check(m_mode == MODE_PICK && m_boolOp == CURVE_SUBTRACT, "Boolean without a second selected curve: waits for a pick in the viewport");
+        exitMode();
+
+        // tube mesh along the CV curve
+        {
+            Object& co = sc.objects[cv];
+            co.curve.mesh.enabled = true;
+            co.curve.mesh.radius = 0.25f;
+            co.curve.mesh.sides = 12;
+            syncMeshes();
+            std::vector<float3> P, T, U, S;
+            curveFrames(co.curve, P, T, U, S);
+            const int verts = (int)P.size() * 13 + 2 * 14, tris = ((int)P.size() - 1) * 12 * 2 + 2 * 12;
+            const bool hasMesh = co.mesh >= 0 && co.mesh < (int)sc.meshes.size();
+            snprintf(b, sizeof(b), "Tube along the CV curve: %d vertices, %d triangles (expected %d, %d)", hasMesh ? (int)sc.meshes[co.mesh].vertices.size() : 0,
+                     hasMesh ? (int)sc.meshes[co.mesh].triangleCount() : 0, verts, tris);
+            check(hasMesh && (int)sc.meshes[co.mesh].vertices.size() == verts && (int)sc.meshes[co.mesh].triangleCount() == tris, b);
+            const size_t mid = P.size() / 2;
+            const float3 top = co.transform().point(P[mid] + U[mid] * 0.25f);
+            PickResult pr = pick(sc, top + float3(0, 5, 0), float3(0, -1, 0));
+            check(pr.object == cv && std::fabs(pr.position.y - top.y) < 0.02f, "The tube is picked in the viewport (it selects its curve)");
+            float3 tmn(0), tmx(0), tmn2(0), tmx2(0);
+            if (hasMesh) sc.meshes[co.mesh].bounds(tmn, tmx);
+            co.curve.mesh.radius = 0.5f;
+            syncMeshes();
+            if (co.mesh >= 0) sc.meshes[co.mesh].bounds(tmn2, tmx2);
+            check(co.mesh >= 0 && std::fabs((tmx2.y - tmn2.y) - (tmx.y - tmn.y) - 0.5f) < 0.02f, "A new radius rebuilds the tube (0.25 -> 0.5)");
+            co.curve.mesh.enabled = false;
+            syncMeshes();
+            check(co.mesh == -1, "Mesh disabled: no tube");
+        }
+
+        // frames
+        {
+            std::vector<float3> P, T, U, S;
+            CurveData ring = makeCurveShape(CSHAPE_CIRCLE);
+            curveFrames(ring, P, T, U, S);
+            bool upY = !P.empty(), ortho = true;
+            for (size_t i = 0; i < P.size(); ++i) {
+                upY = upY && dot(U[i], float3(0, 1, 0)) > 0.9999f;
+                ortho = ortho && std::fabs(dot(T[i], U[i])) < 1e-4f && std::fabs(dot(T[i], S[i])) < 1e-4f && std::fabs(length(S[i]) - 1) < 1e-4f;
+            }
+            check(upY && ortho, "Frames of a circle on the ground: up = +Y everywhere, forward and side perpendicular");
+            CurveData hx = makeCurveShape(CSHAPE_HELIX);
+            curveFrames(hx, P, T, U, S);
+            ortho = !P.empty();
+            for (size_t i = 0; i < P.size(); ++i) ortho = ortho && std::fabs(dot(T[i], U[i])) < 1e-3f && std::fabs(length(U[i]) - 1) < 1e-3f;
+            check(ortho, "Frames of a helix: orthonormal all along (rotation minimizing)");
+            ring.mesh.angle = 90;
+            curveFrames(ring, P, T, U, S);
+            bool turned = !P.empty();
+            for (size_t i = 0; i < P.size(); ++i) turned = turned && std::fabs(U[i].y) < 1e-3f;
+            check(turned, "Angle 90: the up vectors turn to the side");
+        }
+
+        // kept for the save / load check and the captures: a tube on the helix, frames on the EP curve
+        Object& ho = sc.objects[prims[CSHAPE_HELIX - 1]];
+        ho.curve.mesh.enabled = true;
+        ho.curve.mesh.radius = 0.2f;
+        sc.objects[ep].curve.frames.show = true;
+        sc.objects[ep].curve.frames.length = 1.0f;
+    }
     // point editing
     {
         a.select(cv);
@@ -1795,24 +2121,25 @@ void CurveEditor::runTest() {
     {
         std::filesystem::path rep(testReport);
         std::wstring file = (rep.parent_path() / L"curve_test.wzx").wstring();
-        struct Rec { std::string name; int type; bool closed; std::vector<float3> pts; size_t handles; int shape; };
+        struct Rec { std::string name; int type; bool closed; std::vector<float3> pts; size_t handles; int shape; bool mesh; float radius; int sides; bool frames; };
         std::vector<Rec> recs;
         for (const Object& o : sc.objects)
-            if (o.curve.valid()) recs.push_back({o.name, o.curve.type, o.curve.closed, o.curve.points, o.curve.hout.size(), o.curve.shape.type});
+            if (o.curve.valid()) recs.push_back({o.name, o.curve.type, o.curve.closed, o.curve.points, o.curve.hout.size(), o.curve.shape.type, o.curve.mesh.enabled, o.curve.mesh.radius, o.curve.mesh.sides, o.curve.frames.show});
         bool saved = a.saveSceneFile(file);
         check(saved, "Save the scene (.wzx)");
         bool loaded = saved && a.loadSceneFile(file);
         check(loaded, "Open the scene again");
         std::vector<Rec> back;
         for (const Object& o : sc.objects)
-            if (o.curve.valid()) back.push_back({o.name, o.curve.type, o.curve.closed, o.curve.points, o.curve.hout.size(), o.curve.shape.type});
+            if (o.curve.valid()) back.push_back({o.name, o.curve.type, o.curve.closed, o.curve.points, o.curve.hout.size(), o.curve.shape.type, o.curve.mesh.enabled, o.curve.mesh.radius, o.curve.mesh.sides, o.curve.frames.show});
         bool same = recs.size() == back.size();
         for (size_t i = 0; same && i < recs.size(); ++i) {
             same = recs[i].name == back[i].name && recs[i].type == back[i].type && recs[i].closed == back[i].closed &&
-                   recs[i].pts.size() == back[i].pts.size() && recs[i].handles == back[i].handles && recs[i].shape == back[i].shape;
+                   recs[i].pts.size() == back[i].pts.size() && recs[i].handles == back[i].handles && recs[i].shape == back[i].shape &&
+                   recs[i].mesh == back[i].mesh && recs[i].radius == back[i].radius && recs[i].sides == back[i].sides && recs[i].frames == back[i].frames;
             for (size_t k = 0; same && k < recs[i].pts.size(); ++k) same = length(recs[i].pts[k] - back[i].pts[k]) < 1e-3f;
         }
-        check(same, std::to_string(recs.size()) + " curves read back identical (type, closed, points, handles, primitive)");
+        check(same, std::to_string(recs.size()) + " curves read back identical (type, closed, points, handles, primitive, mesh, normals)");
     }
     // view for the capture: every curve framed, the Bezier curve in point mode with an anchor selected
     {
@@ -1866,6 +2193,66 @@ void CurveEditor::runTest() {
                 draftAdd(m_testMouseAt + float3(7, 0, -3));
                 draftAdd(m_testMouseAt + float3(3, 0, 1));
                 snprintf(m_coordBuf, sizeof(m_coordBuf), "@4, 0");
+            }
+        }
+    }
+    // captures of the tubes and frames (WZX_CURVE_VIEW = mesh) and of the Booleans (WZX_CURVE_VIEW = boolean)
+    {
+        const char* view = getenv("WZX_CURVE_VIEW");
+        const std::string v = view ? view : "";
+        if (v == "mesh") {
+            exitMode();
+            std::vector<int> shown;
+            for (int i = 0; i < (int)sc.objects.size(); ++i) {
+                CurveData& c = sc.objects[i].curve;
+                if (!c.valid()) continue;
+                if (c.shape.type == CSHAPE_NONE && (c.type == CURVE_BEZIER || c.type == CURVE_CV) && sc.objects[i].name.find("Curve") != std::string::npos) {
+                    c.mesh.enabled = true;
+                    c.mesh.radius = 0.3f;
+                    shown.push_back(i);
+                }
+                if (c.shape.type == CSHAPE_HELIX || c.type == CURVE_EP) shown.push_back(i);
+                if (c.shape.type == CSHAPE_HELIX) { c.frames.show = true; c.frames.length = 0.8f; c.frames.count = 40; }
+            }
+            syncMeshes();
+            if (!shown.empty()) {
+                a.m_selected = shown[0];
+                a.m_multi.assign(shown.begin() + 1, shown.end());
+                a.frameSelection();
+                sc.camera.pitch = radians(32.0f);
+                sc.camera.yaw = radians(24.0f);
+                sc.camera.distance *= 0.8f;
+                a.cameraChanged();
+                a.select(shown[0]);   // a curve with its tube: the MESH section in the inspector
+                a.m_tool = TOOL_SELECT;
+            }
+        } else if (v == "boolean") {
+            exitMode();
+            std::vector<int> results;
+            for (int k = 0; k < 3; ++k) {
+                const float3 at = base + float3(-10.0f + k * 10.0f, 0, 34);
+                CurveData sq = makeCurveShape(CSHAPE_SQUARE);
+                sq.shape.width = sq.shape.depth = 3.5f;
+                buildCurveShape(sq);
+                const int ci = addCurveObject(makeCurveShape(CSHAPE_CIRCLE), at, "Circle");
+                const int qi = addCurveObject(sq, at + float3(1.6f, 0, 1.6f), "Square");
+                a.m_selected = ci;
+                a.m_multi = {qi};
+                if (runBoolean(k, qi)) {
+                    results.push_back(a.m_selected);
+                    for (int e : a.m_multi) results.push_back(e);
+                }
+            }
+            if (!results.empty()) {
+                a.m_selected = results[0];
+                a.m_multi.assign(results.begin() + 1, results.end());
+                a.frameSelection();
+                sc.camera.pitch = radians(70.0f);
+                sc.camera.yaw = radians(0.0f);
+                sc.camera.distance *= 0.6f;
+                a.cameraChanged();
+                a.select(results[0]);
+                a.m_tool = TOOL_SELECT;   // no transform gizmo over the results
             }
         }
     }

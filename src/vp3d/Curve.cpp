@@ -417,4 +417,58 @@ CurveData filletCurve(const CurveData& in, const std::vector<int>& pts, float ra
     return out;
 }
 
+CurveData toBezierCurve(const CurveData& c) {
+    CurveData b = c;
+    b.type = CURVE_BEZIER;
+    b.shape.type = CSHAPE_NONE;
+    if (c.type == CURVE_BEZIER) { bezierFixArrays(b); return b; }
+    const int n = c.count();
+    b.points.clear();
+    b.hin.clear();
+    b.hout.clear();
+    b.broken.clear();
+    if (n == 0) return b;
+    const int spans = curveSpans(c);
+    if (n == 1 || spans == 0) { b.points = c.points; bezierFixArrays(b); return b; }
+    // Bezier controls of span sp: straight (linear), Catmull-Rom (EP), or the cubic of the B-spline span found from
+    // four of its points (exact: the span is a polynomial of degree 3 at most)
+    auto span = [&](int sp, float3& p0, float3& p1, float3& p2, float3& p3) {
+        const bool linear = c.type == CURVE_LINEAR || curveDegree(c) == 1;
+        if (linear || c.type == CURVE_EP) {
+            p0 = c.points[sp];
+            p3 = c.points[(sp + 1) % n];
+            if (linear) { p1 = p0 + (p3 - p0) * (1.0f / 3.0f); p2 = p0 + (p3 - p0) * (2.0f / 3.0f); }
+            else catmullSpan(c, sp, p1, p2);
+            return;
+        }
+        auto at = [&](float t) { return c.closed ? periodicBspline(c, sp, t) : deBoor(c.points, curveDegree(c), sp + t); };
+        p0 = at(0.0f);
+        p3 = at(1.0f);
+        const float3 q1 = at(1.0f / 3.0f) * 27.0f - p0 * 8.0f - p3, q2 = at(2.0f / 3.0f) * 27.0f - p0 - p3 * 8.0f;
+        p1 = (q1 * 2.0f - q2) * (1.0f / 18.0f);
+        p2 = (q2 * 2.0f - q1) * (1.0f / 18.0f);
+    };
+    for (int sp = 0; sp < spans; ++sp) {
+        float3 p0, p1, p2, p3;
+        span(sp, p0, p1, p2, p3);
+        if (b.points.empty()) { b.points.push_back(p0); b.hin.push_back(p0); b.hout.push_back(p1); }
+        else b.hout.back() = p1;
+        const bool wraps = c.closed && sp == spans - 1;   // the last span of a closed curve ends on the first anchor
+        if (wraps) b.hin[0] = p2;
+        else { b.points.push_back(p3); b.hin.push_back(p2); b.hout.push_back(p3); }
+    }
+    b.closed = c.closed;
+    b.broken.assign(b.points.size(), 0);
+    if (c.type == CURVE_LINEAR || curveDegree(c) == 1) std::fill(b.broken.begin(), b.broken.end(), (uint8_t)1);
+    return b;
+}
+
+CurveData transformCurve(const CurveData& c, const Affine& xf) {
+    CurveData r = c;
+    for (float3& p : r.points) p = xf.point(p);
+    for (float3& p : r.hin) p = xf.point(p);
+    for (float3& p : r.hout) p = xf.point(p);
+    return r;
+}
+
 } // namespace vp3d

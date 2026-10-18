@@ -144,6 +144,84 @@ void CurveEditor::inspector(float x, float& y, float w) {
         y += 4 * s;
     }
 
+    if (m_mode != MODE_POINTS) {   // Boolean (3ds Max Editable Spline): with a second closed curve
+        Label(x, y, "BOOLEAN");
+        y += 24 * s;
+        if (!c.closed) {
+            Text(x, y, "Close the curve to use it in a Boolean", P().muted, 10);
+            y += 22 * s;
+        } else {
+            static const char* ops[] = {"Union", "Subtract", "Intersect"};
+            static const Icon icons[] = {Icon::BoolUnion, Icon::BoolSubtract, Icon::BoolIntersect};
+            const float tw = (w - 12 * s) / 3;
+            for (int k = 0; k < 3; ++k) {
+                std::string id = std::string("crvBool") + ops[k];
+                if (Button(id.c_str(), {x + k * (tw + 6 * s), y, tw, 27 * s}, ops[k], icons[k], m_mode == MODE_PICK && m_boolOp == k)) startBoolean(k);
+            }
+            y += 33 * s;
+            Text(x, y, m_mode == MODE_PICK ? "Pick the second curve in the viewport (Esc: cancel)" : "With a 2nd selected curve, or pick it after", P().muted, 10);
+            y += 24 * s;
+        }
+    }
+
+    {   // tube along the curve (3ds Max spline "Rendering": Enable In Viewport, thickness, sides, angle)
+        Label(x, y, "MESH");
+        y += 24 * s;
+        CurveMesh& m = c.mesh;
+        bool on = m.enabled;
+        ImGui::SetCursorScreenPos(ImVec2(x, y));
+        if (Check("Enable in Viewport", &on)) { A.pushUndo(); m.enabled = on; A.markDirty(); }
+        y += 32 * s;
+        if (m.enabled) {
+            float r = m.radius, sd = (float)m.sides, ang = m.angle;
+            if (SliderRow("##crvMeshR", "Radius", x, y, w, &r, 0.005f, 5.0f, "%.3f", act) && r != m.radius) { m.radius = std::max(r, 0.001f); A.markDirty(); }
+            if (SliderRow("##crvMeshSides", "Sides", x, y, w, &sd, 3, 48, "%.0f", act)) {
+                const int n = std::clamp((int)std::lround(sd), 3, 48);
+                if (n != m.sides) { m.sides = n; A.markDirty(); }
+            }
+            if (SliderRow("##crvMeshAngle", "Angle", x, y, w, &ang, -180, 180, "%.0f", act) && ang != m.angle) { m.angle = ang; A.markDirty(); }
+            if (!c.closed) {
+                bool caps = m.caps;
+                ImGui::SetCursorScreenPos(ImVec2(x, y));
+                if (Check("Cap Ends", &caps)) { A.pushUndo(); m.caps = caps; A.markDirty(); }
+                y += 32 * s;
+            }
+            if (o->material >= 0 && o->material < (int)A.m_scene.materials.size()) {   // colour of the tube (sRGB shown)
+                Material& mat = A.m_scene.materials[o->material];
+                auto toS = [](float v) { return v <= 0.0031308f ? v * 12.92f : 1.055f * std::pow(v, 1.0f / 2.4f) - 0.055f; };
+                float col[3] = {toS(mat.baseColor.x), toS(mat.baseColor.y), toS(mat.baseColor.z)};
+                Text(x, y, "Colour", P().muted, 11);
+                ImGui::SetCursorScreenPos(ImVec2(x + w - 150 * s, y - 3 * s));
+                ImGui::SetNextItemWidth(150 * s);
+                if (ImGui::ColorEdit3("##crvMeshCol", col, ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoLabel)) {
+                    static int lastEdit = -100;   // one undo step per colour change (the picker sends a change every frame)
+                    if (ImGui::GetFrameCount() - lastEdit > 30) A.pushUndo();
+                    lastEdit = ImGui::GetFrameCount();
+                    mat.baseColor = float3(srgbToLinear(col[0]), srgbToLinear(col[1]), srgbToLinear(col[2]));
+                    A.markDirty();
+                }
+                y += 30 * s;
+            }
+        }
+    }
+
+    {   // frames along the curve: the rotation an object following it would have
+        Label(x, y, "NORMALS");
+        y += 24 * s;
+        CurveFrames& f = c.frames;
+        bool show = f.show;
+        ImGui::SetCursorScreenPos(ImVec2(x, y));
+        if (Check("Show Normals and Rotation", &show)) { f.show = show; A.markDirty(); }
+        y += 32 * s;
+        if (f.show) {
+            float len = f.length, cnt = (float)f.count;
+            if (SliderRow("##crvFrLen", "Vector Length", x, y, w, &len, 0.05f, 10.0f, "%.2f", act)) { f.length = len; A.markDirty(); }
+            if (SliderRow("##crvFrCount", "Count", x, y, w, &cnt, 2, 128, "%.0f", act)) { f.count = std::clamp((int)std::lround(cnt), 2, 128); A.markDirty(); }
+            Text(x, y, "X side (red)  ·  Y up (green)  ·  Z forward (blue)", P().muted, 10);
+            y += 22 * s;
+        }
+    }
+
     if (m_mode == MODE_POINTS && !m_sel.empty()) {   // selected point: exact position (local), applied to the selection
         Label(x, y, "SELECTED POINTS");
         y += 24 * s;

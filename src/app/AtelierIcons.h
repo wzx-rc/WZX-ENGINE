@@ -12,7 +12,8 @@ enum class Icon {
     ArrowLeft, ArrowRight, ChevronDown, ChevronRight, Play, Pause, Step,
     Settings, Sun, Grid, List, Filter, Move, Rotate, Scale, Magnet, Camera,
     Material, Animation, Blueprint, Light, Volume, Info, Check, Link, More,
-    Save, Trash, Undo, Redo, Home, Pin, Person, Monitor, Refresh, Collection, Curve
+    Save, Trash, Undo, Redo, Home, Pin, Person, Monitor, Refresh, Collection, Curve,
+    BoolUnion, BoolSubtract, BoolIntersect
 };
 
 // Small editor glyphs drawn as vectors: p is the top-left of a size x size square.
@@ -85,6 +86,31 @@ inline void DrawIcon(ImDrawList* dl, Icon icon, ImVec2 p, float size, ImU32 colo
         dl->AddRectFilled(point(.06f, .72f), point(.22f, .88f), color);
         dl->AddRectFilled(point(.78f, .12f), point(.94f, .28f), color);
         break;
+    case Icon::BoolUnion:       // two discs merged (curve Boolean)
+    case Icon::BoolSubtract:    // the first disc bitten by the second
+    case Icon::BoolIntersect: { // the lens shared by the two discs
+        const ImVec2 c1 = point(.38f, .5f), c2 = point(.62f, .5f);
+        const float r = .27f * size, h = .14f * size;   // the discs cross at x = .5, y = .5 -/+ ~.23
+        const float a = std::acos(.12f * size / r);    // half angle of the crossing seen from a centre
+        if (icon == Icon::BoolUnion) {
+            dl->PathArcTo(c1, r, a, 2 * pi - a, 20);
+            dl->PathArcTo(c2, r, pi + a, 3 * pi - a, 20);
+            dl->PathFillConcave(color);
+        } else if (icon == Icon::BoolSubtract) {
+            dl->PathArcTo(c1, r, a, 2 * pi - a, 20);
+            dl->PathArcTo(c2, r, pi + a, pi - a, 12);
+            dl->PathFillConcave(color);
+            dl->AddCircle(c2, r, color, 20, stroke * 0.8f);
+        } else {
+            dl->AddCircle(c1, r, color, 20, stroke * 0.8f);
+            dl->AddCircle(c2, r, color, 20, stroke * 0.8f);
+            dl->PathArcTo(c2, r, pi - a, pi + a, 10);
+            dl->PathArcTo(c1, r, -a, a, 10);
+            dl->PathFillConvex(color);
+        }
+        (void)h;
+        break;
+    }
     case Icon::FolderOpen:
         line(.14f,.34f,.14f,.78f); line(.14f,.34f,.37f,.34f);
         line(.37f,.34f,.46f,.43f); line(.46f,.43f,.77f,.43f);

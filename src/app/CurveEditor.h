@@ -5,6 +5,7 @@
 #pragma once
 #include "App.h"
 #include <functional>
+#include <map>
 
 namespace app {
 
@@ -30,6 +31,10 @@ public:
     void startCreate(int type);
     void addPrimitive(int shape);
     void startDraw(int shape);   // Create > Curve primitives: drawn in the viewport
+    // Boolean (3ds Max Editable Spline): the selected curve with a second closed curve (already selected, else picked
+    // in the viewport); the result replaces the first curve, the second one is removed
+    void startBoolean(int op);
+    bool runBoolean(int op, int other);
     void enterPoints();
     void exitMode();
     bool editingPoints() const { return m_mode == MODE_POINTS; }
@@ -38,7 +43,7 @@ public:
     std::wstring testReport;                 // --curve-test: report file
 
 private:
-    enum Mode { MODE_NONE, MODE_CREATE, MODE_POINTS, MODE_DRAW };
+    enum Mode { MODE_NONE, MODE_CREATE, MODE_POINTS, MODE_DRAW, MODE_PICK };   // PICK: second curve of a Boolean
     enum Part { PART_POINT = 0, PART_IN = 1, PART_OUT = 2 };
     struct Item { int index; int part; };
     struct Start { Item item; float3 local; };
@@ -76,6 +81,8 @@ private:
     std::vector<int> m_filletIdx;
     float m_filletPx0 = 0, m_filletR = 0, m_filletRadius = 0.5f;
     float3 m_filletAt{0, 0, 0};
+    int m_boolOp = 0, m_pickHover = -1;
+    std::map<uint32_t, uint64_t> m_meshSig;   // tube mesh of each curve object (by id): signature of the curve it was built from
     // manipulator of the points: shown after a click on a point; hidden while a point is dragged directly (press and
     // move: the point follows the mouse), after such a drag, and with the fillet tool
     bool m_manipHidden = false;
@@ -148,6 +155,8 @@ private:
     float worldPerPixel(const float3& p) const;
     std::vector<int> selectedAnchors() const;
     void applyFillet(float radius);
+    void syncMeshes();   // tube meshes of the curves with "Enable in Viewport" (rebuilt when their curve changes)
+    void drawFrames(ImDrawList* dl, const Object& o) const;
 };
 
 } // namespace app

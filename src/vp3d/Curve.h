@@ -1,10 +1,12 @@
 // 3D curves of the editor (Create > Curve): linear, CV (cubic B-spline, Maya style), EP (passes through its
 // points) and Bezier (anchors with in / out handles), open or closed, plus parametric curve primitives
 // (line, circle, square, arc, helix, spiral, star). Points are in the object's local space; the object transform
-// places the curve. The renderers ignore curves (mesh -1): the editor draws them over the viewport.
+// places the curve. The editor draws the curve line over the viewport; a curve can also carry a tube mesh swept
+// along it (CurveMesh, 3ds Max "Rendering" rollout), which the renderers draw as any mesh.
 #pragma once
 #include "Math.h"
 #include <cstdint>
+#include <string>
 #include <vector>
 
 namespace vp3d {
@@ -25,6 +27,23 @@ struct CurveShapeParams {
     int sections = 8;        // circle / arc / helix / spiral: points per turn (or along the arc); star: branches
 };
 
+// Tube swept along the curve (3ds Max spline "Rendering": Enable In Viewport, radial thickness, sides, angle).
+struct CurveMesh {
+    bool enabled = false;
+    float radius = 0.1f;
+    int sides = 12;
+    float angle = 0.0f;      // degrees: turns the tube section (and the frames) around the curve
+    bool caps = true;        // open curve: closes both ends
+};
+
+// Display of the frames along the curve: forward (tangent), up (normal) and side vectors, the rotation an object
+// following the curve would have.
+struct CurveFrames {
+    bool show = false;
+    float length = 0.5f;     // vector length in scene units
+    int count = 24;          // frames shown along the curve
+};
+
 struct CurveData {
     int type = CURVE_NONE;
     bool closed = false;
@@ -33,6 +52,8 @@ struct CurveData {
     std::vector<uint8_t> broken;     // Bezier: 1 = the two handles move independently
     int steps = 16;                  // display: samples per span
     CurveShapeParams shape;
+    CurveMesh mesh;
+    CurveFrames frames;
 
     bool valid() const { return type != CURVE_NONE; }
     int count() const { return (int)points.size(); }
@@ -67,6 +88,26 @@ void eraseCurvePoint(CurveData& c, int i);
 // segments (the radius shrinks when the segments are too short). The result is a Bezier curve; linear segments
 // stay straight. Open end points and straight points are left as they are.
 CurveData filletCurve(const CurveData& c, const std::vector<int>& points, float radius);
+
+// The same shape as a Bezier curve (exact: every span of these curves is a cubic), and the curve moved by a transform.
+CurveData toBezierCurve(const CurveData& c);
+CurveData transformCurve(const CurveData& c, const Affine& xf);
+
+// Boolean of two closed curves lying in the same plane (3ds Max Editable Spline Boolean), both in the same space.
+// The result keeps the exact curved segments (Bezier, or linear when every segment is straight); several loops
+// when the shapes are apart or leave a hole. False with a message when it cannot be done.
+enum CurveBoolOp { CURVE_UNION = 0, CURVE_SUBTRACT, CURVE_INTERSECT };
+bool curveBoolean(const CurveData& a, const CurveData& b, int op, std::vector<CurveData>& out, std::string& error);
+float curveArea(const CurveData& c);   // area enclosed by a closed planar curve (absolute value)
+
+// Frames along the curve (rotation minimizing, the up vector starts as close to +Y as possible, closed curves
+// close without a jump, then turned by mesh.angle): positions, forward (tangent), up and side unit vectors.
+void curveFrames(const CurveData& c, std::vector<float3>& pos, std::vector<float3>& fwd, std::vector<float3>& up,
+                 std::vector<float3>& side, std::vector<float>* arcLength = nullptr);
+
+// Tube swept along the curve with the parameters of c.mesh (local space of the curve).
+struct MeshData;
+MeshData makeCurveTube(const CurveData& c);
 
 // Builds the points of a primitive from c.shape (sets the type and closed flag of that primitive).
 void buildCurveShape(CurveData& c);
