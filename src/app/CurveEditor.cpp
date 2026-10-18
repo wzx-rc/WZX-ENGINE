@@ -979,7 +979,7 @@ bool CurveEditor::input(bool inView, bool placing) {
                 }
                 return true;
             }
-            if (m_hoverAxis >= 0 && m_hoverAxis < 3) { beginDrag(m_hoverAxis, mx, my); return true; }   // an arrow
+            if (m_hoverAxis >= 0 && (m_hoverAxis < 3 || a.m_tool == TOOL_SCALE)) { beginDrag(m_hoverAxis, mx, my, a.m_tool == TOOL_SCALE); return true; }   // an arrow, or the scale square (before the point under it)
             if (ms.ctrl) { insertPointAt(mx, my); return true; }
             if (onPoint) {
                 if (shift) {
@@ -993,7 +993,7 @@ bool CurveEditor::input(bool inView, bool placing) {
                 }
                 return true;
             }
-            if (m_hoverAxis == 3) { beginDrag(3, mx, my); return true; }   // the ring around the selection (not on a point)
+            if (m_hoverAxis == 3) { beginDrag(3, mx, my, a.m_tool == TOOL_SCALE); return true; }   // the ring / square around the selection (not on a point)
             m_marquee = true;
             m_marq0 = float2(mx, my);
         }
@@ -1042,13 +1042,16 @@ int CurveEditor::manipulatorHit(float mx, float my) const {
     return hit;
 }
 
-void CurveEditor::beginDrag(int axis, float mx, float my) {
+void CurveEditor::beginDrag(int axis, float mx, float my, bool scale) {
     float3 pv;
     if (!selectionPivot(pv)) return;
     a.pushUndo();
     m_dragging = true;
     m_dragMoved = false;
     m_dragAxis = axis;
+    m_dragScale = scale;
+    m_dragMx0 = mx;
+    m_dragFactor = 1;
     m_dragPivot = pv;
     // moved items: the selection, plus the handles of the selected Bezier anchors
     const CurveData& c = a.m_scene.objects[m_obj].curve;
@@ -1082,6 +1085,23 @@ void CurveEditor::updateDrag(float mx, float my) {
     float3 delta(0);
     const bool snapOn = ImGui::IsKeyDown(ImGuiKey_X);
     const float g = grid();
+    if (m_dragScale) {   // Scale tool (Maya): the points spread from the selection centre; one Bezier point: its tangents
+        float k = 1.0f;
+        if (m_dragAxis < 3) k = 1.0f + (axisParam(m_dragPivot, m_dragDir, ro, rd) - m_dragT0) / std::max(a.gizmoScale(m_dragPivot) * 1.1f, 1e-4f);
+        else k = 1.0f + (mx - m_dragMx0) / (120.0f * a.m_dpi);
+        if (snapOn) k = std::round(k * 10.0f) / 10.0f;   // X: steps of 0.1
+        k = std::max(k, 0.0f);
+        float3 sv(k);
+        if (m_dragAxis < 3) { sv = float3(1); sv[m_dragAxis] = k; }
+        m_dragFactor = k;
+        Object& o = a.m_scene.objects[m_obj];
+        const Affine xf = o.transform(), inv = xf.inverse();
+        for (const Start& st : m_dragStart) itemRef(o.curve, st.item) = inv.point(m_dragPivot + (xf.point(st.local) - m_dragPivot) * sv);
+        o.curve.shape.type = CSHAPE_NONE;
+        if (k != 1.0f) m_dragMoved = true;
+        a.markDirty();
+        return;
+    }
     if (m_dragAxis < 3) {
         float d = axisParam(m_dragPivot, m_dragDir, ro, rd) - m_dragT0;
         if (snapOn) d = std::round((m_dragPivot[m_dragAxis] + d) / g) * g - m_dragPivot[m_dragAxis];
@@ -1554,6 +1574,28 @@ void CurveEditor::drawManipulator(ImDrawList* dl) const {
     float2 pc;
     if (!a.project(pv, pc)) return;
     const float d = a.m_dpi, s = a.gizmoScale(pv);
+    const bool scale = m_dragging ? m_dragScale : a.m_tool == TOOL_SCALE;
+    if (scale) {   // Scale tool: lines ending in squares, a square in the centre for a uniform scale (as the object gizmo)
+        for (int k = 0; k < 3; ++k) {
+            const bool lit = m_dragging ? m_dragAxis == k : m_hoverAxis == k;
+            const ImU32 c = lit ? IM_COL32(255, 255, 255, 255) : kAxisCol[k];
+            float2 p0, pt;
+            const float len = 1.1f * s * (m_dragging && m_dragAxis == k ? std::max(m_dragFactor, 0.1f) : 1.0f);
+            if (!a.project(pv + axisVec(k) * (0.22f * s), p0) || !a.project(pv + axisVec(k) * len, pt)) continue;
+            dl->AddLine(iv(p0), iv(pt), c, (lit ? 2.6f : 1.8f) * d);
+            const float hs = (lit ? 5.5f : 4.5f) * d;
+            dl->AddRectFilled(ImVec2(pt.x - hs, pt.y - hs), ImVec2(pt.x + hs, pt.y + hs), c, 1.5f * d);
+        }
+        const bool lit = m_dragging ? m_dragAxis == 3 : m_hoverAxis == 3;
+        const float hs = 9.0f * d;
+        dl->AddRect(ImVec2(pc.x - hs, pc.y - hs), ImVec2(pc.x + hs, pc.y + hs), lit ? kNodeRing : (kNodeRing & 0x00FFFFFFu) | 0x90000000u, 2.0f * d, 0, (lit ? 2.0f : 1.4f) * d);
+        if (m_dragging) {
+            char b[32];
+            snprintf(b, sizeof(b), "x %.2f", m_dragFactor);
+            dl->AddText(ImVec2(pc.x + 14 * d, pc.y + 10 * d), kNodeRing, b);
+        }
+        return;
+    }
     for (int k = 0; k < 3; ++k) {
         bool lit = m_dragging ? m_dragAxis == k : m_hoverAxis == k;
         ImU32 c = lit ? IM_COL32(255, 255, 255, 255) : kAxisCol[k];
@@ -2137,6 +2179,42 @@ void CurveEditor::runTest() {
         check(length(a0 - b0) < 1e-4f && std::fabs(length(c.hin[1] - c.points[1]) - lenIn) < 1e-4f, "Bezier: smooth handles stay aligned, the other keeps its length");
         exitMode();
     }
+    // Scale tool on points (Maya): one Bezier point = its tangents grow; several points spread from their centre
+    {
+        a.select(bez);
+        enterPoints();
+        CurveData& c = sc.objects[bez].curve;
+        m_sel = {{1, PART_POINT}};
+        const float3 p1 = c.points[1], in0 = c.hin[1] - p1, out0 = c.hout[1] - p1;
+        float2 sp;
+        float3 pv;
+        selectionPivot(pv);
+        a.project(pv, sp);
+        const Tool tool = a.m_tool;
+        a.m_tool = TOOL_SCALE;
+        beginDrag(3, sp.x, sp.y, true);
+        updateDrag(sp.x + 120.0f * a.m_dpi, sp.y);   // + 120 px: x 2
+        m_dragging = false;
+        check(length(c.points[1] - p1) < 1e-4f && length((c.hin[1] - p1) - in0 * 2.0f) < 1e-3f && length((c.hout[1] - p1) - out0 * 2.0f) < 1e-3f,
+              "Scale tool on one Bezier point: the point stays, its tangents double");
+        a.undo();
+        a.select(cv);
+        enterPoints();
+        CurveData& cc = sc.objects[cv].curve;
+        m_sel = {{1, PART_POINT}, {3, PART_POINT}};
+        const float3 q1 = cc.points[1], q3 = cc.points[3];
+        selectionPivot(pv);
+        a.project(pv, sp);
+        beginDrag(3, sp.x, sp.y, true);
+        updateDrag(sp.x + 60.0f * a.m_dpi, sp.y);   // + 60 px: x 1.5
+        m_dragging = false;
+        const float3 mid = (q1 + q3) * 0.5f;
+        check(length(cc.points[1] - (mid + (q1 - mid) * 1.5f)) < 1e-3f && length(cc.points[3] - (mid + (q3 - mid) * 1.5f)) < 1e-3f,
+              "Scale tool on two CVs: they spread from their centre (x 1.5)");
+        a.undo();
+        a.m_tool = tool;
+        exitMode();
+    }
     // Cavalry-style tangent modes
     {
         a.select(bez);
@@ -2357,7 +2435,7 @@ void CurveEditor::runTest() {
     // --shot, the capture is the report path with .png): pressing on a point and dragging at once moves it without
     // manipulator, a click selects it with its manipulator, the fillet tool never shows the manipulator.
     const std::string scr = getenv("WZX_CURVE_VIEW") ? getenv("WZX_CURVE_VIEW") : "";
-    if (a.m_opt.shotPath.empty() && (scr.empty() || scr == "drag" || scr == "filletdrag")) {
+    if (a.m_opt.shotPath.empty() && (scr.empty() || scr == "drag" || scr == "filletdrag" || scr == "scaledrag")) {
         std::filesystem::path png(testReport);
         png.replace_extension(L".png");
         const std::wstring shot = png.wstring();
@@ -2396,6 +2474,18 @@ void CurveEditor::runTest() {
                 float2 s0, s1;
                 return a.project(P, s0) && a.project(ob.transform().point(ob.curve.points[i]), s1) && std::hypot(s1.x - s0.x, s1.y - (s0.y + dy)) < 1.5f;
             };
+            if (scr == "scaledrag") {   // click a Bezier point, Scale tool, drag the centre square to the right
+                step(P1, 0, 0, false, false);
+                step(P1, 0, 0, true, true);
+                step(P1, 0, 0, false, false);
+                step(P1, 0, 0, false, false, [this] { a.m_tool = TOOL_SCALE; });
+                step(P1, 0, 0, true, true);
+                step(P1, 40, 0, true, false);
+                step(P1, 80, 0, true, false, [this] {
+                    testCheck(m_dragging && m_dragScale && m_dragFactor > 1.15f && manipulatorShown(), "Scale tool drag on a point: its tangents grow, the scale manipulator stays");
+                });
+                step(P1, 90, 0, true, false, [this, shot] { writeReport(); capture(shot); });
+            } else
             if (fil) {
                 step(P1, 0, 0, false, false, [this] { m_filletTool = true; });
                 step(P1, 0, 0, true, true);

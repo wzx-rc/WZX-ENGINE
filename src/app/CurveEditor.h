@@ -65,6 +65,8 @@ private:
     float m_dragT0 = 0;
     std::vector<Start> m_dragStart;
     bool m_dragMoved = false;
+    bool m_dragScale = false;          // the drag scales the points (Scale tool) instead of moving them
+    float m_dragMx0 = 0, m_dragFactor = 1;
     bool m_pendingFree = false;        // pressed on a point: a drag moves it freely
     bool m_pulling = false;            // Ctrl+drag from a Bezier point: pulls symmetric tangents
     int m_pullIndex = -1;
@@ -126,7 +128,7 @@ private:
     int pickCurve(float mx, float my, float* distOut = nullptr) const;
     bool selectionPivot(float3& p) const;
     int manipulatorHit(float mx, float my) const;
-    void beginDrag(int axis, float mx, float my);
+    void beginDrag(int axis, float mx, float my, bool scale = false);   // scale: Scale tool (R), around the selection centre
     void updateDrag(float mx, float my);
     void applyDelta(const float3& worldDelta);
     void deleteSelectedPoints();
