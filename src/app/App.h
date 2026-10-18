@@ -46,9 +46,10 @@ struct GizmoDrag {
     float4 free = qIdentity();   // trackball rotation
     float3 value;                // shown next to the mouse: displacement, degrees (x) or scale factors
     bool moved = false;
-    struct Item { int obj; float3 pos; float4 rot; float3 scale; float3 ax[3]; float3 pivot; };
+    struct Item { int obj; float3 pos; float4 rot; float3 scale; float3 ax[3]; float3 pivot; float3 base; };   // base: contact point (object space)
     std::vector<Item> items;     // objects driven (each on its own pivot and axes)
     bool pivotEdit = false;      // Edit Pivot: the move moves the pivots, the geometry stays
+    bool placeAnchor = false;    // Place on: the scale holds the contact point (the bottom of the object) still, its pivot unchanged
 };
 
 struct ViewBookmark {
@@ -544,7 +545,7 @@ private:
     bool m_snapAbsolute = false; // move increments land on the grid of the step instead of relative to the start
     // Snapping (Snapping.cpp): the grid points of the absolute snapping (intersections, centres of the cells, middles of
     // the edges, SnapOptions), drawn around the moved object; V: the vertex nearest to the cursor; the options window
-    // (Shift + the Snapping button); placement on the surfaces (Place button); the pivot (Edit Pivot: D held or Insert,
+    // (Shift + the Snapping button); placement on the surfaces (Place button); the pivot (Edit Pivot: C or Insert,
     // Center Pivot: Alt+Y)
     bool m_showSnapOptions = false;
     bool m_surfacePlace = false;       // Place: a selected object dragged with the left button slides over the surfaces

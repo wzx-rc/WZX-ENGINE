@@ -6,7 +6,7 @@
 //   - Place (button of the header): a selected object dragged with the left button slides over the surfaces of the
 //     scene (the ground at y = 0 where there is none), resting on them, turned to them if asked; the grid snapping
 //     applies on flat ground;
-//   - Edit Pivot (D held, or Insert until pressed again): the move manipulator moves the pivot of the objects, their
+//   - Edit Pivot (C or Insert, a switch): the move manipulator moves the pivot of the objects, their
 //     geometry stays (Object::pivot); Center Pivot (Alt+Y): the pivot at the centre of the geometry.
 #include "App.h"
 #include "GameHost.h"
@@ -193,18 +193,6 @@ bool App::surfacePlaceInput(bool inView, bool click) {
     m_sd.active = true;
     m_sd.objs = gizmoTargets();
     m_sd.lead = std::find(m_sd.objs.begin(), m_sd.objs.end(), pr.object) != m_sd.objs.end() ? pr.object : m_selected;
-    // the pivot at the contact point (the bottom of the geometry, in the middle): the manipulators, the scale and the
-    // rotation work from where the object rests (the geometry does not move; Center Pivot gives the centre back)
-    for (int i : m_sd.objs) {
-        Object& ob = m_scene.objects[i];
-        if (ob.mesh < 0 || ob.mesh >= (int)m_scene.meshes.size()) continue;
-        float3 a, b;
-        m_scene.meshes[ob.mesh].bounds(a, b);
-        const float3 base((a.x + b.x) * 0.5f, a.y, (a.z + b.z) * 0.5f);
-        ob.position = ob.transform().point(base);
-        ob.pivot = base;
-        hierRebase(ob.id);
-    }
     const float3 lp = m_scene.objects[m_sd.lead].position;
     for (int i : m_sd.objs) {
         m_sd.offs.push_back(m_scene.objects[i].position - lp);
@@ -285,13 +273,13 @@ void App::surfacePlaceDrag(float mx, float my) {
 
 // --------------------------------------------------------------------------- pivot
 
-// D or Insert: in and out of Edit Pivot (the move manipulator moves the pivot); Alt+Y: Center Pivot.
+// C or Insert: in and out of Edit Pivot (the move manipulator moves the pivot); Alt+Y: Center Pivot.
 void App::pivotInput(bool allowed) {
     ImGuiIO& io = ImGui::GetIO();
     const bool keys = allowed && !io.WantTextInput;
     m_pivotHold = false;
-    // D or Insert: a switch, in and out of Edit Pivot
-    if (keys && !io.KeyCtrl && !io.KeyAlt && (ImGui::IsKeyPressed(ImGuiKey_D, false) || ImGui::IsKeyPressed(ImGuiKey_Insert, false))) m_pivotEdit = !m_pivotEdit;
+    // C or Insert: a switch, in and out of Edit Pivot
+    if (keys && !io.KeyCtrl && !io.KeyAlt && (ImGui::IsKeyPressed(ImGuiKey_C, false) || ImGui::IsKeyPressed(ImGuiKey_Insert, false))) m_pivotEdit = !m_pivotEdit;
     if (keys && io.KeyAlt && ImGui::IsKeyPressed(ImGuiKey_Y, false)) centerPivot();
     // the move manipulator while the pivot is edited, the tool of before after
     if (pivotEditing() && m_pivotTool < 0 && !m_gz.active) {

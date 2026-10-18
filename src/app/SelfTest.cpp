@@ -2100,8 +2100,23 @@ void App::SelfTest::build() {
         check("Place: the sphere rests on the top of the cube", std::fabs(mn.y - (float)v["top"]) < 0.02f && std::hypot(sp.position.x - cube.x, sp.position.z - cube.z) < 0.6f,
               fmt("bottom %.3f, top of the cube %.3f", mn.y, v["top"]));
         check("Place: the sphere selected, one undo step", a.m_selected == obj("Sphere") && a.m_undo.size() == 1, fmt("%d undo steps", (int)a.m_undo.size()));
-        check("Place: its pivot (the manipulator) at the contact point", std::fabs(sp.position.y - (float)v["top"]) < 0.02f, fmt("pivot y %.3f", sp.position.y));
+        check("Place: its pivot unchanged", length(sp.pivot) < 1e-6f);
+        // Place on, the Scale tool: the sphere grows from where it rests, its pivot kept
+        a.m_tool = TOOL_SCALE;
+        return 2;
+    });
+    add("snapping", [this] {
+        const float2 s = a.gizmoHandlePoint(MH_CENTER), d = a.gizmoHandleDir(MH_CENTER, s);
+        return drag(s.x, s.y, s.x + d.x * 50, s.y + d.y * 50);
+    });
+    add("snapping", [this] {
+        const Object& sp = a.m_scene.objects[obj("Sphere")];
+        float3 mn, mx2;
+        a.aabbOf(sp, sp.position, a.objRot(sp), mn, mx2);
+        check("Place + Scale: grown from the contact point, the pivot kept", sp.scale.x > 1.05f && std::fabs(mn.y - (float)v["top"]) < 0.02f && length(sp.pivot) < 1e-6f,
+              fmt("scale %.2f, bottom %.3f", sp.scale.x, mn.y));
         a.m_surfacePlace = false;
+        a.m_tool = TOOL_MOVE;
         // Center Pivot: the pivot at the centre of the geometry, the geometry does not move
         const Object& cy = a.m_scene.objects[obj("Cylinder")];
         a.aabbOf(cy, cy.position, a.objRot(cy), mn, mx2);
@@ -2149,16 +2164,16 @@ void App::SelfTest::build() {
               fmt("pivot %.2f %.2f %.2f", cy.pivot.x, cy.pivot.y, cy.pivot.z));
         check("Center Pivot: the geometry stays", still);
         fresh();
-        // D: a switch in and out of Edit Pivot
+        // C: a switch in and out of Edit Pivot
         a.select(obj("Cube"));
         a.m_tool = TOOL_ROTATE;
-        return key(ImGuiKey_D) + 1;
+        return key(ImGuiKey_C) + 1;
     });
     add("snapping", [this] {
-        check("D: Edit Pivot (it stays on once D is released), the move manipulator", a.pivotEditing() && a.m_tool == TOOL_MOVE);
-        return key(ImGuiKey_D) + 1;
+        check("C: Edit Pivot (it stays on once C is released), the move manipulator", a.pivotEditing() && a.m_tool == TOOL_MOVE);
+        return key(ImGuiKey_C) + 1;
     });
-    add("snapping", [this] { check("D again: out of Edit Pivot, the tool of before", !a.pivotEditing() && a.m_tool == TOOL_ROTATE); return 1; });
+    add("snapping", [this] { check("C again: out of Edit Pivot, the tool of before", !a.pivotEditing() && a.m_tool == TOOL_ROTATE); return 1; });
 
     // ================================================================= split views: layouts, the active pane, Space
     add("layouts", [this] {

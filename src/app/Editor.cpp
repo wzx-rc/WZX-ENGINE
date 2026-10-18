@@ -234,7 +234,7 @@ void App::drawSnapOptionsWindow() {
     check("Place (drag over the surfaces)", "##snPlace", &m_surfacePlace);
     check("Turn to the surface", "##snAlign", &o.alignToSurface);
     section("Pivot");
-    ImGui::TextDisabled("Edit Pivot: hold D (or Insert) and move it  ·  Center Pivot: Alt+Y");
+    ImGui::TextDisabled("Edit Pivot: C (or Insert) in and out, V snaps it to a vertex  ·  Center Pivot: Alt+Y");
     if (ImGui::Button("Center Pivot", ImVec2(150 * d, 0))) centerPivot();
     ImGui::Spacing();
     ImGui::Separator();

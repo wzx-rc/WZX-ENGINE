@@ -25,7 +25,7 @@ const int kRingSeg = 72;
 // (the plane squares sit far from the centre, at two thirds of the axes, as the reference of the user)
 const float kConeBase = 0.86f, kPlane0 = 0.60f, kPlane1 = 0.74f, kCube = 0.045f, kRing = 0.85f, kViewRing = 1.08f;
 const double kMarkingDelay = 0.2;   // seconds before the marking menu is drawn
-const float kFlashTime = 0.35f;    // seconds the item chosen by a quick gesture stays shown
+const float kFlashTime = 0.15f;    // seconds the item chosen by a quick gesture stays shown
 
 float3 unitAxis(int a) { return float3(a == 0 ? 1.0f : 0.0f, a == 1 ? 1.0f : 0.0f, a == 2 ? 1.0f : 0.0f); }
 ImVec2 iv(float2 p) { return ImVec2(p.x, p.y); }
@@ -205,10 +205,17 @@ void App::gizmoBegin(int handle, int button, float mx, float my) {
         it.rot = objRot(o);
         it.scale = o.scale;
         it.pivot = o.pivot;
+        it.base = it.pivot;
+        if (o.mesh >= 0 && o.mesh < (int)m_scene.meshes.size()) {   // the bottom of its geometry, in the middle
+            float3 a, b;
+            m_scene.meshes[o.mesh].bounds(a, b);
+            it.base = float3((a.x + b.x) * 0.5f, a.y, (a.z + b.z) * 0.5f);
+        }
         gizmoFrame(i, m_tool, it.ax);
         g.items.push_back(it);
     }
     g.pivotEdit = m_tool == TOOL_MOVE && pivotEditing();
+    g.placeAnchor = m_tool == TOOL_SCALE && m_surfacePlace;
     m_gzLast[m_tool] = handle;
     float3 r, u, f;
     m_scene.camera.basis(r, u, f);
@@ -276,12 +283,20 @@ bool App::gizmoInput(bool inView) {
     int h = inView ? gizmoHit(mx, my) : MH_NONE;
     m_gzHover = h;
     if (!inView) return false;
-    if (h != MH_NONE && ImGui::IsMouseClicked(0)) { gizmoBegin(h, 0, mx, my); return true; }
+    // V held (move): the press already puts the pivot on the vertex under the cursor (a simple click is enough)
+    const bool vSnap = m_tool == TOOL_MOVE && ImGui::IsKeyDown(ImGuiKey_V);
+    if (h != MH_NONE && ImGui::IsMouseClicked(0)) {
+        gizmoBegin(h, 0, mx, my);
+        if (vSnap) gizmoDrag(mx, my, false);
+        return true;
+    }
     // middle button (Maya): the handle under the mouse, else the last used handle, dragged from anywhere
     if (ImGui::IsMouseClicked(2)) {
         int mh = h != MH_NONE ? h : m_gzLast[m_tool];
         if (mh == MH_NONE) mh = m_tool == TOOL_ROTATE ? MH_FREE : MH_CENTER;
+        if (vSnap) mh = MH_CENTER;   // (V: the vertex in 3D, whatever the last handle)
         gizmoBegin(mh, 2, mx, my);
+        if (vSnap) gizmoDrag(mx, my, false);
         return true;
     }
     return false;
@@ -420,6 +435,11 @@ void App::gizmoDrag(float mx, float my, bool snap) {
         float3 ns = it.scale;
         for (int i = 0; i < 3; ++i) if (on[i]) ns[i] = std::max(0.001f, it.scale[i] * k);
         if (ns.x != o.scale.x || ns.y != o.scale.y || ns.z != o.scale.z) { o.scale = ns; changed = true; }
+        if (g.placeAnchor) {   // Place: the contact point stays where it rests (a temporary pivot, not shown, the real one kept)
+            const float3 anchor = it.pos + qRot(it.rot, (it.base - it.pivot) * it.scale);
+            const float3 np = anchor - qRot(it.rot, (it.base - it.pivot) * ns);
+            if (length(np - o.position) > 1e-7f) { o.position = np; changed = true; }
+        }
     }
     if (changed) { g.moved = true; markDirty(); }
 }
