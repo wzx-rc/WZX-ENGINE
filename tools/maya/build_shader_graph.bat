@@ -21,5 +21,5 @@ if exist assets\themes xcopy /E /I /Y /Q assets\themes %OUT%\assets\themes >nul
 set "CFLAGS=/nologo /std:c++17 /EHsc /W3 /utf-8 /DUNICODE /D_UNICODE /DNOMINMAX /DWIN32_LEAN_AND_MEAN /DIMGUI_DEFINE_MATH_OPERATORS /O2 /DNDEBUG /MT /Isrc /Ithird_party\imgui"
 del /q build\obj\mayashader\*.obj 2>nul
 cl %CFLAGS% /c src\mayashader\*.cpp src\game\Graph.cpp src\game\NodeEditor.cpp src\game\Runtime.cpp src\app\ImGuiLayer.cpp src\app\Theme.cpp /Fo:build\obj\mayashader\ || exit /b 1
-link /nologo /OUT:%OUT%\WzxShaderGraph.exe build\obj\mayashader\*.obj build\lib\vp3d.lib build\lib\imgui_mt.lib ws2_32.lib d3d12.lib dxgi.lib d3dcompiler.lib windowscodecs.lib user32.lib gdi32.lib ole32.lib shell32.lib shcore.lib comdlg32.lib dwmapi.lib /SUBSYSTEM:WINDOWS || exit /b 1
+link /nologo /OUT:%OUT%\WzxShaderGraph.exe build\obj\mayashader\*.obj build\lib\vp3d.lib build\lib\imgui_mt.lib ws2_32.lib d3d12.lib dxgi.lib d3dcompiler.lib windowscodecs.lib user32.lib gdi32.lib ole32.lib shell32.lib shcore.lib comdlg32.lib dwmapi.lib uuid.lib /SUBSYSTEM:WINDOWS || exit /b 1
 echo Build OK: %OUT%\WzxShaderGraph.exe

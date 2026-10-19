@@ -34,6 +34,14 @@ matériaux Arnold. Chaque nœud du graph pilote un nœud Maya / Arnold existant 
 - Aperçu à droite : sphère en path tracing (vp3d), HDRI (`assets/hdri`) + 3 lumières. Barre du haut : lecture / pause du rendu, remise à zéro de la rotation. Caméra fixe : glisser gauche / droite fait tourner l.HDRI et les lumières sur 360° (comme Substance Painter).
   Les couleurs sont lues dans l'espace de rendu de Maya (ACEScg par défaut) ; l'exposition est calée sur un rendu Arnold avec le même HDRI.
 
+## Library et équivalences
+
+Trois espaces en haut à gauche : **Graph**, **Library**, **Equiv.**
+
+- **Library > Disk library** : un dossier du PC (par défaut `Documents\WZX_ShaderLibrary`, « Browse... » pour un autre). Un sous-dossier par catégorie, un dossier par matériau (`material.graph.json`, `thumbnail.png`, `metadata.json` avec nom et tags). « Save the current material » l.y enregistre avec sa vignette ; double clic sur une carte = l.ouvrir dans le matériau courant.
+- **Library > Scene** : les matériaux de la scène Maya. Graph WZX : « Open graph ». Matériau Maya : « Convert to graph » construit un graph WZX avec les équivalences lues à l.envers (l.original reste intact ; les nœuds sans règle sont listés). « Select objects », « Assign ».
+- **Equiv.** : les règles de `tools/maya/mappings/equivalences.json`. Pour chaque nœud et chaque pin, l.équivalent dans Maya / Arnold, Blender / Cycles et Unreal, et des règles de valeur (bouton f : échelle, décalage, inversion, clamp, puissance, connexion seule). Pastilles de couverture par logiciel ; « Check in Maya » vérifie que chaque attribut existe (rouge sinon). Le pont Maya construit les réseaux à partir de ce fichier (plus de table en dur). Blender et Unreal : données seulement pour l.instant.
+
 ## Fonctionnement
 
 `WzxShaderGraph.exe` est une appli séparée : Maya la lance avec `--embed`, lit le handle de sa fenêtre et l'insère dans le

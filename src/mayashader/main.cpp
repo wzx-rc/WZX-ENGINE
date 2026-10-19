@@ -6,6 +6,8 @@
 #include "Preview.h"
 #include "MayaLink.h"
 #include "Flatten.h"
+#include "Equivalences.h"
+#include "Library.h"
 #include <map>
 #include "app/ImGuiLayer.h"
 #include "app/Theme.h"
@@ -37,6 +39,11 @@ struct Options {
     std::wstring shotPath;
     bool openSettings = false;
     bool openPreview = false;    // the material preview is hidden (and off) by default
+    int mode = 0;                // workspace at start: 0 graph, 1 library, 2 equivalences
+    std::wstring library, saveLib;   // test: library folder, "Category/Name" saved at start
+    int libTab = -1;
+    bool autoCheck = false;   // test: Check in Maya once connected
+    std::wstring mappings;       // equivalences file (default: tools/maya/mappings/equivalences.json)
     int enterCompound = 0;       // test: compound opened at start
     std::wstring collapse;       // test: node ids (comma separated) moved into a compound at start
     int hoverLink = -1;          // test: link shown as hovered
@@ -120,6 +127,12 @@ Options parseArgs() {
         else if (a == L"--shot") o.shotPath = next();
         else if (a == L"--open-settings") o.openSettings = true;
         else if (a == L"--open-preview") o.openPreview = true;
+        else if (a == L"--mode") o.mode = _wtoi(next().c_str());
+        else if (a == L"--library") o.library = next();
+        else if (a == L"--lib-tab") o.libTab = _wtoi(next().c_str());
+        else if (a == L"--auto-check") o.autoCheck = true;
+        else if (a == L"--save-lib") o.saveLib = next();
+        else if (a == L"--mappings") o.mappings = next();
         else if (a == L"--enter") o.enterCompound = _wtoi(next().c_str());
         else if (a == L"--collapse") o.collapse = next();
         else if (a == L"--hover-link") o.hoverLink = _wtoi(next().c_str());
@@ -335,6 +348,54 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         ImGui::EndGroup();
     };
 
+    // workspaces: 0 graph, 1 shader library, 2 equivalences dashboard
+    int mode = opt.mode;
+    auto send = [&](const std::string& line) { return maya.send(line); };
+    // equivalences: tools/maya/mappings/equivalences.json of the repository (found from the exe folder)
+    std::wstring mappingPath = opt.mappings;
+    if (mappingPath.empty()) {
+        std::wstring d = exeDir;
+        for (int up = 0; up < 6 && mappingPath.empty(); ++up) {
+            std::wstring c = d + L"\\tools\\maya\\mappings\\equivalences.json";
+            if (GetFileAttributesW(c.c_str()) != INVALID_FILE_ATTRIBUTES) mappingPath = c;
+            size_t cut = d.find_last_of(L"\\/");
+            if (cut == std::wstring::npos) break;
+            d = d.substr(0, cut);
+        }
+        if (mappingPath.empty()) mappingPath = exeDir + L"\\equivalences.json";
+    }
+    mayashader::Equivalences equivalences;
+    equivalences.load(mappingPath);
+    // shader library: folder on the PC and materials of the scene
+    const std::wstring graphStem = opt.graphPath.substr(opt.graphPath.find_last_of(L"\\/") + 1);
+    const std::string graphKey = toUtf8(graphStem.substr(0, graphStem.find(L'.')));
+    mayashader::Library library;
+    mayashader::Library::Host host;
+    host.send = send;
+    host.mayaConnected = [&]() { return maya.connected(); };
+    host.graph = [&]() -> const Graph& { return graph; };
+    host.openInGraph = [&](const std::string& json) {   // a library material replaces the current one (its name stays)
+        std::string keep = graph.name;
+        std::string err;
+        if (!graph.fromJson(json, &err)) { editor.addMessage(2, "Cannot open the material: " + err); return; }
+        graph.name = keep;
+        graph.refreshDefs();
+        path.clear();
+        editor.resetHistory();
+        editor.frameAll(graph);
+        mode = 0;
+    };
+    host.currentKey = [&]() { return graphKey; };
+    host.acescg = preview.acescg();
+    library.init(g_gui, exeDir + L"\\wzx_library.txt", host);
+    if (!opt.library.empty()) library.setRoot(opt.library);
+    if (opt.libTab >= 0) library.setTab(opt.libTab);
+    if (!opt.saveLib.empty()) {   // test: "Category/Name"
+        std::string cs = toUtf8(opt.saveLib);
+        size_t sl = cs.find('/');
+        library.saveMaterial(sl == std::string::npos ? cs : cs.substr(sl + 1), sl == std::string::npos ? "Default" : cs.substr(0, sl), "test");
+    }
+
     MSG msg;
     while (g_running) {
         while (PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE)) {
@@ -365,6 +426,19 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         const ImGuiWindowFlags fixed = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
                                        ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings;
         if (ImGui::Begin("##library", nullptr, fixed)) {
+            ImGui::AlignTextToFramePadding();
+            // workspaces
+            {
+                const char* names[] = {"Graph", "Library", "Equiv."};
+                float bw = (ImGui::GetContentRegionAvail().x - 2 * ImGui::GetStyle().ItemSpacing.x) / 3;
+                for (int m = 0; m < 3; ++m) {
+                    if (m) ImGui::SameLine();
+                    ImGui::PushStyleColor(ImGuiCol_Button, mode == m ? app::th::selectV() : ImGui::GetStyleColorVec4(ImGuiCol_Button));
+                    if (ImGui::Button(names[m], ImVec2(bw, 0))) mode = m;
+                    ImGui::PopStyleColor();
+                }
+                ImGui::Separator();
+            }
             ImGui::AlignTextToFramePadding();
             ImGui::TextUnformatted("Material");
             ImGui::SameLine(ImGui::GetContentRegionAvail().x + ImGui::GetCursorPosX() - 30 * s);
@@ -486,11 +560,19 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
                           ImGui::ColorConvertFloat4ToU32(app::th::settings().graphSelectColor));
         editor.status = maya.connected() ? "Maya :" + std::to_string(opt.port) : "waiting for Maya :" + std::to_string(opt.port);
         ImVec2 edPos(vp->WorkPos.x + sideW, vp->WorkPos.y), edSize(std::max(1.0f, full.x - sideW), full.y);
-        editor.draw(edPos, edSize, s, current(), nullptr, false);
-
-        // preview (top of the right column): the flat graph, so a compound shows what it really makes
-        ImVec2 pvPos(edPos.x + edSize.x - editor.inspectorPx * s, edPos.y);
-        bool rendered = showPreview && preview.draw(flat, pvPos, ImVec2(editor.inspectorPx * s, previewH), s);
+        bool rendered = false;
+        if (mode == 1) library.draw(edPos, edSize, s);
+        else if (mode == 2) {
+            static bool checked = false;
+            if (opt.autoCheck && !checked && maya.connected()) checked = equivalences.requestCheck(send);
+            equivalences.draw(edPos, edSize, s, send, maya.connected());
+        }
+        else {
+            editor.draw(edPos, edSize, s, current(), nullptr, false);
+            // preview (top of the right column): the flat graph, so a compound shows what it really makes
+            ImVec2 pvPos(edPos.x + edSize.x - editor.inspectorPx * s, edPos.y);
+            rendered = showPreview && preview.draw(flat, pvPos, ImVec2(editor.inspectorPx * s, previewH), s);
+        }
 
         // WZX settings window (theme, colours, sizes, graph outlines), saved next to the exe
         if (showSettings && mayashader::drawSettingsWindow(&showSettings, dpi)) {

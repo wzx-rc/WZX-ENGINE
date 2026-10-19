@@ -283,6 +283,10 @@ def _src_plug(src, nodes, have):
 def sync(data, key, editor_data=None):
     _plugins()
     name = _clean(data.get('name') or key)
+    # two graphs with the same material name: the second one is named after its key
+    sg = name + 'SG'
+    if cmds.objExists(sg) and cmds.attributeQuery(TAG_GRAPH, node=sg, exists=True) and cmds.getAttr(sg + '.' + TAG_GRAPH) != key:
+        name = _clean(key)
     nodes = {n['id']: n for n in data.get('nodes', [])}
     links = {}
     for l in data.get('links', []):
