@@ -9,6 +9,12 @@
 
 namespace mayashader {
 
+// Value of a flat node output at the centre of the UVs (floats replicated); false for a shader output.
+bool sampleValue(const game::Graph& flat, int node, int pin, vp3d::float3& out);
+// Preview square of a node (RGBA8, sRGB): the texture over the UVs, or a small shaded ball for a shader; `constant` for an
+// unconnected compound input.
+bool renderThumb(const game::Graph& flat, int node, int pin, const game::Value* constant, bool acescg, int size, std::vector<uint8_t>& rgba);
+
 class Preview {
 public:
     void init(vp3d::Renderer& r, app::ImGuiLayer& gui, const std::wstring& hdri);
@@ -19,6 +25,7 @@ public:
     bool busy() const { return m_busy; }
     void setLights(bool on) { m_lights = on; }
     void setAcescg(bool on) { m_acescg = on; m_graphKey.clear(); }   // graph colours in ACEScg (Maya default rendering space)
+    bool acescg() const { return m_acescg; }
 
 private:
     void applyGraph(const game::Graph& g);

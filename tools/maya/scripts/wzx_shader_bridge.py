@@ -44,7 +44,9 @@ NODES = {
                       ins={'Bump Map': 'bumpMap', 'Bump Height': 'bumpHeight'}),
     'const.color': dict(type='colorConstant', cls='utility', outs={'Color': 'outColor'}, ins={'Color': 'inColor'}),
     'const.float': dict(type='floatConstant', cls='utility', outs={'Value': 'outFloat'}, ins={'Value': 'inFloat'}),
-    'out.material': dict(type='shadingEngine', cls='sg', outs={}, ins={'Surface': 'surfaceShader'}),
+    'out.material': dict(type='shadingEngine', cls='sg', outs={}, ins={'Surface': 'surfaceShader', 'Displacement': 'displacementShader'}),
+    'shader.displacement': dict(type='displacementShader', cls='shader', outs={'Displacement': 'displacement'},
+                                ins={'Height': 'displacement', 'Scale': 'scale'}),
 }
 
 TAG_GRAPH, TAG_ID, TAG_TYPE = 'wzxGraph', 'wzxNode', 'wzxType'
@@ -178,7 +180,7 @@ def _desired(src, dst):
     """Connections making src drive dst, converting float <-> colour."""
     st, dt = _ptype(src), _ptype(dst)
     s3, d3 = st in ("float3", "double3"), dt in ("float3", "double3")
-    if s3 == d3 or st is None or dt is None or "surfaceShader" in dst:
+    if s3 == d3 or st is None or dt is None or "surfaceShader" in dst or "displacementShader" in dst:
         return [(src, dst)]
     if d3:   # value -> colour: the three channels
         return [(src, c) for c in _children(dst)]
@@ -188,7 +190,24 @@ def _desired(src, dst):
     return [(_children(src)[0], dst)]
 
 
-def sync(data, key):
+def _src_plug(src, nodes, have):
+    """Maya plug of a graph output (node id, pin name); a channel pin ('Color.R') is a child of the colour plug."""
+    if not src or src[0] not in have or src[0] not in nodes:
+        return None
+    outs = NODES.get(nodes[src[0]]['type'], {}).get('outs', {})
+    node = have[src[0]]
+    if src[1] in outs:
+        return node + '.' + outs[src[1]]
+    base, _, ch = src[1].rpartition('.')
+    if base in outs and ch and ch in 'RGBXYZ':
+        kids = _children(node + '.' + outs[base])
+        idx = 'RGB'.find(ch) if ch in 'RGB' else 'XYZ'.find(ch)
+        if idx < len(kids):
+            return kids[idx]
+    return None
+
+
+def sync(data, key, editor_data=None):
     _plugins()
     name = _clean(data.get('name') or key)
     nodes = {n['id']: n for n in data.get('nodes', [])}
@@ -206,7 +225,7 @@ def sync(data, key):
             holder = cmds.createNode('network', name=name + '_wzxGraph')
             _tag(holder, key, 0, 'graph')
             cmds.addAttr(holder, ln='graphJson', dt='string')
-        cmds.setAttr(holder + '.graphJson', json.dumps(data), type='string')
+        cmds.setAttr(holder + '.graphJson', json.dumps(editor_data if editor_data is not None else data), type='string')
         # delete what left the graph or changed type
         for nid, node in list(have.items()):
             if nid == 0:
@@ -258,21 +277,33 @@ def sync(data, key):
                             _set_value(p + '.repeatV', values['Repeat'])
                 for pin, attr in spec['ins'].items():
                     plug = node + '.' + attr
-                    src = links.get((nid, pin))
                     want = []
-                    if src and src[0] in have:
-                        sspec = NODES.get(nodes[src[0]]['type'], {})
-                        sattr = sspec.get('outs', {}).get(src[1])
-                        if sattr:
-                            want = _desired(have[src[0]] + '.' + sattr, plug)
+                    sp = _src_plug(links.get((nid, pin)), nodes, have)
+                    if sp:
+                        want = _desired(sp, plug)
+                    # channel pins (R, G, B / X, Y, Z) connected one by one, as Maya's expanded attributes
+                    kids, linked = [], set()
+                    if not want and _is_compound3(plug):
+                        kids = _children(plug)[:3]
+                        letters = 'XYZ' if pin == 'Normal' else 'RGB'
+                        for k, kid in enumerate(kids):
+                            sp = _src_plug(links.get((nid, pin + '.' + letters[k])), nodes, have)
+                            if sp:
+                                want += _desired(sp, kid)
+                                linked.add(k)
                     have_c = _sources(plug)
                     if sorted(want) != have_c:
                         for s, d in have_c:
                             cmds.disconnectAttr(s, d)
                         for s, d in want:
                             cmds.connectAttr(s, d, force=True)
-                    if not want and pin in values and pin not in spec.get('link_only', ()):
-                        _set_value(plug, values[pin])
+                    if pin in values and pin not in spec.get('link_only', ()):
+                        if not want:
+                            _set_value(plug, values[pin])
+                        elif linked and isinstance(values[pin], list):   # the channels left free keep the colour's value
+                            for k, kid in enumerate(kids):
+                                if k not in linked:
+                                    _set_value(kid, values[pin][k])
             except Exception as e:   # one bad node must not stop the others
                 errors.append('%s: %s' % (node, e))
     finally:
@@ -283,10 +314,15 @@ def sync(data, key):
     return 'synced %d nodes' % len(nodes)
 
 
-def sync_file(path):
+def sync_file(path, graph_path=None):
+    """path: graph to build (compounds already expanded); graph_path: the editor graph kept in the scene."""
     with open(path, 'r', encoding='utf-8') as f:
         data = json.load(f)
-    return sync(data, graph_key(path))
+    editor = None
+    if graph_path:
+        with open(graph_path, 'r', encoding='utf-8') as f:
+            editor = json.load(f)
+    return sync(data, graph_key(graph_path or path), editor)
 
 
 def _sg(path):

@@ -5,6 +5,8 @@
 // nodes (wzx_shader_bridge.sync_file). The right column shows a path traced preview of the material (vp3d).
 #include "Preview.h"
 #include "MayaLink.h"
+#include "Flatten.h"
+#include <map>
 #include "app/ImGuiLayer.h"
 #include "app/Theme.h"
 #include "app/AtelierIcons.h"
@@ -34,6 +36,10 @@ struct Options {
     DWORD mayaPid = 0;
     std::wstring shotPath;
     bool openSettings = false;
+    bool openPreview = false;    // the material preview is hidden (and off) by default
+    int enterCompound = 0;       // test: compound opened at start
+    std::wstring collapse;       // test: node ids (comma separated) moved into a compound at start
+    int hoverLink = -1;          // test: link shown as hovered
     int shotFrames = 120;
     bool shotPreview = false;    // --shot-preview: the preview image only
     int previewLights = 1;
@@ -113,6 +119,10 @@ Options parseArgs() {
         else if (a == L"--maya-pid") o.mayaPid = (DWORD)_wtoi(next().c_str());
         else if (a == L"--shot") o.shotPath = next();
         else if (a == L"--open-settings") o.openSettings = true;
+        else if (a == L"--open-preview") o.openPreview = true;
+        else if (a == L"--enter") o.enterCompound = _wtoi(next().c_str());
+        else if (a == L"--collapse") o.collapse = next();
+        else if (a == L"--hover-link") o.hoverLink = _wtoi(next().c_str());
         else if (a == L"--frames") o.shotFrames = _wtoi(next().c_str());
         else if (a == L"--shot-preview") { o.shotPath = next(); o.shotPreview = true; }
         else if (a == L"--preview-lights") o.previewLights = _wtoi(next().c_str());
@@ -260,6 +270,70 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
     int frameCount = 0;
     bool showSettings = opt.openSettings;
     bool wasParented = false;
+    bool showPreview = opt.openPreview || opt.shotPreview;   // hidden and off by default
+
+    // compounds opened by double click, from the root (the editor shows the last one)
+    std::vector<std::pair<int, std::shared_ptr<Graph>>> path;
+    auto current = [&]() -> Graph& { return path.empty() ? graph : *path.back().second; };
+    auto pathIds = [&]() { std::vector<int> v; for (auto& p : path) v.push_back(p.first); return v; };
+    auto openLevel = [&](size_t depth) { path.resize(depth); editor.resetHistory(); editor.frameAll(current()); };
+    graph.refreshDefs();
+    if (!opt.collapse.empty()) {   // test: compound made from these nodes, then opened
+        std::vector<int> ids;
+        for (size_t p = 0; p < opt.collapse.size();) { ids.push_back(_wtoi(opt.collapse.c_str() + p)); p = opt.collapse.find(L",", p); if (p == std::wstring::npos) break; ++p; }
+        int c = graph.collapse(ids, "Patterns");
+        if (opt.enterCompound < 0) opt.enterCompound = c;
+    }
+    editor.forceHoverLink = opt.hoverLink;
+    if (opt.enterCompound)
+        if (Node* n = graph.node(opt.enterCompound))
+            if (n->sub) { path.push_back({n->id, n->sub}); editor.frameAll(*n->sub); }
+
+    // flat graph (compounds expanded): what Maya builds and the preview renders
+    const std::wstring flatPath = opt.graphPath.substr(0, opt.graphPath.rfind(L".graph.json") != std::wstring::npos
+                                                           ? opt.graphPath.rfind(L".graph.json") : opt.graphPath.size()) + L".flat.json";
+    Graph flat;
+
+    // preview squares of the cards, rendered on the CPU when the graph changes
+    std::map<int, ImTextureID> thumbs;
+    std::string thumbKey;
+    ULONGLONG thumbAt = 0;
+    editor.nodeThumb = [&](const Node& n) -> ImTextureID {
+        auto it = thumbs.find(n.id);
+        return it == thumbs.end() ? (ImTextureID)0 : it->second;
+    };
+    // what flows through a link (tooltip): the source square and its value at the centre of the UVs
+    editor.linkInfo = [&](const Graph& g, const Link& l) {
+        const Node* a = g.node(l.fromNode);
+        mayashader::FlatRef r = mayashader::resolveOut(graph, pathIds(), l.fromNode, l.fromPin);
+        auto it = thumbs.find(l.fromNode);
+        if (it != thumbs.end()) {
+            ImGui::Image(it->second, ImVec2(64 * dpi, 64 * dpi));
+            ImGui::SameLine();
+        }
+        ImGui::BeginGroup();
+        vp3d::float3 v;
+        bool isValue = r.valid() && (r.constant ? (v = r.value.asVec3(), true) : mayashader::sampleValue(flat, r.node, r.pin, v));
+        if (!r.valid()) ImGui::TextDisabled("nothing flows (not connected inside)");
+        else if (!isValue) {
+            const Node* src = r.constant ? nullptr : flat.node(r.node);
+            ImGui::Text("Shader: %s", src ? src->def->label.c_str() : "?");
+        } else if (a && a->def->outs[l.fromPin].type == PinType::Float) {
+            ImGui::Text("Value  %.3f", v.x);
+        } else {
+            vp3d::float3 d = v;
+            if (preview.acescg())   // swatch in display colours (Maya ACEScg values)
+                d = vp3d::float3(std::max(0.0f, 1.70505f * v.x - 0.62179f * v.y - 0.08326f * v.z),
+                                 std::max(0.0f, -0.13026f * v.x + 1.14080f * v.y - 0.01055f * v.z),
+                                 std::max(0.0f, -0.02400f * v.x - 0.12897f * v.y + 1.15297f * v.z));
+            auto enc = [](float x) { x = std::min(std::max(x, 0.0f), 1.0f); return x <= 0.0031308f ? x * 12.92f : 1.055f * std::pow(x, 1 / 2.4f) - 0.055f; };
+            ImGui::ColorButton("##flow", ImVec4(enc(d.x), enc(d.y), enc(d.z), 1), ImGuiColorEditFlags_NoTooltip, ImVec2(18 * dpi, 18 * dpi));
+            ImGui::SameLine();
+            ImGui::Text("R %.3f   G %.3f   B %.3f", v.x, v.y, v.z);
+        }
+        if (r.valid()) ImGui::TextDisabled(r.constant ? "compound input value" : "sampled at UV (0.5, 0.5)");
+        ImGui::EndGroup();
+    };
 
     MSG msg;
     while (g_running) {
@@ -296,6 +370,27 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
             ImGui::SameLine(ImGui::GetContentRegionAvail().x + ImGui::GetCursorPosX() - 30 * s);
             if (ImGui::Button(ICON_SETTINGS "##settings", ImVec2(28 * s, 0))) showSettings = !showSettings;
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("Settings: theme, colours, sizes, graph");
+            // material preview: hidden and off until asked
+            ImGui::PushStyleColor(ImGuiCol_Button, showPreview ? app::th::selectV() : ImGui::GetStyleColorVec4(ImGuiCol_Button));
+            if (ImGui::Button(showPreview ? "\xEE\x9E\x90  Material Preview: on" : "\xEE\x9E\x90  Material Preview: off", ImVec2(-FLT_MIN, 0)))   // view glyph
+                showPreview = !showPreview;
+            ImGui::PopStyleColor();
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Path traced sphere above the Inspector (uses the GPU while it renders)");
+            // breadcrumb of the opened compounds
+            if (!path.empty()) {
+                ImGui::TextDisabled("COMPOUND");
+                if (ImGui::SmallButton(graph.name.c_str())) openLevel(0);
+                for (size_t i = 0; i < path.size(); ++i) {
+                    ImGui::SameLine(0, 2);
+                    ImGui::TextDisabled(">");
+                    ImGui::SameLine(0, 2);
+                    ImGui::PushID((int)i);
+                    std::string nm = path[i].second->io ? path[i].second->io->name : std::string("Compound");
+                    if (ImGui::SmallButton(nm.c_str()) && i + 1 < path.size()) openLevel(i + 1);
+                    ImGui::PopID();
+                }
+                if (ImGui::Button("\xEE\x9C\xAA  Up one level", ImVec2(-FLT_MIN, 0))) openLevel(path.size() - 1);   // back glyph
+            }
             char name[128] = {};
             strncpy_s(name, graph.name.c_str(), _TRUNCATE);
             ImGui::SetNextItemWidth(-FLT_MIN);
@@ -314,6 +409,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
             ImDrawList* dl = ImGui::GetWindowDrawList();
             std::string last;
             for (const NodeDef& d : nodeDefs()) {
+                if (d.id == "compound.input" || d.id == "compound.output") continue;   // created with each compound
                 std::string label = d.label;
                 for (char& c : label) c = (char)tolower((unsigned char)c);
                 if (!q.empty() && label.find(q) == std::string::npos) continue;
@@ -330,29 +426,71 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
                 atl::DrawIcon(dl, nodeIcon(d), ImVec2(rmin.x + 6 * s, cy - 7 * s), 14 * s, categoryAccentColor(d.category));
                 dl->AddText(ImGui::GetFont(), 13 * s, ImVec2(rmin.x + 26 * s, cy - 7 * s), app::th::text(), d.label.c_str());
                 atl::DrawIcon(dl, atl::Icon::Plus, ImVec2(rmax.x - 18 * s, cy - 6 * s), 12 * s, app::th::dim());
-                if (clicked) editor.addNodeAtView(graph, d);
+                if (clicked) editor.addNodeAtView(current(), d);
                 if (ImGui::IsItemHovered() && !d.help.empty()) ImGui::SetTooltip("%s", d.help.c_str());
                 ImGui::PopID();
             }
             ImGui::Spacing();
             ImGui::TextColored(ImColor(app::th::dim()), "Layout");
-            if (ImGui::Button("+ Backdrop  (Ctrl+G)", ImVec2(-FLT_MIN, 0))) editor.addBackdrop(graph);
+            if (ImGui::Button("+ Backdrop  (Ctrl+G)", ImVec2(-FLT_MIN, 0))) editor.addBackdrop(current());
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("Frame around the selected nodes (or in the middle of the view)");
+            if (ImGui::Button("+ Compound  (Ctrl+Shift+G)", ImVec2(-FLT_MIN, 0))) editor.collapseSelection(current());
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Moves the selected nodes into a compound (LookDevX): double click to enter it,\nconnect inner pins to its Input / Output + pins to promote them");
         }
         ImGui::End();
 
+        // the opened compounds must still exist (a deleted compound or an undo at an upper level closes them)
+        {
+            const Graph* g = &graph;
+            size_t ok = 0;
+            for (; ok < path.size(); ++ok) {
+                const Node* n = g->node(path[ok].first);
+                if (!n || n->sub != path[ok].second) break;
+                g = n->sub.get();
+            }
+            if (ok < path.size()) openLevel(ok);
+        }
+        graph.refreshDefs();
+        flat = mayashader::flatten(graph);
+
+        // preview squares: rendered again when the graph (or the opened level) changed, at most every 100 ms
+        {
+            std::string key = flat.toJson() + "|" + std::to_string(path.size()) + "|" + std::to_string(path.empty() ? 0 : path.back().first) +
+                              "|" + std::to_string(preview.acescg());
+            ULONGLONG t = GetTickCount64();
+            if (key != thumbKey && t - thumbAt > 100) {
+                thumbKey = key;
+                thumbAt = t;
+                for (auto& kv : thumbs) g_gui.releaseTexture(kv.second);
+                thumbs.clear();
+                const int S = (int)(72 * dpi);
+                std::vector<uint8_t> px;
+                std::vector<int> ids = pathIds();
+                for (const Node& n : current().nodes) {
+                    if (!n.def || n.type == "compound.input" || n.type == "compound.output") continue;
+                    mayashader::FlatRef r;
+                    if (n.type == "out.material") r = mayashader::resolveIn(graph, ids, n.id, n.def->findIn("Surface"));
+                    else if (!n.def->outs.empty()) r = mayashader::resolveOut(graph, ids, n.id, 0);
+                    if (!r.valid()) continue;
+                    if (mayashader::renderThumb(flat, r.node, r.pin, r.constant ? &r.value : nullptr, preview.acescg(), S, px))
+                        if (ImTextureID tex = g_gui.createTexture(px.data(), S, S)) thumbs[n.id] = tex;
+                }
+            }
+        }
+
         // graph editor (canvas, output, inspector) with the preview above the inspector
-        const float previewH = std::min(full.y * 0.5f, editor.inspectorPx * s + 64 * s);
+        const float previewH = showPreview ? std::min(full.y * 0.5f, editor.inspectorPx * s + 64 * s) : 0.0f;
         editor.inspectorTop = previewH;
+        editor.labels.subtitle = path.empty() ? "Arnold" : "Compound: " + (path.back().second->io ? path.back().second->io->name : std::string());
         editor.setOutline(app::th::settings().graphOutline, app::th::settings().graphOutlineWeight,
                           ImGui::ColorConvertFloat4ToU32(app::th::settings().graphSelectColor));
         editor.status = maya.connected() ? "Maya :" + std::to_string(opt.port) : "waiting for Maya :" + std::to_string(opt.port);
         ImVec2 edPos(vp->WorkPos.x + sideW, vp->WorkPos.y), edSize(std::max(1.0f, full.x - sideW), full.y);
-        editor.draw(edPos, edSize, s, graph, nullptr, false);
+        editor.draw(edPos, edSize, s, current(), nullptr, false);
 
-        // preview (top of the right column)
+        // preview (top of the right column): the flat graph, so a compound shows what it really makes
         ImVec2 pvPos(edPos.x + edSize.x - editor.inspectorPx * s, edPos.y);
-        bool rendered = preview.draw(graph, pvPos, ImVec2(editor.inspectorPx * s, previewH), s);
+        bool rendered = showPreview && preview.draw(flat, pvPos, ImVec2(editor.inspectorPx * s, previewH), s);
 
         // WZX settings window (theme, colours, sizes, graph outlines), saved next to the exe
         if (showSettings && mayashader::drawSettingsWindow(&showSettings, dpi)) {
@@ -366,7 +504,11 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         case NodeEditor::TogglePlay: maya.send("import wzx_shader_bridge as _w; _w.assign(" + mayashader::pyStr(toUtf8(opt.graphPath)) + ")"); break;
         case NodeEditor::Build: maya.send("import wzx_shader_bridge as _w; _w.show_in_hypershade(" + mayashader::pyStr(toUtf8(opt.graphPath)) + ")"); break;
         case NodeEditor::Save: pendingSync = true; lastJson.clear(); break;
-        case NodeEditor::Arrange: editor.arrangeOverlaps(graph); break;
+        case NodeEditor::Arrange: editor.arrangeOverlaps(current()); break;
+        case NodeEditor::EnterCompound:
+            if (Node* n = current().node(editor.enteredNode()))
+                if (n->sub) { path.push_back({n->id, n->sub}); editor.resetHistory(); editor.frameAll(*n->sub); }
+            break;
         default: break;
         }
 
@@ -374,16 +516,20 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         maya.poll();
         if (maya.connected() && !wasConnected) { pendingSync = true; lastJson.clear(); }
         wasConnected = maya.connected();
+        graph.refreshDefs();
         std::string json = graph.toJson();
         if (json != lastJson) pendingSync = true;
         ULONGLONG now = GetTickCount64();
         if (pendingSync && now - lastSend > 60) {
-            if (graph.save(opt.graphPath)) {
+            // the editor graph (with its compounds) is kept in the scene; Maya builds the flat one
+            flat = mayashader::flatten(graph);
+            if (graph.save(opt.graphPath) && flat.save(flatPath)) {
                 lastJson = json;
                 pendingSync = false;
                 lastSend = now;
                 if (maya.connected()) {
-                    maya.send("import wzx_shader_bridge as _w; _w.sync_file(" + mayashader::pyStr(toUtf8(opt.graphPath)) + ")");
+                    maya.send("import wzx_shader_bridge as _w; _w.sync_file(" + mayashader::pyStr(toUtf8(flatPath)) + ", " +
+                              mayashader::pyStr(toUtf8(opt.graphPath)) + ")");
                     editor.clearModified();
                 }
             }
@@ -399,7 +545,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         }
         g_renderer.present(true);
         // idle: the preview has converged and nothing moves, so do not keep the GPU busy inside Maya
-        if (!preview.busy() && !ImGui::IsAnyItemActive() && !ImGui::GetIO().WantTextInput)
+        if ((!showPreview || !preview.busy()) && !ImGui::IsAnyItemActive() && !ImGui::GetIO().WantTextInput)
             MsgWaitForMultipleObjects(0, nullptr, FALSE, 30, QS_ALLINPUT);
     }
     g_renderer.waitIdle();

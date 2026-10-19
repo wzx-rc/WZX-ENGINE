@@ -6,6 +6,9 @@
 #pragma once
 #include "Runtime.h"
 #include "imgui.h"
+#include <functional>
+#include <map>
+#include <set>
 #include <string>
 
 struct ImFont;
@@ -14,7 +17,7 @@ namespace game {
 
 class NodeEditor {
 public:
-    enum Action { None, TogglePlay, Save, Compile, Close, Build, Arrange };
+    enum Action { None, TogglePlay, Save, Compile, Close, Build, Arrange, EnterCompound };
 
     // Fonts for the canvas text (regular and bold); the ImGui default font is used when null.
     void setFonts(ImFont* regular, ImFont* bold) { m_font = regular; m_fontBold = bold; }
@@ -25,6 +28,16 @@ public:
     // Draws the icon of a node type (the app owns the icon set); called with the node type id.
     using NodeIconFn = void (*)(ImDrawList* dl, const std::string& nodeId, ImVec2 p, float size, ImU32 color);
     void setNodeIconDrawer(NodeIconFn f) { m_nodeIcon = f; }
+
+    // Small preview square on the cards (the host renders it): a texture for the node, 0 = no square.
+    std::function<ImTextureID(const Node&)> nodeThumb;
+    // Extra content of the tooltip shown over a link (Houdini style): the host draws the value that flows.
+    std::function<void(const Graph&, const Link&)> linkInfo;
+    int forceHoverLink = -1;   // test captures: this link is shown as hovered
+    // Compound to open after a double click (Action EnterCompound).
+    int enteredNode() const { return m_enterNode; }
+    // Moves the selected nodes into a new compound (LookDevX). Returns its id.
+    int collapseSelection(Graph& g);
 
     // Draws the whole graph workspace in the rectangle `pos` / `size` (ImGui pixels): canvas header,
     // canvas, Inspector (right) and Output panel (bottom), and handles their input.
@@ -39,6 +52,8 @@ public:
     // Backdrop (group frame): around the selected nodes, or at the centre of the view when nothing is selected (Ctrl+G).
     void addBackdrop(Graph& g);
     void resetView() { m_pan = ImVec2(-40, -60); m_zoom = 1.0f; }
+    // Another graph is shown (compound opened or closed): undo steps, selection and expanded pins belong to the previous one.
+    void resetHistory() { m_undo.clear(); m_sel.clear(); m_selGroup = -1; m_expanded.clear(); m_hoverLink = -1; }
     bool modified() const { return m_modified; }
     void clearModified() { m_modified = false; }
     std::string status;                   // small message shown in the canvas header
@@ -76,6 +91,13 @@ private:
     ImVec2 nodeMax(const Node& n) const;                 // screen
     ImVec2 pinPos(const Node& n, int pin, bool output) const;
     bool inlineArea(const Graph& g, const Node& n, int pin, ImVec2& a, ImVec2& b) const;
+    // layout of the cards: row of each pin (-1 = hidden channel pin), preview square
+    struct NodeLayout { std::vector<int> inRow, outRow; int rows = 1, thumbRow = -1; };
+    void computeLayout(const Graph& g);
+    int rowOf(const Node& n, int pin, bool output) const;
+    bool hasChannels(const Node& n, int pin, bool output) const;
+    bool expanderRect(const Node& n, int pin, bool output, ImVec2& a, ImVec2& b) const;
+    int hitLink(const Graph& g, ImVec2 p) const;
     bool overInlineWidget(const Graph& g, ImVec2 p) const;
     PinRef hitPin(const Graph& g, ImVec2 p) const;
     int hitNode(const Graph& g, ImVec2 p) const;
@@ -124,6 +146,10 @@ private:
     int m_selGroup = -1;                   // selected group (index), -1 = none
     std::vector<std::string> m_undo;
     Action m_action = None;
+    int m_enterNode = 0;
+    std::map<int, NodeLayout> m_layout;
+    std::set<long long> m_expanded;          // (node, pin, side) expanded by the user
+    int m_hoverLink = -1;
     bool m_modified = true;                // not compiled or saved yet
     bool m_wantFrame = false;
 

@@ -34,7 +34,7 @@ std::vector<NodeDef> build() {
     const char* CO = "Constants";
     std::vector<B> v;
     v.push_back(B("out.material", "Material Output", OU, "Shading group (shadingEngine) of the material. Assign it from the toolbar.")
-                    .in("Surface", SH));
+                    .in("Surface", SH).in("Displacement", SH));
     v.push_back(B("shader.standardSurface", "aiStandardSurface", SD, "Arnold Standard Surface.")
                     .inF("Base", 1.0f).inC("Base Color", float3(0.8f, 0.8f, 0.8f)).inF("Diffuse Roughness", 0.0f).inF("Metalness", 0.0f)
                     .inF("Specular", 1.0f).inC("Specular Color", float3(1, 1, 1)).inF("Specular Roughness", 0.2f).inF("Specular IOR", 1.5f)
@@ -43,6 +43,8 @@ std::vector<NodeDef> build() {
                     .in("Normal", C).out("Shader", SH));
     v.push_back(B("shader.mix", "aiMixShader", SD, "Blends two shaders (Mix = 0: Shader 1, 1: Shader 2).")
                     .in("Shader 1", SH).in("Shader 2", SH).inF("Mix", 0.5f).out("Shader", SH));
+    v.push_back(B("shader.displacement", "Displacement", SD, "Maya displacementShader: Height x Scale, plugged in Material Output > Displacement.")
+                    .inF("Height", 0.0f).inF("Scale", 1.0f).out("Displacement", SH));
     v.push_back(B("shader.flat", "aiFlat", SD, "Constant colour, no lighting.").inC("Color", float3(1, 1, 1)).out("Shader", SH));
     v.push_back(B("tex.ramp", "Ramp", TX, "Maya ramp texture (V direction): Color A at the bottom, Color B at the top.")
                     .inC("Color A", float3(0.05f, 0.1f, 0.4f)).inF("Position A", 0.0f).inC("Color B", float3(0.9f, 0.6f, 0.2f)).inF("Position B", 1.0f)
@@ -65,8 +67,30 @@ std::vector<NodeDef> build() {
                     .inF("Bump Map", 0.0f).inF("Bump Height", 1.0f).out("Normal", C));
     v.push_back(B("const.color", "Color Constant", CO, "Maya colorConstant node.").inC("Color", float3(0.8f, 0.3f, 0.2f)).out("Color", C));
     v.push_back(B("const.float", "Float Constant", CO, "Maya floatConstant node.").inF("Value", 0.5f).out("Value", F));
+    // compounds (LookDevX): their pins are promoted by the user (Graph::refreshDefs)
+    v.push_back(B("compound", "Compound", "Compounds", "Group of nodes with promoted inputs and outputs. Double click to enter it."));
+    v.push_back(B("compound.input", "Input", "Compounds", "Inputs of the compound: connect the + pin to an inner input to promote it."));
+    v.push_back(B("compound.output", "Output", "Compounds", "Outputs of the compound: connect an inner output to the + pin to promote it."));
     std::vector<NodeDef> out;
     for (auto& b : v) out.push_back(b.d);
+    // Maya style expansion: each colour (or vector) pin gets R, G, B (X, Y, Z) channel pins after the others
+    for (NodeDef& d : out) {
+        for (int side = 0; side < 2; ++side) {
+            std::vector<PinDef>& pins = side ? d.outs : d.ins;
+            const size_t n = pins.size();
+            for (size_t i = 0; i < n; ++i) {
+                if (pins[i].type != PinType::Vec3) continue;
+                const bool xyz = pins[i].name == "Normal";
+                for (int k = 0; k < 3; ++k) {
+                    PinDef c{pins[i].name + "." + (xyz ? "XYZ" : "RGB")[k], PinType::Float};
+                    c.parent = (int)i;
+                    c.channel = k;
+                    pins.push_back(c);
+                    if (!side) d.defaults.push_back(Value::Float(d.defaults[i].v[k]));
+                }
+            }
+        }
+    }
     return out;
 }
 

@@ -172,7 +172,68 @@ static bool barButton(ImDrawList* dl, ImFont* font, const char* id, ImVec2 a, Im
 
 float NodeEditor::nodeWidth(const Node&) const { return kCardW; }
 
+static long long expandKey(int node, int pin, bool output) { return ((long long)node << 20) | (pin << 1) | (output ? 1 : 0); }
+static const int kThumbRows = 3;   // preview square: 3 rows high
+
+bool NodeEditor::hasChannels(const Node& n, int pin, bool output) const {
+    const auto& pins = output ? n.def->outs : n.def->ins;
+    for (const PinDef& p : pins) if (p.parent == pin) return true;
+    return false;
+}
+
+// Rows of the cards: each pin on its side, the channel pins (R, G, B) under their colour when it is expanded (or one of them
+// is connected), then the preview square.
+void NodeEditor::computeLayout(const Graph& g) {
+    m_layout.clear();
+    for (const Node& n : g.nodes) {
+        if (!n.def) continue;
+        NodeLayout L;
+        int rows[2] = {0, 0};
+        for (int side = 0; side < 2; ++side) {
+            const auto& pins = side ? n.def->outs : n.def->ins;
+            std::vector<int>& row = side ? L.outRow : L.inRow;
+            row.assign(pins.size(), -1);
+            for (int i = 0; i < (int)pins.size(); ++i) {
+                if (pins[i].parent >= 0) continue;
+                row[i] = rows[side]++;
+                bool open = m_expanded.count(expandKey(n.id, i, side == 1)) > 0;
+                for (int c = 0; c < (int)pins.size() && !open; ++c) {
+                    if (pins[c].parent != i) continue;
+                    for (const Link& l : g.links)
+                        if (side ? (l.fromNode == n.id && l.fromPin == c) : (l.toNode == n.id && l.toPin == c)) { open = true; break; }
+                }
+                if (!open) continue;
+                for (int c = 0; c < (int)pins.size(); ++c)
+                    if (pins[c].parent == i) row[c] = rows[side]++;
+            }
+        }
+        L.rows = std::max(1, std::max(rows[0], rows[1]));
+        if (nodeThumb && nodeThumb(n)) { L.thumbRow = L.rows; L.rows += kThumbRows; }
+        m_layout[n.id] = L;
+    }
+}
+
+int NodeEditor::rowOf(const Node& n, int pin, bool output) const {
+    auto it = m_layout.find(n.id);
+    if (it == m_layout.end()) return pin;
+    const std::vector<int>& r = output ? it->second.outRow : it->second.inRow;
+    return pin >= 0 && pin < (int)r.size() ? r[pin] : pin;
+}
+
+// The +/- box of a colour pin that has channel pins: left of the input label, right of the output label.
+bool NodeEditor::expanderRect(const Node& n, int pin, bool output, ImVec2& a, ImVec2& b) const {
+    if (m_zoom < 0.6f || rowOf(n, pin, output) < 0 || !hasChannels(n, pin, output)) return false;
+    ImVec2 pp = pinPos(n, pin, output);
+    float s = scale(), h = 5 * s;
+    float cx = output ? pp.x - 19 * s : pp.x + 17 * s;
+    a = ImVec2(cx - h, pp.y - h);
+    b = ImVec2(cx + h, pp.y + h);
+    return true;
+}
+
 int NodeEditor::rowCount(const Node& n) const {
+    auto it = m_layout.find(n.id);
+    if (it != m_layout.end()) return it->second.rows;
     return std::max(1, std::max((int)n.def->ins.size(), (int)n.def->outs.size()));
 }
 
@@ -187,7 +248,12 @@ ImVec2 NodeEditor::nodeMax(const Node& n) const {
 ImVec2 NodeEditor::pinPos(const Node& n, int pin, bool output) const {
     ImVec2 p0 = nodeMin(n);
     float s = scale();
-    float y = p0.y + (kPinTop + pin * kRow) * s;
+    int row = rowOf(n, pin, output);
+    if (row < 0) {   // hidden channel pin: at its colour pin
+        const auto& pins = output ? n.def->outs : n.def->ins;
+        row = rowOf(n, pins[pin].parent, output);
+    }
+    float y = p0.y + (kPinTop + row * kRow) * s;
     float x = output ? p0.x + nodeWidth(n) * s : p0.x;
     return ImVec2(x, y);
 }
@@ -195,8 +261,9 @@ ImVec2 NodeEditor::pinPos(const Node& n, int pin, bool output) const {
 // Screen rectangle of the inline value of an input pin (only when it is drawn as a widget).
 bool NodeEditor::inlineArea(const Graph& g, const Node& n, int pin, ImVec2& a, ImVec2& b) const {
     const PinDef& p = n.def->ins[pin];
-    if (m_zoom < 0.75f || p.type == PinType::Exec || p.type == PinType::Object) return false;
-    if (g.inputLink(n.id, pin)) return false;
+    if (m_zoom < 0.75f || p.type == PinType::Exec || p.type == PinType::Object || p.wildcard) return false;
+    if (g.inputLink(n.id, pin) || rowOf(n, pin, false) < 0) return false;
+    if (p.parent >= 0 && g.inputLink(n.id, p.parent)) return false;   // channel of a connected colour
     float s = scale();
     float labelW = p.type == PinType::Vec3 ? 70.0f : 88.0f;
     ImVec2 p0 = nodeMin(n), p1 = nodeMax(n);
@@ -213,6 +280,11 @@ bool NodeEditor::overInlineWidget(const Graph& g, ImVec2 p) const {
             ImVec2 a, b;
             if (inlineArea(g, n, i, a, b) && p.x >= a.x && p.x <= b.x && p.y >= a.y && p.y <= b.y) return true;
         }
+        for (int side = 0; side < 2; ++side)
+            for (int i = 0; i < (int)(side ? n.def->outs : n.def->ins).size(); ++i) {
+                ImVec2 a, b;
+                if (expanderRect(n, i, side == 1, a, b) && p.x >= a.x - 2 && p.x <= b.x + 2 && p.y >= a.y - 2 && p.y <= b.y + 2) return true;
+            }
     }
     return false;
 }
@@ -227,6 +299,7 @@ NodeEditor::PinRef NodeEditor::hitPin(const Graph& g, ImVec2 m) const {
         for (int o = 0; o < 2; ++o) {
             const auto& pins = o ? n.def->outs : n.def->ins;
             for (int i = 0; i < (int)pins.size(); ++i) {
+                if (rowOf(n, i, o == 1) < 0) continue;
                 ImVec2 p = pinPos(n, i, o == 1);
                 // the label next to the pin is part of the target too
                 float lx0 = o ? p.x - 70 * s : p.x - rad, lx1 = o ? p.x + rad : p.x + 70 * s;
@@ -270,6 +343,21 @@ int NodeEditor::hitGroupGrip(const Graph& g, ImVec2 p) const {
         if (p.x >= b.x - r && p.x <= b.x + 2 && p.y >= b.y - r && p.y <= b.y + 2) return i;
     }
     return -1;
+}
+
+int NodeEditor::collapseSelection(Graph& g) {
+    std::vector<int> ids;
+    for (int id : m_sel)
+        if (const Node* n = g.node(id))
+            if (n->type != "compound.input" && n->type != "compound.output") ids.push_back(id);
+    if (ids.empty()) { status = "Select nodes to make a compound"; return 0; }
+    pushUndo(g);
+    int c = g.collapse(ids, "Compound");
+    m_sel = {c};
+    m_selGroup = -1;
+    m_modified = true;
+    status = "Compound created: double click to enter it";
+    return c;
 }
 
 void NodeEditor::addBackdrop(Graph& g) {
@@ -383,7 +471,10 @@ void NodeEditor::duplicateSelection(Graph& g) {
         const Node* n = g.node(id);
         if (!n) continue;
         Node copy = *n;
+        if (copy.type == "compound.input" || copy.type == "compound.output") continue;
         int nid = g.addNode(copy.type, float2(copy.pos.x + 30, copy.pos.y + 30));
+        if (copy.sub) g.node(nid)->sub = g.cloneSub(copy);   // a copied compound gets its own inner graph
+        g.refreshDefs();
         g.node(nid)->inputs = copy.inputs;
         remap[id] = nid;
     }
@@ -454,7 +545,8 @@ void NodeEditor::setDiagnostics(const std::vector<Diagnostic>& d) {
 
 void NodeEditor::draw(ImVec2 pos, ImVec2 size, float dpi, Graph& g, const Runtime* rt, bool playing) {
     m_dpi = dpi > 0 ? dpi : 1.0f;
-    for (Node& n : g.nodes) if (!n.def) n.def = findNodeDef(n.type);
+    g.refreshDefs();   // new nodes, compound pins promoted since the last frame
+    computeLayout(g);
 
     // one window over the whole graph workspace: canvas column (header, canvas, footer, output) and the Inspector
     ImGui::SetNextWindowPos(pos, ImGuiCond_Always);
@@ -487,8 +579,39 @@ void NodeEditor::draw(ImVec2 pos, ImVec2 size, float dpi, Graph& g, const Runtim
                   !ImGui::IsPopupOpen("##addnode") && !ImGui::IsAnyItemActive();
     bool overWidget = overInlineWidget(g, io.MousePos);
     handleInput(g, inArea, overWidget);
+    computeLayout(g);
+    m_hoverLink = (inArea && !overWidget && m_drag == DragNone && !hitNode(g, io.MousePos) && hitPin(g, io.MousePos).pin < 0)
+                      ? hitLink(g, io.MousePos) : -1;
+    if (forceHoverLink >= 0) m_hoverLink = forceHoverLink;
 
     drawCanvas(g, rt);
+    // link under the mouse: what flows through it (Houdini style)
+    if (m_hoverLink >= 0 && m_hoverLink < (int)g.links.size()) {
+        const Link& l = g.links[m_hoverLink];
+        const Node* a = g.node(l.fromNode);
+        const Node* b = g.node(l.toNode);
+        if (a && b) {
+            const PinDef& po = a->def->outs[l.fromPin];
+            if (forceHoverLink >= 0) {   // test capture: the tooltip at the middle of the link
+                ImVec2 p0 = pinPos(*a, l.fromPin, true), p1 = pinPos(*b, l.toPin, false);
+                ImGui::SetNextWindowPos((p0 + p1) * 0.5f + ImVec2(12, 12));
+            }
+            ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(10 * d, 8 * d));
+            ImGui::BeginTooltip();
+            const char* tn = po.type == PinType::Vec3 ? labels.vectorPin : po.type == PinType::Object ? labels.objectPin : pinTypeName(po.type);
+            ImGui::TextColored(ImColor(pinColor(po.type)), "%s", tn);
+            ImGui::SameLine();
+            ImGui::TextDisabled("link");
+            ImGui::Text("From  %s . %s", a->def->label.c_str(), po.name.c_str());
+            ImGui::Text("To      %s . %s", b->def->label.c_str(), b->def->ins[l.toPin].name.c_str());
+            if (linkInfo) {
+                ImGui::Separator();
+                linkInfo(g, l);
+            }
+            ImGui::EndTooltip();
+            ImGui::PopStyleVar();
+        }
+    }
     drawHint(g);
     drawMinimap(g);
     drawFooter(ImVec2(pos.x, footY), cw, g);
@@ -501,6 +624,8 @@ void NodeEditor::draw(ImVec2 pos, ImVec2 size, float dpi, Graph& g, const Runtim
 }
 
 void NodeEditor::drawCanvas(Graph& g, const Runtime* rt) {
+    g.refreshDefs();
+    computeLayout(g);   // nodes and links may have changed with the input of this frame
     ImDrawList* dl = ImGui::GetWindowDrawList();
     ImVec2 c0 = m_origin, c1 = m_origin + m_canvas;
     float z = scale();
@@ -594,11 +719,40 @@ void NodeEditor::drawHint(const Graph& g) {
     dl->AddText(f, 14 * m_dpi, ImVec2(c.x - ts.x * 0.5f, c.y - ts.y * 0.5f), kMuted, msg);
 }
 
+// Link whose curve passes within a few pixels of p, or -1.
+int NodeEditor::hitLink(const Graph& g, ImVec2 m) const {
+    float z = scale(), best = 6.0f * m_dpi;
+    int found = -1;
+    for (int k = 0; k < (int)g.links.size(); ++k) {
+        const Link& l = g.links[k];
+        const Node* a = g.node(l.fromNode);
+        const Node* b = g.node(l.toNode);
+        if (!a || !b) continue;
+        ImVec2 p0 = pinPos(*a, l.fromPin, true), p3 = pinPos(*b, l.toPin, false);
+        float d = std::max(65 * z, std::fabs(p3.x - p0.x) * 0.46f);
+        ImVec2 p1(p0.x + d, p0.y), p2(p3.x - d, p3.y);
+        ImVec2 prev = p0;
+        for (int i = 1; i <= 24; ++i) {
+            float t = i / 24.0f, u = 1 - t;
+            ImVec2 q = p0 * (u * u * u) + p1 * (3 * u * u * t) + p2 * (3 * u * t * t) + p3 * (t * t * t);
+            ImVec2 e = q - prev;
+            float len2 = e.x * e.x + e.y * e.y;
+            float s = len2 > 0 ? std::min(1.0f, std::max(0.0f, ((m.x - prev.x) * e.x + (m.y - prev.y) * e.y) / len2)) : 0;
+            ImVec2 c = prev + e * s;
+            float dist = std::sqrt((m.x - c.x) * (m.x - c.x) + (m.y - c.y) * (m.y - c.y));
+            if (dist < best) { best = dist; found = k; }
+            prev = q;
+        }
+    }
+    return found;
+}
+
 // Wires as in the Atelier graph: cubic curves with a soft halo, colour of the output pin.
 void NodeEditor::drawLinks(const Graph& g, const Runtime* rt) {
     ImDrawList* dl = ImGui::GetWindowDrawList();
     float z = scale();
-    for (const Link& l : g.links) {
+    for (int k = 0; k < (int)g.links.size(); ++k) {
+        const Link& l = g.links[k];
         const Node* a = g.node(l.fromNode);
         const Node* b = g.node(l.toNode);
         if (!a || !b) continue;
@@ -607,6 +761,7 @@ void NodeEditor::drawLinks(const Graph& g, const Runtime* rt) {
         ImU32 c = pinColor(t);
         float w = 2.0f * z;
         if (rt && t == PinType::Exec && rt->running() && rt->time() - rt->lastRun(b->id) < 0.25f) { c = IM_COL32(255, 210, 74, 255); w *= 1.6f; }
+        if (k == m_hoverLink) w *= 2.0f;
         float d = std::max(65 * z, std::fabs(p1.x - p0.x) * 0.46f);
         dl->AddBezierCubic(p0, ImVec2(p0.x + d, p0.y), ImVec2(p1.x - d, p1.y), p1, withA(c, 55), w + 3 * z);
         dl->AddBezierCubic(p0, ImVec2(p0.x + d, p0.y), ImVec2(p1.x - d, p1.y), p1, c, w);
@@ -694,26 +849,70 @@ void NodeEditor::drawNode(Graph& g, Node& n, const Runtime* rt) {
     else if (m_outline) outside(withA(color, 128), m_outlineWeight * s);   // the node colour, half transparent
     if (hot) outside(IM_COL32(255, 210, 74, 255), 2 * m_outlineWeight * s);
 
+    // preview square (rendered by the host): what the node outputs
+    auto lay = m_layout.find(n.id);
+    if (nodeThumb && lay != m_layout.end() && lay->second.thumbRow >= 0) {
+        if (ImTextureID tex = nodeThumb(n)) {
+            float top = p0.y + (kPinTop + lay->second.thumbRow * kRow - 8) * s, side = (kThumbRows * kRow - 6) * s;
+            ImVec2 ta(p0.x + 12 * s, top), tb(ta.x + side, top + side);
+            dl->AddImageRounded(tex, ta, tb, ImVec2(0, 0), ImVec2(1, 1), IM_COL32_WHITE, 4 * s);
+            dl->AddRect(ta, tb, withA(kBorderC, 220), 4 * s);
+        }
+    }
+
+    // +/- of the colour pins that have channel pins (R, G, B)
+    auto expander = [&](int i, bool output) {
+        ImVec2 a, b;
+        if (!expanderRect(n, i, output, a, b)) return;
+        bool open = rowOf(n, i + 0, output) >= 0 && [&] {
+            const auto& pins = output ? n.def->outs : n.def->ins;
+            for (int c = 0; c < (int)pins.size(); ++c) if (pins[c].parent == i) return rowOf(n, c, output) >= 0;
+            return false;
+        }();
+        ImGui::PushID(n.id * 128 + i * 2 + (output ? 1 : 0));
+        Hit h = hitArea("##exp", ImVec2(a.x - 2, a.y - 2), ImVec2(b.x + 2, b.y + 2));
+        ImGui::PopID();
+        dl->AddRectFilled(a, b, h.hovered ? kHover : kBg, 2 * s);
+        dl->AddRect(a, b, h.hovered ? kCyan : kMuted, 2 * s);
+        float cx = (a.x + b.x) * 0.5f, cy = (a.y + b.y) * 0.5f, r = 2.6f * s;
+        dl->AddLine(ImVec2(cx - r, cy), ImVec2(cx + r, cy), kText, 1.2f * m_dpi);
+        if (!open) dl->AddLine(ImVec2(cx, cy - r), ImVec2(cx, cy + r), kText, 1.2f * m_dpi);
+        if (h.pressed) {
+            long long key = expandKey(n.id, i, output);
+            if (m_expanded.count(key)) m_expanded.erase(key);
+            else m_expanded.insert(key);
+        }
+    };
+
     // outputs: labels on the inner side of the pin
     for (int i = 0; i < (int)n.def->outs.size(); ++i) {
         const PinDef& p = n.def->outs[i];
+        if (rowOf(n, i, true) < 0) continue;
         ImVec2 pp = pinPos(n, i, true);
         bool conn = false;
         for (const Link& l : g.links) if (l.fromNode == n.id && l.fromPin == i) { conn = true; break; }
         drawPinShape(dl, pp, p.type, conn, s, m_dpi);
-        if (!p.name.empty()) canvasText(dl, m_font, 12.5f * s, ImVec2(pp.x - 13 * s, pp.y), kText, p.name, true);
+        std::string label = p.parent >= 0 ? p.name.substr(p.name.rfind('.') + 1) : p.name;
+        float lx = pp.x - 13 * s - (hasChannels(n, i, true) ? 14 * s : 0);
+        if (!label.empty()) canvasText(dl, m_font, 12.5f * s, ImVec2(lx, pp.y), p.wildcard || p.parent >= 0 ? kMuted : kText, label, true);
+        expander(i, true);
     }
 
     // inputs: labels right of the pin, inline values below the label
     for (int i = 0; i < (int)n.def->ins.size(); ++i) {
         const PinDef& p = n.def->ins[i];
+        if (rowOf(n, i, false) < 0) continue;
         ImVec2 pp = pinPos(n, i, false);
         bool conn = g.inputLink(n.id, i) != nullptr;
         drawPinShape(dl, pp, p.type, conn, s, m_dpi);
         if (p.type == PinType::Exec) continue;
         float labelW = p.type == PinType::Vec3 ? 70.0f : 88.0f;
-        canvasText(dl, m_font, 12.5f * s, ImVec2(pp.x + 13 * s, pp.y), kText, p.name);
-        if (p.type == PinType::Object || conn) continue;
+        std::string label = p.parent >= 0 ? p.name.substr(p.name.rfind('.') + 1) : p.name;
+        float lx = pp.x + 13 * s + (hasChannels(n, i, false) ? 13 * s : 0) + (p.parent >= 0 ? 12 * s : 0);
+        canvasText(dl, m_font, 12.5f * s, ImVec2(lx, pp.y), p.wildcard || p.parent >= 0 ? kMuted : kText, label);
+        expander(i, false);
+        if (p.type == PinType::Object || p.wildcard || conn) continue;
+        if (p.parent >= 0 && g.inputLink(n.id, p.parent)) continue;
         Value& v = n.inputs[i];
 
         ImVec2 a, b;
@@ -728,8 +927,10 @@ void NodeEditor::drawNode(Graph& g, Node& n, const Runtime* rt) {
         switch (p.type) {
         case PinType::Float: {
             Hit h = hitArea("##f", a, b);
-            float speed = std::max(0.02f, std::fabs(v.f) * 0.01f);
-            bool changed = dragBox(dl, m_font, h, a, b, v.f, speed, "%.2f", s, m_dpi);
+            // a channel pin edits its colour's channel
+            float& fv = p.parent >= 0 ? n.inputs[p.parent].v[p.channel] : v.f;
+            float speed = std::max(0.02f, std::fabs(fv) * 0.01f);
+            bool changed = dragBox(dl, m_font, h, a, b, fv, speed, "%.2f", s, m_dpi);
             trackEdit(g, h.activated, changed, h.deactivated);
             break;
         }
@@ -972,11 +1173,28 @@ void NodeEditor::drawInspectorNode(Graph& g, Node& n, float w) {
     trackEdit(g, ImGui::IsItemActivated(), moved, ImGui::IsItemDeactivatedAfterEdit());
 
     ImGui::Spacing();
+    if (n.sub && n.sub->io) {   // compound: its name, how to edit it
+        ImGui::Spacing();
+        ImGui::TextDisabled("COMPOUND");
+        char nb[128] = {};
+        std::strncpy(nb, n.sub->io->name.c_str(), sizeof nb - 1);
+        ImGui::SetNextItemWidth(-FLT_MIN);
+        if (ImGui::InputText("##cname", nb, sizeof nb, ImGuiInputTextFlags_EnterReturnsTrue) && nb[0]) {
+            pushUndo(g);
+            n.sub->io->name = nb;
+            n.sub->name = nb;
+            ++n.sub->io->version;
+            m_modified = true;
+        }
+        ImGui::TextDisabled("%d inputs, %d outputs promoted", (int)n.sub->io->ins.size(), (int)n.sub->io->outs.size());
+        if (ImGui::Button("Open compound", ImVec2(-FLT_MIN, 0))) { m_action = EnterCompound; m_enterNode = n.id; }
+    }
+    ImGui::Spacing();
     ImGui::TextDisabled("DEFAULT VALUES");
     bool any = false;
     for (int i = 0; i < (int)def.ins.size(); ++i) {
         const PinDef& p2 = def.ins[i];
-        if (p2.type == PinType::Exec || p2.type == PinType::Object || g.inputLink(n.id, i)) continue;
+        if (p2.type == PinType::Exec || p2.type == PinType::Object || p2.parent >= 0 || p2.wildcard || g.inputLink(n.id, i)) continue;
         any = true;
         ImGui::PushID(i);
         ImGui::TextColored(ImColor(pinColor(p2.type)), "%s", p2.name.c_str());
@@ -1181,7 +1399,9 @@ void NodeEditor::drawOutput(ImVec2 pos, ImVec2 size, Graph& g, const Runtime* rt
 // Creates the node picked in the popup, wired to the pin the popup was opened from.
 void NodeEditor::addNodeFromMenu(Graph& g, const NodeDef& d) {
     pushUndo(g);
-    int id = g.addNode(d.id, float2(std::round(m_menuGraph.x / 8) * 8, std::round(m_menuGraph.y / 8) * 8));
+    float2 at(std::round(m_menuGraph.x / 8) * 8, std::round(m_menuGraph.y / 8) * 8);
+    int id = d.id == "compound" ? g.addCompound(at) : g.addNode(d.id, at);   // a compound comes with its Input and Output
+    g.refreshDefs();
     const Node* fromNode = m_menuFrom.pin >= 0 ? g.node(m_menuFrom.node) : nullptr;
     if (fromNode && id) {
         const auto& pins = m_menuFrom.output ? d.ins : d.outs;
@@ -1255,6 +1475,10 @@ void NodeEditor::drawMenu(Graph& g) {
                 addBackdrop(g);
                 ImGui::CloseCurrentPopup();
             }
+            if (!m_sel.empty() && ImGui::Selectable("+ Compound from selection  (Ctrl+Shift+G)", false, 0, ImVec2(0, 22 * d))) {
+                collapseSelection(g);
+                ImGui::CloseCurrentPopup();
+            }
             if (ImGui::Selectable("+ Add backdrop", false, 0, ImVec2(0, 22 * d))) {
                 pushUndo(g);
                 Group gr;
@@ -1271,6 +1495,7 @@ void NodeEditor::drawMenu(Graph& g) {
         std::string lastCat;
         for (const NodeDef& nd : nodeDefs()) {
             if (!compatibleWithPin(nd)) continue;
+            if (nd.id == "compound.input" || nd.id == "compound.output") continue;   // created with the compound
             if (!q.empty() && fold(widen(nd.label)).find(q) == std::wstring::npos && fold(widen(nd.id)).find(q) == std::wstring::npos) continue;
             if (!first) first = &nd;
             if (q.empty() && nd.category != lastCat) {
@@ -1328,7 +1553,8 @@ void NodeEditor::handleInput(Graph& g, bool inArea, bool overWidget) {
             }
         }
         if (ctrl && ImGui::IsKeyPressed(ImGuiKey_D)) duplicateSelection(g);
-        if (ctrl && ImGui::IsKeyPressed(ImGuiKey_G)) addBackdrop(g);
+        if (ctrl && !shift && ImGui::IsKeyPressed(ImGuiKey_G)) addBackdrop(g);
+        if (ctrl && shift && ImGui::IsKeyPressed(ImGuiKey_G)) collapseSelection(g);
         if (ctrl && ImGui::IsKeyPressed(ImGuiKey_Z)) undo(g);
         if (ctrl && ImGui::IsKeyPressed(ImGuiKey_A)) { m_sel.clear(); m_selGroup = -1; for (const Node& n : g.nodes) m_sel.push_back(n.id); }
         if (ImGui::IsKeyPressed(ImGuiKey_Escape)) { m_sel.clear(); m_selGroup = -1; }
@@ -1359,6 +1585,10 @@ void NodeEditor::handleInput(Graph& g, bool inArea, bool overWidget) {
                 m_drag = DragLink;
             }
         } else if (int id = hitNode(g, mouse)) {
+            if (ImGui::IsMouseDoubleClicked(0)) {   // double click on a compound: open it
+                const Node* nd = g.node(id);
+                if (nd && nd->sub) { m_action = EnterCompound; m_enterNode = id; }
+            }
             if (ctrl || shift) {
                 auto it = std::find(m_sel.begin(), m_sel.end(), id);
                 if (it != m_sel.end()) m_sel.erase(it); else m_sel.push_back(id);

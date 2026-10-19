@@ -4,8 +4,11 @@
 #pragma once
 #include "vp3d/Math.h"
 #include <map>
+#include <memory>
 #include <string>
 #include <vector>
+
+namespace app { struct Json; }
 
 namespace game {
 
@@ -39,6 +42,9 @@ struct Value {
 struct PinDef {
     std::string name;
     PinType type;
+    int parent = -1;         // channel pin (R, G, B / X, Y, Z) of the Vec3 pin at this index (Maya style expansion)
+    int channel = 0;         // 0, 1, 2 for a channel pin
+    bool wildcard = false;   // "+" pin of a compound Input / Output node: connecting it promotes a new pin
 };
 
 // Operation implemented by the runtime for each node type.
@@ -76,12 +82,27 @@ const std::vector<NodeDef>& nodeDefs();
 const NodeDef* findNodeDef(const std::string& id);
 const char* pinTypeName(PinType t);
 
+class Graph;
+
+// Pins promoted on a compound: the inputs / outputs of the compound node, i.e. the outputs of its Input node and the
+// inputs of its Output node. Shared by the compound node and its inner graph.
+struct CompoundIO {
+    std::string name = "Compound";
+    std::vector<PinDef> ins, outs;
+    std::vector<Value> defaults;   // value of each input when the compound input is not connected
+    uint32_t version = 1;
+};
+
 struct Node {
     int id = 0;
     std::string type;
     float2 pos;                      // editor position (graph units)
     std::vector<Value> inputs;       // inline values of unconnected inputs
     const NodeDef* def = nullptr;    // resolved from type
+    // compound (LookDevX): its inner graph; compound, Input and Output nodes have pins of their own (ownDef)
+    std::shared_ptr<Graph> sub;
+    std::shared_ptr<NodeDef> ownDef;
+    uint32_t defVersion = 0;
 };
 
 // A labelled frame around nodes (Atelier "group"): moving it moves the nodes inside.
@@ -111,6 +132,7 @@ public:
     std::vector<Group> groups;
     int nextId = 1;
     uint32_t version = 1;            // bumped on every structural edit
+    std::shared_ptr<CompoundIO> io;  // inner graph of a compound: its promoted pins (null at the root)
 
     Node* node(int id);
     const Node* node(int id) const;
@@ -128,8 +150,17 @@ public:
     // Checks the execution flow: cycles, events without action, actions no event reaches, unconnected objects.
     std::vector<Diagnostic> validate() const;
 
+    // Compounds (LookDevX). refreshDefs rebuilds the pins of the compound / Input / Output nodes (and the defs of new
+    // nodes), recursively; call it after loading or editing. addCompound creates an empty compound (Input and Output
+    // inside); collapse moves nodes into a new compound, promoting the links that cross its border.
+    void refreshDefs();
+    int addCompound(float2 pos, const std::string& name = "Compound");
+    int collapse(const std::vector<int>& ids, const std::string& name = "Compound");
+    std::shared_ptr<Graph> cloneSub(const Node& compound) const;
+
     std::string toJson() const;
     bool fromJson(const std::string& text, std::string* err = nullptr);
+    bool fromJsonValue(const app::Json& j, std::shared_ptr<CompoundIO> io, std::string* err);
     bool save(const std::wstring& path) const;
     bool load(const std::wstring& path, std::string* err = nullptr);
 };

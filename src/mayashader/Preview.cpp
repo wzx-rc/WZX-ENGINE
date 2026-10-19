@@ -113,7 +113,15 @@ public:
             if (src && depth < 32) return output(*src, l->fromPin, uv, P, depth + 1);
         }
         const game::Value& v = n.inputs[i];
-        return v.type == PinType::Vec3 ? v.v : float3(v.asFloat());
+        float3 c = v.type == PinType::Vec3 ? v.v : float3(v.asFloat());
+        // channel pins (R, G, B) connected on their own
+        for (int k = 0; k < (int)n.def->ins.size(); ++k) {
+            if (n.def->ins[k].parent != i) continue;
+            if (const Link* l = m_g.inputLink(n.id, k))
+                if (const Node* src = m_g.node(l->fromNode))
+                    if (depth < 32) c[n.def->ins[k].channel] = lum(output(*src, l->fromPin, uv, P, depth + 1));
+        }
+        return c;
     }
     float value(const Node& n, const char* pin, float2 uv, float3 P, int depth = 0) const {
         int i = n.def ? n.def->findIn(pin) : -1;
@@ -125,6 +133,10 @@ public:
         return n.inputs[i].asFloat();
     }
     float3 output(const Node& n, int outPin, float2 uv, float3 P, int depth) const {
+        if (n.def && outPin >= 0 && outPin < (int)n.def->outs.size() && n.def->outs[outPin].parent >= 0) {   // R, G or B of a colour
+            const game::PinDef& p = n.def->outs[outPin];
+            return float3(output(n, p.parent, uv, P, depth)[p.channel]);
+        }
         const std::string& t = n.type;
         const bool alpha = n.def && outPin >= 0 && outPin < (int)n.def->outs.size() && n.def->outs[outPin].name == "Alpha";
         float3 c(0, 0, 0);
@@ -278,6 +290,90 @@ MeshData uvSphere(float r, int segU, int segV) {
 } // namespace
 
 // ------------------------------------------------------------------------------------------------ preview
+
+// ------------------------------------------------------------------------------------------------ node thumbnails
+
+static float3 acesToRec709(float3 c) {
+    float3 r(1.70505f * c.x - 0.62179f * c.y - 0.08326f * c.z, -0.13026f * c.x + 1.14080f * c.y - 0.01055f * c.z,
+             -0.02400f * c.x - 0.12897f * c.y + 1.15297f * c.z);
+    return float3(std::max(r.x, 0.0f), std::max(r.y, 0.0f), std::max(r.z, 0.0f));
+}
+
+// Surface point of the unit sphere for Maya UVs (as the baked texture of the preview).
+static float3 spherePoint(float2 uv) {
+    float th = (1.0f - uv.y) * kPi, ph = (uv.x + kSeam) * 2.0f * kPi;
+    return float3(std::sin(th) * std::cos(ph), std::cos(th), -std::sin(th) * std::sin(ph));
+}
+
+bool sampleValue(const Graph& flat, int node, int pin, float3& out) {
+    const Node* n = flat.node(node);
+    if (!n || !n->def || pin < 0 || pin >= (int)n->def->outs.size()) return false;
+    if (n->def->outs[pin].type == PinType::Object) return false;
+    Eval ev(flat);
+    out = ev.output(*n, pin, float2(0.5f, 0.5f), spherePoint(float2(0.5f, 0.5f)), 0);
+    return true;
+}
+
+bool renderThumb(const Graph& flat, int node, int pin, const game::Value* constant, bool acescg, int S, std::vector<uint8_t>& rgba) {
+    rgba.assign((size_t)S * S * 4, 255);
+    Eval ev(flat);
+    const Node* n = node > 0 ? flat.node(node) : nullptr;
+    auto put = [&](int x, int y, float3 c) {
+        if (acescg) c = acesToRec709(c);
+        uint8_t* d = &rgba[((size_t)y * S + x) * 4];
+        d[0] = toSrgb8(c.x);
+        d[1] = toSrgb8(c.y);
+        d[2] = toSrgb8(c.z);
+        d[3] = 255;
+    };
+    if (constant) {   // unconnected compound input: its value
+        float3 c = constant->asVec3();
+        for (int y = 0; y < S; ++y) for (int x = 0; x < S; ++x) put(x, y, c);
+        return true;
+    }
+    if (!n || !n->def || pin < 0 || pin >= (int)n->def->outs.size()) return false;
+    if (n->def->outs[pin].type != PinType::Object) {   // a colour / value: the texture over the UVs
+        for (int y = 0; y < S; ++y)
+            for (int x = 0; x < S; ++x) {
+                float2 uv((x + 0.5f) / S, 1.0f - (y + 0.5f) / S);
+                put(x, y, ev.output(*n, pin, uv, spherePoint(uv), 0));
+            }
+        return true;
+    }
+    // a shader: small shaded ball (Hypershade swatch style)
+    const float3 L = normalize(float3(-0.55f, 0.6f, 0.75f)), V(0, 0, 1);
+    const float3 H = normalize(L + V);
+    for (int y = 0; y < S; ++y)
+        for (int x = 0; x < S; ++x) {
+            float sx = (x + 0.5f) / S * 2 - 1, sy = 1 - (y + 0.5f) / S * 2;
+            float r2 = (sx * sx + sy * sy) / 0.86f;
+            if (r2 >= 1) {   // background: dark checker
+                bool k = ((x / 6) + (y / 6)) & 1;
+                float g = k ? 0.035f : 0.02f;
+                uint8_t* d = &rgba[((size_t)y * S + x) * 4];
+                d[0] = d[1] = d[2] = toSrgb8(g);
+                continue;
+            }
+            float3 N(sx / std::sqrt(0.86f), sy / std::sqrt(0.86f), std::sqrt(1 - r2));
+            // object point and Maya UVs of the visible sphere (camera on +Z)
+            float th = std::acos(std::min(1.0f, std::max(-1.0f, N.y))), ph = std::atan2(-N.z, N.x);
+            float u = ph / (2 * kPi) - kSeam;
+            u -= std::floor(u);
+            float2 uv(u, 1 - th / kPi);
+            Shade s = ev.shade(n, uv, N);
+            float ndl = std::max(0.0f, dot(N, L)), ndh = std::max(0.0f, dot(N, H)), ndv = std::max(0.0f, N.z);
+            float rough = std::max(0.04f, s.rough), p = 2.0f / (rough * rough * rough * rough + 1e-4f);
+            float fres = 0.04f + 0.96f * std::pow(1 - ndv, 5.0f);
+            float3 base = s.base;
+            float3 diff = base * ((1 - s.metal) * (1 - s.trans) * (0.16f + 0.84f * ndl));
+            float3 f0 = lerp3(float3(0.04f * s.spec), base, s.metal);
+            float spec = std::pow(ndh, std::min(p, 4000.0f)) * (std::min(p, 4000.0f) + 2) / 8.0f * ndl;
+            float3 c = diff + f0 * spec * 0.6f + float3(0.18f) * fres * (s.spec * (1 - rough)) + s.emisColor * s.emis;
+            c = c + float3(0.9f) * (s.coat * std::pow(ndh, 600.0f) * 3.0f);
+            put(x, y, c);
+        }
+    return true;
+}
 
 void Preview::init(vp3d::Renderer& r, app::ImGuiLayer& gui, const std::wstring& hdri) {
     m_r = &r;

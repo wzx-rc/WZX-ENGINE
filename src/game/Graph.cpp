@@ -187,10 +187,35 @@ bool Graph::connect(int fromNode, int fromPin, int toNode, int toPin, std::strin
     if (fromNode == toNode) return fail("un noeud ne peut pas se connecter a lui-meme");
     if (fromPin < 0 || fromPin >= (int)a->def->outs.size()) return fail("sortie introuvable");
     if (toPin < 0 || toPin >= (int)b->def->ins.size()) return fail("entree introuvable");
+    // "+" pin of a compound Input / Output node: a new promoted pin takes the name and type of the other side
+    const bool wildOut = a->def->outs[fromPin].wildcard, wildIn = b->def->ins[toPin].wildcard;
+    if (wildOut || wildIn) {
+        if ((wildOut && wildIn) || !io) return fail("deux broches + ne se connectent pas");
+        if (wildOut) {
+            const PinDef t = b->def->ins[toPin];
+            if (t.type == PinType::Exec) return fail("broche de flux");
+            io->ins.push_back({t.parent >= 0 ? b->def->ins[t.parent].name + " " + t.name.substr(t.name.rfind('.') + 1) : t.name, t.type});
+            io->defaults.push_back(b->inputs[toPin]);
+            fromPin = (int)io->ins.size() - 1;
+        } else {
+            const PinDef t = a->def->outs[fromPin];
+            if (t.type == PinType::Exec) return fail("broche de flux");
+            io->outs.push_back({t.name, t.type});
+            toPin = (int)io->outs.size() - 1;
+        }
+        ++io->version;
+        refreshDefs();
+        a = node(fromNode);
+        b = node(toNode);
+    }
     PinType o = a->def->outs[fromPin].type, i = b->def->ins[toPin].type;
     if (!compatible(o, i)) return fail("types de broches incompatibles");
     if (o == PinType::Exec) disconnectPin(fromNode, fromPin, true);   // one exec output -> one target
     else disconnectPin(toNode, toPin, false);                         // one source per data input
+    // a colour and its channels (R, G, B) are not driven together: the last connection wins
+    if (b->def->ins[toPin].parent >= 0) disconnectPin(toNode, b->def->ins[toPin].parent, false);
+    for (size_t k = 0; k < b->def->ins.size(); ++k)
+        if (b->def->ins[k].parent == toPin) disconnectPin(toNode, (int)k, false);
     links.push_back({fromNode, fromPin, toNode, toPin});
     ++version;
     return true;
@@ -235,11 +260,23 @@ std::string Graph::toJson() const {
         bool f2 = true;
         for (size_t i = 0; i < n.def->ins.size(); ++i) {
             const PinDef& p = n.def->ins[i];
-            if (p.type == PinType::Exec || p.type == PinType::Object) continue;
+            if (p.type == PinType::Exec || p.type == PinType::Object || p.wildcard) continue;
             js << (f2 ? "" : ", ") << "\"" << jsonEscape(p.name) << "\": " << valueToJson(n.inputs[i]);
             f2 = false;
         }
-        js << "}}";
+        js << "}";
+        if (n.sub && n.sub->io) {   // compound: promoted pins and the inner graph
+            const CompoundIO& io2 = *n.sub->io;
+            auto pins = [&](const std::vector<PinDef>& v) {
+                std::string s = "[";
+                for (size_t i = 0; i < v.size(); ++i)
+                    s += std::string(i ? ", " : "") + "[\"" + jsonEscape(v[i].name) + "\", \"" + pinTypeName(v[i].type) + "\"]";
+                return s + "]";
+            };
+            js << ", \"compound\": {\"name\": \"" << jsonEscape(io2.name) << "\", \"ins\": " << pins(io2.ins) << ", \"outs\": "
+               << pins(io2.outs) << ", \"sub\": " << n.sub->toJson() << "}";
+        }
+        js << "}";
         first = false;
     }
     js << "\n  ],\n  \"links\": [";
@@ -267,7 +304,18 @@ bool Graph::fromJson(const std::string& text, std::string* err) {
     Json j;
     if (!Json::parse(text, j) || j.type != Json::Object) { if (err) *err = "JSON invalide"; return false; }
     if (j["format"].str("wzx-graph") != "wzx-graph") { if (err) *err = "format inconnu"; return false; }
+    return fromJsonValue(j, io, err);
+}
+
+static PinType pinTypeFromName(const std::string& s) {
+    for (PinType t : {PinType::Exec, PinType::Float, PinType::Bool, PinType::Vec3, PinType::Object, PinType::String})
+        if (s == pinTypeName(t)) return t;
+    return PinType::Float;
+}
+
+bool Graph::fromJsonValue(const Json& j, std::shared_ptr<CompoundIO> ioIn, std::string* err) {
     Graph g;
+    g.io = ioIn;
     g.name = j["name"].str("main");
     for (const Json& jn : j["nodes"].a) {
         const NodeDef* d = findNodeDef(jn["type"].str());
@@ -277,10 +325,24 @@ bool Graph::fromJson(const std::string& text, std::string* err) {
         int nid = g.addNode(d->id, float2((float)jn["x"].num(), (float)jn["y"].num()));
         Node* n = g.node(nid);
         n->id = id > 0 ? id : nid;
-        for (auto& kv : jn["in"].o) {
-            int pi = d->findIn(kv.first);
-            if (pi >= 0) valueFromJson(kv.second, d->ins[pi].type, n->inputs[pi]);
+        if (jn["compound"].type == Json::Object) {   // compound: promoted pins, then its inner graph
+            const Json& jc = jn["compound"];
+            auto cio = std::make_shared<CompoundIO>();
+            cio->name = jc["name"].str("Compound");
+            for (const Json& p : jc["ins"].a) { cio->ins.push_back({p[0].str(), pinTypeFromName(p[1].str())}); cio->defaults.push_back(Value::None(cio->ins.back().type)); }
+            for (const Json& p : jc["outs"].a) cio->outs.push_back({p[0].str(), pinTypeFromName(p[1].str())});
+            auto sub = std::make_shared<Graph>();
+            if (!sub->fromJsonValue(jc["sub"], cio, err)) return false;
+            n->sub = sub;
         }
+        g.refreshDefs();
+        n = g.node(id > 0 ? id : nid);
+        for (auto& kv : jn["in"].o) {
+            int pi = n->def->findIn(kv.first);
+            if (pi >= 0 && !n->def->ins[pi].wildcard) valueFromJson(kv.second, n->def->ins[pi].type, n->inputs[pi]);
+        }
+        if (n->sub)   // the compound inputs keep their values as defaults
+            for (size_t k = 0; k < n->sub->io->defaults.size() && k < n->inputs.size(); ++k) n->sub->io->defaults[k] = n->inputs[k];
     }
     for (Node& n : g.nodes) g.nextId = std::max(g.nextId, n.id + 1);
     for (const Json& jl : j["links"].a) {
@@ -321,6 +383,134 @@ bool Graph::load(const std::wstring& path, std::string* err) {
     std::stringstream ss;
     ss << f.rdbuf();
     return fromJson(ss.str(), err);
+}
+
+// --------------------------------------------------------------------------- compounds
+
+void Graph::refreshDefs() {
+    for (Node& n : nodes) {
+        if (!n.def) n.def = findNodeDef(n.type);
+        std::shared_ptr<CompoundIO> cio;
+        if (n.type == "compound") {
+            if (!n.sub) { n.sub = std::make_shared<Graph>(); n.sub->io = std::make_shared<CompoundIO>(); }
+            cio = n.sub->io;
+            n.sub->refreshDefs();
+        } else if (n.type == "compound.input" || n.type == "compound.output") {
+            cio = io;
+        }
+        if (!cio) continue;
+        if (n.ownDef && n.defVersion == cio->version) { n.def = n.ownDef.get(); continue; }
+        auto d = std::make_shared<NodeDef>(*findNodeDef(n.type));
+        PinDef plus{"+", PinType::Float};
+        plus.wildcard = true;
+        if (n.type == "compound") {
+            d->label = cio->name;
+            d->ins = cio->ins;
+            d->outs = cio->outs;
+            d->defaults = cio->defaults;
+        } else if (n.type == "compound.input") {
+            d->outs = cio->ins;
+            d->outs.push_back(plus);
+        } else {
+            d->ins = cio->outs;
+            d->ins.push_back(plus);
+            d->defaults.clear();
+            for (const PinDef& p : d->ins) d->defaults.push_back(Value::None(p.type));
+        }
+        d->defaults.resize(d->ins.size());
+        // inline values: the existing ones are kept, the new pins take their default
+        size_t old = n.inputs.size();
+        n.inputs.resize(d->ins.size());
+        for (size_t i = 0; i < d->ins.size(); ++i) {
+            if (i >= old || n.inputs[i].type != d->ins[i].type) n.inputs[i] = d->defaults[i];
+            n.inputs[i].type = d->ins[i].type;
+        }
+        n.ownDef = d;
+        n.def = d.get();
+        n.defVersion = cio->version;
+    }
+}
+
+int Graph::addCompound(float2 pos, const std::string& name) {
+    int id = addNode("compound", pos);
+    if (!id) return 0;
+    Node* n = node(id);
+    n->sub = std::make_shared<Graph>();
+    n->sub->io = std::make_shared<CompoundIO>();
+    n->sub->io->name = name;
+    n->sub->name = name;
+    n->sub->addNode("compound.input", float2(-320, 0));
+    n->sub->addNode("compound.output", float2(320, 0));
+    refreshDefs();
+    return id;
+}
+
+std::shared_ptr<Graph> Graph::cloneSub(const Node& c) const {
+    if (!c.sub) return nullptr;
+    auto io2 = std::make_shared<CompoundIO>(*c.sub->io);
+    auto g = std::make_shared<Graph>();
+    Json j;
+    if (!Json::parse(c.sub->toJson(), j) || !g->fromJsonValue(j, io2, nullptr)) return nullptr;
+    return g;
+}
+
+int Graph::collapse(const std::vector<int>& ids, const std::string& name) {
+    std::set<int> inSet(ids.begin(), ids.end());
+    float x0 = 1e9f, y0 = 1e9f, x1 = -1e9f, cy = 0;
+    int count = 0;
+    for (int id : ids)
+        if (const Node* n = node(id)) {
+            x0 = std::min(x0, n->pos.x); x1 = std::max(x1, n->pos.x); y0 = std::min(y0, n->pos.y); cy += n->pos.y;
+            ++count;
+        }
+    if (!count) return 0;
+    cy /= count;
+    int cid = addCompound(float2((x0 + x1) * 0.5f, cy), name);
+    std::shared_ptr<Graph> sub = node(cid)->sub;
+    sub->nodes.clear();
+    sub->nextId = 1;
+    int inId = sub->addNode("compound.input", float2(x0 - 320, cy));
+    int outId = sub->addNode("compound.output", float2(x1 + 300, cy));
+    // the nodes move inside (same positions), with new ids
+    std::map<int, int> remap;
+    for (int id : ids)
+        if (const Node* n = node(id)) {
+            if (n->type == "compound.input" || n->type == "compound.output") continue;
+            Node c = *n;
+            c.id = sub->nextId++;
+            remap[id] = c.id;
+            sub->nodes.push_back(c);
+        }
+    sub->refreshDefs();
+    std::vector<Link> inner, incoming, outgoing;
+    for (const Link& l : links) {
+        bool a = inSet.count(l.fromNode) > 0, b = inSet.count(l.toNode) > 0;
+        if (a && b) inner.push_back(l);
+        else if (b) incoming.push_back(l);
+        else if (a) outgoing.push_back(l);
+    }
+    for (const Link& l : inner) sub->links.push_back({remap[l.fromNode], l.fromPin, remap[l.toNode], l.toPin});
+    // a link entering the selection promotes the inner input; one promoted output per inner output used outside
+    std::vector<std::pair<Link, int>> parentLinks;   // parent link (compound side filled in) and the promoted pin
+    for (const Link& l : incoming) {
+        int plus = (int)sub->io->ins.size();
+        if (sub->connect(inId, plus, remap[l.toNode], l.toPin)) parentLinks.push_back({{l.fromNode, l.fromPin, cid, (int)sub->io->ins.size() - 1}, 0});
+    }
+    std::map<std::pair<int, int>, int> promotedOut;
+    for (const Link& l : outgoing) {
+        auto key = std::make_pair(l.fromNode, l.fromPin);
+        if (!promotedOut.count(key)) {
+            int plus = (int)sub->io->outs.size();
+            if (!sub->connect(remap[l.fromNode], l.fromPin, outId, plus)) continue;
+            promotedOut[key] = (int)sub->io->outs.size() - 1;
+        }
+        parentLinks.push_back({{cid, promotedOut[key], l.toNode, l.toPin}, 0});
+    }
+    for (int id : ids) removeNode(id);
+    refreshDefs();
+    for (auto& pl : parentLinks) connect(pl.first.fromNode, pl.first.fromPin, pl.first.toNode, pl.first.toPin);
+    ++version;
+    return cid;
 }
 
 // --------------------------------------------------------------------------- validation
