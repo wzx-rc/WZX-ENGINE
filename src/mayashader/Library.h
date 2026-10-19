@@ -39,11 +39,12 @@ private:
     };
     struct SceneItem {
         std::string sg, shader, shaderType, wzx, graph;
-        int objects = 0;
+        int objects = 0, unknown = 0;
         ImTextureID thumb = 0;
     };
     void scan();
     bool saveCurrent(const std::string& name, const std::string& category, const std::string& tags);
+    bool saveGraph(const game::Graph& g, const std::string& name, const std::string& category, const std::string& tags);
     ImTextureID loadThumb(const std::wstring& png);
     ImTextureID graphThumb(const std::string& graphJson, int size);
     void pollScene();
@@ -56,6 +57,8 @@ private:
     std::vector<std::string> m_categories;
     int m_category = -1;   // -1 = all
     char m_search[96] = {}, m_rootBuf[512] = {}, m_sceneFilter[96] = {};
+    int m_sceneSel = -1;          // selected sample slot
+    float m_slotSize = 74;
     float m_cardSize = 120;
     char m_saveName[96] = {}, m_saveCat[96] = "Default", m_saveTags[160] = {};
     int m_tab = 0, m_forceTab = -1;

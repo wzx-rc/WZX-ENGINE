@@ -505,6 +505,13 @@ def scene_materials(out_path):
         members = cmds.sets(sg, q=True) or []
         out.append({'sg': sg, 'shader': shader, 'shaderType': cmds.nodeType(shader) if shader else '',
                     'objects': len(members), 'wzx': key, 'graph': graphs_by_key.get(key) if key else None})
+        if not key and shader:   # a Maya material: its graph read through the equivalences, for the sample ball
+            try:
+                nodes, links, unknown = graph_from_material(sg)
+                out[-1]['graph'] = json.dumps({'format': 'wzx-graph', 'version': 1, 'name': shader, 'nodes': nodes, 'links': links, 'groups': []})
+                out[-1]['unknown'] = len(unknown)
+            except Exception:
+                pass
     with open(out_path, 'w', encoding='utf-8') as f:
         json.dump(out, f)
     return 'scene: %d material(s)' % len(out)
@@ -523,8 +530,8 @@ def assign_sg(sg):
     return 'assigned %s to %d object(s)' % (sg, len(sel))
 
 
-def import_material(sg, out_path=None):
-    """Maya material -> WZX graph, with the rules read backwards. The Maya nodes without a rule are listed (never
+def graph_from_material(sg):
+    """Maya material -> WZX graph data (nodes, links, unknown nodes), with the rules read backwards. The Maya nodes without a rule are listed (never
     converted silently). The new graph builds its own copy of the network; the original material is left as it is."""
     sp = specs()
     rev = {}
@@ -602,6 +609,12 @@ def import_material(sg, out_path=None):
         for i, nid in enumerate(col):
             nodes[nid - 1]['x'] = 900 - d * 320
             nodes[nid - 1]['y'] = i * 340 - (len(col) - 1) * 170
+    return nodes, links, unknown
+
+
+def import_material(sg, out_path=None):
+    """Maya material -> new WZX graph (its own copy of the network; the original material is left as it is)."""
+    nodes, links, unknown = graph_from_material(sg)
     shader = (cmds.listConnections(sg + '.surfaceShader', s=True, d=False) or [sg])[0]
     have = graphs()
     base = _clean(shader) + '_wzx'

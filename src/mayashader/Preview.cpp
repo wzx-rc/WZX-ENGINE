@@ -368,7 +368,14 @@ bool renderThumb(const Graph& flat, int node, int pin, const game::Value* consta
             float3 diff = base * ((1 - s.metal) * (1 - s.trans) * (0.16f + 0.84f * ndl));
             float3 f0 = lerp3(float3(0.04f * s.spec), base, s.metal);
             float spec = std::pow(ndh, std::min(p, 4000.0f)) * (std::min(p, 4000.0f) + 2) / 8.0f * ndl;
-            float3 c = diff + f0 * spec * 0.6f + float3(0.18f) * fres * (s.spec * (1 - rough)) + s.emisColor * s.emis;
+            // simple studio environment reflected (grey sky over a dark floor): metals and gloss read as in the swatches
+            float3 R = N * (2 * N.z) - V;
+            float sky = sat(0.5f + 0.5f * R.y);
+            float3 env = lerp3(float3(0.04f), float3(0.9f), std::pow(sky, 1.5f)) + float3(0.6f) * std::pow(std::max(0.0f, R.y), 8.0f * (1 - rough) + 1);
+            float3 envSpec = lerp3(env, float3(0.35f), std::min(1.0f, rough * 1.2f));   // rough: blurred to the average
+            float3 refl = float3(envSpec.x * (f0.x + (1 - f0.x) * fres * (1 - s.metal)), envSpec.y * (f0.y + (1 - f0.y) * fres * (1 - s.metal)),
+                                 envSpec.z * (f0.z + (1 - f0.z) * fres * (1 - s.metal)));
+            float3 c = diff + f0 * spec * 0.6f + refl * (s.metal > 0 ? 1.0f : s.spec) + s.emisColor * s.emis;
             c = c + float3(0.9f) * (s.coat * std::pow(ndh, 600.0f) * 3.0f);
             put(x, y, c);
         }

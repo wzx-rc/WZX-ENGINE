@@ -193,11 +193,14 @@ void Library::scan() {
 }
 
 bool Library::saveCurrent(const std::string& name, const std::string& category, const std::string& tags) {
+    return saveGraph(m_host.graph(), name, category, tags);
+}
+
+bool Library::saveGraph(const game::Graph& g, const std::string& name, const std::string& category, const std::string& tags) {
     std::error_code ec;
     fs::path dir = fs::path(m_root) / wide(safeName(category)) / wide(safeName(name));
     fs::create_directories(dir, ec);
     if (ec) { m_status = "Cannot create " + utf8(dir.wstring()); return false; }
-    const game::Graph& g = m_host.graph();
     {
         std::ofstream f(dir / "material.graph.json", std::ios::binary);
         if (!f) { m_status = "Cannot write the graph"; return false; }
@@ -239,6 +242,7 @@ void Library::pollScene() {
                 s.wzx = m["wzx"].str();
                 s.graph = m["graph"].str();
                 s.objects = (int)m["objects"].num();
+                s.unknown = (int)m["unknown"].num();
                 if (!s.graph.empty()) s.thumb = graphThumb(s.graph, 96);
                 m_scene.push_back(s);
             }
@@ -411,13 +415,15 @@ void Library::drawLibraryWindow(bool* open, float dpi) {
 }
 
 // ------------------------------------------------------------------------------------------------ scene shaders window
+// 3ds Max Compact Material Editor style: a grid of sample slots (material balls), an icon toolbar under it, then the name
+// and type of the selected material.
 
 void Library::drawSceneWindow(bool* open, float dpi) {
     pollScene();
     ImGuiViewport* vp = ImGui::GetMainViewport();
-    ImGui::SetNextWindowSize(ImVec2(380 * dpi, 420 * dpi), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowPos(ImVec2(vp->WorkPos.x + vp->WorkSize.x - 400 * dpi, vp->WorkPos.y + 70 * dpi), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSizeConstraints(ImVec2(300 * dpi, 200 * dpi), ImVec2(FLT_MAX, FLT_MAX));
+    ImGui::SetNextWindowSize(ImVec2(6 * 80 * dpi + 28 * dpi, 470 * dpi), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowPos(ImVec2(vp->WorkPos.x + vp->WorkSize.x - 540 * dpi, vp->WorkPos.y + 70 * dpi), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSizeConstraints(ImVec2(260 * dpi, 300 * dpi), ImVec2(FLT_MAX, FLT_MAX));
     if (!ImGui::Begin("\xEE\xA0\x9E  Scene Shaders###scenewin", open, ImGuiWindowFlags_NoCollapse)) { ImGui::End(); return; }
     ImGui::BringWindowToDisplayFront(ImGui::GetCurrentWindow());
     const bool connected = m_host.mayaConnected();
@@ -426,93 +432,124 @@ void Library::drawSceneWindow(bool* open, float dpi) {
         m_scenePending = m_host.send("import wzx_shader_bridge as _w; _w.scene_materials(" + pyStr(utf8(m_scenePath)) + ")");
     };
     if (!m_sceneAsked && connected) { m_sceneAsked = true; refresh(); }
-
-    // toolbar: refresh, filter, count
-    ImGui::BeginDisabled(!connected);
-    if (iconButton("refresh", 0xE72C, "Refresh the list from Maya", dpi)) refresh();
-    ImGui::EndDisabled();
-    ImGui::SameLine();
-    ImGui::SetNextItemWidth(-60 * dpi);
-    ImGui::InputTextWithHint("##scenefilter", "\xEE\x9C\xA1  Filter", m_sceneFilter, sizeof m_sceneFilter);
-    ImGui::SameLine();
-    ImGui::TextDisabled("%d", (int)m_scene.size());
-    std::string q = m_sceneFilter;
-    for (char& c : q) c = (char)tolower((unsigned char)c);
-
     const std::string current = m_host.currentKey();
-    ImGui::BeginChild("##scenelist", ImVec2(0, -ImGui::GetTextLineHeightWithSpacing() - 4 * dpi), ImGuiChildFlags_Borders);
-    const float rowH = 34 * dpi, th = 26 * dpi;
-    for (size_t i = 0; i < m_scene.size(); ++i) {
+    if (m_sceneSel >= (int)m_scene.size()) m_sceneSel = -1;
+    if (m_sceneSel < 0)   // the graph being edited is selected by default
+        for (int i = 0; i < (int)m_scene.size(); ++i)
+            if (!m_scene[i].wzx.empty() && m_scene[i].wzx == current) m_sceneSel = i;
+
+    auto openOrConvert = [&](const SceneItem& s) {
+        if (!s.wzx.empty()) m_host.send("import wzx_shader_panel as _p; _p.open_graph(" + pyStr(s.wzx) + ")");
+        else if (!s.shader.empty()) {
+            m_importTime = fileTime(m_importPath);
+            m_importPending = m_host.send("import wzx_shader_bridge as _w; _w.import_material(" + pyStr(s.sg) + ", " + pyStr(utf8(m_importPath)) + ")");
+            m_status = "Converting " + s.shader + "...";
+        }
+    };
+
+    // sample slots
+    const float footer = 26 * dpi + 2 * ImGui::GetFrameHeightWithSpacing() + 10 * dpi;
+    ImGui::BeginChild("##slots", ImVec2(0, -footer), ImGuiChildFlags_Borders);
+    const float slot = m_slotSize * dpi, gap = 4 * dpi;
+    int perRow = std::max(1, (int)((ImGui::GetContentRegionAvail().x + gap) / (slot + gap)));
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    for (int i = 0; i < (int)m_scene.size(); ++i) {
         const SceneItem& s = m_scene[i];
-        std::string hay = s.sg + " " + s.shader + " " + s.shaderType;
-        for (char& c : hay) c = (char)tolower((unsigned char)c);
-        if (!q.empty() && hay.find(q) == std::string::npos) continue;
-        ImGui::PushID((int)i);
-        ImVec2 p = ImGui::GetCursorScreenPos();
-        const float w = ImGui::GetContentRegionAvail().x;
-        ImDrawList* dl = ImGui::GetWindowDrawList();
-        const bool isCurrent = !s.wzx.empty() && s.wzx == current;
-        const bool hov = ImGui::IsMouseHoveringRect(p, ImVec2(p.x + w, p.y + rowH));
-        if (isCurrent || hov) dl->AddRectFilled(p, ImVec2(p.x + w, p.y + rowH), isCurrent ? app::th::select() : app::th::hover(), 4 * dpi);
-        if (isCurrent) dl->AddRectFilled(p, ImVec2(p.x + 3 * dpi, p.y + rowH), app::th::accent(), 2 * dpi);
-        // icon: the material ball of a WZX graph, else a dot with the shader initial
-        ImVec2 c(p.x + 8 * dpi + th * 0.5f, p.y + rowH * 0.5f);
-        if (s.thumb) dl->AddImageRounded(s.thumb, ImVec2(c.x - th * 0.5f, c.y - th * 0.5f), ImVec2(c.x + th * 0.5f, c.y + th * 0.5f), ImVec2(0, 0), ImVec2(1, 1),
-                                         IM_COL32_WHITE, th * 0.5f);
-        else {
-            dl->AddCircleFilled(c, th * 0.42f, app::th::field());
-            char ini[2] = {s.shaderType.empty() ? '?' : (char)toupper((unsigned char)s.shaderType[0]), 0};
-            if (s.shaderType.rfind("ai", 0) == 0 && s.shaderType.size() > 2) ini[0] = (char)toupper((unsigned char)s.shaderType[2]);
-            ImVec2 ts = ImGui::CalcTextSize(ini);
-            dl->AddText(ImVec2(c.x - ts.x * 0.5f, c.y - ts.y * 0.5f), app::th::dim(), ini);
+        if (i % perRow) ImGui::SameLine(0, gap);
+        ImGui::PushID(i);
+        ImVec2 p = ImGui::GetCursorScreenPos(), q(p.x + slot, p.y + slot);
+        ImGui::InvisibleButton("##slot", ImVec2(slot, slot));
+        const bool hov = ImGui::IsItemHovered(), sel = i == m_sceneSel;
+        if (ImGui::IsItemClicked()) m_sceneSel = i;
+        if (hov && ImGui::IsMouseDoubleClicked(0) && connected) openOrConvert(s);
+        // sample background (grey checker, as the Max slots), then the ball
+        dl->AddRectFilled(p, q, IM_COL32(52, 52, 54, 255));
+        const float c = slot / 6;
+        for (int y = 0; y < 6; ++y)
+            for (int x = 0; x < 6; ++x)
+                if ((x + y) & 1) dl->AddRectFilled(ImVec2(p.x + x * c, p.y + y * c), ImVec2(p.x + (x + 1) * c, p.y + (y + 1) * c), IM_COL32(64, 64, 66, 255));
+        if (s.thumb) dl->AddImage(s.thumb, p, q);
+        else {   // no preview (no rule for this shader): a flat grey ball with the shader type
+            dl->AddCircleFilled(ImVec2(p.x + slot * 0.5f, p.y + slot * 0.5f), slot * 0.36f, IM_COL32(95, 95, 98, 255), 32);
+            dl->AddCircleFilled(ImVec2(p.x + slot * 0.43f, p.y + slot * 0.43f), slot * 0.18f, IM_COL32(120, 120, 124, 255), 24);
         }
-        // name, type and objects
-        float tx = p.x + th + 16 * dpi;
-        const float btnW = 3 * 26 * dpi + 2 * ImGui::GetStyle().ItemSpacing.x;
-        dl->PushClipRect(ImVec2(tx, p.y), ImVec2(p.x + w - btnW - 6 * dpi, p.y + rowH), true);
-        std::string name = s.shader.empty() ? s.sg : s.shader;
-        dl->AddText(ImVec2(tx, p.y + 3 * dpi), app::th::text(), name.c_str());
-        std::string sub = s.shaderType + "  \xC2\xB7  " + std::to_string(s.objects) + " obj";
-        float subX = tx;
-        if (!s.wzx.empty()) {   // WZX badge
-            ImVec2 bs = ImGui::CalcTextSize("WZX");
-            float f = 0.8f;
-            dl->AddRectFilled(ImVec2(tx, p.y + 18 * dpi), ImVec2(tx + bs.x * f + 8 * dpi, p.y + 18 * dpi + bs.y * f + 2 * dpi), app::th::accent(0.85f), 3 * dpi);
-            dl->AddText(ImGui::GetFont(), ImGui::GetFontSize() * f, ImVec2(tx + 4 * dpi, p.y + 19 * dpi), app::th::bg0(), "WZX");
-            subX += bs.x * f + 14 * dpi;
+        // assigned in the scene: white corner marks (Max "hot" material)
+        if (s.objects > 0) {
+            const float t = slot * 0.16f;
+            ImU32 w = IM_COL32(235, 235, 235, 255);
+            dl->AddTriangleFilled(p, ImVec2(p.x + t, p.y), ImVec2(p.x, p.y + t), w);
+            dl->AddTriangleFilled(ImVec2(q.x, p.y), ImVec2(q.x - t, p.y), ImVec2(q.x, p.y + t), w);
+            dl->AddTriangleFilled(ImVec2(p.x, q.y), ImVec2(p.x + t, q.y), ImVec2(p.x, q.y - t), w);
+            dl->AddTriangleFilled(q, ImVec2(q.x - t, q.y), ImVec2(q.x, q.y - t), w);
         }
-        dl->AddText(ImGui::GetFont(), ImGui::GetFontSize() * 0.85f, ImVec2(subX, p.y + 18 * dpi), app::th::dim(), sub.c_str());
-        dl->PopClipRect();
-        // actions: open / convert, select objects, assign
-        ImGui::SetCursorScreenPos(ImVec2(p.x + w - btnW - 2 * dpi, p.y + (rowH - 24 * dpi) * 0.5f));
-        ImGui::BeginDisabled(!connected);
-        if (!s.wzx.empty()) {
-            ImGui::BeginDisabled(isCurrent);
-            if (iconButton("open", 0xE8A7, isCurrent ? "Open in the graph (already open)" : "Open in the graph", dpi))
-                m_host.send("import wzx_shader_panel as _p; _p.open_graph(" + pyStr(s.wzx) + ")");
-            ImGui::EndDisabled();
-        } else {
-            ImGui::BeginDisabled(s.shader.empty());
-            if (iconButton("convert", 0xE8AB, "Convert to a WZX graph (with the equivalences; the original stays as it is)", dpi)) {
-                m_importTime = fileTime(m_importPath);
-                m_importPending = m_host.send("import wzx_shader_bridge as _w; _w.import_material(" + pyStr(s.sg) + ", " + pyStr(utf8(m_importPath)) + ")");
-                m_status = "Converting " + name + "...";
-            }
-            ImGui::EndDisabled();
+        if (!s.wzx.empty()) {   // WZX graph tag
+            ImVec2 ts = ImGui::CalcTextSize("WZX");
+            float f = 0.7f;
+            ImVec2 a(p.x + 3 * dpi, q.y - ts.y * f - 5 * dpi);
+            dl->AddRectFilled(a, ImVec2(a.x + ts.x * f + 6 * dpi, q.y - 3 * dpi), app::th::accent(0.9f), 2 * dpi);
+            dl->AddText(ImGui::GetFont(), ImGui::GetFontSize() * f, ImVec2(a.x + 3 * dpi, a.y + 1 * dpi), IM_COL32(20, 20, 20, 255), "WZX");
         }
-        ImGui::SameLine();
-        if (iconButton("select", 0xE8B3, "Select the objects using it", dpi)) m_host.send("import wzx_shader_bridge as _w; _w.select_members(" + pyStr(s.sg) + ")");
-        ImGui::SameLine();
-        if (iconButton("assign", 0xE73E, "Assign to the selected objects", dpi)) m_host.send("import wzx_shader_bridge as _w; _w.assign_sg(" + pyStr(s.sg) + ")");
-        ImGui::EndDisabled();
-        if (hov && !ImGui::IsAnyItemHovered()) ImGui::SetTooltip("%s\nshading group: %s", name.c_str(), s.sg.c_str());
-        ImGui::SetCursorScreenPos(ImVec2(p.x, p.y + rowH + 2 * dpi));
-        ImGui::Dummy(ImVec2(1, 0));
+        if (sel) dl->AddRect(ImVec2(p.x - 1, p.y - 1), ImVec2(q.x + 1, q.y + 1), IM_COL32(255, 255, 255, 255), 0, 0, 2.0f * dpi);
+        else if (hov) dl->AddRect(p, q, app::th::accent(), 0, 0, 1.0f * dpi);
+        if (hov) ImGui::SetTooltip("%s\n%s  -  %d object(s)%s", s.shader.empty() ? s.sg.c_str() : s.shader.c_str(), s.shaderType.c_str(), s.objects,
+                                   s.wzx.empty() ? "\nDouble click: convert to a WZX graph" : "\nDouble click: open the graph");
         ImGui::PopID();
     }
-    if (m_scene.empty()) ImGui::TextDisabled(connected ? (m_scenePending ? "Asking Maya..." : "No material listed (refresh)") : "Maya not connected");
+    if (m_scene.empty()) ImGui::TextDisabled(connected ? (m_scenePending ? "Asking Maya..." : "No material (refresh)") : "Maya not connected");
     ImGui::EndChild();
-    ImGui::TextDisabled("%s", m_status.empty() ? (connected ? "Maya scene" : "Maya not connected") : m_status.c_str());
+
+    // toolbar under the slots
+    const SceneItem* s = m_sceneSel >= 0 ? &m_scene[m_sceneSel] : nullptr;
+    ImGui::BeginDisabled(!connected);
+    if (iconButton("refresh", 0xE72C, "Refresh from the Maya scene", dpi)) refresh();
+    ImGui::SameLine();
+    ImGui::BeginDisabled(!s || (s->wzx.empty() && s->shader.empty()) || (s && !s->wzx.empty() && s->wzx == current));
+    if (iconButton("open", s && s->wzx.empty() ? 0xE8AB : 0xE8A7, s && s->wzx.empty() ? "Convert to a WZX graph (the original stays as it is)" : "Open in the graph", dpi))
+        openOrConvert(*s);
+    ImGui::EndDisabled();
+    ImGui::BeginDisabled(!s);
+    ImGui::SameLine();
+    if (iconButton("assign", 0xE73E, "Assign to the selected objects", dpi)) m_host.send("import wzx_shader_bridge as _w; _w.assign_sg(" + pyStr(s->sg) + ")");
+    ImGui::SameLine();
+    if (iconButton("select", 0xE8B3, "Select the objects using it", dpi)) m_host.send("import wzx_shader_bridge as _w; _w.select_members(" + pyStr(s->sg) + ")");
+    ImGui::SameLine();
+    if (iconButton("hypershade", 0xE8A1, "Show in Hypershade", dpi))
+        m_host.send("import maya.cmds as _c, maya.mel as _m; _c.select(" + pyStr(s->sg) + ", r=True, ne=True); _m.eval('HypershadeWindow;')");
+    ImGui::EndDisabled();
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    ImGui::BeginDisabled(!s || s->graph.empty());
+    if (iconButton("tolib", 0xE74E, "Put to the Shader Library (category Scene)", dpi)) {
+        game::Graph g;
+        if (g.fromJson(s->graph)) {
+            g.refreshDefs();
+            std::string nm = s->shader.empty() ? s->sg : s->shader;
+            g.name = nm;
+            saveGraph(g, nm, "Scene", s->shaderType);
+        }
+    }
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + std::max(0.0f, ImGui::GetContentRegionAvail().x - 90 * dpi));
+    ImGui::SetNextItemWidth(90 * dpi);
+    ImGui::SliderFloat("##slot", &m_slotSize, 48, 140, "%.0f px");
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Sample slot size");
+
+    // name and type of the selected material (as the Max name field and type button)
+    std::string name = s ? (s->shader.empty() ? s->sg : s->shader) : std::string();
+    char nb[128] = {};
+    strncpy_s(nb, name.c_str(), _TRUNCATE);
+    ImGui::SetNextItemWidth(-150 * dpi);
+    ImGui::InputTextWithHint("##matname", "no material selected", nb, sizeof nb, ImGuiInputTextFlags_ReadOnly);
+    ImGui::SameLine();
+    ImGui::PushStyleColor(ImGuiCol_Button, s && !s->wzx.empty() ? app::th::selectV() : ImGui::GetStyleColorVec4(ImGuiCol_Button));
+    ImGui::Button(s ? (s->wzx.empty() ? s->shaderType.c_str() : "WZX graph") : "-", ImVec2(-FLT_MIN, 0));
+    ImGui::PopStyleColor();
+    if (s) {
+        std::string info = std::to_string(s->objects) + " object(s)  \xC2\xB7  " + s->sg;
+        if (s->wzx.empty() && s->unknown) info += "  \xC2\xB7  " + std::to_string(s->unknown) + " node(s) without rule";
+        ImGui::TextDisabled("%s", info.c_str());
+    } else ImGui::TextDisabled("%s", m_status.empty() ? (connected ? "Click a sample slot" : "Maya not connected") : m_status.c_str());
     ImGui::End();
 }
 
