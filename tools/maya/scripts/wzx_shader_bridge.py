@@ -12,7 +12,12 @@ import re
 import maya.cmds as cmds
 import maya.mel as mel
 
-# graph node type -> Maya node type, creation flag, pins -> attributes
+# The equivalences (graph node -> Maya node, pins -> attributes, value transforms) live in mappings/equivalences.json,
+# edited in the Equivalences dashboard of WzxShaderGraph.exe. NODES below is only the fallback when the file is missing.
+MAPPING_FILE = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'mappings', 'equivalences.json'))
+_mapping_cache = {'mtime': None, 'specs': None, 'doc': None}
+
+# graph node type -> Maya node type, creation flag, pins -> attributes (fallback)
 NODES = {
     'shader.standardSurface': dict(
         type='aiStandardSurface', cls='shader', outs={'Shader': 'outColor'},
@@ -50,6 +55,74 @@ NODES = {
 }
 
 TAG_GRAPH, TAG_ID, TAG_TYPE = 'wzxGraph', 'wzxNode', 'wzxType'
+
+
+def _entry(e):
+    """A pin rule as a dict: attr (or attrs), link_only, vector, value_map, scale, offset, invert01, clamp, power."""
+    return {'attr': e} if isinstance(e, str) else dict(e)
+
+
+def specs():
+    """Maya rules of every graph node type, read from the equivalences file (reloaded when it changes)."""
+    try:
+        mt = os.path.getmtime(MAPPING_FILE)
+    except OSError:
+        mt = None
+    if mt is not None and mt != _mapping_cache['mtime']:
+        try:
+            with open(MAPPING_FILE, 'r', encoding='utf-8') as f:
+                doc = json.load(f)
+            out = {}
+            for t, targets in doc.get('nodes', {}).items():
+                m = targets.get('maya')
+                if not m or not m.get('type'):
+                    continue
+                out[t] = dict(type=m['type'], cls=m.get('class', 'utility'), ins={p: _entry(e) for p, e in m.get('ins', {}).items()},
+                              outs=dict(m.get('outs', {})), fixed=dict(m.get('fixed', {})))
+            _mapping_cache.update(mtime=mt, specs=out, doc=doc)
+        except (OSError, ValueError) as e:
+            cmds.warning('WZX shader graph: equivalences file unreadable (%s), built-in table used' % e)
+    if _mapping_cache['specs'] is None:
+        _mapping_cache['specs'] = {t: dict(type=s['type'], cls=s['cls'], outs=dict(s['outs']), fixed={},
+                                           ins={p: dict(attr=a, link_only=p in s.get('link_only', ())) for p, a in s['ins'].items()})
+                                   for t, s in NODES.items()}
+    return _mapping_cache['specs']
+
+
+def _transform(v, e, inverse=False):
+    """Value rules of a pin (ChatIt style): scale, offset, invert01, clamp, power, value_map."""
+    if isinstance(v, (list, tuple)):
+        return [_transform(x, e, inverse) for x in v]
+    vm = e.get('value_map')
+    if vm:
+        if inverse:
+            for k, mv in vm.items():
+                if mv == v:
+                    return k == 'true' if k in ('true', 'false') else k
+            return v
+        k = ('true' if v else 'false') if isinstance(v, bool) else str(v)
+        return vm.get(k, v)
+    if isinstance(v, bool) or not isinstance(v, (int, float)):
+        return v
+    sc, of = float(e.get('scale', 1.0)), float(e.get('offset', 0.0))
+    if inverse:
+        return (v - of) / sc if sc else v
+    v = v * sc + of
+    if e.get('invert01'):
+        v = 1.0 - v
+    if 'clamp' in e:
+        v = min(max(v, e['clamp'][0]), e['clamp'][1])
+    if 'power' in e:
+        v = abs(v) ** float(e['power'])
+    return v
+
+
+def _resolve(node, attr):
+    """'place2d.repeatU' is an attribute of the place2dTexture driving the texture."""
+    if attr.startswith('place2d.'):
+        p = _place2d(node)
+        return p + '.' + attr[8:] if p else None
+    return node + '.' + attr
 
 
 def graph_key(path):
@@ -194,7 +267,7 @@ def _src_plug(src, nodes, have):
     """Maya plug of a graph output (node id, pin name); a channel pin ('Color.R') is a child of the colour plug."""
     if not src or src[0] not in have or src[0] not in nodes:
         return None
-    outs = NODES.get(nodes[src[0]]['type'], {}).get('outs', {})
+    outs = specs().get(nodes[src[0]]['type'], {}).get('outs', {})
     node = have[src[0]]
     if src[1] in outs:
         return node + '.' + outs[src[1]]
@@ -214,6 +287,7 @@ def sync(data, key, editor_data=None):
     links = {}
     for l in data.get('links', []):
         links[(l['to'][0], l['to'][1])] = (l['from'][0], l['from'][1])
+    rules = specs()
     undo = cmds.undoInfo(q=True, state=True)
     cmds.undoInfo(stateWithoutFlush=False)
     errors = []
@@ -231,12 +305,12 @@ def sync(data, key, editor_data=None):
             if nid == 0:
                 continue
             n = nodes.get(nid)
-            if not n or n['type'] not in NODES or cmds.getAttr(node + '.' + TAG_TYPE) != n['type']:
+            if not n or n['type'] not in rules or cmds.getAttr(node + '.' + TAG_TYPE) != n['type']:
                 _delete(node)
                 del have[nid]
         # create / rename
         for nid, n in nodes.items():
-            spec = NODES.get(n['type'])
+            spec = rules.get(n['type'])
             if not spec:
                 continue
             want = name + 'SG' if spec['cls'] == 'sg' else '%s_%s_%d' % (name, _clean(spec['type']), nid)
@@ -251,32 +325,31 @@ def sync(data, key, editor_data=None):
             cmds.rename(holder, name + '_wzxGraph')
         # values and connections
         for nid, n in nodes.items():
-            spec = NODES.get(n['type'])
+            spec = rules.get(n['type'])
             node = have.get(nid)
             if not spec or not node:
                 continue
             try:
                 values = n.get('in', {})
-                if n['type'] == 'tex.ramp':
-                    cmds.setAttr(node + '.type', 1 if values.get('U Direction') else 0)
+                if spec['type'] == 'ramp':   # two entries: Color A and Color B
                     for i in cmds.getAttr(node + '.colorEntryList', multiIndices=True) or []:
-                        if i > 1:   # two entries: Color A and Color B
+                        if i > 1:
                             cmds.removeMultiInstance('%s.colorEntryList[%d]' % (node, i), b=True)
-                if n['type'] == 'util.multiply':
-                    cmds.setAttr(node + '.operation', 1)
-                if n['type'] == 'tex.noise' and 'Scale' in values:
-                    _set_value(node + '.scale', [values['Scale']] * 3)
-                if 'Repeat' in values:
-                    if n['type'] == 'tex.image':
-                        _set_value(node + '.sscale', values['Repeat'])
-                        _set_value(node + '.tscale', values['Repeat'])
-                    else:
-                        p = _place2d(node)
-                        if p:
-                            _set_value(p + '.repeatU', values['Repeat'])
-                            _set_value(p + '.repeatV', values['Repeat'])
-                for pin, attr in spec['ins'].items():
-                    plug = node + '.' + attr
+                for a, v in spec.get('fixed', {}).items():   # constant attributes of the rule (e.g. multiplyDivide operation)
+                    _set_value(node + '.' + a, v)
+                for pin, e in spec['ins'].items():
+                    if 'attrs' in e:   # value copied to several attributes (repeat U and V...), never connected
+                        if pin in values:
+                            for a in e['attrs']:
+                                p = _resolve(node, a)
+                                if p:
+                                    _set_value(p, _transform(values[pin], e))
+                        continue
+                    if not e.get('attr'):
+                        continue
+                    plug = _resolve(node, e['attr'])
+                    if not plug:
+                        continue
                     want = []
                     sp = _src_plug(links.get((nid, pin)), nodes, have)
                     if sp:
@@ -297,13 +370,16 @@ def sync(data, key, editor_data=None):
                             cmds.disconnectAttr(s, d)
                         for s, d in want:
                             cmds.connectAttr(s, d, force=True)
-                    if pin in values and pin not in spec.get('link_only', ()):
+                    if pin in values and not e.get('link_only'):
+                        v = _transform(values[pin], e)
+                        if e.get('vector') and not isinstance(v, list):
+                            v = [v] * 3
                         if not want:
-                            _set_value(plug, values[pin])
-                        elif linked and isinstance(values[pin], list):   # the channels left free keep the colour's value
+                            _set_value(plug, v)
+                        elif linked and isinstance(v, list):   # the channels left free keep the colour's value
                             for k, kid in enumerate(kids):
                                 if k not in linked:
-                                    _set_value(kid, values[pin][k])
+                                    _set_value(kid, v[k])
             except Exception as e:   # one bad node must not stop the others
                 errors.append('%s: %s' % (node, e))
     finally:
@@ -366,3 +442,177 @@ def graphs():
         if cmds.attributeQuery(TAG_GRAPH, node=node, exists=True):
             out[cmds.getAttr(node + '.' + TAG_GRAPH)] = cmds.getAttr(plug)
     return out
+
+
+# ------------------------------------------------------------------------------------------------ equivalences check
+
+def check_mappings(out_path, mapping_path=None):
+    """Creates each Maya node of the rules once and checks that every mapped attribute exists. Writes a JSON report
+    {graph type: {type_ok, ins: {pin: ok}, outs: {pin: ok}}} for the Equivalences dashboard."""
+    global MAPPING_FILE
+    if mapping_path:
+        MAPPING_FILE = mapping_path
+    _mapping_cache['mtime'] = None
+    _plugins()
+    report = {}
+    undo = cmds.undoInfo(q=True, state=True)
+    cmds.undoInfo(stateWithoutFlush=False)
+    made = []
+    try:
+        for t, s in specs().items():
+            r = {'type_ok': False, 'ins': {}, 'outs': {}}
+            report[t] = r
+            try:
+                node = _create(s, 'wzxCheck_' + _clean(s['type']))
+            except Exception:
+                continue
+            made.append(node)
+            r['type_ok'] = True
+
+            def ok(attr, node=node):
+                p = _resolve(node, attr)
+                return bool(p) and cmds.objExists(p)
+            for pin, e in s['ins'].items():
+                attrs = e.get('attrs') or ([e['attr']] if e.get('attr') else [])
+                r['ins'][pin] = bool(attrs) and all(ok(a) for a in attrs)
+            for pin, a in s['outs'].items():
+                r['outs'][pin] = ok(a)
+    finally:
+        for n in made:
+            _delete(n)
+        cmds.undoInfo(stateWithoutFlush=undo)
+    with open(out_path, 'w', encoding='utf-8') as f:
+        json.dump(report, f)
+    bad = sum(1 for r in report.values() for d in (r['ins'], r['outs']) for v in d.values() if not v)
+    return 'checked %d nodes, %d attribute(s) not found' % (len(report), bad)
+
+
+# ------------------------------------------------------------------------------------------------ scene library
+
+def scene_materials(out_path):
+    """Materials of the scene for the Scene library: shading group, surface shader, type, objects, WZX graph (if any)."""
+    graphs_by_key = graphs()
+    out = []
+    for sg in cmds.ls(type='shadingEngine') or []:
+        if sg == 'initialParticleSE':
+            continue
+        shader = (cmds.listConnections(sg + '.surfaceShader', s=True, d=False) or [None])[0]
+        key = cmds.getAttr(sg + '.' + TAG_GRAPH) if cmds.attributeQuery(TAG_GRAPH, node=sg, exists=True) else None
+        members = cmds.sets(sg, q=True) or []
+        out.append({'sg': sg, 'shader': shader, 'shaderType': cmds.nodeType(shader) if shader else '',
+                    'objects': len(members), 'wzx': key, 'graph': graphs_by_key.get(key) if key else None})
+    with open(out_path, 'w', encoding='utf-8') as f:
+        json.dump(out, f)
+    return 'scene: %d material(s)' % len(out)
+
+
+def select_members(sg):
+    cmds.select(cmds.sets(sg, q=True) or [], r=True)
+    return 'selected objects of %s' % sg
+
+
+def assign_sg(sg):
+    sel = cmds.ls(sl=True, dag=True, shapes=True, noIntermediate=True) or cmds.ls(sl=True)
+    if not sel:
+        return 'select objects first'
+    cmds.sets(sel, e=True, forceElement=sg)
+    return 'assigned %s to %d object(s)' % (sg, len(sel))
+
+
+def import_material(sg, out_path=None):
+    """Maya material -> WZX graph, with the rules read backwards. The Maya nodes without a rule are listed (never
+    converted silently). The new graph builds its own copy of the network; the original material is left as it is."""
+    sp = specs()
+    rev = {}
+    for t, s in sp.items():
+        rev.setdefault(s['type'], (t, s))
+    ids, nodes, links, unknown, depth = {}, [], [], [], {}
+
+    def letters(pin):
+        return 'XYZ' if pin == 'Normal' else 'RGB'
+
+    def out_pin(s, plug):
+        """Graph output pin of a Maya plug: the output itself or one of its channels (Color.R)."""
+        node, attr = plug.split('.', 1)
+        for pin, a in s['outs'].items():
+            if a == attr:
+                return pin
+            whole = node + '.' + a
+            for k, kid in enumerate(_children(whole) if _is_compound3(whole) else []):
+                if kid.split('.', 1)[1] == attr:
+                    return pin + '.' + letters(pin)[k]
+        return None
+
+    def visit(mnode, d):
+        if mnode in ids:
+            depth[mnode] = max(depth[mnode], d)
+            return ids[mnode]
+        mtype = cmds.nodeType(mnode)
+        if mtype not in rev:
+            if mtype != 'place2dTexture' and not any(u['node'] == mnode for u in unknown):
+                unknown.append({'node': mnode, 'type': mtype})
+            return None
+        t, s = rev[mtype]
+        nid = len(ids) + 1
+        ids[mnode] = nid
+        depth[mnode] = d
+        entry = {'id': nid, 'type': t, 'x': 0, 'y': 0, 'in': {}}
+        nodes.append(entry)
+        for pin, e in s['ins'].items():
+            attrs = e.get('attrs') or ([e['attr']] if e.get('attr') else [])
+            if not attrs:
+                continue
+            plug = _resolve(mnode, attrs[0])
+            if not plug or not cmds.objExists(plug):
+                continue
+            if 'attrs' not in e:
+                kids = _children(plug)[:3] if _is_compound3(plug) else []
+                targets = [(plug, pin)] + [(kid, pin + '.' + letters(pin)[k]) for k, kid in enumerate(kids)]
+                for target, pin_name in targets:
+                    for src in cmds.listConnections(target, s=True, d=False, p=True) or []:
+                        snode = src.split('.')[0]
+                        sid = visit(snode, d + 1)
+                        if sid is None:
+                            continue
+                        so = out_pin(rev[cmds.nodeType(snode)][1], src)
+                        if so:
+                            links.append({'from': [sid, so], 'to': [nid, pin_name]})
+            if e.get('link_only'):
+                continue
+            try:
+                v = cmds.getAttr(plug)
+            except (RuntimeError, ValueError):
+                continue
+            if isinstance(v, list) and v and isinstance(v[0], tuple):
+                v = list(v[0])
+            if isinstance(v, (int, float, str, bool, list)):
+                entry['in'][pin] = _transform(v, e, inverse=True)
+        return nid
+
+    visit(sg, 0)
+    # layout: one column per depth, the Material Output on the right
+    cols = {}
+    for mnode, nid in ids.items():
+        cols.setdefault(depth[mnode], []).append(nid)
+    for d, col in cols.items():
+        for i, nid in enumerate(col):
+            nodes[nid - 1]['x'] = 900 - d * 320
+            nodes[nid - 1]['y'] = i * 340 - (len(col) - 1) * 170
+    shader = (cmds.listConnections(sg + '.surfaceShader', s=True, d=False) or [sg])[0]
+    have = graphs()
+    base = _clean(shader) + '_wzx'
+    key, i = base, 1
+    while key in have:
+        i += 1
+        key = '%s%d' % (base, i)
+    data = {'format': 'wzx-graph', 'version': 1, 'name': key, 'nodes': nodes, 'links': links, 'groups': []}
+    sync(data, key)
+    result = {'key': key, 'nodes': len(nodes), 'unknown': unknown}
+    if out_path:
+        with open(out_path, 'w', encoding='utf-8') as f:
+            json.dump(result, f)
+    msg = 'converted %s: %d node(s)' % (shader, len(nodes))
+    if unknown:
+        msg += ', no rule for: ' + ', '.join('%s (%s)' % (u['node'], u['type']) for u in unknown)
+        cmds.warning('WZX shader graph: ' + msg)
+    return msg

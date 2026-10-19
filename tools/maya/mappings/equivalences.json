@@ -1,0 +1,519 @@
+{
+ "format": "wzx-equivalences",
+ "version": 1,
+ "targets": [
+  {
+   "id": "maya",
+   "label": "Maya / Arnold"
+  },
+  {
+   "id": "blender",
+   "label": "Blender / Cycles"
+  },
+  {
+   "id": "unreal",
+   "label": "Unreal"
+  }
+ ],
+ "nodes": {
+  "shader.standardSurface": {
+   "maya": {
+    "type": "aiStandardSurface",
+    "class": "shader",
+    "ins": {
+     "Base": "base",
+     "Base Color": "baseColor",
+     "Diffuse Roughness": "diffuseRoughness",
+     "Metalness": "metalness",
+     "Specular": "specular",
+     "Specular Color": "specularColor",
+     "Specular Roughness": "specularRoughness",
+     "Specular IOR": "specularIOR",
+     "Transmission": "transmission",
+     "Transmission Color": "transmissionColor",
+     "Subsurface": "subsurface",
+     "Subsurface Color": "subsurfaceColor",
+     "Coat": "coat",
+     "Coat Roughness": "coatRoughness",
+     "Emission": "emission",
+     "Emission Color": "emissionColor",
+     "Normal": {
+      "attr": "normalCamera",
+      "link_only": true
+     }
+    },
+    "outs": {
+     "Shader": "outColor"
+    }
+   },
+   "blender": {
+    "type": "ShaderNodeBsdfPrincipled",
+    "ins": {
+     "Base Color": "Base Color",
+     "Diffuse Roughness": "Diffuse Roughness",
+     "Metalness": "Metallic",
+     "Specular": {
+      "attr": "Specular IOR Level",
+      "scale": 0.5
+     },
+     "Specular Color": "Specular Tint",
+     "Specular Roughness": "Roughness",
+     "Specular IOR": "IOR",
+     "Transmission": "Transmission Weight",
+     "Subsurface": "Subsurface Weight",
+     "Coat": "Coat Weight",
+     "Coat Roughness": "Coat Roughness",
+     "Emission": "Emission Strength",
+     "Emission Color": "Emission Color",
+     "Normal": "Normal"
+    },
+    "outs": {
+     "Shader": "BSDF"
+    }
+   },
+   "unreal": {
+    "type": "MaterialAttributes",
+    "ins": {
+     "Base Color": "BaseColor",
+     "Metalness": "Metallic",
+     "Specular Roughness": "Roughness",
+     "Specular": {
+      "attr": "Specular",
+      "scale": 0.5
+     },
+     "Emission Color": "EmissiveColor",
+     "Normal": "Normal"
+    },
+    "outs": {
+     "Shader": "MaterialAttributes"
+    }
+   }
+  },
+  "shader.mix": {
+   "maya": {
+    "type": "aiMixShader",
+    "class": "shader",
+    "ins": {
+     "Shader 1": "shader1",
+     "Shader 2": "shader2",
+     "Mix": "mix"
+    },
+    "outs": {
+     "Shader": "outColor"
+    }
+   },
+   "blender": {
+    "type": "ShaderNodeMixShader",
+    "ins": {
+     "Shader 1": "Shader",
+     "Shader 2": "Shader_001",
+     "Mix": "Fac"
+    },
+    "outs": {
+     "Shader": "Shader"
+    }
+   }
+  },
+  "shader.flat": {
+   "maya": {
+    "type": "aiFlat",
+    "class": "shader",
+    "ins": {
+     "Color": "color"
+    },
+    "outs": {
+     "Shader": "outColor"
+    }
+   },
+   "blender": {
+    "type": "ShaderNodeEmission",
+    "ins": {
+     "Color": "Color"
+    },
+    "outs": {
+     "Shader": "Emission"
+    }
+   }
+  },
+  "tex.ramp": {
+   "maya": {
+    "type": "ramp",
+    "class": "texture2d",
+    "ins": {
+     "Color A": "colorEntryList[0].color",
+     "Position A": "colorEntryList[0].position",
+     "Color B": "colorEntryList[1].color",
+     "Position B": "colorEntryList[1].position",
+     "U Direction": {
+      "attr": "type",
+      "value_map": {
+       "false": 0,
+       "true": 1
+      }
+     },
+     "Repeat": {
+      "attrs": [
+       "place2d.repeatU",
+       "place2d.repeatV"
+      ]
+     }
+    },
+    "outs": {
+     "Color": "outColor",
+     "Alpha": "outAlpha"
+    }
+   },
+   "blender": {
+    "type": "ShaderNodeValToRGB",
+    "ins": {
+     "Color A": "color_ramp.elements[0].color",
+     "Position A": "color_ramp.elements[0].position",
+     "Color B": "color_ramp.elements[1].color",
+     "Position B": "color_ramp.elements[1].position"
+    },
+    "outs": {
+     "Color": "Color",
+     "Alpha": "Alpha"
+    }
+   }
+  },
+  "tex.checker": {
+   "maya": {
+    "type": "checker",
+    "class": "texture2d",
+    "ins": {
+     "Color 1": "color1",
+     "Color 2": "color2",
+     "Contrast": "contrast",
+     "Repeat": {
+      "attrs": [
+       "place2d.repeatU",
+       "place2d.repeatV"
+      ]
+     }
+    },
+    "outs": {
+     "Color": "outColor",
+     "Alpha": "outAlpha"
+    }
+   },
+   "blender": {
+    "type": "ShaderNodeTexChecker",
+    "ins": {
+     "Color 1": "Color1",
+     "Color 2": "Color2",
+     "Repeat": {
+      "attr": "Scale",
+      "scale": 2.0
+     }
+    },
+    "outs": {
+     "Color": "Color",
+     "Alpha": "Fac"
+    }
+   }
+  },
+  "tex.noise": {
+   "maya": {
+    "type": "aiNoise",
+    "class": "texture",
+    "ins": {
+     "Color 1": "color1",
+     "Color 2": "color2",
+     "Octaves": "octaves",
+     "Distortion": "distortion",
+     "Amplitude": "amplitude",
+     "Scale": {
+      "attr": "scale",
+      "vector": true
+     }
+    },
+    "outs": {
+     "Color": "outColor"
+    }
+   },
+   "blender": {
+    "type": "ShaderNodeTexNoise",
+    "ins": {
+     "Scale": "Scale",
+     "Octaves": "Detail",
+     "Distortion": "Distortion"
+    },
+    "outs": {
+     "Color": "Color"
+    }
+   }
+  },
+  "tex.image": {
+   "maya": {
+    "type": "aiImage",
+    "class": "texture",
+    "ins": {
+     "File": "filename",
+     "Repeat": {
+      "attrs": [
+       "sscale",
+       "tscale"
+      ]
+     }
+    },
+    "outs": {
+     "Color": "outColor"
+    }
+   },
+   "blender": {
+    "type": "ShaderNodeTexImage",
+    "ins": {
+     "File": "image.filepath"
+    },
+    "outs": {
+     "Color": "Color"
+    }
+   },
+   "unreal": {
+    "type": "MaterialExpressionTextureSample",
+    "ins": {
+     "File": "Texture"
+    },
+    "outs": {
+     "Color": "RGB"
+    }
+   }
+  },
+  "util.colorCorrect": {
+   "maya": {
+    "type": "aiColorCorrect",
+    "class": "utility",
+    "ins": {
+     "Input": "input",
+     "Gamma": "gamma",
+     "Hue Shift": "hueShift",
+     "Saturation": "saturation",
+     "Exposure": "exposure"
+    },
+    "outs": {
+     "Color": "outColor"
+    }
+   },
+   "blender": {
+    "type": "ShaderNodeHueSaturation",
+    "ins": {
+     "Input": "Color",
+     "Hue Shift": {
+      "attr": "Hue",
+      "offset": 0.5
+     },
+     "Saturation": "Saturation"
+    },
+    "outs": {
+     "Color": "Color"
+    }
+   }
+  },
+  "util.blend": {
+   "maya": {
+    "type": "blendColors",
+    "class": "utility",
+    "ins": {
+     "Color 1": "color1",
+     "Color 2": "color2",
+     "Blender": "blender"
+    },
+    "outs": {
+     "Color": "output"
+    }
+   },
+   "blender": {
+    "type": "ShaderNodeMix",
+    "ins": {
+     "Color 1": "B",
+     "Color 2": "A",
+     "Blender": "Factor"
+    },
+    "outs": {
+     "Color": "Result"
+    },
+    "fixed": {
+     "data_type": "RGBA",
+     "blend_type": "MIX"
+    }
+   },
+   "unreal": {
+    "type": "MaterialExpressionLinearInterpolate",
+    "ins": {
+     "Color 1": "B",
+     "Color 2": "A",
+     "Blender": "Alpha"
+    },
+    "outs": {
+     "Color": "Output"
+    }
+   }
+  },
+  "util.multiply": {
+   "maya": {
+    "type": "multiplyDivide",
+    "class": "utility",
+    "ins": {
+     "A": "input1",
+     "B": "input2"
+    },
+    "outs": {
+     "Color": "output"
+    },
+    "fixed": {
+     "operation": 1
+    }
+   },
+   "blender": {
+    "type": "ShaderNodeMix",
+    "ins": {
+     "A": "A",
+     "B": "B"
+    },
+    "outs": {
+     "Color": "Result"
+    },
+    "fixed": {
+     "data_type": "RGBA",
+     "blend_type": "MULTIPLY"
+    }
+   },
+   "unreal": {
+    "type": "MaterialExpressionMultiply",
+    "ins": {
+     "A": "A",
+     "B": "B"
+    },
+    "outs": {
+     "Color": "Output"
+    }
+   }
+  },
+  "util.bump": {
+   "maya": {
+    "type": "aiBump2d",
+    "class": "utility",
+    "ins": {
+     "Bump Map": "bumpMap",
+     "Bump Height": "bumpHeight"
+    },
+    "outs": {
+     "Normal": "outValue"
+    }
+   },
+   "blender": {
+    "type": "ShaderNodeBump",
+    "ins": {
+     "Bump Map": "Height",
+     "Bump Height": "Strength"
+    },
+    "outs": {
+     "Normal": "Normal"
+    }
+   }
+  },
+  "const.color": {
+   "maya": {
+    "type": "colorConstant",
+    "class": "utility",
+    "ins": {
+     "Color": "inColor"
+    },
+    "outs": {
+     "Color": "outColor"
+    }
+   },
+   "blender": {
+    "type": "ShaderNodeRGB",
+    "ins": {
+     "Color": "outputs[0].default_value"
+    },
+    "outs": {
+     "Color": "Color"
+    }
+   },
+   "unreal": {
+    "type": "MaterialExpressionConstant3Vector",
+    "ins": {
+     "Color": "Constant"
+    },
+    "outs": {
+     "Color": "Output"
+    }
+   }
+  },
+  "const.float": {
+   "maya": {
+    "type": "floatConstant",
+    "class": "utility",
+    "ins": {
+     "Value": "inFloat"
+    },
+    "outs": {
+     "Value": "outFloat"
+    }
+   },
+   "blender": {
+    "type": "ShaderNodeValue",
+    "ins": {
+     "Value": "outputs[0].default_value"
+    },
+    "outs": {
+     "Value": "Value"
+    }
+   },
+   "unreal": {
+    "type": "MaterialExpressionConstant",
+    "ins": {
+     "Value": "R"
+    },
+    "outs": {
+     "Value": "Output"
+    }
+   }
+  },
+  "out.material": {
+   "maya": {
+    "type": "shadingEngine",
+    "class": "sg",
+    "ins": {
+     "Surface": "surfaceShader",
+     "Displacement": "displacementShader"
+    },
+    "outs": {}
+   },
+   "blender": {
+    "type": "ShaderNodeOutputMaterial",
+    "ins": {
+     "Surface": "Surface",
+     "Displacement": "Displacement"
+    },
+    "outs": {}
+   }
+  },
+  "shader.displacement": {
+   "maya": {
+    "type": "displacementShader",
+    "class": "shader",
+    "ins": {
+     "Height": "displacement",
+     "Scale": "scale"
+    },
+    "outs": {
+     "Displacement": "displacement"
+    }
+   },
+   "blender": {
+    "type": "ShaderNodeDisplacement",
+    "ins": {
+     "Height": "Height",
+     "Scale": "Scale"
+    },
+    "outs": {
+     "Displacement": "Displacement"
+    }
+   }
+  }
+ }
+}

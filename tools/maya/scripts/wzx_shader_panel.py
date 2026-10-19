@@ -224,3 +224,12 @@ def install_shelf(shelf='WZX_Shader'):
                      image='render_aiStandardSurface.png', imageOverlayLabel='WZX', sourceType='python', command=cmd)
     cmds.shelfTabLayout(top, e=True, selectTab=shelf)
     return shelf
+
+
+def open_graph(key):
+    """Asked by the graph editor (Scene library): shows another graph of the scene (the editor restarts on it)."""
+    def go():
+        if _panel is not None:
+            _panel.start(key)
+    QtCore.QTimer.singleShot(0, go)
+    return 'opening ' + key
