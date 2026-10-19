@@ -43,6 +43,7 @@ struct Options {
     int windows = 0;             // floating windows open at start: 1 library, 2 scene, 4 equivalences
     std::wstring library, saveLib;   // test: library folder, "Category/Name" saved at start
     int libTab = -1;
+    bool sceneList = false;   // test: Scene Shaders in list view
     bool autoCheck = false;   // test: Check in Maya once connected
     std::wstring mappings;       // equivalences file (default: tools/maya/mappings/equivalences.json)
     int enterCompound = 0;       // test: compound opened at start
@@ -132,6 +133,7 @@ Options parseArgs() {
         else if (a == L"--windows") o.windows = _wtoi(next().c_str());
         else if (a == L"--library") o.library = next();
         else if (a == L"--lib-tab") o.libTab = _wtoi(next().c_str());
+        else if (a == L"--scene-list") o.sceneList = true;
         else if (a == L"--auto-check") o.autoCheck = true;
         else if (a == L"--save-lib") o.saveLib = next();
         else if (a == L"--mappings") o.mappings = next();
@@ -393,6 +395,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
     library.init(g_gui, exeDir + L"\\wzx_library.txt", host);
     if (!opt.library.empty()) library.setRoot(opt.library);
     if (opt.libTab >= 0) library.setTab(opt.libTab);
+    if (opt.sceneList) library.setSceneList(true);
     if (!opt.saveLib.empty()) {   // test: "Category/Name"
         std::string cs = toUtf8(opt.saveLib);
         size_t sl = cs.find('/');

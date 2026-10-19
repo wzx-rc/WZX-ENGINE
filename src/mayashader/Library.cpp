@@ -447,15 +447,94 @@ void Library::drawSceneWindow(bool* open, float dpi) {
         }
     };
 
-    // sample slots
+    // view: sample slots (3ds Max compact editor) or compact list (Max Material/Map Browser, Blender material list)
+    if (iconButton("vgrid", 0xE80A, "Sample slots", dpi, !m_sceneList)) m_sceneList = false;
+    ImGui::SameLine(0, 2 * dpi);
+    if (iconButton("vlist", 0xE8FD, "Compact list", dpi, m_sceneList)) m_sceneList = true;
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(-90 * dpi);
+    ImGui::InputTextWithHint("##scenesearch", "\xEE\x9C\xA1  Search by name...", m_sceneFilter, sizeof m_sceneFilter);
+    ImGui::SameLine();
+    ImGui::TextDisabled("All : %d", (int)m_scene.size());
+    std::string flt = m_sceneFilter;
+    for (char& c : flt) c = (char)tolower((unsigned char)c);
+    auto matches = [&](const SceneItem& s) {
+        if (flt.empty()) return true;
+        std::string h = s.sg + " " + s.shader + " " + s.shaderType;
+        for (char& c : h) c = (char)tolower((unsigned char)c);
+        return h.find(flt) != std::string::npos;
+    };
     const float footer = 26 * dpi + 2 * ImGui::GetFrameHeightWithSpacing() + 10 * dpi;
+
+    if (m_sceneList) {
+        ImGui::BeginChild("##list", ImVec2(0, -footer), ImGuiChildFlags_Borders);
+        ImDrawList* ldl = ImGui::GetWindowDrawList();
+        for (int group = 0; group < 2; ++group) {
+            int count = 0;
+            for (const SceneItem& s : m_scene) count += (group == 0) == !s.wzx.empty();
+            char title[64];
+            snprintf(title, sizeof title, "%s  (%d)###grp%d", group == 0 ? "WZX Graphs" : "Maya Materials", count, group);
+            ImGui::SetNextItemOpen(true, ImGuiCond_FirstUseEver);
+            if (!ImGui::CollapsingHeader(title)) continue;
+            for (int i = 0; i < (int)m_scene.size(); ++i) {
+                const SceneItem& s = m_scene[i];
+                if ((group == 0) != !s.wzx.empty() || !matches(s)) continue;
+                ImGui::PushID(i + 1000 * group);
+                const float rowH = 22 * dpi;
+                ImVec2 p = ImGui::GetCursorScreenPos();
+                float w = ImGui::GetContentRegionAvail().x;
+                const bool sel = i == m_sceneSel, isCurrent = !s.wzx.empty() && s.wzx == current;
+                // row: select objects, assign, ball, "Name (Type)", objects
+                ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(2 * dpi, 1 * dpi));
+                ImGui::BeginDisabled(!connected);
+                if (ImGui::Button("\xEE\xA2\xB3##sel", ImVec2(rowH, rowH))) m_host.send("import wzx_shader_bridge as _w; _w.select_members(" + pyStr(s.sg) + ")");
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Select the objects using it");
+                ImGui::SameLine(0, 2 * dpi);
+                if (ImGui::Button("\xEE\x9C\x90##asg", ImVec2(rowH, rowH))) m_host.send("import wzx_shader_bridge as _w; _w.assign_sg(" + pyStr(s.sg) + ")");
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Assign to the selected objects");
+                ImGui::EndDisabled();
+                ImGui::PopStyleVar();
+                ImGui::SameLine(0, 4 * dpi);
+                ImVec2 rp = ImGui::GetCursorScreenPos();
+                const float rw = w - (rp.x - p.x);
+                ImGui::InvisibleButton("##row", ImVec2(rw, rowH));
+                const bool hov = ImGui::IsItemHovered();
+                if (ImGui::IsItemClicked()) m_sceneSel = i;
+                if (hov && ImGui::IsMouseDoubleClicked(0) && connected) openOrConvert(s);
+                ldl->AddRectFilled(rp, ImVec2(rp.x + rw, rp.y + rowH), sel ? app::th::select() : (hov ? app::th::hover() : app::th::field()), 3 * dpi);
+                if (isCurrent) ldl->AddRectFilled(rp, ImVec2(rp.x + 3 * dpi, rp.y + rowH), app::th::accent(), 2 * dpi);
+                const float b = rowH - 6 * dpi;
+                ImVec2 bc(rp.x + 6 * dpi + b * 0.5f, rp.y + rowH * 0.5f);
+                if (s.thumb) ldl->AddImageRounded(s.thumb, ImVec2(bc.x - b * 0.5f, bc.y - b * 0.5f), ImVec2(bc.x + b * 0.5f, bc.y + b * 0.5f), ImVec2(0.12f, 0.12f),
+                                                  ImVec2(0.88f, 0.88f), IM_COL32_WHITE, b * 0.5f);
+                else ldl->AddCircleFilled(bc, b * 0.5f, IM_COL32(140, 140, 144, 255), 20);
+                std::string name = s.shader.empty() ? s.sg : s.shader;
+                std::string label = name + "  (" + (s.wzx.empty() ? s.shaderType : std::string("WZX graph")) + ")";
+                char cnt[16];
+                snprintf(cnt, sizeof cnt, "%d", s.objects);
+                ImVec2 cs = ImGui::CalcTextSize(cnt);
+                ldl->PushClipRect(ImVec2(bc.x + b, rp.y), ImVec2(rp.x + rw - cs.x - 14 * dpi, rp.y + rowH), true);
+                ldl->AddText(ImVec2(bc.x + b * 0.5f + 8 * dpi, rp.y + (rowH - ImGui::GetFontSize()) * 0.5f), app::th::text(), label.c_str());
+                ldl->PopClipRect();
+                ldl->AddText(ImVec2(rp.x + rw - cs.x - 8 * dpi, rp.y + (rowH - cs.y) * 0.5f), s.objects ? app::th::text() : app::th::dim(), cnt);
+                if (hov) ImGui::SetTooltip("%s\n%s  -  %d object(s)\nDouble click: %s", name.c_str(), s.sg.c_str(), s.objects,
+                                           s.wzx.empty() ? "convert to a WZX graph" : "open the graph");
+                ImGui::PopID();
+            }
+        }
+        if (m_scene.empty()) ImGui::TextDisabled(connected ? (m_scenePending ? "Asking Maya..." : "No material (refresh)") : "Maya not connected");
+        ImGui::EndChild();
+    } else {
+    // sample slots
     ImGui::BeginChild("##slots", ImVec2(0, -footer), ImGuiChildFlags_Borders);
     const float slot = m_slotSize * dpi, gap = 4 * dpi;
     int perRow = std::max(1, (int)((ImGui::GetContentRegionAvail().x + gap) / (slot + gap)));
     ImDrawList* dl = ImGui::GetWindowDrawList();
+    int shownSlots = 0;
     for (int i = 0; i < (int)m_scene.size(); ++i) {
         const SceneItem& s = m_scene[i];
-        if (i % perRow) ImGui::SameLine(0, gap);
+        if (!matches(s)) continue;
+        if (shownSlots++ % perRow) ImGui::SameLine(0, gap);
         ImGui::PushID(i);
         ImVec2 p = ImGui::GetCursorScreenPos(), q(p.x + slot, p.y + slot);
         ImGui::InvisibleButton("##slot", ImVec2(slot, slot));
@@ -497,6 +576,7 @@ void Library::drawSceneWindow(bool* open, float dpi) {
     }
     if (m_scene.empty()) ImGui::TextDisabled(connected ? (m_scenePending ? "Asking Maya..." : "No material (refresh)") : "Maya not connected");
     ImGui::EndChild();
+    }
 
     // toolbar under the slots
     const SceneItem* s = m_sceneSel >= 0 ? &m_scene[m_sceneSel] : nullptr;
@@ -529,11 +609,13 @@ void Library::drawSceneWindow(bool* open, float dpi) {
         }
     }
     ImGui::EndDisabled();
-    ImGui::SameLine();
-    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + std::max(0.0f, ImGui::GetContentRegionAvail().x - 90 * dpi));
-    ImGui::SetNextItemWidth(90 * dpi);
-    ImGui::SliderFloat("##slot", &m_slotSize, 48, 140, "%.0f px");
-    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Sample slot size");
+    if (!m_sceneList) {   // slot size (sample slots view only)
+        ImGui::SameLine();
+        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + std::max(0.0f, ImGui::GetContentRegionAvail().x - 90 * dpi));
+        ImGui::SetNextItemWidth(90 * dpi);
+        ImGui::SliderFloat("##slot", &m_slotSize, 48, 140, "%.0f px");
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Sample slot size");
+    }
 
     // name and type of the selected material (as the Max name field and type button)
     std::string name = s ? (s->shader.empty() ? s->sg : s->shader) : std::string();

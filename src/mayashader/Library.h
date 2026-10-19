@@ -28,6 +28,7 @@ public:
     // test / scripts: another library folder (not remembered), and saving the current material into it
     void setRoot(const std::wstring& root) { m_root = root; strncpy_s(m_rootBuf, utf8Root().c_str(), _TRUNCATE); scan(); }
     void setTab(int t) { m_forceTab = t; }
+    void setSceneList(bool on) { m_sceneList = on; }
     bool saveMaterial(const std::string& name, const std::string& category, const std::string& tags) { return saveCurrent(name, category, tags); }
 
 private:
@@ -58,6 +59,7 @@ private:
     int m_category = -1;   // -1 = all
     char m_search[96] = {}, m_rootBuf[512] = {}, m_sceneFilter[96] = {};
     int m_sceneSel = -1;          // selected sample slot
+    bool m_sceneList = false;     // compact list instead of the sample slots
     float m_slotSize = 74;
     float m_cardSize = 120;
     char m_saveName[96] = {}, m_saveCat[96] = "Default", m_saveTags[160] = {};
