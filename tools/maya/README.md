@@ -25,6 +25,12 @@ matériaux Arnold. Chaque nœud du graph pilote un nœud Maya / Arnold existant 
 - Chaque modification du graph est répercutée dans Maya (création, valeurs, connexions, suppression) ; Hypershade montre le réseau.
 - **Assign** : assigne le matériau aux objets sélectionnés. **Graph** : ouvre Hypershade sur le matériau. **Sync Maya** : resynchronise.
 - Le graph est enregistré dans la scène (nœud `network` `<nom>_wzxGraph`), donc sauvé avec le .ma / .mb.
+- Vignette sur chaque nœud : ce que le nœud sort (couleur, texture, petite sphère shadée pour un shader), mise à jour en direct.
+- Survol d.un lien : nœuds et pins source / cible, type, valeur qui passe (pastille, RGB) et vignette de la source.
+- Couleurs dépliables (comme Maya) : le « + » d.une entrée ou sortie couleur montre R, G, B, branchables séparément.
+- Material Output : Surface et Displacement (nœud Displacement = displacementShader).
+- Compounds (LookDevX) : « + Compound » ou Ctrl+Shift+G sur une sélection, double clic pour entrer, fil d.Ariane pour remonter. Brancher une entrée intérieure sur le « + » du nœud Input la promeut sur le compound (idem sorties avec Output). Maya reçoit le graph aplati (vrais nœuds Arnold), la scène garde le graph avec ses compounds.
+- L.aperçu matériau est caché et éteint au démarrage : bouton « Material Preview » en haut à gauche.
 - Aperçu à droite : sphère en path tracing (vp3d), HDRI (`assets/hdri`) + 3 lumières. Barre du haut : lecture / pause du rendu, remise à zéro de la rotation. Caméra fixe : glisser gauche / droite fait tourner l.HDRI et les lumières sur 360° (comme Substance Painter).
   Les couleurs sont lues dans l'espace de rendu de Maya (ACEScg par défaut) ; l'exposition est calée sur un rendu Arnold avec le même HDRI.
 
