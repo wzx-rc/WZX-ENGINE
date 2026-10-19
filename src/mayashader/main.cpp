@@ -40,6 +40,7 @@ struct Options {
     bool openSettings = false;
     bool openPreview = false;    // the material preview is hidden (and off) by default
     int mode = 0;                // workspace at start: 0 graph, 1 library, 2 equivalences
+    int windows = 0;             // floating windows open at start: 1 library, 2 scene, 4 equivalences
     std::wstring library, saveLib;   // test: library folder, "Category/Name" saved at start
     int libTab = -1;
     bool autoCheck = false;   // test: Check in Maya once connected
@@ -128,6 +129,7 @@ Options parseArgs() {
         else if (a == L"--open-settings") o.openSettings = true;
         else if (a == L"--open-preview") o.openPreview = true;
         else if (a == L"--mode") o.mode = _wtoi(next().c_str());
+        else if (a == L"--windows") o.windows = _wtoi(next().c_str());
         else if (a == L"--library") o.library = next();
         else if (a == L"--lib-tab") o.libTab = _wtoi(next().c_str());
         else if (a == L"--auto-check") o.autoCheck = true;
@@ -349,7 +351,8 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
     };
 
     // workspaces: 0 graph, 1 shader library, 2 equivalences dashboard
-    int mode = opt.mode;
+    // floating windows (--mode 1: library + scene, 2: equivalences; --windows bit mask)
+    bool winLibrary = opt.mode == 1 || (opt.windows & 1), winScene = opt.mode == 1 || (opt.windows & 2), winEquiv = opt.mode == 2 || (opt.windows & 4);
     auto send = [&](const std::string& line) { return maya.send(line); };
     // equivalences: tools/maya/mappings/equivalences.json of the repository (found from the exe folder)
     std::wstring mappingPath = opt.mappings;
@@ -383,7 +386,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         path.clear();
         editor.resetHistory();
         editor.frameAll(graph);
-        mode = 0;
+        winLibrary = false;
     };
     host.currentKey = [&]() { return graphKey; };
     host.acescg = preview.acescg();
@@ -429,13 +432,17 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
             ImGui::AlignTextToFramePadding();
             // workspaces
             {
-                const char* names[] = {"Graph", "Library", "Equiv."};
+                // floating windows: library (folder), scene shaders, equivalences
+                const char* names[] = {"\xEE\xA3\xB1##lib", "\xEE\xA0\x9E##scene", "\xEE\xA2\xAB##equiv"};
+                const char* tips[] = {"Shader Library (folder on the PC)", "Scene Shaders (materials of the Maya scene)", "Equivalences (Maya, Blender, Unreal)"};
+                bool* flags[] = {&winLibrary, &winScene, &winEquiv};
                 float bw = (ImGui::GetContentRegionAvail().x - 2 * ImGui::GetStyle().ItemSpacing.x) / 3;
                 for (int m = 0; m < 3; ++m) {
                     if (m) ImGui::SameLine();
-                    ImGui::PushStyleColor(ImGuiCol_Button, mode == m ? app::th::selectV() : ImGui::GetStyleColorVec4(ImGuiCol_Button));
-                    if (ImGui::Button(names[m], ImVec2(bw, 0))) mode = m;
+                    ImGui::PushStyleColor(ImGuiCol_Button, *flags[m] ? app::th::selectV() : ImGui::GetStyleColorVec4(ImGuiCol_Button));
+                    if (ImGui::Button(names[m], ImVec2(bw, 26 * s))) *flags[m] = !*flags[m];
                     ImGui::PopStyleColor();
+                    if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", tips[m]);
                 }
                 ImGui::Separator();
             }
@@ -560,18 +567,18 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
                           ImGui::ColorConvertFloat4ToU32(app::th::settings().graphSelectColor));
         editor.status = maya.connected() ? "Maya :" + std::to_string(opt.port) : "waiting for Maya :" + std::to_string(opt.port);
         ImVec2 edPos(vp->WorkPos.x + sideW, vp->WorkPos.y), edSize(std::max(1.0f, full.x - sideW), full.y);
-        bool rendered = false;
-        if (mode == 1) library.draw(edPos, edSize, s);
-        else if (mode == 2) {
+        editor.draw(edPos, edSize, s, current(), nullptr, false);
+        // preview (top of the right column): the flat graph, so a compound shows what it really makes
+        ImVec2 pvPos(edPos.x + edSize.x - editor.inspectorPx * s, edPos.y);
+        bool rendered = showPreview && preview.draw(flat, pvPos, ImVec2(editor.inspectorPx * s, previewH), s);
+
+        // floating windows over the graph: shader library, scene shaders, equivalences
+        if (winLibrary) library.drawLibraryWindow(&winLibrary, s);
+        if (winScene) library.drawSceneWindow(&winScene, s);
+        if (winEquiv) {
             static bool checked = false;
             if (opt.autoCheck && !checked && maya.connected()) checked = equivalences.requestCheck(send);
-            equivalences.draw(edPos, edSize, s, send, maya.connected());
-        }
-        else {
-            editor.draw(edPos, edSize, s, current(), nullptr, false);
-            // preview (top of the right column): the flat graph, so a compound shows what it really makes
-            ImVec2 pvPos(edPos.x + edSize.x - editor.inspectorPx * s, edPos.y);
-            rendered = showPreview && preview.draw(flat, pvPos, ImVec2(editor.inspectorPx * s, previewH), s);
+            equivalences.draw(&winEquiv, s, send, maya.connected());
         }
 
         // WZX settings window (theme, colours, sizes, graph outlines), saved next to the exe

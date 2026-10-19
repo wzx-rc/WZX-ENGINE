@@ -22,7 +22,9 @@ public:
         bool acescg = true;
     };
     void init(app::ImGuiLayer& gui, const std::wstring& settingsFile, Host host);
-    void draw(ImVec2 pos, ImVec2 size, float dpi);
+    // floating windows: the materials of the library folder, and the materials of the Maya scene
+    void drawLibraryWindow(bool* open, float dpi);
+    void drawSceneWindow(bool* open, float dpi);
     // test / scripts: another library folder (not remembered), and saving the current material into it
     void setRoot(const std::wstring& root) { m_root = root; strncpy_s(m_rootBuf, utf8Root().c_str(), _TRUNCATE); scan(); }
     void setTab(int t) { m_forceTab = t; }
@@ -41,8 +43,6 @@ private:
         ImTextureID thumb = 0;
     };
     void scan();
-    void drawDisk(float dpi);
-    void drawScene(float dpi);
     bool saveCurrent(const std::string& name, const std::string& category, const std::string& tags);
     ImTextureID loadThumb(const std::wstring& png);
     ImTextureID graphThumb(const std::string& graphJson, int size);
@@ -55,7 +55,8 @@ private:
     std::vector<Item> m_items;
     std::vector<std::string> m_categories;
     int m_category = -1;   // -1 = all
-    char m_search[96] = {}, m_rootBuf[512] = {};
+    char m_search[96] = {}, m_rootBuf[512] = {}, m_sceneFilter[96] = {};
+    float m_cardSize = 120;
     char m_saveName[96] = {}, m_saveCat[96] = "Default", m_saveTags[160] = {};
     int m_tab = 0, m_forceTab = -1;
     std::string utf8Root() const;

@@ -4,6 +4,7 @@
 #include "Preview.h"
 #include "app/Theme.h"
 #include "game/NodeEditor.h"
+#include "imgui_internal.h"
 #include <windows.h>
 #include <shellapi.h>
 #include <shlobj.h>
@@ -261,197 +262,257 @@ void Library::pollScene() {
     }
 }
 
-void Library::drawDisk(float dpi) {
-    // library folder
-    ImGui::AlignTextToFramePadding();
-    ImGui::TextUnformatted("Folder");
+// Small square button with a Segoe Fluent glyph and a tooltip.
+static bool iconButton(const char* id, uint32_t cp, const char* tip, float dpi, bool active = false) {
+    char g[4] = {(char)(0xE0 | (cp >> 12)), (char)(0x80 | ((cp >> 6) & 0x3F)), (char)(0x80 | (cp & 0x3F)), 0};
+    std::string label = std::string(g) + "##" + id;
+    if (active) ImGui::PushStyleColor(ImGuiCol_Button, app::th::selectV());
+    bool p = ImGui::Button(label.c_str(), ImVec2(26 * dpi, 24 * dpi));
+    if (active) ImGui::PopStyleColor();
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) && tip) ImGui::SetTooltip("%s", tip);
+    return p;
+}
+
+// ------------------------------------------------------------------------------------------------ disk library window
+
+void Library::drawLibraryWindow(bool* open, float dpi) {
+    ImGuiViewport* vp = ImGui::GetMainViewport();
+    ImGui::SetNextWindowSize(ImVec2(680 * dpi, 520 * dpi), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowPos(ImVec2(vp->WorkPos.x + vp->WorkSize.x * 0.42f, vp->WorkPos.y + 60 * dpi), ImGuiCond_FirstUseEver, ImVec2(0.5f, 0));
+    ImGui::SetNextWindowSizeConstraints(ImVec2(360 * dpi, 260 * dpi), ImVec2(FLT_MAX, FLT_MAX));
+    if (!ImGui::Begin("\xEE\xA3\xB1  Shader Library###libwin", open, ImGuiWindowFlags_NoCollapse)) { ImGui::End(); return; }   // library glyph
+    ImGui::BringWindowToDisplayFront(ImGui::GetCurrentWindow());
+
+    // toolbar: search, category, thumbnail size | save, folder
+    ImGui::SetNextItemWidth(170 * dpi);
+    ImGui::InputTextWithHint("##libsearch", "\xEE\x9C\xA1  Search", m_search, sizeof m_search);
     ImGui::SameLine();
-    ImGui::SetNextItemWidth(-260 * dpi);
-    if (ImGui::InputText("##libroot", m_rootBuf, sizeof m_rootBuf, ImGuiInputTextFlags_EnterReturnsTrue)) {
-        m_root = wide(m_rootBuf);
-        std::ofstream(m_settingsFile, std::ios::binary) << m_rootBuf;
-        scan();
+    ImGui::SetNextItemWidth(130 * dpi);
+    if (ImGui::BeginCombo("##cat", m_category < 0 ? "All categories" : m_categories[m_category].c_str())) {
+        if (ImGui::Selectable("All categories", m_category < 0)) m_category = -1;
+        for (int i = 0; i < (int)m_categories.size(); ++i) {
+            int count = 0;
+            for (const Item& it : m_items) count += it.category == m_categories[i];
+            char lbl[160];
+            snprintf(lbl, sizeof lbl, "%s  (%d)", m_categories[i].c_str(), count);
+            if (ImGui::Selectable(lbl, m_category == i)) m_category = i;
+        }
+        ImGui::EndCombo();
     }
     ImGui::SameLine();
-    if (ImGui::Button("Browse...")) {
-        std::wstring p = pickFolder(m_root);
-        if (!p.empty()) {
-            m_root = p;
-            strncpy_s(m_rootBuf, utf8(p).c_str(), _TRUNCATE);
+    ImGui::SetNextItemWidth(90 * dpi);
+    ImGui::SliderFloat("##size", &m_cardSize, 70, 200, "%.0f px");
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Thumbnail size");
+    ImGui::SameLine();
+    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + std::max(0.0f, ImGui::GetContentRegionAvail().x - 2 * 26 * dpi - ImGui::GetStyle().ItemSpacing.x));
+    if (iconButton("save", 0xE74E, "Save the current material in the library", dpi)) {
+        strncpy_s(m_saveName, m_host.graph().name.c_str(), _TRUNCATE);
+        ImGui::OpenPopup("##savepop");
+    }
+    ImGui::SameLine();
+    if (iconButton("folder", 0xE8B7, "Library folder", dpi)) ImGui::OpenPopup("##folderpop");
+    if (ImGui::BeginPopup("##savepop")) {
+        ImGui::TextDisabled("SAVE THE CURRENT MATERIAL");
+        ImGui::SetNextItemWidth(220 * dpi);
+        ImGui::InputText("Name", m_saveName, sizeof m_saveName);
+        ImGui::SetNextItemWidth(220 * dpi);
+        ImGui::InputText("Category", m_saveCat, sizeof m_saveCat);
+        if (!m_categories.empty()) {
+            ImGui::SameLine();
+            if (ImGui::BeginCombo("##catpick", nullptr, ImGuiComboFlags_NoPreview)) {
+                for (const std::string& c : m_categories)
+                    if (ImGui::Selectable(c.c_str())) strncpy_s(m_saveCat, c.c_str(), _TRUNCATE);
+                ImGui::EndCombo();
+            }
+        }
+        ImGui::SetNextItemWidth(220 * dpi);
+        ImGui::InputTextWithHint("Tags", "metal, worn...", m_saveTags, sizeof m_saveTags);
+        if (ImGui::Button("Save", ImVec2(120 * dpi, 0))) {
+            saveCurrent(m_saveName, m_saveCat[0] ? m_saveCat : "Default", m_saveTags);
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::SameLine();
+        ImGui::TextDisabled("graph + thumbnail + tags");
+        ImGui::EndPopup();
+    }
+    if (ImGui::BeginPopup("##folderpop")) {
+        ImGui::TextDisabled("LIBRARY FOLDER");
+        ImGui::SetNextItemWidth(380 * dpi);
+        if (ImGui::InputText("##libroot", m_rootBuf, sizeof m_rootBuf, ImGuiInputTextFlags_EnterReturnsTrue)) {
+            m_root = wide(m_rootBuf);
             std::ofstream(m_settingsFile, std::ios::binary) << m_rootBuf;
             scan();
         }
-    }
-    ImGui::SameLine();
-    if (ImGui::Button("Rescan")) scan();
-    ImGui::SameLine();
-    if (ImGui::Button("Explorer")) ShellExecuteW(nullptr, L"open", m_root.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
-
-    // save the current material
-    if (ImGui::CollapsingHeader("Save the current material in the library")) {
-        if (!m_saveName[0]) strncpy_s(m_saveName, m_host.graph().name.c_str(), _TRUNCATE);
-        ImGui::SetNextItemWidth(200 * dpi);
-        ImGui::InputText("Name", m_saveName, sizeof m_saveName);
-        ImGui::SameLine();
-        ImGui::SetNextItemWidth(160 * dpi);
-        ImGui::InputText("##cat", m_saveCat, sizeof m_saveCat);
-        ImGui::SameLine();
-        if (ImGui::BeginCombo("Category", nullptr, ImGuiComboFlags_NoPreview)) {
-            for (const std::string& c : m_categories)
-                if (ImGui::Selectable(c.c_str())) strncpy_s(m_saveCat, c.c_str(), _TRUNCATE);
-            ImGui::EndCombo();
+        if (ImGui::Button("Browse...")) {
+            std::wstring p = pickFolder(m_root);
+            if (!p.empty()) {
+                m_root = p;
+                strncpy_s(m_rootBuf, utf8(p).c_str(), _TRUNCATE);
+                std::ofstream(m_settingsFile, std::ios::binary) << m_rootBuf;
+                scan();
+            }
         }
         ImGui::SameLine();
-        ImGui::SetNextItemWidth(220 * dpi);
-        ImGui::InputTextWithHint("##tags", "tags (metal, worn...)", m_saveTags, sizeof m_saveTags);
+        if (ImGui::Button("Rescan")) scan();
         ImGui::SameLine();
-        if (ImGui::Button("Save")) saveCurrent(m_saveName, m_saveCat[0] ? m_saveCat : "Default", m_saveTags);
+        if (ImGui::Button("Show in Explorer")) ShellExecuteW(nullptr, L"open", m_root.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+        ImGui::TextDisabled("One sub-folder per category, one folder per material");
+        ImGui::EndPopup();
     }
     ImGui::Separator();
 
-    // categories (left), materials (grid)
-    ImGui::BeginChild("##cats", ImVec2(170 * dpi, 0), ImGuiChildFlags_Borders);
-    if (ImGui::Selectable("All", m_category < 0)) m_category = -1;
-    for (int i = 0; i < (int)m_categories.size(); ++i) {
-        int count = 0;
-        for (const Item& it : m_items) count += it.category == m_categories[i];
-        char lbl[160];
-        snprintf(lbl, sizeof lbl, "%s  (%d)", m_categories[i].c_str(), count);
-        if (ImGui::Selectable(lbl, m_category == i)) m_category = i;
-    }
-    ImGui::EndChild();
-    ImGui::SameLine();
-    ImGui::BeginChild("##grid", ImVec2(0, 0));
-    ImGui::SetNextItemWidth(260 * dpi);
-    ImGui::InputTextWithHint("##libsearch", "Search name or tag...", m_search, sizeof m_search);
+    // grid of materials
+    ImGui::BeginChild("##grid", ImVec2(0, -ImGui::GetTextLineHeightWithSpacing() - 4 * dpi));
     std::string q = m_search;
     for (char& c : q) c = (char)tolower((unsigned char)c);
-    const float card = 150 * dpi, gap = 10 * dpi;
+    const float card = m_cardSize * dpi, gap = 8 * dpi, textH = 34 * dpi;
     int perRow = std::max(1, (int)((ImGui::GetContentRegionAvail().x + gap) / (card + gap)));
     int col = 0, shown = 0;
     for (size_t i = 0; i < m_items.size(); ++i) {
         const Item& it = m_items[i];
         if (m_category >= 0 && it.category != m_categories[m_category]) continue;
-        std::string hay = it.name + " " + it.tags;
+        std::string hay = it.name + " " + it.tags + " " + it.category;
         for (char& c : hay) c = (char)tolower((unsigned char)c);
         if (!q.empty() && hay.find(q) == std::string::npos) continue;
         if (col) ImGui::SameLine(0, gap);
         ImGui::PushID((int)i);
-        ImGui::BeginGroup();
         ImVec2 p = ImGui::GetCursorScreenPos();
         ImDrawList* dl = ImGui::GetWindowDrawList();
-        ImGui::InvisibleButton("##card", ImVec2(card, card + 44 * dpi));
+        ImGui::InvisibleButton("##card", ImVec2(card, card + textH));
         bool hov = ImGui::IsItemHovered();
-        if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
+        if (hov && ImGui::IsMouseDoubleClicked(0)) {
             m_host.openInGraph(readText(fs::path(it.folder) / "material.graph.json"));
-            m_status = "Opened " + it.name + " in the current material";
+            m_status = "Opened " + it.name;
         }
-        dl->AddRectFilled(p, ImVec2(p.x + card, p.y + card + 44 * dpi), hov ? app::th::hover() : app::th::card(), 5 * dpi);
-        if (it.thumb) dl->AddImageRounded(it.thumb, ImVec2(p.x + 6 * dpi, p.y + 6 * dpi), ImVec2(p.x + card - 6 * dpi, p.y + card - 6 * dpi),
-                                          ImVec2(0, 0), ImVec2(1, 1), IM_COL32_WHITE, 4 * dpi);
+        dl->AddRectFilled(p, ImVec2(p.x + card, p.y + card + textH), hov ? app::th::hover() : app::th::card(), 6 * dpi);
+        if (hov) dl->AddRect(p, ImVec2(p.x + card, p.y + card + textH), app::th::accent(), 6 * dpi);
+        if (it.thumb) dl->AddImageRounded(it.thumb, ImVec2(p.x + 4 * dpi, p.y + 4 * dpi), ImVec2(p.x + card - 4 * dpi, p.y + card - 4 * dpi),
+                                          ImVec2(0, 0), ImVec2(1, 1), IM_COL32_WHITE, 5 * dpi);
         else dl->AddCircleFilled(ImVec2(p.x + card * 0.5f, p.y + card * 0.5f), card * 0.3f, app::th::field());
-        dl->AddText(ImVec2(p.x + 8 * dpi, p.y + card), app::th::text(), it.name.c_str());
-        std::string sub = it.category + (it.tags.empty() ? "" : "  -  " + it.tags);
-        dl->AddText(ImVec2(p.x + 8 * dpi, p.y + card + 18 * dpi), app::th::dim(), sub.c_str());
-        if (hov) ImGui::SetTooltip("%s\nDouble click: open in the current material\nRight click: more", it.name.c_str());
+        dl->PushClipRect(ImVec2(p.x + 6 * dpi, p.y + card), ImVec2(p.x + card - 6 * dpi, p.y + card + textH), true);
+        dl->AddText(ImVec2(p.x + 7 * dpi, p.y + card), app::th::text(), it.name.c_str());
+        dl->AddText(ImGui::GetFont(), ImGui::GetFontSize() * 0.85f, ImVec2(p.x + 7 * dpi, p.y + card + 16 * dpi), app::th::dim(),
+                    (it.category + (it.tags.empty() ? "" : "  " + it.tags)).c_str());
+        dl->PopClipRect();
+        if (hov) ImGui::SetTooltip("%s\n%s\nDouble click: open in the current material", it.name.c_str(), it.tags.c_str());
         if (ImGui::BeginPopupContextItem("##ctx")) {
             if (ImGui::MenuItem("Open in the current material")) m_host.openInGraph(readText(fs::path(it.folder) / "material.graph.json"));
             if (ImGui::MenuItem("Show in Explorer")) ShellExecuteW(nullptr, L"open", it.folder.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
             ImGui::EndPopup();
         }
-        ImGui::EndGroup();
         ImGui::PopID();
         if (++col >= perRow) col = 0;
         ++shown;
     }
-    if (!shown) ImGui::TextDisabled(m_items.empty() ? "The library is empty: save the current material with the panel above." : "No material matches.");
+    if (!shown) ImGui::TextDisabled(m_items.empty() ? "Empty library: save the current material with the disk button." : "No material matches.");
     ImGui::EndChild();
+    ImGui::TextDisabled("%d material(s)  -  %s", shown, m_status.empty() ? utf8(m_root).c_str() : m_status.c_str());
+    ImGui::End();
 }
 
-void Library::drawScene(float dpi) {
+// ------------------------------------------------------------------------------------------------ scene shaders window
+
+void Library::drawSceneWindow(bool* open, float dpi) {
+    pollScene();
+    ImGuiViewport* vp = ImGui::GetMainViewport();
+    ImGui::SetNextWindowSize(ImVec2(380 * dpi, 420 * dpi), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowPos(ImVec2(vp->WorkPos.x + vp->WorkSize.x - 400 * dpi, vp->WorkPos.y + 70 * dpi), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSizeConstraints(ImVec2(300 * dpi, 200 * dpi), ImVec2(FLT_MAX, FLT_MAX));
+    if (!ImGui::Begin("\xEE\xA0\x9E  Scene Shaders###scenewin", open, ImGuiWindowFlags_NoCollapse)) { ImGui::End(); return; }
+    ImGui::BringWindowToDisplayFront(ImGui::GetCurrentWindow());
     const bool connected = m_host.mayaConnected();
-    if (!m_sceneAsked && connected) {   // first visit: ask Maya
-        m_sceneAsked = true;
+    auto refresh = [&] {
         m_sceneTime = fileTime(m_scenePath);
         m_scenePending = m_host.send("import wzx_shader_bridge as _w; _w.scene_materials(" + pyStr(utf8(m_scenePath)) + ")");
-    }
+    };
+    if (!m_sceneAsked && connected) { m_sceneAsked = true; refresh(); }
+
+    // toolbar: refresh, filter, count
     ImGui::BeginDisabled(!connected);
-    if (ImGui::Button("Refresh")) {
-        m_sceneTime = fileTime(m_scenePath);
-        m_scenePending = m_host.send("import wzx_shader_bridge as _w; _w.scene_materials(" + pyStr(utf8(m_scenePath)) + ")");
-    }
+    if (iconButton("refresh", 0xE72C, "Refresh the list from Maya", dpi)) refresh();
     ImGui::EndDisabled();
     ImGui::SameLine();
-    ImGui::TextDisabled(connected ? (m_scenePending ? "asking Maya..." : "Materials of the Maya scene") : "Maya not connected");
-    ImGui::Separator();
+    ImGui::SetNextItemWidth(-60 * dpi);
+    ImGui::InputTextWithHint("##scenefilter", "\xEE\x9C\xA1  Filter", m_sceneFilter, sizeof m_sceneFilter);
+    ImGui::SameLine();
+    ImGui::TextDisabled("%d", (int)m_scene.size());
+    std::string q = m_sceneFilter;
+    for (char& c : q) c = (char)tolower((unsigned char)c);
+
     const std::string current = m_host.currentKey();
-    ImGui::BeginChild("##scenelist", ImVec2(0, 0));
-    const float th = 72 * dpi;
+    ImGui::BeginChild("##scenelist", ImVec2(0, -ImGui::GetTextLineHeightWithSpacing() - 4 * dpi), ImGuiChildFlags_Borders);
+    const float rowH = 34 * dpi, th = 26 * dpi;
     for (size_t i = 0; i < m_scene.size(); ++i) {
         const SceneItem& s = m_scene[i];
+        std::string hay = s.sg + " " + s.shader + " " + s.shaderType;
+        for (char& c : hay) c = (char)tolower((unsigned char)c);
+        if (!q.empty() && hay.find(q) == std::string::npos) continue;
         ImGui::PushID((int)i);
         ImVec2 p = ImGui::GetCursorScreenPos();
-        float w = ImGui::GetContentRegionAvail().x;
+        const float w = ImGui::GetContentRegionAvail().x;
         ImDrawList* dl = ImGui::GetWindowDrawList();
-        bool isCurrent = !s.wzx.empty() && s.wzx == current;
-        dl->AddRectFilled(p, ImVec2(p.x + w, p.y + th + 12 * dpi), isCurrent ? app::th::select() : app::th::card(), 5 * dpi);
-        if (s.thumb) dl->AddImageRounded(s.thumb, ImVec2(p.x + 6 * dpi, p.y + 6 * dpi), ImVec2(p.x + 6 * dpi + th, p.y + 6 * dpi + th), ImVec2(0, 0), ImVec2(1, 1),
-                                         IM_COL32_WHITE, 4 * dpi);
-        else dl->AddCircleFilled(ImVec2(p.x + 6 * dpi + th * 0.5f, p.y + 6 * dpi + th * 0.5f), th * 0.36f, app::th::field());
-        float tx = p.x + th + 18 * dpi;
-        dl->AddText(ImVec2(tx, p.y + 8 * dpi), app::th::text(), s.sg.c_str());
-        std::string sub = (s.shader.empty() ? std::string("(no shader)") : s.shader + "  (" + s.shaderType + ")") + "   " + std::to_string(s.objects) + " object(s)";
-        dl->AddText(ImVec2(tx, p.y + 28 * dpi), app::th::dim(), sub.c_str());
-        if (!s.wzx.empty()) dl->AddText(ImVec2(tx, p.y + 48 * dpi), app::th::accent(), isCurrent ? "WZX graph (open)" : ("WZX graph: " + s.wzx).c_str());
-        // actions on the right
-        ImGui::SetCursorScreenPos(ImVec2(p.x + w - 420 * dpi, p.y + 22 * dpi));
+        const bool isCurrent = !s.wzx.empty() && s.wzx == current;
+        const bool hov = ImGui::IsMouseHoveringRect(p, ImVec2(p.x + w, p.y + rowH));
+        if (isCurrent || hov) dl->AddRectFilled(p, ImVec2(p.x + w, p.y + rowH), isCurrent ? app::th::select() : app::th::hover(), 4 * dpi);
+        if (isCurrent) dl->AddRectFilled(p, ImVec2(p.x + 3 * dpi, p.y + rowH), app::th::accent(), 2 * dpi);
+        // icon: the material ball of a WZX graph, else a dot with the shader initial
+        ImVec2 c(p.x + 8 * dpi + th * 0.5f, p.y + rowH * 0.5f);
+        if (s.thumb) dl->AddImageRounded(s.thumb, ImVec2(c.x - th * 0.5f, c.y - th * 0.5f), ImVec2(c.x + th * 0.5f, c.y + th * 0.5f), ImVec2(0, 0), ImVec2(1, 1),
+                                         IM_COL32_WHITE, th * 0.5f);
+        else {
+            dl->AddCircleFilled(c, th * 0.42f, app::th::field());
+            char ini[2] = {s.shaderType.empty() ? '?' : (char)toupper((unsigned char)s.shaderType[0]), 0};
+            if (s.shaderType.rfind("ai", 0) == 0 && s.shaderType.size() > 2) ini[0] = (char)toupper((unsigned char)s.shaderType[2]);
+            ImVec2 ts = ImGui::CalcTextSize(ini);
+            dl->AddText(ImVec2(c.x - ts.x * 0.5f, c.y - ts.y * 0.5f), app::th::dim(), ini);
+        }
+        // name, type and objects
+        float tx = p.x + th + 16 * dpi;
+        const float btnW = 3 * 26 * dpi + 2 * ImGui::GetStyle().ItemSpacing.x;
+        dl->PushClipRect(ImVec2(tx, p.y), ImVec2(p.x + w - btnW - 6 * dpi, p.y + rowH), true);
+        std::string name = s.shader.empty() ? s.sg : s.shader;
+        dl->AddText(ImVec2(tx, p.y + 3 * dpi), app::th::text(), name.c_str());
+        std::string sub = s.shaderType + "  \xC2\xB7  " + std::to_string(s.objects) + " obj";
+        float subX = tx;
+        if (!s.wzx.empty()) {   // WZX badge
+            ImVec2 bs = ImGui::CalcTextSize("WZX");
+            float f = 0.8f;
+            dl->AddRectFilled(ImVec2(tx, p.y + 18 * dpi), ImVec2(tx + bs.x * f + 8 * dpi, p.y + 18 * dpi + bs.y * f + 2 * dpi), app::th::accent(0.85f), 3 * dpi);
+            dl->AddText(ImGui::GetFont(), ImGui::GetFontSize() * f, ImVec2(tx + 4 * dpi, p.y + 19 * dpi), app::th::bg0(), "WZX");
+            subX += bs.x * f + 14 * dpi;
+        }
+        dl->AddText(ImGui::GetFont(), ImGui::GetFontSize() * 0.85f, ImVec2(subX, p.y + 18 * dpi), app::th::dim(), sub.c_str());
+        dl->PopClipRect();
+        // actions: open / convert, select objects, assign
+        ImGui::SetCursorScreenPos(ImVec2(p.x + w - btnW - 2 * dpi, p.y + (rowH - 24 * dpi) * 0.5f));
         ImGui::BeginDisabled(!connected);
         if (!s.wzx.empty()) {
             ImGui::BeginDisabled(isCurrent);
-            if (ImGui::Button("Open graph", ImVec2(130 * dpi, 0))) m_host.send("import wzx_shader_panel as _p; _p.open_graph(" + pyStr(s.wzx) + ")");
+            if (iconButton("open", 0xE8A7, isCurrent ? "Open in the graph (already open)" : "Open in the graph", dpi))
+                m_host.send("import wzx_shader_panel as _p; _p.open_graph(" + pyStr(s.wzx) + ")");
             ImGui::EndDisabled();
         } else {
             ImGui::BeginDisabled(s.shader.empty());
-            if (ImGui::Button("Convert to graph", ImVec2(130 * dpi, 0))) {
+            if (iconButton("convert", 0xE8AB, "Convert to a WZX graph (with the equivalences; the original stays as it is)", dpi)) {
                 m_importTime = fileTime(m_importPath);
                 m_importPending = m_host.send("import wzx_shader_bridge as _w; _w.import_material(" + pyStr(s.sg) + ", " + pyStr(utf8(m_importPath)) + ")");
-                m_status = "Converting " + s.sg + "...";
+                m_status = "Converting " + name + "...";
             }
             ImGui::EndDisabled();
-            if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-                ImGui::SetTooltip("Builds a WZX graph from this material with the equivalences (the original stays as it is);\nnodes without a rule are listed");
         }
         ImGui::SameLine();
-        if (ImGui::Button("Select objects", ImVec2(130 * dpi, 0))) m_host.send("import wzx_shader_bridge as _w; _w.select_members(" + pyStr(s.sg) + ")");
+        if (iconButton("select", 0xE8B3, "Select the objects using it", dpi)) m_host.send("import wzx_shader_bridge as _w; _w.select_members(" + pyStr(s.sg) + ")");
         ImGui::SameLine();
-        if (ImGui::Button("Assign", ImVec2(130 * dpi, 0))) m_host.send("import wzx_shader_bridge as _w; _w.assign_sg(" + pyStr(s.sg) + ")");
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Assigns this material to the objects selected in Maya");
+        if (iconButton("assign", 0xE73E, "Assign to the selected objects", dpi)) m_host.send("import wzx_shader_bridge as _w; _w.assign_sg(" + pyStr(s.sg) + ")");
         ImGui::EndDisabled();
-        ImGui::SetCursorScreenPos(ImVec2(p.x, p.y + th + 18 * dpi));
-        ImGui::Dummy(ImVec2(1, 1));
+        if (hov && !ImGui::IsAnyItemHovered()) ImGui::SetTooltip("%s\nshading group: %s", name.c_str(), s.sg.c_str());
+        ImGui::SetCursorScreenPos(ImVec2(p.x, p.y + rowH + 2 * dpi));
+        ImGui::Dummy(ImVec2(1, 0));
         ImGui::PopID();
     }
-    if (m_scene.empty()) ImGui::TextDisabled(connected ? "No material listed yet (Refresh)." : "Open the panel from Maya to list the scene materials.");
+    if (m_scene.empty()) ImGui::TextDisabled(connected ? (m_scenePending ? "Asking Maya..." : "No material listed (refresh)") : "Maya not connected");
     ImGui::EndChild();
-}
-
-void Library::draw(ImVec2 pos, ImVec2 size, float dpi) {
-    pollScene();
-    ImGui::SetNextWindowPos(pos, ImGuiCond_Always);
-    ImGui::SetNextWindowSize(size, ImGuiCond_Always);
-    const ImGuiWindowFlags flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
-                                   ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings;
-    ImGui::Begin("##library_view", nullptr, flags);
-    ImGui::TextUnformatted("Shader Library");
-    ImGui::SameLine();
-    if (!m_status.empty()) ImGui::TextDisabled("%s", m_status.c_str());
-    if (ImGui::BeginTabBar("##libtabs")) {
-        const int force = m_forceTab;
-        m_forceTab = -1;
-        if (ImGui::BeginTabItem("Disk library", nullptr, force == 0 ? ImGuiTabItemFlags_SetSelected : 0)) { m_tab = 0; drawDisk(dpi); ImGui::EndTabItem(); }
-        if (ImGui::BeginTabItem("Scene", nullptr, force == 1 ? ImGuiTabItemFlags_SetSelected : 0)) { m_tab = 1; drawScene(dpi); ImGui::EndTabItem(); }
-        ImGui::EndTabBar();
-    }
+    ImGui::TextDisabled("%s", m_status.empty() ? (connected ? "Maya scene" : "Maya not connected") : m_status.c_str());
     ImGui::End();
 }
 

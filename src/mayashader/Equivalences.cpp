@@ -3,7 +3,10 @@
 #include "app/Theme.h"
 #include "game/Graph.h"
 #include "game/NodeEditor.h"
+#include "imgui_internal.h"
 #include <windows.h>
+#include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <fstream>
@@ -176,7 +179,7 @@ void Equivalences::pollCheck() {
 }
 
 void Equivalences::drawPinCell(const std::string& nodeType, const std::string& target, const std::string& pin, bool output, float w,
-                               float dpi) {
+                               float dpi, const game::Value* ref) {
     Json& r = rule(nodeType, target);
     Json& side = r.o[output ? "outs" : "ins"];
     if (side.type != Json::Object) side.type = Json::Object;
@@ -191,7 +194,8 @@ void Equivalences::drawPinCell(const std::string& nodeType, const std::string& t
     }
     char buf[256] = {};
     strncpy_s(buf, attrText(e).c_str(), _TRUNCATE);
-    ImGui::SetNextItemWidth(output ? -FLT_MIN : w - 26 * dpi);
+    const float attrW = output ? w : std::max(60.0f, (w - 26 * dpi) * 0.58f);   // one line: attribute, value, rules
+    ImGui::SetNextItemWidth(output ? -FLT_MIN : attrW);
     if (ImGui::InputTextWithHint("##attr", "-", buf, sizeof buf)) {
         std::string s = buf;
         m_dirty = true;
@@ -214,6 +218,50 @@ void Equivalences::drawPinCell(const std::string& nodeType, const std::string& t
         else side.o[pin] = str(s);
     }
     if (output) return;
+    // the graph value converted for this application (Specular 1.0 in the graph = 0.5 in Blender...): edit it to set the scale
+    if (ref && !attrText(e).empty()) {
+        float sc = (float)(e.type == Json::Object ? e["scale"].num(1) : 1), of = (float)(e.type == Json::Object ? e["offset"].num(0) : 0);
+        bool inv = e.type == Json::Object && e["invert01"].type == Json::Bool && e["invert01"].b;
+        auto conv = [&](float x) {
+            float v = x * sc + of;
+            if (inv) v = 1 - v;
+            if (e.type == Json::Object && e["clamp"].type == Json::Array) v = std::min(std::max(v, (float)e["clamp"][0].num(0)), (float)e["clamp"][1].num(1));
+            if (e.type == Json::Object && e["power"].type == Json::Number) v = std::pow(std::fabs(v), (float)e["power"].num(1));
+            return v;
+        };
+        const bool changedRule = sc != 1 || of != 0 || inv || (e.type == Json::Object && (e.o.count("clamp") || e.o.count("power")));
+        ImGui::PushStyleColor(ImGuiCol_Text, changedRule ? app::th::accentTextV() : app::th::dimV());
+        if (ref->type == PinType::Float) {
+            float v = conv(ref->f);
+            ImGui::SameLine(0, 4 * dpi);
+            ImGui::SetNextItemWidth(w - attrW - 30 * dpi);
+            if (ImGui::DragFloat("##val", &v, 0.005f, 0, 0, "= %.3f")) {
+                Json o = e;
+                if (o.type != Json::Object) { o = Json(); o.type = Json::Object; o.o["attr"] = str(attrText(e)); }
+                if (std::fabs(ref->f) > 1e-6f) o.o["scale"] = num((v - of) / ref->f);
+                else o.o["offset"] = num(v);
+                side.o[pin] = o;
+                m_dirty = true;
+            }
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Graph %.3f  ->  %s %.3f\nDrag to set the conversion (scale)", ref->f, target.c_str(), v);
+        } else if (ref->type == PinType::Vec3) {
+            float c[3] = {conv(ref->v.x), conv(ref->v.y), conv(ref->v.z)};
+            ImGui::SameLine(0, 4 * dpi);
+            ImGui::ColorButton("##valc", ImVec4(std::min(c[0], 1.0f), std::min(c[1], 1.0f), std::min(c[2], 1.0f), 1), ImGuiColorEditFlags_NoTooltip,
+                               ImVec2(16 * dpi, 16 * dpi));
+            ImGui::SameLine();
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("= %.3f  %.3f  %.3f", c[0], c[1], c[2]);
+        } else if (ref->type == PinType::Bool) {
+            ImGui::SameLine(0, 4 * dpi);
+            const Json& vm = e.type == Json::Object ? e["value_map"] : Json();
+            std::string k = ref->b ? "true" : "false";
+            ImGui::Text("= %s", vm.type == Json::Object && vm.o.count(k) ? jsonText(vm[k]).c_str() : k.c_str());
+        } else if (ref->type == PinType::String) {
+            ImGui::SameLine(0, 4 * dpi);
+            ImGui::Text("= \"%s\"", ref->s.c_str());
+        }
+        ImGui::PopStyleColor();
+    }
     // value rules of the pin
     ImGui::SameLine(0, 2 * dpi);
     const bool rules = hasRules(e);
@@ -281,22 +329,22 @@ void Equivalences::drawPinCell(const std::string& nodeType, const std::string& t
     }
 }
 
-void Equivalences::draw(ImVec2 pos, ImVec2 size, float dpi, const std::function<bool(const std::string&)>& send, bool mayaConnected) {
+void Equivalences::draw(bool* open, float dpi, const std::function<bool(const std::string&)>& send, bool mayaConnected) {
     pollCheck();
-    ImGui::SetNextWindowPos(pos, ImGuiCond_Always);
-    ImGui::SetNextWindowSize(size, ImGuiCond_Always);
-    const ImGuiWindowFlags flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
-                                   ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings;
-    ImGui::Begin("##equivalences", nullptr, flags);
+    // floating window, opened over the graph
+    ImGuiViewport* vp = ImGui::GetMainViewport();
+    ImGui::SetNextWindowSize(ImVec2(std::min(vp->WorkSize.x * 0.8f, 1250 * dpi), std::min(vp->WorkSize.y * 0.8f, 760 * dpi)), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowPos(vp->GetCenter(), ImGuiCond_FirstUseEver, ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowSizeConstraints(ImVec2(640 * dpi, 360 * dpi), ImVec2(FLT_MAX, FLT_MAX));
+    if (!ImGui::Begin("  Equivalences###eqwin", open, ImGuiWindowFlags_NoCollapse)) { ImGui::End(); return; }
+    ImGui::BringWindowToDisplayFront(ImGui::GetCurrentWindow());
     const Json& targets = m_doc["targets"];
     std::vector<std::pair<std::string, std::string>> tg;
     for (const Json& t : targets.a) tg.push_back({t["id"].str(), t["label"].str()});
 
-    // header: file, save / reload / check, coverage per target
-    ImGui::TextUnformatted("Equivalences");
-    ImGui::SameLine();
-    ImGui::TextDisabled("%s%s", utf8(m_path).c_str(), m_dirty ? "  (modified)" : "");
-    if (ImGui::Button("Save")) save();
+    // header: save / reload / check, coverage per target (file path in the tooltip)
+    if (ImGui::Button(m_dirty ? "Save *###eqsave" : "Save###eqsave")) save();
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", utf8(m_path).c_str());
     ImGui::SameLine();
     if (ImGui::Button("Reload")) { load(m_path); m_status = "Reloaded"; }
     ImGui::SameLine();
@@ -410,8 +458,11 @@ void Equivalences::draw(ImVec2 pos, ImVec2 size, float dpi, const std::function<
                 ImGui::TableNextRow();
                 ImGui::TableSetColumnIndex(0);
                 ImGui::TextDisabled(side ? "OUTPUTS" : "INPUTS");
-                for (const PinDef& p : side ? d->outs : d->ins) {
+                const auto& pinList = side ? d->outs : d->ins;
+                for (size_t pi = 0; pi < pinList.size(); ++pi) {
+                    const PinDef& p = pinList[pi];
                     if (!listed(p)) continue;
+                    const game::Value* ref = !side && pi < d->defaults.size() ? &d->defaults[pi] : nullptr;
                     ImGui::TableNextRow();
                     ImGui::TableSetColumnIndex(0);
                     ImGui::PushID((p.name + (side ? "#o" : "#i")).c_str());
@@ -420,10 +471,12 @@ void Equivalences::draw(ImVec2 pos, ImVec2 size, float dpi, const std::function<
                     ImGui::TextUnformatted(p.name.c_str());
                     ImGui::SameLine();
                     ImGui::TextDisabled("%s", tn);
+                    if (ref && ref->type == PinType::Float) { ImGui::SameLine(); ImGui::TextDisabled("· %.3f", ref->f); }
+                    else if (ref && ref->type == PinType::Vec3) { ImGui::SameLine(); ImGui::ColorButton("##ref", ImVec4(ref->v.x, ref->v.y, ref->v.z, 1), 0, ImVec2(12 * dpi, 12 * dpi)); }
                     for (size_t k = 0; k < tg.size(); ++k) {
                         ImGui::TableSetColumnIndex((int)k + 1);
                         ImGui::PushID((int)k);
-                        drawPinCell(d->id, tg[k].first, p.name, side == 1, ImGui::GetContentRegionAvail().x, dpi);
+                        drawPinCell(d->id, tg[k].first, p.name, side == 1, ImGui::GetContentRegionAvail().x, dpi, ref);
                         ImGui::PopID();
                     }
                     ImGui::PopID();
