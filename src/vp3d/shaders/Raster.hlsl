@@ -330,6 +330,7 @@ float4 Shade(VSOut i, bool ghost, float shadowBias, bool capture) {
     float3 ambDiffuse, ambGlossy;
     float3 kdAmb;
     float3 skyN;   // mean sky radiance over the hemisphere of N, compared with the probes (glossy occlusion)
+    float3 kSpec;  // weight of the glossy ambient (Fresnel), for the reflection of the probe light
     if (R.envMapOn > 0) {
         // HDRI: SH irradiance (diffuse) and the blurred mips of the image along the reflection (glossy).
         float3 Rd = reflect(-V, N);
@@ -339,6 +340,7 @@ float4 Shade(VSOut i, bool ghost, float shadowBias, bool capture) {
         ambDiffuse = kdAmb / PI * EnvIrradiance(N) * cavity;
         ambGlossy = Fe * refl * cavity;
         skyN = EnvIrradiance(N) / PI;
+        kSpec = Fe;
     } else {
         float3 sky = Environment(N) + R.ambient * (0.65 + 0.35 * N.y);
         float3 refl = Environment(reflect(-V, N)) + R.ambient;
@@ -347,6 +349,7 @@ float4 Shade(VSOut i, bool ghost, float shadowBias, bool capture) {
         ambDiffuse = diffuseCol * sky * cavity;
         ambGlossy = Fa * refl * cavity;
         skyN = sky;
+        kSpec = Fa;
     }
 #ifdef VP3D_DDGI_PROBES
     if (R.giMode > 0) {
@@ -367,7 +370,10 @@ float4 Shade(VSOut i, bool ghost, float shadowBias, bool capture) {
 #endif
             const float3 lw = float3(0.2126, 0.7152, 0.0722);
             float occ = saturate(dot(irr, lw) / max(dot(skyN, lw), 1e-4));
-            color += lerp(ambDiffuse, kdAmb * irr, conf) + ambGlossy * lerp(1.0, occ, conf);
+            occ *= occ;   // squared: grazing reflections of the sky indoors are occluded harder
+            // what the occluded sky no longer gives, the room gives: the probe light, reflected (metals keep a reflection)
+            float3 glossy = ambGlossy * occ + kSpec * irr * cavity * (1.0 - occ);
+            color += lerp(ambDiffuse, kdAmb * irr, conf) + lerp(ambGlossy, glossy, conf);
         }
     } else
 #endif
