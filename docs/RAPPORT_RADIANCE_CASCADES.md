@@ -174,3 +174,22 @@ Captures 15 à 21 dans `docs/rc_screens`.
 **HDRI** : le moteur éclaire déjà par HDRI, que ce soit en path tracing, en raster ou dans les sondes et cascades. Le viewer permet maintenant de choisir un HDRI sur toutes les scènes (capture 24 : Atrium avec le ciel procédural).
 - **Coût** : environ 48 ms GPU en mode RC écran dans une grande fenêtre. L'échantillonnage d'importance de l'HDRI est fait à chaque impact des 9 M rayons écran.
 - **Piste** : n'éclairer les impacts écran que par le soleil de l'HDRI et laisser le ciel passer par les cascades.
+
+### Version filtrée (sans temporel)
+
+La première version, avec les rayons tracés dans le pixel shader, laissait un bord granuleux et un liseré pointillé sur la ligne jour / nuit des sphères. Elle est remplacée par deux passes compute avant la passe raster :
+
+1. **`SunShadowTrace.hlsl`** :
+   - rayon caméra par pixel, puis 8 rayons dans le disque du soleil (spirale de Vogel tournée par pixel) ;
+   - les rayons partent de la surface lissée décrite par les normales des sommets (« Hacking the shadow terminator », Hanika 2021), ce qui supprime le liseré des sphères facettées ;
+   - écrit la visibilité, la profondeur et la normale.
+2. **`SunShadowFilter.hlsl`** : filtre bilatéral 5 × 5 guidé par la profondeur (2 %) et la normale. La pénombre est lisse et ne déborde pas d'un objet à l'autre.
+
+La passe raster lit le masque filtré (t8), ses pixel shaders repassent en SM 6.0.
+
+Coût sur l'Atrium (1 188 × 900), image entière :
+- shadow map : 5,63 ms
+- 4 rayons : 6,56 ms (+0,93 ms)
+- **8 rayons (défaut) : 7,06 ms (+1,43 ms)**
+
+Captures 25 (gros plan shadow map / ray tracé filtré / path tracing) et 26 (couloir).

@@ -132,7 +132,7 @@ bool Renderer::init(HWND hwnd, uint32_t width, uint32_t height, const std::wstri
 
     D3D12_DESCRIPTOR_HEAP_DESC hd = {};
     hd.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-    hd.NumDescriptors = kScreenGIUavSlot + 1;  // + shadow map SRV + material textures + DDGI UAVs + history UAVs + HDRI SRV + capture UAVs + probe SRVs + screen GI SRV, UAV
+    hd.NumDescriptors = kSunShadowUavSlot + 2;  // + shadow map SRV + material textures + DDGI UAVs + history UAVs + HDRI SRV + capture UAVs + probe SRVs + screen GI and sun shadow views
     hd.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
     m_device->CreateDescriptorHeap(&hd, IID_PPV_ARGS(&m_heap));
     m_descSize = m_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
@@ -146,8 +146,8 @@ bool Renderer::init(HWND hwnd, uint32_t width, uint32_t height, const std::wstri
         D3D12_CPU_DESCRIPTOR_HANDLE h = m_heap->GetCPUDescriptorHandleForHeapStart();
         h.ptr += (SIZE_T)kEnvHeapSlot * m_descSize;
         m_device->CreateShaderResourceView(nullptr, &sv, h);
-        // no probe grid yet: null views in the probe SRV slots of the raster pass (and the screen GI one)
-        for (uint32_t k = 0; k < 4; ++k) {
+        // no probe grid yet: null views in the probe SRV slots of the raster pass (and the screen GI, sun shadow ones)
+        for (uint32_t k = 0; k < 5; ++k) {
             D3D12_CPU_DESCRIPTOR_HANDLE ph = m_heap->GetCPUDescriptorHandleForHeapStart();
             ph.ptr += (SIZE_T)(kProbeSrvSlot + k) * m_descSize;
             m_device->CreateShaderResourceView(nullptr, &sv, ph);
@@ -156,8 +156,11 @@ bool Renderer::init(HWND hwnd, uint32_t width, uint32_t height, const std::wstri
         uv.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
         uv.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
         D3D12_CPU_DESCRIPTOR_HANDLE uh = m_heap->GetCPUDescriptorHandleForHeapStart();
-        uh.ptr += (SIZE_T)kScreenGIUavSlot * m_descSize;
-        m_device->CreateUnorderedAccessView(nullptr, nullptr, &uv, uh);
+        for (uint32_t k = 0; k < 3; ++k) {   // screen GI, raw and filtered sun shadow UAVs
+            D3D12_CPU_DESCRIPTOR_HANDLE uh2 = uh;
+            uh2.ptr += (SIZE_T)(kScreenGIUavSlot + k) * m_descSize;
+            m_device->CreateUnorderedAccessView(nullptr, nullptr, &uv, uh2);
+        }
         m_envDist = createBuffer(256, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ);
         memset(m_envDist.mapped, 0, 256);
     }
@@ -220,7 +223,12 @@ bool Renderer::createPipelines(std::string* error) {
     screenRange.NumDescriptors = 1;
     screenRange.BaseShaderRegister = 17;
 
-    D3D12_ROOT_PARAMETER p[21] = {};
+    D3D12_DESCRIPTOR_RANGE sunRange = {};   // u18, u19 ray traced sun shadow (raw, filtered)
+    sunRange.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_UAV;
+    sunRange.NumDescriptors = 2;
+    sunRange.BaseShaderRegister = 18;
+
+    D3D12_ROOT_PARAMETER p[22] = {};
     p[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
     p[0].Descriptor.ShaderRegister = 0;
     p[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
@@ -263,6 +271,9 @@ bool Renderer::createPipelines(std::string* error) {
     p[20].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;   // u17 screen GI texture
     p[20].DescriptorTable.NumDescriptorRanges = 1;
     p[20].DescriptorTable.pDescriptorRanges = &screenRange;
+    p[21].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;   // u18, u19 sun shadow
+    p[21].DescriptorTable.NumDescriptorRanges = 1;
+    p[21].DescriptorTable.pDescriptorRanges = &sunRange;
 
     D3D12_STATIC_SAMPLER_DESC ss = {};   // gLinearWrap (s0) of the path tracer
     ss.Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
@@ -271,7 +282,7 @@ bool Renderer::createPipelines(std::string* error) {
     ss.ShaderRegister = 0;
 
     D3D12_ROOT_SIGNATURE_DESC rsd = {};
-    rsd.NumParameters = 21;
+    rsd.NumParameters = 22;
     rsd.pParameters = p;
     rsd.NumStaticSamplers = 1;
     rsd.pStaticSamplers = &ss;
@@ -303,7 +314,8 @@ bool Renderer::createPipelines(std::string* error) {
            make(L"RCVisibility.cso", m_psoRCVisibility) && make(L"RCTrace.cso", m_psoRCTrace) &&
            make(L"RCGather.cso", m_psoRCGather) && make(L"RCSProbes.cso", m_psoRCSProbes) &&
            make(L"RCSTrace.cso", m_psoRCSTrace) && make(L"RCSProbeSH.cso", m_psoRCSProbeSH) &&
-           make(L"RCSGather.cso", m_psoRCSGather);
+           make(L"RCSGather.cso", m_psoRCSGather) && make(L"SunShadowTrace.cso", m_psoSunTrace) &&
+           make(L"SunShadowFilter.cso", m_psoSunFilter);
 }
 
 void Renderer::createTargets(uint32_t w, uint32_t h) {
@@ -387,6 +399,38 @@ void Renderer::createTargets(uint32_t w, uint32_t h) {
         hnd.ptr += (SIZE_T)kScreenGISrvSlot * m_descSize;
         m_device->CreateShaderResourceView(m_screenGI.Get(), &sv, hnd);
         m_screenGIOn = false;
+    }
+    {   // ray traced sun shadow: raw visibility + depth + normal (u18), filtered mask (u19, raster t8)
+        const DXGI_FORMAT fm[2] = {DXGI_FORMAT_R16G16B16A16_FLOAT, DXGI_FORMAT_R16_FLOAT};
+        ComPtr<ID3D12Resource>* res[2] = {&m_sunShadowRaw, &m_sunShadow};
+        for (int k = 0; k < 2; ++k) {
+            D3D12_RESOURCE_DESC d = {};
+            d.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+            d.Width = w;
+            d.Height = h;
+            d.DepthOrArraySize = 1;
+            d.MipLevels = 1;
+            d.Format = fm[k];
+            d.SampleDesc.Count = 1;
+            d.Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
+            res[k]->Reset();
+            m_device->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &d, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, nullptr,
+                                              IID_PPV_ARGS(&(*res[k])));
+            D3D12_UNORDERED_ACCESS_VIEW_DESC u = {};
+            u.Format = fm[k];
+            u.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
+            D3D12_CPU_DESCRIPTOR_HANDLE hnd = cpu;
+            hnd.ptr += (SIZE_T)(kSunShadowUavSlot + k) * m_descSize;
+            m_device->CreateUnorderedAccessView(res[k]->Get(), nullptr, &u, hnd);
+        }
+        D3D12_SHADER_RESOURCE_VIEW_DESC sv = {};
+        sv.Format = DXGI_FORMAT_R16_FLOAT;
+        sv.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+        sv.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+        sv.Texture2D.MipLevels = 1;
+        D3D12_CPU_DESCRIPTOR_HANDLE hnd = cpu;
+        hnd.ptr += (SIZE_T)kSunShadowSrvSlot * m_descSize;
+        m_device->CreateShaderResourceView(m_sunShadow.Get(), &sv, hnd);
     }
     createRasterTargets(w, h);
     m_sampleIndex = 0;
@@ -1503,6 +1547,45 @@ void Renderer::recordRCScreen(const RenderSettings& rs, UINT gx, UINT gy) {
     m_cmd->Dispatch(gx, gy, 1);
     uavBarrier();
     m_screenGIOn = true;
+}
+
+// Ray traced sun shadow of the raster pass: the visibility of every pixel (SunShadowTrace), then its bilateral filter
+// (SunShadowFilter). Leaves the filtered mask in PIXEL_SHADER_RESOURCE for the raster pass (t8); recordRaster puts it
+// back. Needs this frame's acceleration structure and frame constants; binds the compute root signature.
+void Renderer::recordSunShadow(const float3& sunDir, const RenderSettings& rs) {
+    float3 L = normalize(sunDir);
+    float s = std::abs(L.x) + std::abs(L.y) + std::abs(L.z);
+    float ox = L.x / s, oy = L.y / s;
+    if (L.z < 0) {   // octahedral encoding, as OctDec in the shader
+        float nx = (1.0f - std::abs(oy)) * (ox >= 0 ? 1.0f : -1.0f), ny = (1.0f - std::abs(ox)) * (oy >= 0 ? 1.0f : -1.0f);
+        ox = nx;
+        oy = ny;
+    }
+    const float tanR = std::tan(radians(std::max(rs.sunAngle, 0.0f)) * 0.5f);
+    const uint32_t samples = (uint32_t)std::max(1, std::min(rs.rtShadowSamples, 32));
+    uint32_t c[4];
+    memcpy(&c[0], &ox, 4);
+    memcpy(&c[1], &oy, 4);
+    memcpy(&c[2], &tanR, 4);
+    c[3] = samples;
+    m_cmd->SetComputeRootSignature(m_rootSig.Get());
+    m_cmd->SetComputeRootConstantBufferView(0, m_constants.va());
+    m_cmd->SetComputeRoot32BitConstants(1, 4, c, 0);
+    m_cmd->SetComputeRootShaderResourceView(2, m_tlas.va());
+    m_cmd->SetComputeRootShaderResourceView(3, m_vb.va());
+    m_cmd->SetComputeRootShaderResourceView(4, m_ib.va());
+    m_cmd->SetComputeRootShaderResourceView(5, m_instances.va());
+    D3D12_GPU_DESCRIPTOR_HANDLE sunTable = m_heap->GetGPUDescriptorHandleForHeapStart();
+    sunTable.ptr += (UINT64)kSunShadowUavSlot * m_descSize;
+    m_cmd->SetComputeRootDescriptorTable(21, sunTable);
+    const UINT gx = (m_rtW + 7) / 8, gy = (m_rtH + 7) / 8;
+    m_cmd->SetPipelineState(m_psoSunTrace.Get());
+    m_cmd->Dispatch(gx, gy, 1);
+    uavBarrier(m_sunShadowRaw.Get());
+    m_cmd->SetPipelineState(m_psoSunFilter.Get());
+    m_cmd->Dispatch(gx, gy, 1);
+    uavBarrier(m_sunShadow.Get());
+    transition(m_sunShadow.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
 }
 
 // Copies ACCUM and NORMAL into the history textures, after the frame's compute work and before the copy to the back buffer.

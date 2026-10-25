@@ -235,6 +235,7 @@ private:
     ComPtr<ID3D12PipelineState> m_psoGIUpdate, m_psoGIBlend, m_psoGIShade, m_psoGIRaster;
     ComPtr<ID3D12PipelineState> m_psoRCVisibility, m_psoRCTrace, m_psoRCGather;
     ComPtr<ID3D12PipelineState> m_psoRCSProbes, m_psoRCSTrace, m_psoRCSProbeSH, m_psoRCSGather;
+    ComPtr<ID3D12PipelineState> m_psoSunTrace, m_psoSunFilter;
     ComPtr<ID3D12DescriptorHeap> m_heap;
     uint32_t m_descSize = 0;
 
@@ -251,7 +252,9 @@ private:
     // SRVs of the probe atlases (irradiance, distance, state) read by the raster pass, after the capture UAVs
     static constexpr uint32_t kProbeSrvSlot = kCapHeapSlot + 3;
     // Screen GI texture (screen-space cascades): its SRV right after the probe SRVs (raster t7), then its UAV (u17)
-    static constexpr uint32_t kScreenGISrvSlot = kProbeSrvSlot + 3, kScreenGIUavSlot = kProbeSrvSlot + 4;
+    // and the ray traced sun shadow: its mask SRV (raster t8), then its raw and filtered UAVs (u18, u19)
+    static constexpr uint32_t kScreenGISrvSlot = kProbeSrvSlot + 3, kSunShadowSrvSlot = kProbeSrvSlot + 4;
+    static constexpr uint32_t kScreenGIUavSlot = kProbeSrvSlot + 5, kSunShadowUavSlot = kProbeSrvSlot + 6;   // + 7: filtered
     static constexpr uint32_t kProbeFace = 16;   // texels per cube face of a probe capture
     std::vector<ComPtr<ID3D12Resource>> m_materialTex;
     ComPtr<ID3D12Resource> m_tex[kTexCount];
@@ -308,6 +311,8 @@ private:
     Buffer m_rcBuffer, m_rcConstants;
     Buffer m_rcsBuffer, m_rcsConstants;          // screen-space cascades (u16, b4)
     ComPtr<ID3D12Resource> m_screenGI;           // per pixel indirect irradiance (RCSGather.hlsl)
+    ComPtr<ID3D12Resource> m_sunShadowRaw, m_sunShadow;   // ray traced sun visibility: raw (+ depth, normal), filtered
+    void recordSunShadow(const float3& sunDir, const RenderSettings& rs);   // SunShadowTrace + SunShadowFilter
     bool m_screenGIOn = false;                   // the last frame filled it (raster reads it)
     bool m_asThisFrame = false;                  // the TLAS was built this frame (ray traced shadows of the raster pass)
     RCStats m_rcStats;
