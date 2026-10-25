@@ -2,9 +2,10 @@
 // against DDGI and the path traced reference, with the usual inspection views. One window: the settings panel on
 // the left, the 3D view on the right (orbit / pan / zoom). Built by build.bat next to the editor (RCViewer.exe).
 //
-// Command line: --scene cornell|lookdev|atrium  --mode 0..5  --view 0|1|2  --probes N  --cascades N  --dirres N
+// Command line: --scene cornell|lookdev|atrium  --mode 0..6  --view 0|1|2  --probes N  --cascades N  --dirres N
 //               --interval x  --hdri file|sky  --size WxH  --shot file.png [--frames N]  --anim 1
-//               --show-probes 1  --camview N  --hysteresis x  --bilinear 0|1  --shot-window file.png
+//               (modes: 0 RC écran, 1 RC grille, 2 RC ray tracé, 3 DDGI raster, 4 DDGI ray tracé, 5 path, 6 raster)
+//               --show-probes 1  --camview N  --hysteresis x  --bilinear 0|1  --sspacing N  --sdirres N  --sinterval x  --shot-window file.png
 #include "app/Content.h"
 #include "app/ImGuiLayer.h"
 #include "backends/imgui_impl_win32.h"
@@ -30,9 +31,10 @@ enum SceneId { SC_CORNELL = 0, SC_LOOKDEV = 1, SC_ATRIUM = 2, SC_COUNT };
 const char* kSceneNames[SC_COUNT] = {"Cornell Box", "LookDev (HDRI)", "Atrium (soleil)"};
 
 // Render modes of the viewer (how RenderSettings is set up, see applyMode).
-enum Mode { MODE_RC_RASTER = 0, MODE_RC_TRACED, MODE_DDGI_RASTER, MODE_DDGI_TRACED, MODE_PATH, MODE_RASTER, MODE_COUNT };
+enum Mode { MODE_RCS_RASTER = 0, MODE_RC_RASTER, MODE_RC_TRACED, MODE_DDGI_RASTER, MODE_DDGI_TRACED, MODE_PATH, MODE_RASTER, MODE_COUNT };
 const char* kModeNames[MODE_COUNT] = {
-    "Radiance Cascades + raster (sans temporel)",
+    "RC écran (sondes sur les surfaces) + raster",
+    "RC grille 3D + raster (sans temporel)",
     "Radiance Cascades + ombrage ray tracé",
     "DDGI + raster (comparaison)",
     "DDGI + ombrage ray tracé (comparaison)",
@@ -42,7 +44,7 @@ const char* kModeNames[MODE_COUNT] = {
 
 struct Options {
     int scene = SC_CORNELL;
-    int mode = MODE_RC_RASTER;
+    int mode = MODE_RCS_RASTER;
     int view = 0;
     int probes = -1, cascades = -1, dirRes = -1;
     float interval = -1;
@@ -56,6 +58,8 @@ struct Options {
     int camView = -1;
     float hysteresis = -1;
     int bilinear = -1;
+    int sSpacing = -1, sDirRes = -1;
+    float sInterval = -1;
 };
 
 bool savePng(const std::wstring& path, std::vector<uint8_t> rgba, uint32_t w, uint32_t h) {
@@ -223,7 +227,7 @@ private:
     Scene m_base;          // the scene as built (animation reference)
     RenderSettings m_rs;
     int m_sceneId = SC_CORNELL;
-    int m_mode = MODE_RC_RASTER;
+    int m_mode = MODE_RCS_RASTER;
     std::vector<app::ViewPreset> m_views;
     std::vector<std::wstring> m_hdris;
     std::wstring m_hdriPath;
@@ -310,6 +314,9 @@ bool Viewer::init(HINSTANCE inst, const Options& opt) {
     m_rs.ddgiShowProbes = opt.showProbes;
     if (opt.hysteresis >= 0) m_rs.rcHysteresis = opt.hysteresis;
     if (opt.bilinear >= 0) m_rs.rcBilinearFix = opt.bilinear != 0;
+    if (opt.sSpacing > 0) m_rs.rcScreenSpacing = opt.sSpacing;
+    if (opt.sDirRes > 0) m_rs.rcScreenDirRes = opt.sDirRes;
+    if (opt.sInterval > 0) m_rs.rcScreenInterval = opt.sInterval;
     applyMode();
     ShowWindow(m_hwnd, SW_SHOWDEFAULT);
     UpdateWindow(m_hwnd);
@@ -323,9 +330,10 @@ bool Viewer::init(HINSTANCE inst, const Options& opt) {
 void Viewer::applyMode() {
     m_rs.raster = m_mode == MODE_RASTER;
     m_rs.ddgi = m_mode <= MODE_DDGI_TRACED;
-    m_rs.giMethod = (m_mode == MODE_RC_RASTER || m_mode == MODE_RC_TRACED) ? 1 : 0;
+    m_rs.giMethod = (m_mode == MODE_RCS_RASTER || m_mode == MODE_RC_RASTER || m_mode == MODE_RC_TRACED) ? 1 : 0;
+    m_rs.rcScreen = m_mode == MODE_RCS_RASTER;
     m_rs.ddgiRaster = false;   // probes always ray traced here (Radiance Cascades need ray tracing)
-    m_rs.ddgiRasterView = m_mode == MODE_RC_RASTER || m_mode == MODE_DDGI_RASTER;
+    m_rs.ddgiRasterView = m_mode == MODE_RCS_RASTER || m_mode == MODE_RC_RASTER || m_mode == MODE_DDGI_RASTER;
     m_r.resetAccumulation();
 }
 
@@ -490,7 +498,7 @@ void Viewer::ui(float panelW) {
     }
     ImGui::Checkbox("Animer la lumière (A)", &m_anim);
 
-    ImGui::SeparatorText("Rendu (touches 1 à 6)");
+    ImGui::SeparatorText("Rendu (touches 1 à 7)");
     int mode = m_mode;
     if (ImGui::Combo("##mode", &mode, kModeNames, MODE_COUNT)) { m_mode = mode; applyMode(); }
 
@@ -522,6 +530,11 @@ void Viewer::ui(float panelW) {
     ImGui::Checkbox("Rebonds multiples", &m_rs.rcBounces);
     ImGui::Checkbox("Correction bilinéaire (fusion exacte)", &m_rs.rcBilinearFix);
     ImGui::SliderFloat("##hy", &m_rs.rcHysteresis, 0.0f, 0.95f, m_rs.rcHysteresis > 0 ? "Hystérésis : %.2f" : "Hystérésis : 0 (aucun temporel)");
+    ImGui::BeginDisabled(!m_rs.rcScreen);
+    ImGui::SliderInt("##sspace", &m_rs.rcScreenSpacing, 2, 16, "Écran : 1 sonde / %d px");
+    ImGui::SliderInt("##sdir", &m_rs.rcScreenDirRes, 2, 8, "Écran : directions C0 %d par côté");
+    ImGui::SliderFloat("##sint", &m_rs.rcScreenInterval, 0.05f, 2.0f, "Écran : intervalle C0 %.2f x esp.");
+    ImGui::EndDisabled();
     ImGui::EndDisabled();
     if (m_rs.giMethod == 0 && gi) {
         ImGui::SeparatorText("DDGI");
@@ -562,7 +575,8 @@ void Viewer::ui(float panelW) {
         if (m_rs.giMethod == 1) {
             const RCStats& s = m_r.rcStats();
             ImGui::Text("Cascades : trace %.2f ms, intégration %.2f ms", m_r.giUpdateMs(), m_r.giBlendMs());
-            ImGui::Text("%.2f M rayons / image", s.rays / 1e6);
+            ImGui::Text("%.2f M rayons / image (grille)", s.rays / 1e6);
+            if (s.screenCascades > 0) ImGui::Text("Écran : %d cascades, %.2f M rayons", s.screenCascades, s.screenRays / 1e6);
             if (ImGui::BeginTable("casc", 4, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_RowBg)) {
                 ImGui::TableSetupColumn("C");
                 ImGui::TableSetupColumn("Sondes");
@@ -626,7 +640,7 @@ void Viewer::frame() {
             const RCStats& s = m_r.rcStats();
             fprintf(f, "mode %d scene %d size %ux%u\ngpu %.3f ms\nprobes %u spacing %.3f\nprobe update %.3f ms, gather %.3f ms\n",
                     m_mode, m_sceneId, w, h, m_r.gpuFrameMs(), m_r.giProbeCount(), m_r.giSpacing(), m_r.giUpdateMs(), m_r.giBlendMs());
-            fprintf(f, "rc rays %.3f M\n", s.rays / 1e6);
+            fprintf(f, "rc rays %.3f M, screen %d cascades %.3f M rays\n", s.rays / 1e6, s.screenCascades, s.screenRays / 1e6);
             for (int i = 0; i < s.cascades; ++i)
                 fprintf(f, "C%d probes %u dirs %ux%u interval %.2f - %.2f\n", i, s.probes[i], s.dirRes[i], s.dirRes[i], s.tStart[i], s.tEnd[i]);
             fclose(f);
@@ -660,6 +674,9 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         else if (a == L"--camview") opt.camView = _wtoi(next().c_str());
         else if (a == L"--hysteresis") opt.hysteresis = (float)_wtof(next().c_str());
         else if (a == L"--bilinear") opt.bilinear = _wtoi(next().c_str());
+        else if (a == L"--sspacing") opt.sSpacing = _wtoi(next().c_str());
+        else if (a == L"--sdirres") opt.sDirRes = _wtoi(next().c_str());
+        else if (a == L"--sinterval") opt.sInterval = (float)_wtof(next().c_str());
         else if (a == L"--size") swscanf_s(next().c_str(), L"%dx%d", &opt.width, &opt.height);
     }
     LocalFree(argv);

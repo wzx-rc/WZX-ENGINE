@@ -46,3 +46,18 @@ float RCTexelSolidAngle(uint2 t, uint dirRes) {
     // four triangles around the centre: exact for texels that straddle a fold of the octahedron as well
     return TriSolidAngle(m, p00, p10) + TriSolidAngle(m, p10, p11) + TriSolidAngle(m, p11, p01) + TriSolidAngle(m, p01, p00);
 }
+
+// Radiance leaving the hit towards the probe. The light samples are fixed (stable noise) unless the animated noise
+// flag is set (then the gather pass averages the frames with its hysteresis).
+float3 ShadeHit(Hit h, float3 d, inout uint rng) {
+    GpuInstance gi = gInst[h.inst];
+    Surf s = MakeSurf(gMats[gi.materialId], h);
+    float3 albedo = DiffuseAlbedo(s);
+    float3 rad = s.emission;
+    float3 e = 0;
+    uint n = max(RC.lightSamples, 1u);
+    for (uint k = 0; k < n; ++k) e += DirectIrradiance(h.P, h.N, h.Ng, rng) + EnvDirectIrradiance(h.P, h.N, h.Ng, rng);
+    rad += albedo / PI * e / n;
+    if ((RC.flags & RC_FLAG_BOUNCES) && G.frame > 0) rad += albedo * SampleIrradiance(h.P, h.N, -d);
+    return rad;
+}

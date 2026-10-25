@@ -75,6 +75,12 @@ struct RenderSettings {
     int rcLightSamples = 2;       // light samples per hit (fixed per texel: stable, no flicker)
     float rcHysteresis = 0.0f;    // 0 = no temporal accumulation; > 0 blends the frames (the light samples then move)
     bool rcBilinearFix = false;   // merge with one traced segment per parent probe (8x the merge rays; not better here)
+    // Screen-space cascades (needs giMethod = 1 and the raster view): probes on the visible surfaces, one per
+    // rcScreenSpacing x rcScreenSpacing pixels in cascade 0; the world cascades stay the cache of the further bounces.
+    bool rcScreen = false;
+    int rcScreenSpacing = 8;      // pixels between the cascade-0 probes (x2 per cascade)
+    int rcScreenDirRes = 8;       // directions per side of cascade 0 (x2 per cascade)
+    float rcScreenInterval = 0.25f;   // ray length of cascade 0, in world probe spacings (x4 per cascade)
 };
 
 // What the Radiance Cascades of the last frame looked like (viewer statistics).
@@ -83,6 +89,8 @@ struct RCStats {
     uint32_t probes[RC_MAX_CASCADES] = {}, dirRes[RC_MAX_CASCADES] = {};
     float tStart[RC_MAX_CASCADES] = {}, tEnd[RC_MAX_CASCADES] = {};
     uint64_t rays = 0;            // texels traced per frame (all cascades)
+    int screenCascades = 0;       // screen-space cascades (rcScreen)
+    uint64_t screenRays = 0;
 };
 
 struct ViewRect { int x = 0, y = 0, w = 1, h = 1; };
@@ -189,6 +197,7 @@ private:
     void createProbeTextures(const lit::ProbeGrid& grid);
     void recordDDGI(const RenderSettings& rs, UINT gx, UINT gy, bool shade = true);   // shade: GIShade (ray traced visibility)
     void recordRC(const RenderSettings& rs);   // Radiance Cascades: trace + merge every cascade, then fill the probe atlases
+    void recordRCScreen(const RenderSettings& rs, UINT gx, UINT gy);   // screen-space cascades + per-pixel gather
     void copyHistory();
     uint32_t sceneSignature(const Scene& scene) const;
     uint32_t transformSignature(const Scene& scene) const;
@@ -220,6 +229,7 @@ private:
     ComPtr<ID3D12PipelineState> m_psoTrace, m_psoDenoise, m_psoTonemap;
     ComPtr<ID3D12PipelineState> m_psoGIUpdate, m_psoGIBlend, m_psoGIShade, m_psoGIRaster;
     ComPtr<ID3D12PipelineState> m_psoRCVisibility, m_psoRCTrace, m_psoRCGather;
+    ComPtr<ID3D12PipelineState> m_psoRCSProbes, m_psoRCSTrace, m_psoRCSGather;
     ComPtr<ID3D12DescriptorHeap> m_heap;
     uint32_t m_descSize = 0;
 
@@ -235,6 +245,8 @@ private:
     static constexpr uint32_t kCapHeapSlot = kEnvHeapSlot + 1;
     // SRVs of the probe atlases (irradiance, distance, state) read by the raster pass, after the capture UAVs
     static constexpr uint32_t kProbeSrvSlot = kCapHeapSlot + 3;
+    // Screen GI texture (screen-space cascades): its SRV right after the probe SRVs (raster t7), then its UAV (u17)
+    static constexpr uint32_t kScreenGISrvSlot = kProbeSrvSlot + 3, kScreenGIUavSlot = kProbeSrvSlot + 4;
     static constexpr uint32_t kProbeFace = 16;   // texels per cube face of a probe capture
     std::vector<ComPtr<ID3D12Resource>> m_materialTex;
     ComPtr<ID3D12Resource> m_tex[kTexCount];
@@ -289,6 +301,9 @@ private:
     Rng m_giRng;
     // Radiance Cascades: all cascades in one buffer (u15), their constants (b3)
     Buffer m_rcBuffer, m_rcConstants;
+    Buffer m_rcsBuffer, m_rcsConstants;          // screen-space cascades (u16, b4)
+    ComPtr<ID3D12Resource> m_screenGI;           // per pixel indirect irradiance (RCSGather.hlsl)
+    bool m_screenGIOn = false;                   // the last frame filled it (raster reads it)
     RCStats m_rcStats;
 
     // Temporal history: copies of ACCUM and NORMAL of the previous frame, and the camera they were rendered with.

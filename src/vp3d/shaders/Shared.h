@@ -144,6 +144,22 @@ struct RCConstants {
     float hysteresis; float pad0; float pad1; float pad2;
 };
 
+// Screen-space Radiance Cascades (probes on the visible surfaces, rays traced in the whole scene): cascade i has one
+// probe per tile x tile pixels (tile = spacing * 2^i) placed where the tile centre's camera ray hits, dirRes
+// = dirRes0 * 2^i octahedral directions, intervals x4 per cascade, the top one to infinity. Every cascade holds about
+// the same number of texels. Cascade 0 is gathered per pixel into the screen GI texture read by the raster pass.
+#define RCS_MAX_CASCADES 8
+
+struct RCSCascade {
+    uint4 grid;                       // probes per row, per column, tile (pixels), directions per side
+    uint offset; uint probeOffset; float tStart; float tEnd;   // first texel, first probe record (2 float4 each)
+};
+
+struct RCSConstants {
+    RCSCascade c[RCS_MAX_CASCADES];
+    uint cascadeCount; uint flags; float planeTolerance; float pad0;   // planeTolerance: world size of a C0 tile
+};
+
 #define RC_FLAG_BOUNCES 1u
 #define RC_FLAG_ANIMATED_NOISE 2u
 #define RC_FLAG_BILINEAR_FIX 4u   // merge with one traced segment per parent (RCTrace.hlsl, BilinearFixMerge)

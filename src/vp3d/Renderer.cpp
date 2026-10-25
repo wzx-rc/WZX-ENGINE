@@ -132,7 +132,7 @@ bool Renderer::init(HWND hwnd, uint32_t width, uint32_t height, const std::wstri
 
     D3D12_DESCRIPTOR_HEAP_DESC hd = {};
     hd.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-    hd.NumDescriptors = kProbeSrvSlot + 3;  // + shadow map SRV + material textures + DDGI UAVs + history UAVs + HDRI SRV + capture UAVs + probe SRVs
+    hd.NumDescriptors = kScreenGIUavSlot + 1;  // + shadow map SRV + material textures + DDGI UAVs + history UAVs + HDRI SRV + capture UAVs + probe SRVs + screen GI SRV, UAV
     hd.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
     m_device->CreateDescriptorHeap(&hd, IID_PPV_ARGS(&m_heap));
     m_descSize = m_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
@@ -146,12 +146,18 @@ bool Renderer::init(HWND hwnd, uint32_t width, uint32_t height, const std::wstri
         D3D12_CPU_DESCRIPTOR_HANDLE h = m_heap->GetCPUDescriptorHandleForHeapStart();
         h.ptr += (SIZE_T)kEnvHeapSlot * m_descSize;
         m_device->CreateShaderResourceView(nullptr, &sv, h);
-        // no probe grid yet: null views in the probe SRV slots of the raster pass
-        for (uint32_t k = 0; k < 3; ++k) {
+        // no probe grid yet: null views in the probe SRV slots of the raster pass (and the screen GI one)
+        for (uint32_t k = 0; k < 4; ++k) {
             D3D12_CPU_DESCRIPTOR_HANDLE ph = m_heap->GetCPUDescriptorHandleForHeapStart();
             ph.ptr += (SIZE_T)(kProbeSrvSlot + k) * m_descSize;
             m_device->CreateShaderResourceView(nullptr, &sv, ph);
         }
+        D3D12_UNORDERED_ACCESS_VIEW_DESC uv = {};
+        uv.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
+        uv.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
+        D3D12_CPU_DESCRIPTOR_HANDLE uh = m_heap->GetCPUDescriptorHandleForHeapStart();
+        uh.ptr += (SIZE_T)kScreenGIUavSlot * m_descSize;
+        m_device->CreateUnorderedAccessView(nullptr, nullptr, &uv, uh);
         m_envDist = createBuffer(256, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ);
         memset(m_envDist.mapped, 0, 256);
     }
@@ -162,6 +168,8 @@ bool Renderer::init(HWND hwnd, uint32_t width, uint32_t height, const std::wstri
     m_giConstants = createBuffer(256, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ);
     m_rcConstants = createBuffer((sizeof(gpu::RCConstants) + 255) & ~255ull, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_FLAG_NONE,
                                  D3D12_RESOURCE_STATE_GENERIC_READ);
+    m_rcsConstants = createBuffer((sizeof(gpu::RCSConstants) + 255) & ~255ull, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_FLAG_NONE,
+                                  D3D12_RESOURCE_STATE_GENERIC_READ);
 
     D3D12_QUERY_HEAP_DESC qhd = {};
     qhd.Type = D3D12_QUERY_HEAP_TYPE_TIMESTAMP;
@@ -207,7 +215,12 @@ bool Renderer::createPipelines(std::string* error) {
     capRange.NumDescriptors = 3;
     capRange.BaseShaderRegister = 12;
 
-    D3D12_ROOT_PARAMETER p[18] = {};
+    D3D12_DESCRIPTOR_RANGE screenRange = {};   // u17 screen GI texture (screen-space cascades)
+    screenRange.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_UAV;
+    screenRange.NumDescriptors = 1;
+    screenRange.BaseShaderRegister = 17;
+
+    D3D12_ROOT_PARAMETER p[21] = {};
     p[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
     p[0].Descriptor.ShaderRegister = 0;
     p[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
@@ -243,6 +256,13 @@ bool Renderer::createPipelines(std::string* error) {
     p[16].Descriptor.ShaderRegister = 3;
     p[17].ParameterType = D3D12_ROOT_PARAMETER_TYPE_UAV;   // u15 Radiance Cascades buffer
     p[17].Descriptor.ShaderRegister = 15;
+    p[18].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;   // b4 screen-space cascades constants
+    p[18].Descriptor.ShaderRegister = 4;
+    p[19].ParameterType = D3D12_ROOT_PARAMETER_TYPE_UAV;   // u16 screen-space cascades buffer
+    p[19].Descriptor.ShaderRegister = 16;
+    p[20].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;   // u17 screen GI texture
+    p[20].DescriptorTable.NumDescriptorRanges = 1;
+    p[20].DescriptorTable.pDescriptorRanges = &screenRange;
 
     D3D12_STATIC_SAMPLER_DESC ss = {};   // gLinearWrap (s0) of the path tracer
     ss.Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
@@ -251,7 +271,7 @@ bool Renderer::createPipelines(std::string* error) {
     ss.ShaderRegister = 0;
 
     D3D12_ROOT_SIGNATURE_DESC rsd = {};
-    rsd.NumParameters = 18;
+    rsd.NumParameters = 21;
     rsd.pParameters = p;
     rsd.NumStaticSamplers = 1;
     rsd.pStaticSamplers = &ss;
@@ -281,7 +301,8 @@ bool Renderer::createPipelines(std::string* error) {
            make(L"DDGIUpdate.cso", m_psoGIUpdate) && make(L"DDGIRaster.cso", m_psoGIRaster) &&
            make(L"DDGIBlend.cso", m_psoGIBlend) && make(L"GIShade.cso", m_psoGIShade) &&
            make(L"RCVisibility.cso", m_psoRCVisibility) && make(L"RCTrace.cso", m_psoRCTrace) &&
-           make(L"RCGather.cso", m_psoRCGather);
+           make(L"RCGather.cso", m_psoRCGather) && make(L"RCSProbes.cso", m_psoRCSProbes) &&
+           make(L"RCSTrace.cso", m_psoRCSTrace) && make(L"RCSGather.cso", m_psoRCSGather);
 }
 
 void Renderer::createTargets(uint32_t w, uint32_t h) {
@@ -337,6 +358,35 @@ void Renderer::createTargets(uint32_t w, uint32_t h) {
         m_device->CreateUnorderedAccessView(m_hist[i].Get(), nullptr, &u, hnd);
     }
     m_historyValid = false;
+    {   // screen GI texture of the screen-space cascades (UAV u17, SRV t7 of the raster pass)
+        D3D12_RESOURCE_DESC d = {};
+        d.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+        d.Width = w;
+        d.Height = h;
+        d.DepthOrArraySize = 1;
+        d.MipLevels = 1;
+        d.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
+        d.SampleDesc.Count = 1;
+        d.Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
+        m_screenGI.Reset();
+        m_device->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &d, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, nullptr,
+                                          IID_PPV_ARGS(&m_screenGI));
+        D3D12_UNORDERED_ACCESS_VIEW_DESC u = {};
+        u.Format = d.Format;
+        u.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
+        D3D12_CPU_DESCRIPTOR_HANDLE hnd = cpu;
+        hnd.ptr += (SIZE_T)kScreenGIUavSlot * m_descSize;
+        m_device->CreateUnorderedAccessView(m_screenGI.Get(), nullptr, &u, hnd);
+        D3D12_SHADER_RESOURCE_VIEW_DESC sv = {};
+        sv.Format = d.Format;
+        sv.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+        sv.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+        sv.Texture2D.MipLevels = 1;
+        hnd = cpu;
+        hnd.ptr += (SIZE_T)kScreenGISrvSlot * m_descSize;
+        m_device->CreateShaderResourceView(m_screenGI.Get(), &sv, hnd);
+        m_screenGIOn = false;
+    }
     createRasterTargets(w, h);
     m_sampleIndex = 0;
 }
@@ -1252,6 +1302,9 @@ void Renderer::recordDDGI(const RenderSettings& rs, UINT gx, UINT gy, bool shade
     f.captureSeen = rs.ddgiRaster ? std::min(total, m_capSeen + m_capSlots) : total;
     gpu::DDGIConstants c;
     lit::ddgiConstants(grid, f, m_giRng, c);
+    // Screen-space cascades: only for the raster view (shade = false), which reads their screen GI texture.
+    const bool screen = rs.giMethod == 1 && rs.rcScreen && !rs.ddgiRaster && !shade;
+    if (screen) c.flags |= 8u;
     memcpy(m_giConstants.mapped, &c, sizeof(c));
 
     D3D12_GPU_DESCRIPTOR_HANDLE giTable = m_heap->GetGPUDescriptorHandleForHeapStart();
@@ -1259,8 +1312,12 @@ void Renderer::recordDDGI(const RenderSettings& rs, UINT gx, UINT gy, bool shade
     m_cmd->SetComputeRootConstantBufferView(10, m_giConstants.va());
     m_cmd->SetComputeRootDescriptorTable(11, giTable);
 
+    m_screenGIOn = false;
+    m_rcStats.screenCascades = 0;
+    m_rcStats.screenRays = 0;
     if (rs.giMethod == 1 && !rs.ddgiRaster) {
         recordRC(rs);   // the cascades replace the probe rays and the blend (same atlases)
+        if (screen) recordRCScreen(rs, gx, gy);
     } else if (rs.ddgiRaster) {
         // One group per probe: the captured ones integrate their faces (u12..u14) straight into their tiles, no blend pass.
         D3D12_GPU_DESCRIPTOR_HANDLE capTable = m_heap->GetGPUDescriptorHandleForHeapStart();
@@ -1373,6 +1430,75 @@ void Renderer::recordRC(const RenderSettings& rs) {
     m_cmd->EndQuery(m_queryHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 3);
 }
 
+// Screen-space cascades over the viewport: cascade i has a probe per (spacing * 2^i)^2 pixels on the visible surface,
+// (dirRes0 * 2^i)^2 directions and the interval [L0 (4^i - 1) / 3, L0 (4^(i+1) - 1) / 3] (the top one to infinity),
+// so every cascade traces about the same number of rays. Cascades are added until one probe covers the viewport.
+// Probes (RCSProbes), cascades from the top down (RCSTrace), then the per-pixel gather into the screen GI texture.
+// Expects recordRC to have run this frame (its probes are the cache of the further bounces) and its bindings.
+void Renderer::recordRCScreen(const RenderSettings& rs, UINT gx, UINT gy) {
+    gpu::RCSConstants sc = {};
+    const uint32_t W = m_rtW, H = m_rtH;
+    const uint32_t s0 = (uint32_t)std::max(2, std::min(rs.rcScreenSpacing, 32));
+    const uint32_t d0 = (uint32_t)std::max(2, std::min(rs.rcScreenDirRes, 8));
+    const float L0 = std::max(0.01f, rs.rcScreenInterval) * m_giSpacing;
+    uint32_t count = 0, texels = 0;
+    for (uint32_t i = 0; i < RCS_MAX_CASCADES; ++i) {
+        gpu::RCSCascade& c = sc.c[i];
+        const uint32_t tile = s0 << i;
+        c.grid = {(W + tile - 1) / tile, (H + tile - 1) / tile, tile, d0 << i};
+        c.offset = texels;
+        c.tStart = L0 * (std::pow(4.0f, (float)i) - 1.0f) / 3.0f;
+        c.tEnd = L0 * (std::pow(4.0f, (float)(i + 1)) - 1.0f) / 3.0f;
+        texels += c.grid.x * c.grid.y * c.grid.w * c.grid.w;
+        ++count;
+        // stop when the next cascade would see the whole viewport from one probe, or once the rays cross the scene
+        if ((c.grid.x <= 2 && c.grid.y <= 2) || c.tEnd >= 2.0f * m_sceneRadius) break;
+    }
+    sc.c[count - 1].tEnd = 1e30f;
+    uint32_t probes = texels;
+    for (uint32_t i = 0; i < count; ++i) {
+        sc.c[i].probeOffset = probes;
+        probes += sc.c[i].grid.x * sc.c[i].grid.y * 2;
+    }
+    sc.cascadeCount = count;
+    sc.planeTolerance = std::max(L0, 1e-3f);
+    memcpy(m_rcsConstants.mapped, &sc, sizeof(sc));
+    m_rcStats.screenCascades = (int)count;
+    m_rcStats.screenRays = texels;
+
+    const uint64_t bytes = (uint64_t)probes * 16;
+    if (!m_rcsBuffer.res || m_rcsBuffer.size < bytes) {
+        waitIdle();
+        m_rcsBuffer = createBuffer(bytes, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS,
+                                   D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+    }
+    D3D12_GPU_DESCRIPTOR_HANDLE screenTable = m_heap->GetGPUDescriptorHandleForHeapStart();
+    screenTable.ptr += (UINT64)kScreenGIUavSlot * m_descSize;
+    m_cmd->SetComputeRootConstantBufferView(18, m_rcsConstants.va());
+    m_cmd->SetComputeRootUnorderedAccessView(19, m_rcsBuffer.va());
+    m_cmd->SetComputeRootDescriptorTable(20, screenTable);
+
+    m_cmd->SetPipelineState(m_psoRCSProbes.Get());
+    for (uint32_t i = 0; i < count; ++i) {
+        const uint32_t pass[4] = {i, 0, 0, 0};
+        m_cmd->SetComputeRoot32BitConstants(1, 4, pass, 0);
+        m_cmd->Dispatch((sc.c[i].grid.x * sc.c[i].grid.y + 63) / 64, 1, 1);
+    }
+    uavBarrier(m_rcsBuffer.res.Get());
+    m_cmd->SetPipelineState(m_psoRCSTrace.Get());
+    for (int i = (int)count - 1; i >= 0; --i) {
+        const uint32_t pass[4] = {(uint32_t)i, 0, 0, 0};
+        m_cmd->SetComputeRoot32BitConstants(1, 4, pass, 0);
+        const uint32_t n = sc.c[i].grid.x * sc.c[i].grid.y * sc.c[i].grid.w * sc.c[i].grid.w;
+        m_cmd->Dispatch((n + 63) / 64, 1, 1);
+        uavBarrier(m_rcsBuffer.res.Get());
+    }
+    m_cmd->SetPipelineState(m_psoRCSGather.Get());
+    m_cmd->Dispatch(gx, gy, 1);
+    uavBarrier();
+    m_screenGIOn = true;
+}
+
 // Copies ACCUM and NORMAL into the history textures, after the frame's compute work and before the copy to the back buffer.
 void Renderer::copyHistory() {
     uavBarrier();
@@ -1416,6 +1542,10 @@ uint32_t renderSignature(const RenderSettings& rs) {
     mix(&rs.rcLightSamples, sizeof(int));
     mix(&rs.rcHysteresis, sizeof(float));
     mix(&rs.rcBilinearFix, sizeof(bool));
+    mix(&rs.rcScreen, sizeof(bool));
+    mix(&rs.rcScreenSpacing, sizeof(int));
+    mix(&rs.rcScreenDirRes, sizeof(int));
+    mix(&rs.rcScreenInterval, sizeof(float));
     mix(&rs.maxBounces, sizeof(int));
     mix(&rs.bevel, sizeof(bool));
     mix(&rs.bevelScale, sizeof(float));
@@ -1696,7 +1826,7 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
             memcpy(m_giConstants.mapped, &c, sizeof(c));
         }
         // The raster pass reads the irradiance, distance and state atlases (SRVs t4..t6).
-        ID3D12Resource* atlases[3] = {m_giTex[0].Get(), m_giTex[1].Get(), m_giTex[3].Get()};
+        ID3D12Resource* atlases[4] = {m_giTex[0].Get(), m_giTex[1].Get(), m_giTex[3].Get(), m_screenGI.Get()};   // + screen GI (t7)
         for (ID3D12Resource* r : atlases) transition(r, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
         recordRaster(scene, rs, vp, false, true, !(liveProbes && rs.ddgiRaster));   // the capture pass already drew the shadow map
         for (ID3D12Resource* r : atlases) transition(r, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);

@@ -60,6 +60,12 @@ static const float PI = 3.14159265;
 #define DDGI_PROBE_REG_STATE t22
 #endif
 #include "DDGIProbe.hlsli"
+#ifndef VP3D_ATTRIB_SEMANTICS
+// Screen-space Radiance Cascades (DDGIConstants flags bit 8): the indirect irradiance of each pixel, computed by
+// RCSGather.hlsl (DirectX 12 viewport only).
+#define VP3D_SCREEN_GI
+Texture2D<float4> gScreenGI : register(t7);
+#endif
 #endif
 #define DRAW_GHOST 1u
 #define DRAW_LIGHT 2u
@@ -352,6 +358,13 @@ float4 Shade(VSOut i, bool ghost, float shadowBias, bool capture) {
         if (!capture && G.view != 2) {
             float conf;
             float3 irr = SampleIrradiance(i.wpos, N, V, conf);
+#ifdef VP3D_SCREEN_GI
+            if (G.flags & 8u) {   // screen-space cascades where they answer, the probe volume elsewhere
+                float4 s = gScreenGI.Load(int3(i.pos.xy, 0));
+                irr = lerp(irr, s.rgb, s.a);
+                conf = max(conf, s.a);
+            }
+#endif
             const float3 lw = float3(0.2126, 0.7152, 0.0722);
             float occ = saturate(dot(irr, lw) / max(dot(skyN, lw), 1e-4));
             color += lerp(ambDiffuse, kdAmb * irr, conf) + ambGlossy * lerp(1.0, occ, conf);

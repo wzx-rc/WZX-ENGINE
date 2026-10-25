@@ -7,21 +7,6 @@
 // (unless RC.hysteresis > 0 in the gather pass).
 #include "RCCommon.hlsli"
 
-// Radiance leaving the hit towards the probe. The light samples are fixed (stable noise) unless the animated noise
-// flag is set (then the gather pass averages the frames with its hysteresis).
-float3 ShadeHit(Hit h, float3 d, inout uint rng) {
-    GpuInstance gi = gInst[h.inst];
-    Surf s = MakeSurf(gMats[gi.materialId], h);
-    float3 albedo = DiffuseAlbedo(s);
-    float3 rad = s.emission;
-    float3 e = 0;
-    uint n = max(RC.lightSamples, 1u);
-    for (uint k = 0; k < n; ++k) e += DirectIrradiance(h.P, h.N, h.Ng, rng) + EnvDirectIrradiance(h.P, h.N, h.Ng, rng);
-    rad += albedo / PI * e / n;
-    if ((RC.flags & RC_FLAG_BOUNCES) && G.frame > 0) rad += albedo * SampleIrradiance(h.P, h.N, -d);
-    return rad;
-}
-
 // Merged radiance of the cascade above (index j) for direction texel t of cascade j-1, seen from the child probe
 // (position P, visibility mask of its parents): the 2x2 finer directions averaged, trilinear over the parents the
 // child sees (all of them when it sees none, e.g. a probe stuck inside an object).

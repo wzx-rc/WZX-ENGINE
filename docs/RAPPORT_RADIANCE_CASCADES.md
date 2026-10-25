@@ -76,3 +76,59 @@ Captures après correctif : `docs/rc_screens/8_atrium_RC_v2.png`, `9_atrium_RC_v
 - Pas encore de « bilinear fix » complet (un rayon par parent et par direction). Le test de visibilité par sonde en est une version bon marché.
 - Les reflets brillants restent ceux de la passe raster (environnement) : en intérieur, le sol prend un reflet bleuté du ciel. C'est le même défaut en DDGI raster ; il faudrait une occlusion spéculaire.
 - Pas encore branché dans l'éditeur (`Viewport3D.exe`) : seul `RenderSettings::giMethod` est à exposer dans le menu Rendu.
+
+## Recherche et mode « RC écran » (25/10, soir)
+
+**Recherche** (dépôts clonés pour étude, hors du dépôt) :
+- **Sam Pavlovic** : aucun dépôt public trouvé, ni aucun code de lui sur Radiance Cascades.
+- **Articles** :
+  - Sannikov, *Radiance Cascades* (JCGT, source LaTeX) ;
+  - Osborne et Sannikov 2024 (*bilinear fix*) ;
+  - Freeman et Sannikov, *Split Radiance Cascades* (arXiv 2607.20384, juillet 2026).
+- **Codes étudiés** :
+
+  | Dépôt | Ce que c'est | Licence |
+  |---|---|---|
+  | three-rc (Cody Bennett) | Sondes en espace écran, tracé dans un BVH, sans aucun temporel | Tous droits réservés : étudié, rien copié |
+  | jumeder/dx12-radiance-cascades | Grille 3D en DXR | MIT |
+  | tmpvar/radiance-cascades-3d-grid | Grille 3D en OpenGL | MIT |
+  | dequevedo/radiance-cascades-lab | Godot, voxels + champ proche par pixel ; journal de bord très détaillé | MIT |
+
+- **Conclusion** : les images propres sans temporel (Sponza de three-rc, post de Sam) viennent de sondes posées sur les surfaces visibles, et non d'une grille 3D. Avec une grille, les sondes proches des surfaces donnent des « lobes » et des fuites, comme le confirme le journal du lab Godot.
+
+**Mode « RC écran »** (`RenderSettings::rcScreen`, mode 0 du viewer, implémentation propre) :
+- **Sondes** : chaque cascade i pose une sonde par tuile de 8·2ⁱ pixels, là où le rayon caméra du centre de la tuile touche la scène (`RCSProbes.hlsl`).
+- **Tracé** : directions 8·2ⁱ par côté, intervalles ×4 en DXR dans toute la scène, donc la géométrie et les lumières hors écran comptent (`RCSTrace.hlsl`).
+- **Fusion** : les 4 sondes parentes à l'écran, pondérées par la distance au plan de la surface et par la normale.
+- **Rebonds suivants** : ils viennent de la grille RC 3D, qui reste le cache.
+- **Gather par pixel** (`RCSGather.hlsl`) : les 4 sondes de cascade 0 voisines, intégrées en cosinus, écrites dans une texture d'irradiance écran lue par la passe raster (t7).
+- **Cascades** : ajoutées jusqu'à ce que les rayons traversent la scène (5 ici). Aucun temporel.
+
+Mesures sur l'Atrium (% du path tracing), viewport 1 188 × 900 :
+
+| Zone | RC grille + raster | **RC écran + raster** |
+|---|---|---|
+| Bannière rouge G | 88 | 95 |
+| Bannière bleue G | 85 | 94 |
+| Plafond G | 129 | 157 |
+| Plafond D | 101 | 110 |
+| Pilier D | 92 | 76 |
+| Sol à l'ombre D | 119 | 108 |
+| Mur du fond | 83 | 85 |
+| Bannière verte D | 93 | 94 |
+| GPU image entière | 3,2 ms | 12,1 ms (5,8 M rayons écran) |
+
+- **Ce qu'apporte le mode écran** : un vrai champ proche, avec les ombres de contact du rebond au pied des piliers, des blocs et des sphères, et des coins nets. Plus aucune trace de la grille, et plus de tache sombre sur la Cornell.
+- **Ce qu'il coûte** : environ 4 fois plus cher. En moyenne, il n'est pas plus juste que la grille.
+- **Variantes testées** :
+  - 4 px et 4 directions : 7 ms, mais moins juste (bannière verte 76 %) ;
+  - 4 px et 8 directions : 21 ms ;
+  - 8 px et 8 directions : le compromis retenu.
+- **Plafond gauche toujours trop clair** : les rebonds suivants lisent la grille 3D, qui fuit encore un peu au-dessus du toit.
+
+**Suite possible** :
+- appliquer le « ray splitting » de Split RC (rayons partant des surfaces visibles, versés dans la cascade de leur distance) pour réduire le coût ;
+- passer à des sondes en hémisphère (deux fois plus de directions utiles) ;
+- utiliser les sondes écran aussi pour les reflets brillants.
+
+Captures : `docs/rc_screens/11` à `14`.

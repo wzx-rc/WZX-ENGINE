@@ -85,7 +85,7 @@ bool Renderer::createRasterPipelines(std::string* error) {
 
     D3D12_DESCRIPTOR_RANGE probeRange = {};   // t4..t6 probe atlases (DDGI without ray tracing)
     probeRange.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
-    probeRange.NumDescriptors = 3;
+    probeRange.NumDescriptors = 4;   // + t7 screen GI (screen-space cascades)
     probeRange.BaseShaderRegister = 4;
 
     D3D12_ROOT_PARAMETER p[10] = {};

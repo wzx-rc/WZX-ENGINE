@@ -28,7 +28,7 @@ if not exist build\lib mkdir build\lib
 
 echo [1/4] Shaders
 set "DXC=%WindowsSdkVerBinPath%x64\dxc.exe"
-for %%S in (PathTrace Denoise Tonemap DDGIUpdate DDGIRaster DDGIBlend GIShade RCVisibility RCTrace RCGather) do (
+for %%S in (PathTrace Denoise Tonemap DDGIUpdate DDGIRaster DDGIBlend GIShade RCVisibility RCTrace RCGather RCSProbes RCSTrace RCSGather) do (
     "%DXC%" -nologo -T cs_6_5 -E main -HV 2021 -O3 -I src\vp3d\shaders src\vp3d\shaders\%%S.hlsl -Fo "%OUT%\shaders\%%S.cso" || exit /b 1
 )
 for %%E in (VSMain VSWire VSShadow VSBackground VSProbe) do (
