@@ -12,7 +12,9 @@ float3 MergeParents(uint j, uint2 kChild, RCSCascade child, float3 P, float3 N, 
     float2 f = px / c.grid.z - 0.5;
     int2 base = int2(floor(f));
     float2 a = f - float2(base);
-    float tol = max(c.tStart, RS.planeTolerance);
+    // plane tolerance of the parents: grows with the tile (x2 per cascade), not with the ray length, or parents on
+    // another surface far behind (a sunlit wall seen past a ceiling) pass the test in the upper cascades
+    float tol = RS.planeTolerance * float(1u << j);
     float3 sum = 0, sumAny = 0;
     float wsum = 0, wAny = 0;
     for (uint i = 0; i < 4; ++i) {

@@ -5,7 +5,7 @@
 // Command line: --scene cornell|lookdev|atrium  --mode 0..6  --view 0|1|2  --probes N  --cascades N  --dirres N
 //               --interval x  --hdri file|sky  --size WxH  --shot file.png [--frames N]  --anim 1
 //               (modes: 0 RC écran, 1 RC grille, 2 RC ray tracé, 3 DDGI raster, 4 DDGI ray tracé, 5 path, 6 raster)
-//               --show-probes 1  --camview N  --hysteresis x  --bilinear 0|1  --sspacing N  --sdirres N  --sinterval x  --shot-window file.png
+//               --show-probes 1  --camview N  --hysteresis x  --bilinear 0|1  --sspacing N  --sdirres N  --sinterval x  --lsamples N  --shot-window file.png
 #include "app/Content.h"
 #include "app/ImGuiLayer.h"
 #include "backends/imgui_impl_win32.h"
@@ -60,6 +60,7 @@ struct Options {
     int bilinear = -1;
     int sSpacing = -1, sDirRes = -1;
     float sInterval = -1;
+    int lightSamples = -1;
 };
 
 bool savePng(const std::wstring& path, std::vector<uint8_t> rgba, uint32_t w, uint32_t h) {
@@ -317,6 +318,7 @@ bool Viewer::init(HINSTANCE inst, const Options& opt) {
     if (opt.sSpacing > 0) m_rs.rcScreenSpacing = opt.sSpacing;
     if (opt.sDirRes > 0) m_rs.rcScreenDirRes = opt.sDirRes;
     if (opt.sInterval > 0) m_rs.rcScreenInterval = opt.sInterval;
+    if (opt.lightSamples > 0) m_rs.rcLightSamples = opt.lightSamples;
     applyMode();
     ShowWindow(m_hwnd, SW_SHOWDEFAULT);
     UpdateWindow(m_hwnd);
@@ -677,6 +679,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         else if (a == L"--sspacing") opt.sSpacing = _wtoi(next().c_str());
         else if (a == L"--sdirres") opt.sDirRes = _wtoi(next().c_str());
         else if (a == L"--sinterval") opt.sInterval = (float)_wtof(next().c_str());
+        else if (a == L"--lsamples") opt.lightSamples = _wtoi(next().c_str());
         else if (a == L"--size") swscanf_s(next().c_str(), L"%dx%d", &opt.width, &opt.height);
     }
     LocalFree(argv);

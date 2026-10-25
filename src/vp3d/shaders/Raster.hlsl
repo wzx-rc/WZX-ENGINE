@@ -329,7 +329,9 @@ float4 Shade(VSOut i, bool ghost, float shadowBias, bool capture) {
     // Ambient of Lit: diffuse and glossy parts kept apart (the DDGI probes replace the diffuse part only).
     float3 ambDiffuse, ambGlossy;
     float3 kdAmb;
-    float3 skyN;   // mean sky radiance over the hemisphere of N, compared with the probes (glossy occlusion)
+    // sky radiance the glossy ambient assumes: the brighter of the sky over the hemisphere of N and the sky around the
+    // reflection (a ceiling seen from below reflects the zenith); the probes tell how much of it really arrives
+    float3 skyN;
     float3 kSpec;  // weight of the glossy ambient (Fresnel), for the reflection of the probe light
     if (R.envMapOn > 0) {
         // HDRI: SH irradiance (diffuse) and the blurred mips of the image along the reflection (glossy).
@@ -339,7 +341,8 @@ float4 Shade(VSOut i, bool ghost, float shadowBias, bool capture) {
         kdAmb = diffuseCol * (1 - Fe);
         ambDiffuse = kdAmb / PI * EnvIrradiance(N) * cavity;
         ambGlossy = Fe * refl * cavity;
-        skyN = EnvIrradiance(N) / PI;
+        float3 skyA = EnvIrradiance(N) / PI, skyB = EnvIrradiance(Rd) / PI;
+        skyN = dot(skyA, float3(0.2126, 0.7152, 0.0722)) > dot(skyB, float3(0.2126, 0.7152, 0.0722)) ? skyA : skyB;
         kSpec = Fe;
     } else {
         float3 sky = Environment(N) + R.ambient * (0.65 + 0.35 * N.y);
@@ -348,8 +351,8 @@ float4 Shade(VSOut i, bool ghost, float shadowBias, bool capture) {
         kdAmb = diffuseCol * (1 - Fa);
         ambDiffuse = diffuseCol * sky * cavity;
         ambGlossy = Fa * refl * cavity;
-        skyN = sky;
-        kSpec = Fa;
+        skyN = dot(sky, float3(0.2126, 0.7152, 0.0722)) > dot(refl, float3(0.2126, 0.7152, 0.0722)) ? sky : refl;
+        kSpec = EnvBRDFApprox(f0, rough, NoV);   // the split-sum fit: a rough surface seen at grazing angle reflects little
     }
 #ifdef VP3D_DDGI_PROBES
     if (R.giMode > 0) {
