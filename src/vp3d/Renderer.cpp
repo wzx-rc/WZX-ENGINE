@@ -132,7 +132,7 @@ bool Renderer::init(HWND hwnd, uint32_t width, uint32_t height, const std::wstri
 
     D3D12_DESCRIPTOR_HEAP_DESC hd = {};
     hd.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-    hd.NumDescriptors = kSunShadowUavSlot + 2;  // + shadow map SRV + material textures + DDGI UAVs + history UAVs + HDRI SRV + capture UAVs + probe SRVs + screen GI and sun shadow views
+    hd.NumDescriptors = kSunShadowUavSlot + 4;  // + shadow map SRV + material textures + DDGI UAVs + history UAVs + HDRI SRV + capture UAVs + probe SRVs + screen GI, sun shadow and reflection views
     hd.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
     m_device->CreateDescriptorHeap(&hd, IID_PPV_ARGS(&m_heap));
     m_descSize = m_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
@@ -147,7 +147,7 @@ bool Renderer::init(HWND hwnd, uint32_t width, uint32_t height, const std::wstri
         h.ptr += (SIZE_T)kEnvHeapSlot * m_descSize;
         m_device->CreateShaderResourceView(nullptr, &sv, h);
         // no probe grid yet: null views in the probe SRV slots of the raster pass (and the screen GI, sun shadow ones)
-        for (uint32_t k = 0; k < 5; ++k) {
+        for (uint32_t k = 0; k < 6; ++k) {
             D3D12_CPU_DESCRIPTOR_HANDLE ph = m_heap->GetCPUDescriptorHandleForHeapStart();
             ph.ptr += (SIZE_T)(kProbeSrvSlot + k) * m_descSize;
             m_device->CreateShaderResourceView(nullptr, &sv, ph);
@@ -156,7 +156,7 @@ bool Renderer::init(HWND hwnd, uint32_t width, uint32_t height, const std::wstri
         uv.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
         uv.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
         D3D12_CPU_DESCRIPTOR_HANDLE uh = m_heap->GetCPUDescriptorHandleForHeapStart();
-        for (uint32_t k = 0; k < 3; ++k) {   // screen GI, raw and filtered sun shadow UAVs
+        for (uint32_t k = 0; k < 5; ++k) {   // screen GI, sun shadow and reflection UAVs (raw, filtered)
             D3D12_CPU_DESCRIPTOR_HANDLE uh2 = uh;
             uh2.ptr += (SIZE_T)(kScreenGIUavSlot + k) * m_descSize;
             m_device->CreateUnorderedAccessView(nullptr, nullptr, &uv, uh2);
@@ -223,9 +223,9 @@ bool Renderer::createPipelines(std::string* error) {
     screenRange.NumDescriptors = 1;
     screenRange.BaseShaderRegister = 17;
 
-    D3D12_DESCRIPTOR_RANGE sunRange = {};   // u18, u19 ray traced sun shadow (raw, filtered)
+    D3D12_DESCRIPTOR_RANGE sunRange = {};   // u18..u21 ray traced sun shadow, reflections (raw, filtered)
     sunRange.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_UAV;
-    sunRange.NumDescriptors = 2;
+    sunRange.NumDescriptors = 4;
     sunRange.BaseShaderRegister = 18;
 
     D3D12_ROOT_PARAMETER p[22] = {};
@@ -315,7 +315,8 @@ bool Renderer::createPipelines(std::string* error) {
            make(L"RCGather.cso", m_psoRCGather) && make(L"RCSProbes.cso", m_psoRCSProbes) &&
            make(L"RCSTrace.cso", m_psoRCSTrace) && make(L"RCSProbeSH.cso", m_psoRCSProbeSH) &&
            make(L"RCSGather.cso", m_psoRCSGather) && make(L"SunShadowTrace.cso", m_psoSunTrace) &&
-           make(L"SunShadowFilter.cso", m_psoSunFilter);
+           make(L"SunShadowFilter.cso", m_psoSunFilter) && make(L"ReflectTrace.cso", m_psoReflTrace) &&
+           make(L"ReflectFilter.cso", m_psoReflFilter);
 }
 
 void Renderer::createTargets(uint32_t w, uint32_t h) {
@@ -400,10 +401,11 @@ void Renderer::createTargets(uint32_t w, uint32_t h) {
         m_device->CreateShaderResourceView(m_screenGI.Get(), &sv, hnd);
         m_screenGIOn = false;
     }
-    {   // ray traced sun shadow: raw visibility + depth + normal (u18), filtered mask (u19, raster t8)
-        const DXGI_FORMAT fm[2] = {DXGI_FORMAT_R16G16B16A16_FLOAT, DXGI_FORMAT_R16_FLOAT};
-        ComPtr<ID3D12Resource>* res[2] = {&m_sunShadowRaw, &m_sunShadow};
-        for (int k = 0; k < 2; ++k) {
+    {   // ray traced sun shadow (raw + depth + normal u18, filtered mask u19, raster t8) and reflections (u20, u21, t9)
+        const DXGI_FORMAT fm[4] = {DXGI_FORMAT_R16G16B16A16_FLOAT, DXGI_FORMAT_R16_FLOAT, DXGI_FORMAT_R16G16B16A16_FLOAT,
+                                   DXGI_FORMAT_R16G16B16A16_FLOAT};
+        ComPtr<ID3D12Resource>* res[4] = {&m_sunShadowRaw, &m_sunShadow, &m_reflRaw, &m_refl};
+        for (int k = 0; k < 4; ++k) {
             D3D12_RESOURCE_DESC d = {};
             d.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
             d.Width = w;
@@ -431,6 +433,10 @@ void Renderer::createTargets(uint32_t w, uint32_t h) {
         D3D12_CPU_DESCRIPTOR_HANDLE hnd = cpu;
         hnd.ptr += (SIZE_T)kSunShadowSrvSlot * m_descSize;
         m_device->CreateShaderResourceView(m_sunShadow.Get(), &sv, hnd);
+        sv.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
+        hnd = cpu;
+        hnd.ptr += (SIZE_T)kReflSrvSlot * m_descSize;
+        m_device->CreateShaderResourceView(m_refl.Get(), &sv, hnd);
     }
     createRasterTargets(w, h);
     m_sampleIndex = 0;
@@ -1549,10 +1555,12 @@ void Renderer::recordRCScreen(const RenderSettings& rs, UINT gx, UINT gy) {
     m_screenGIOn = true;
 }
 
-// Ray traced sun shadow of the raster pass: the visibility of every pixel (SunShadowTrace), then its bilateral filter
-// (SunShadowFilter). Leaves the filtered mask in PIXEL_SHADER_RESOURCE for the raster pass (t8); recordRaster puts it
-// back. Needs this frame's acceleration structure and frame constants; binds the compute root signature.
-void Renderer::recordSunShadow(const float3& sunDir, const RenderSettings& rs) {
+// Ray traced sun shadow and reflections of the raster pass. SunShadowTrace writes the visibility of every pixel with
+// its depth and normal (the guide of both filters), ReflectTrace the reflections of the glossy pixels, then the two
+// bilateral filters. Leaves the filtered sun mask (t8) and reflections (t9) in PIXEL_SHADER_RESOURCE when asked for;
+// recordRaster puts them back. Needs this frame's acceleration structure, frame and probe constants; binds the
+// compute root signature.
+void Renderer::recordScreenTrace(const float3& sunDir, const RenderSettings& rs, bool shadow, bool refl) {
     float3 L = normalize(sunDir);
     float s = std::abs(L.x) + std::abs(L.y) + std::abs(L.z);
     float ox = L.x / s, oy = L.y / s;
@@ -1562,7 +1570,8 @@ void Renderer::recordSunShadow(const float3& sunDir, const RenderSettings& rs) {
         oy = ny;
     }
     const float tanR = std::tan(radians(std::max(rs.sunAngle, 0.0f)) * 0.5f);
-    const uint32_t samples = (uint32_t)std::max(1, std::min(rs.rtShadowSamples, 32));
+    // without the shadow, one ray per pixel: the pass still writes the depth and normal the reflection filter needs
+    const uint32_t samples = shadow ? (uint32_t)std::max(1, std::min(rs.rtShadowSamples, 32)) : 1u;
     uint32_t c[4];
     memcpy(&c[0], &ox, 4);
     memcpy(&c[1], &oy, 4);
@@ -1575,17 +1584,48 @@ void Renderer::recordSunShadow(const float3& sunDir, const RenderSettings& rs) {
     m_cmd->SetComputeRootShaderResourceView(3, m_vb.va());
     m_cmd->SetComputeRootShaderResourceView(4, m_ib.va());
     m_cmd->SetComputeRootShaderResourceView(5, m_instances.va());
+    m_cmd->SetComputeRootShaderResourceView(6, m_materials.va());
+    m_cmd->SetComputeRootShaderResourceView(7, m_lights.va());
+    m_cmd->SetComputeRootDescriptorTable(8, m_heap->GetGPUDescriptorHandleForHeapStart());
+    m_cmd->SetComputeRootDescriptorTable(9, textureTable());
+    m_cmd->SetComputeRootConstantBufferView(10, m_giConstants.va());   // probes lighting the reflected surfaces
+    D3D12_GPU_DESCRIPTOR_HANDLE giTable = m_heap->GetGPUDescriptorHandleForHeapStart();
+    giTable.ptr += (UINT64)kGIHeapBase * m_descSize;
+    m_cmd->SetComputeRootDescriptorTable(11, giTable);
+    D3D12_GPU_DESCRIPTOR_HANDLE envTable = m_heap->GetGPUDescriptorHandleForHeapStart();
+    envTable.ptr += (UINT64)kEnvHeapSlot * m_descSize;
+    m_cmd->SetComputeRootShaderResourceView(13, m_envDist.va());
+    m_cmd->SetComputeRootDescriptorTable(14, envTable);
     D3D12_GPU_DESCRIPTOR_HANDLE sunTable = m_heap->GetGPUDescriptorHandleForHeapStart();
     sunTable.ptr += (UINT64)kSunShadowUavSlot * m_descSize;
     m_cmd->SetComputeRootDescriptorTable(21, sunTable);
     const UINT gx = (m_rtW + 7) / 8, gy = (m_rtH + 7) / 8;
     m_cmd->SetPipelineState(m_psoSunTrace.Get());
     m_cmd->Dispatch(gx, gy, 1);
-    uavBarrier(m_sunShadowRaw.Get());
-    m_cmd->SetPipelineState(m_psoSunFilter.Get());
-    m_cmd->Dispatch(gx, gy, 1);
-    uavBarrier(m_sunShadow.Get());
-    transition(m_sunShadow.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+    if (refl) {
+        const float maxRough = std::max(0.0f, rs.reflMaxRough);
+        uint32_t r[4] = {(uint32_t)std::max(1, std::min(rs.reflSamples, 32)), 0, 0, 0};
+        memcpy(&r[1], &maxRough, 4);
+        m_cmd->SetComputeRoot32BitConstants(1, 4, r, 0);
+        // the raster pass reads the probe atlases as SRVs at this point: back to UAV for the compute pass meanwhile
+        ID3D12Resource* atlases[3] = {m_giTex[0].Get(), m_giTex[1].Get(), m_giTex[3].Get()};
+        for (ID3D12Resource* a : atlases) transition(a, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+        m_cmd->SetPipelineState(m_psoReflTrace.Get());
+        m_cmd->Dispatch(gx, gy, 1);
+        for (ID3D12Resource* a : atlases) transition(a, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+    }
+    uavBarrier();
+    if (shadow) {
+        m_cmd->SetPipelineState(m_psoSunFilter.Get());
+        m_cmd->Dispatch(gx, gy, 1);
+    }
+    if (refl) {
+        m_cmd->SetPipelineState(m_psoReflFilter.Get());
+        m_cmd->Dispatch(gx, gy, 1);
+    }
+    uavBarrier();
+    if (shadow) transition(m_sunShadow.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+    if (refl) transition(m_refl.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
 }
 
 // Copies ACCUM and NORMAL into the history textures, after the frame's compute work and before the copy to the back buffer.
@@ -1638,6 +1678,9 @@ uint32_t renderSignature(const RenderSettings& rs) {
     mix(&rs.rtSunShadows, sizeof(bool));
     mix(&rs.sunAngle, sizeof(float));
     mix(&rs.rtShadowSamples, sizeof(int));
+    mix(&rs.rtReflections, sizeof(bool));
+    mix(&rs.reflSamples, sizeof(int));
+    mix(&rs.reflMaxRough, sizeof(float));
     mix(&rs.maxBounces, sizeof(int));
     mix(&rs.bevel, sizeof(bool));
     mix(&rs.bevelScale, sizeof(float));

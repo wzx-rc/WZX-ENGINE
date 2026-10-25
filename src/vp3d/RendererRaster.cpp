@@ -28,7 +28,7 @@ struct RasterConstants {
     float shIrr[9][4];
     float envMapOn; float envRotation; float envMapIntensity; float envMips;
     float envVisible; uint32_t sunLight; float giMode, pad3;   // giMode: DDGI probes read by Shade (Raster.hlsl)
-    float rtShadow, sunTanRadius, rtShadowSamples, pad4;   // sun shadow ray traced per pixel (mask in t8)
+    float rtShadow, sunTanRadius, rtShadowSamples, rtRefl;   // ray traced sun shadow (mask in t8), reflections (t9)
 };
 
 struct DrawConstants {
@@ -86,7 +86,7 @@ bool Renderer::createRasterPipelines(std::string* error) {
 
     D3D12_DESCRIPTOR_RANGE probeRange = {};   // t4..t6 probe atlases (DDGI without ray tracing)
     probeRange.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
-    probeRange.NumDescriptors = 5;   // + t7 screen GI (screen-space cascades), t8 ray traced sun shadow
+    probeRange.NumDescriptors = 6;   // + t7 screen GI (screen-space cascades), t8 ray traced sun shadow, t9 reflections
     probeRange.BaseShaderRegister = 4;
 
     D3D12_ROOT_PARAMETER p[10] = {};
@@ -492,10 +492,13 @@ void Renderer::recordRaster(const Scene& scene, const RenderSettings& rs, const 
     rc.rtShadow = (rs.rtSunShadows && m_asThisFrame && m_tlas.res) ? 1.0f : 0.0f;
     rc.sunTanRadius = std::tan(radians(std::max(rs.sunAngle, 0.0f)) * 0.5f);
     rc.rtShadowSamples = (float)std::max(1, std::min(rs.rtShadowSamples, 32));
+    // reflections traced per pixel on glossy surfaces: GI modes (the hits read the probes), not the probe captures
+    const bool reflOn = rs.rtReflections && probes && !probeCapture && m_asThisFrame && m_tlas.res;
+    rc.rtRefl = reflOn ? 1.0f : 0.0f;
     memcpy(m_rasterCB.mapped, &rc, sizeof(rc));
-    // ray traced sun shadow: its mask is computed now (compute passes), read by the main pass (t8)
+    // ray traced sun shadow and reflections: computed now (compute passes), read by the main pass (t8, t9)
     const bool sunMask = rc.rtShadow > 0 && !probeCapture;
-    if (sunMask) recordSunShadow(rc.sunDir, rs);
+    if (sunMask || reflOn) recordScreenTrace(rc.sunDir, rs, sunMask, reflOn);
 
     m_cmd->SetGraphicsRootSignature(m_rasterRoot.Get());
     m_cmd->SetGraphicsRootConstantBufferView(0, m_rasterCB.va());
@@ -673,6 +676,7 @@ void Renderer::recordRaster(const Scene& scene, const RenderSettings& rs, const 
         if (!(d.flags & 7u)) drawOne(d);
     transition(m_tex[kTexAlbedo].Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
     if (sunMask) transition(m_sunShadow.Get(), D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+    if (reflOn) transition(m_refl.Get(), D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
 }
 
 } // namespace vp3d

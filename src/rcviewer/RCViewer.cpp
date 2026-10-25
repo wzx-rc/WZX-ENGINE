@@ -5,7 +5,7 @@
 // Command line: --scene cornell|lookdev|atrium  --mode 0..6  --view 0|1|2  --probes N  --cascades N  --dirres N
 //               --interval x  --hdri file|sky  --size WxH  --shot file.png [--frames N]  --anim 1
 //               (modes: 0 RC écran, 1 RC grille, 2 RC ray tracé, 3 DDGI raster, 4 DDGI ray tracé, 5 path, 6 raster)
-//               --show-probes 1  --camview N  --hysteresis x  --bilinear 0|1  --sspacing N  --sdirres N  --sinterval x  --lsamples N  --rtshadow 0|1  --sunangle deg  --rtsamples N  --shot-window file.png
+//               --show-probes 1  --camview N  --hysteresis x  --bilinear 0|1  --sspacing N  --sdirres N  --sinterval x  --lsamples N  --rtshadow 0|1  --sunangle deg  --rtsamples N  --rtrefl 0|1  --shot-window file.png
 #include "app/Content.h"
 #include "app/ImGuiLayer.h"
 #include "backends/imgui_impl_win32.h"
@@ -64,6 +64,7 @@ struct Options {
     int rtShadow = -1;
     float sunAngle = -1;
     int rtSamples = -1;
+    int rtRefl = -1;
 };
 
 bool savePng(const std::wstring& path, std::vector<uint8_t> rgba, uint32_t w, uint32_t h) {
@@ -325,6 +326,7 @@ bool Viewer::init(HINSTANCE inst, const Options& opt) {
     if (opt.rtShadow >= 0) m_rs.rtSunShadows = opt.rtShadow != 0;
     if (opt.sunAngle >= 0) m_rs.sunAngle = opt.sunAngle;
     if (opt.rtSamples > 0) m_rs.rtShadowSamples = opt.rtSamples;
+    if (opt.rtRefl >= 0) m_rs.rtReflections = opt.rtRefl != 0;
     applyMode();
     ShowWindow(m_hwnd, SW_SHOWDEFAULT);
     UpdateWindow(m_hwnd);
@@ -535,7 +537,7 @@ void Viewer::ui(float panelW) {
         ImGui::Checkbox("Débruiteur (modes ray tracés)", &m_rs.denoise);
     if (m_mode == MODE_PATH) ImGui::Text("%u / %d échantillons", m_r.sampleCount(), m_rs.maxSamples);
 
-    ImGui::SeparatorText("Ombre du soleil");
+    ImGui::SeparatorText("Ombre du soleil, reflets");
     const char* shadowModes[] = {"Shadow map (raster)", "Ray tracée par pixel"};
     int sm = m_rs.rtSunShadows ? 1 : 0;
     if (ImGui::Combo("##shadow", &sm, shadowModes, 2)) m_rs.rtSunShadows = sm == 1;
@@ -543,7 +545,12 @@ void Viewer::ui(float panelW) {
     ImGui::SliderFloat("##sunang", &m_rs.sunAngle, 0.0f, 5.0f, "Diamètre du soleil %.2f°");
     ImGui::SliderInt("##rtsamp", &m_rs.rtShadowSamples, 1, 16, "Rayons par pixel : %d");
     ImGui::EndDisabled();
-    if (m_rs.rtSunShadows && !gi) ImGui::TextDisabled("(ray tracé : modes avec GI seulement)");
+    ImGui::Checkbox("Reflets ray tracés (métaux, brillants)", &m_rs.rtReflections);
+    ImGui::BeginDisabled(!m_rs.rtReflections);
+    ImGui::SliderInt("##reflsamp", &m_rs.reflSamples, 1, 16, "Rayons de reflet (rugueux) : %d");
+    ImGui::SliderFloat("##reflrough", &m_rs.reflMaxRough, 0.0f, 1.0f, "Rugosité max tracée : %.2f");
+    ImGui::EndDisabled();
+    if ((m_rs.rtSunShadows || m_rs.rtReflections) && !gi) ImGui::TextDisabled("(ray tracé : modes avec GI seulement)");
 
     ImGui::SeparatorText("Radiance Cascades");
     ImGui::BeginDisabled(m_rs.giMethod != 1 || !gi);
@@ -709,6 +716,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         else if (a == L"--rtshadow") opt.rtShadow = _wtoi(next().c_str());
         else if (a == L"--sunangle") opt.sunAngle = (float)_wtof(next().c_str());
         else if (a == L"--rtsamples") opt.rtSamples = _wtoi(next().c_str());
+        else if (a == L"--rtrefl") opt.rtRefl = _wtoi(next().c_str());
         else if (a == L"--size") swscanf_s(next().c_str(), L"%dx%d", &opt.width, &opt.height);
     }
     LocalFree(argv);

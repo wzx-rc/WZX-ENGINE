@@ -193,3 +193,25 @@ Coût sur l'Atrium (1 188 × 900), image entière :
 - **8 rayons (défaut) : 7,06 ms (+1,43 ms)**
 
 Captures 25 (gros plan shadow map / ray tracé filtré / path tracing) et 26 (couloir).
+
+## Reflets ray tracés (métaux et surfaces brillantes)
+
+Dans les modes raster avec GI, le reflet de l'environnement est remplacé par un reflet tracé par pixel :
+- **`ReflectTrace.hlsl`** :
+  - rayon caméra, puis, pour les métaux et les surfaces de rugosité inférieure à 0,5 : 1 rayon miroir exact (rugosité < 0,04) ou 4 rayons GGX (échantillonnage des normales visibles, ensemble R2 tourné par pixel) ;
+  - les impacts sont éclairés par l'émission, la lumière directe et l'HDRI (4 échantillons, les mêmes pour tous les pixels, pour qu'un miroir ne montre pas de grain) et par les sondes (cascades ou DDGI) pour le reste ;
+  - un rayon qui ne touche rien voit l'environnement.
+- **`ReflectFilter.hlsl`** : filtre bilatéral dont le rayon grandit avec la rugosité. Il est guidé par la profondeur, la normale et la rugosité ; les miroirs ne sont pas filtrés.
+- **Passe raster** : utilise ce reflet (t9) avec son poids de Fresnel / rugosité (`EnvBRDFApprox`). Aucun temporel.
+
+Coût (1 188 × 900, sans → avec reflets) :
+- Cornell : 6,96 → 7,21 ms
+- LookDev : 6,13 → 6,66 ms
+- Atrium : 6,98 → 7,28 ms
+
+Captures :
+- 27 : bille dorée de la Cornell, avant / après / path tracing ;
+- 28 : chrome du LookDev, avant / après / path tracing ;
+- 29 et 30 : LookDev et Cornell entiers.
+
+**Limite** : le verre reste celui de la passe raster (pas de réfraction tracée).

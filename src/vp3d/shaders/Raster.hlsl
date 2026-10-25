@@ -20,7 +20,7 @@ struct RasterConstants {
     float4 shIrr[9];                     // HDRI irradiance (cosine-convolved SH, without the sun), image space
     float envMapOn; float envRotation; float envMapIntensity; float envMips;
     float envVisible; uint sunLight; float giMode; float pad3;   // sunLight: index of the path tracer's sun quad (skipped here); giMode: DDGI probes (see Shade)
-    float rtShadow; float sunTanRadius; float rtShadowSamples; float pad4;   // ray traced sun shadow (DirectX 12 viewport)
+    float rtShadow; float sunTanRadius; float rtShadowSamples; float rtRefl;   // ray traced sun shadow (t8), reflections (t9)
 };
 ConstantBuffer<RasterConstants> R : register(b0);
 
@@ -231,6 +231,7 @@ float Shadow(float3 wpos, float3 n, float bias) {
 // (rays inside the sun's disc, from the smooth surface) and SunShadowFilter.hlsl (bilateral filter), read here
 // instead of the shadow map: physical penumbra, no shadow map resolution, no temporal.
 Texture2D<float> gSunShadow : register(t8);
+Texture2D<float4> gRefl : register(t9);   // ray traced reflections (alpha 1 where traced), DirectX 12 viewport
 #endif
 
 float3 GridColor(float3 base, float3 wpos, inout float3 emission) {
@@ -391,7 +392,14 @@ float4 Shade(VSOut i, bool ghost, float shadowBias, bool capture) {
             occ *= occ;   // squared: grazing reflections of the sky indoors are occluded harder
             // what the occluded sky no longer gives, the room gives: the probe light, reflected (metals keep a reflection)
             float3 glossy = ambGlossy * occ + kSpec * irr * cavity * (1.0 - occ);
-            color += lerp(ambDiffuse, kdAmb * irr, conf) + lerp(ambGlossy, glossy, conf);
+            float3 glossyAmb = lerp(ambGlossy, glossy, conf);
+#if defined(VP3D_RT_SHADOWS) && !defined(VP3D_ATTRIB_SEMANTICS)
+            if (R.rtRefl > 0) {   // ray traced reflection of this pixel (ReflectTrace / ReflectFilter), Fresnel-weighted
+                float4 rr = gRefl.Load(int3(i.pos.xy, 0));
+                if (rr.a > 0.5) glossyAmb = kSpec * rr.rgb;
+            }
+#endif
+            color += lerp(ambDiffuse, kdAmb * irr, conf) + glossyAmb;
         }
     } else
 #endif
