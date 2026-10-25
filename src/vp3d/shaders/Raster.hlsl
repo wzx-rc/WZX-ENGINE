@@ -20,6 +20,7 @@ struct RasterConstants {
     float4 shIrr[9];                     // HDRI irradiance (cosine-convolved SH, without the sun), image space
     float envMapOn; float envRotation; float envMapIntensity; float envMips;
     float envVisible; uint sunLight; float giMode; float pad3;   // sunLight: index of the path tracer's sun quad (skipped here); giMode: DDGI probes (see Shade)
+    float rtShadow; float sunTanRadius; float rtShadowSamples; float pad4;   // ray traced sun shadow (DirectX 12 viewport)
 };
 ConstantBuffer<RasterConstants> R : register(b0);
 
@@ -225,6 +226,38 @@ float Shadow(float3 wpos, float3 n, float bias) {
     return s / 12.0;
 }
 
+#if defined(VP3D_RT_SHADOWS) && !defined(VP3D_ATTRIB_SEMANTICS)
+// Sun shadow traced per pixel (DirectX 12 viewport, R.rtShadow): a few rays inside the sun's disc (angular radius
+// atan(R.sunTanRadius)), on a Vogel spiral turned per pixel, so the penumbra has the physical width and the edge is
+// as sharp as the sun makes it. No shadow map resolution, no acne, no temporal.
+RaytracingAccelerationStructure gSceneRT : register(t9);
+
+// dpdx, dpdy: the pixel footprint on the surface; each ray starts at its own point of it, so the shadow edges
+// crossing a pixel are averaged (anti-aliased) instead of stair-stepped.
+float SunShadowRT(float3 wpos, float3 n, float2 pixel, float3 dpdx, float3 dpdy) {
+    float3 L = R.sunDir;
+    float3 t = normalize(abs(L.y) < 0.99 ? cross(L, float3(0, 1, 0)) : cross(L, float3(1, 0, 0)));
+    float3 b = cross(L, t);
+    float eps = 1e-3 * (1.0 + length(wpos - R.camPos));
+    float3 o = wpos + n * eps;
+    uint count = (uint)max(R.rtShadowSamples, 1.0);
+    float rot = 6.2831853 * frac(52.9829189 * frac(dot(pixel, float2(0.06711056, 0.00583715))));   // interleaved gradient noise
+    float vis = 0;
+    for (uint k = 0; k < count; ++k) {
+        float r = sqrt((k + 0.5) / count), th = k * 2.3999632 + rot;
+        float3 d = normalize(L + (t * cos(th) + b * sin(th)) * (r * R.sunTanRadius));
+        RayQuery<RAY_FLAG_FORCE_OPAQUE | RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH> q;
+        RayDesc ray;
+        float2 sp = frac(float2(k * 0.7548777, k * 0.5698403) + rot * 0.1591549) - 0.5;   // R2 points in the pixel
+        ray.Origin = o + dpdx * sp.x + dpdy * sp.y; ray.Direction = d; ray.TMin = 0.0; ray.TMax = 1e30;
+        q.TraceRayInline(gSceneRT, RAY_FLAG_NONE, 0x01u, ray);   // MASK_OPAQUE
+        q.Proceed();
+        if (q.CommittedStatus() != COMMITTED_TRIANGLE_HIT) vis += 1.0;
+    }
+    return vis / count;
+}
+#endif
+
 float3 GridColor(float3 base, float3 wpos, inout float3 emission) {
     float g = R.gridScale;
     float2 p = wpos.xz / g;
@@ -250,7 +283,10 @@ float3 GridColor(float3 base, float3 wpos, inout float3 emission) {
 float4 Shade(VSOut i, bool ghost, float shadowBias, bool capture) {
     GpuMaterial m = gMats[D.materialId];
     float3 N = normalize(i.nrm);
-    float3 V = normalize((capture ? PF.origin : R.camPos) - i.wpos);   // the probe is the viewer of its capture
+#if defined(VP3D_RT_SHADOWS) && !defined(VP3D_ATTRIB_SEMANTICS)
+    float3 dpdx = ddx(i.wpos), dpdy = ddy(i.wpos);   // here, in uniform control flow (ray traced sun shadow)
+#endif
+    float3 V =normalize((capture ? PF.origin : R.camPos) - i.wpos);   // the probe is the viewer of its capture
     if (dot(N, V) < 0) N = -N;
     float3 base = m.baseColor;
     float3 emission = m.emission;
@@ -321,7 +357,14 @@ float4 Shade(VSOut i, bool ghost, float shadowBias, bool capture) {
             float3 F = Fresnel(f0, saturate(dot(V, H)));
             float3 spec = R.sunFromEnv > 0 ? 0 : D_GGX(NoH, a) * V_Smith(NoV, NoL, a) * F;
             float3 diff = diffuseCol / PI * (1 - F);
-            color += (diff + spec) * R.sunRadiance * R.lightScale * NoL * Shadow(i.wpos, N, shadowBias);
+            float sunVis;
+#if defined(VP3D_RT_SHADOWS) && !defined(VP3D_ATTRIB_SEMANTICS)
+            // ray traced from the shaded point (offset along N, which faces the viewer)
+            if (R.rtShadow > 0 && !capture) sunVis = SunShadowRT(i.wpos, N, i.pos.xy, dpdx, dpdy);
+            else
+#endif
+            sunVis = Shadow(i.wpos, N, shadowBias);
+            color += (diff + spec) * R.sunRadiance * R.lightScale * NoL * sunVis;
         }
     }
     // Hemisphere ambient + reflection of the environment, darkened in cavities facing down.

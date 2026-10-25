@@ -94,6 +94,7 @@ struct RasterConstants {
     float shIrr[9][4];
     float envMapOn; float envRotation; float envMapIntensity; float envMips;
     float envVisible; uint32_t sunLight; float giMode, pad3;   // giMode: DDGI probes read by Shade (Raster.hlsl)
+    float rtShadow, sunTanRadius, rtShadowSamples, pad4;   // sun shadow ray traced per pixel (DirectX 12 viewport only)
 };
 
 struct DrawConstants {

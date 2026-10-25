@@ -5,7 +5,7 @@
 // Command line: --scene cornell|lookdev|atrium  --mode 0..6  --view 0|1|2  --probes N  --cascades N  --dirres N
 //               --interval x  --hdri file|sky  --size WxH  --shot file.png [--frames N]  --anim 1
 //               (modes: 0 RC écran, 1 RC grille, 2 RC ray tracé, 3 DDGI raster, 4 DDGI ray tracé, 5 path, 6 raster)
-//               --show-probes 1  --camview N  --hysteresis x  --bilinear 0|1  --sspacing N  --sdirres N  --sinterval x  --lsamples N  --shot-window file.png
+//               --show-probes 1  --camview N  --hysteresis x  --bilinear 0|1  --sspacing N  --sdirres N  --sinterval x  --lsamples N  --rtshadow 0|1  --sunangle deg  --rtsamples N  --shot-window file.png
 #include "app/Content.h"
 #include "app/ImGuiLayer.h"
 #include "backends/imgui_impl_win32.h"
@@ -61,6 +61,9 @@ struct Options {
     int sSpacing = -1, sDirRes = -1;
     float sInterval = -1;
     int lightSamples = -1;
+    int rtShadow = -1;
+    float sunAngle = -1;
+    int rtSamples = -1;
 };
 
 bool savePng(const std::wstring& path, std::vector<uint8_t> rgba, uint32_t w, uint32_t h) {
@@ -319,6 +322,9 @@ bool Viewer::init(HINSTANCE inst, const Options& opt) {
     if (opt.sDirRes > 0) m_rs.rcScreenDirRes = opt.sDirRes;
     if (opt.sInterval > 0) m_rs.rcScreenInterval = opt.sInterval;
     if (opt.lightSamples > 0) m_rs.rcLightSamples = opt.lightSamples;
+    if (opt.rtShadow >= 0) m_rs.rtSunShadows = opt.rtShadow != 0;
+    if (opt.sunAngle >= 0) m_rs.sunAngle = opt.sunAngle;
+    if (opt.rtSamples > 0) m_rs.rtShadowSamples = opt.rtSamples;
     applyMode();
     ShowWindow(m_hwnd, SW_SHOWDEFAULT);
     UpdateWindow(m_hwnd);
@@ -360,6 +366,13 @@ void Viewer::loadScene(int id) {
 }
 
 bool Viewer::setHdri(const std::wstring& path) {
+    if (path.empty()) {   // back to the scene's own sky (gradient)
+        m_scene.env.hdri.reset();
+        m_hdriPath.clear();
+        m_base.env = m_scene.env;
+        m_r.resetAccumulation();
+        return true;
+    }
     auto e = std::make_shared<EnvImage>();
     if (path == L"sky") {
         makeProceduralSky(*e);
@@ -522,6 +535,16 @@ void Viewer::ui(float panelW) {
         ImGui::Checkbox("Débruiteur (modes ray tracés)", &m_rs.denoise);
     if (m_mode == MODE_PATH) ImGui::Text("%u / %d échantillons", m_r.sampleCount(), m_rs.maxSamples);
 
+    ImGui::SeparatorText("Ombre du soleil");
+    const char* shadowModes[] = {"Shadow map (raster)", "Ray tracée par pixel"};
+    int sm = m_rs.rtSunShadows ? 1 : 0;
+    if (ImGui::Combo("##shadow", &sm, shadowModes, 2)) m_rs.rtSunShadows = sm == 1;
+    ImGui::BeginDisabled(!m_rs.rtSunShadows);
+    ImGui::SliderFloat("##sunang", &m_rs.sunAngle, 0.0f, 5.0f, "Diamètre du soleil %.2f°");
+    ImGui::SliderInt("##rtsamp", &m_rs.rtShadowSamples, 1, 16, "Rayons par pixel : %d");
+    ImGui::EndDisabled();
+    if (m_rs.rtSunShadows && !gi) ImGui::TextDisabled("(ray tracé : modes avec GI seulement)");
+
     ImGui::SeparatorText("Radiance Cascades");
     ImGui::BeginDisabled(m_rs.giMethod != 1 || !gi);
     ImGui::SliderInt("##budget", &m_rs.rcProbeBudget, 512, 16384, "Sondes cascade 0 : %d");
@@ -545,9 +568,10 @@ void Viewer::ui(float panelW) {
     }
 
     ImGui::SeparatorText("Environnement");
-    if (m_sceneId == SC_LOOKDEV || m_scene.env.hdri) {
+    {   // any scene can be lit by an HDRI (the image lights the cascades, the probes and the raster ambient)
         std::string cur = m_hdriPath.empty() ? "(aucun)" : (m_hdriPath == L"sky" ? "Ciel procédural" : fileName(m_hdriPath));
         if (ImGui::BeginCombo("##hdri", cur.c_str())) {
+            if (ImGui::Selectable("(aucun : ciel de la scène)")) setHdri(L"");
             if (ImGui::Selectable("Ciel procédural")) setHdri(L"sky");
             for (auto& p : m_hdris)
                 if (ImGui::Selectable(fileName(p).c_str())) setHdri(p);
@@ -563,8 +587,10 @@ void Viewer::ui(float panelW) {
             }
             ImGui::EndCombo();
         }
+        ImGui::BeginDisabled(!m_scene.env.hdri);
         ImGui::SliderFloat("##hi", &m_scene.env.hdriIntensity, 0.0f, 4.0f, "Intensité HDRI %.2f");
         ImGui::SliderAngle("##hr", &m_scene.env.hdriRotation, -180.0f, 180.0f, "Rotation %.0f°");
+        ImGui::EndDisabled();
     }
     if (m_scene.sun.enabled) ImGui::SliderFloat("##sun", &m_scene.sun.intensity, 0.0f, 20.0f, "Soleil %.1f");
     if (!m_scene.lights.empty()) ImGui::SliderFloat("##li", &m_scene.lights[0].intensity, 0.0f, 150.0f, "Lumière %.0f");
@@ -680,6 +706,9 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         else if (a == L"--sdirres") opt.sDirRes = _wtoi(next().c_str());
         else if (a == L"--sinterval") opt.sInterval = (float)_wtof(next().c_str());
         else if (a == L"--lsamples") opt.lightSamples = _wtoi(next().c_str());
+        else if (a == L"--rtshadow") opt.rtShadow = _wtoi(next().c_str());
+        else if (a == L"--sunangle") opt.sunAngle = (float)_wtof(next().c_str());
+        else if (a == L"--rtsamples") opt.rtSamples = _wtoi(next().c_str());
         else if (a == L"--size") swscanf_s(next().c_str(), L"%dx%d", &opt.width, &opt.height);
     }
     LocalFree(argv);

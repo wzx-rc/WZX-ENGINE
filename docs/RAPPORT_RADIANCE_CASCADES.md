@@ -160,3 +160,17 @@ Atrium, RC écran, % du path tracing (1 188 × 900, 5,8 ms GPU) :
 | Bannière verte D | 91 |
 
 Captures 15 à 21 dans `docs/rc_screens`.
+
+## Ombre du soleil ray tracée dans la passe raster
+
+- **Pourquoi** : la shadow map PCF (2 048 px pour toute la scène) donnait une ombre floue et crénelée.
+- **Principe** : en mode raster avec GI, l'ombre du soleil est tracée par pixel contre la scène (`SunShadowRT` dans `Raster.hlsl`, pixel shaders compilés en SM 6.5, TLAS en t9 de la passe raster).
+- **Pénombre** : 8 rayons dans le disque du soleil (diamètre 0,53°, réglable), sur une spirale de Vogel tournée par pixel.
+- **Anti-crénelage** : chaque rayon part d'un point différent de l'empreinte du pixel (`ddx` / `ddy`), ce qui adoucit les bords sans accumulation temporelle.
+- **Réglages** : `RenderSettings::rtSunShadows`, `sunAngle`, `rtShadowSamples`. Le viewer les expose dans la section « Ombre du soleil », et en ligne de commande avec `--rtshadow`, `--sunangle`, `--rtsamples`.
+- **Coût** (Atrium, 1 188 × 900) : 5,7 ms avec la shadow map, 6,7 ms avec 4 rayons, 8,3 ms avec 8 rayons.
+- **Comparaison** : capture 22 (shadow map / ray tracé / path tracing).
+
+**HDRI** : le moteur éclaire déjà par HDRI, que ce soit en path tracing, en raster ou dans les sondes et cascades. Le viewer permet maintenant de choisir un HDRI sur toutes les scènes (capture 24 : Atrium avec le ciel procédural).
+- **Coût** : environ 48 ms GPU en mode RC écran dans une grande fenêtre. L'échantillonnage d'importance de l'HDRI est fait à chaque impact des 9 M rayons écran.
+- **Piste** : n'éclairer les impacts écran que par le soleil de l'HDRI et laisser le ciel passer par les cascades.

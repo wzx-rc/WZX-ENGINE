@@ -1552,6 +1552,9 @@ uint32_t renderSignature(const RenderSettings& rs) {
     mix(&rs.rcScreenSpacing, sizeof(int));
     mix(&rs.rcScreenDirRes, sizeof(int));
     mix(&rs.rcScreenInterval, sizeof(float));
+    mix(&rs.rtSunShadows, sizeof(bool));
+    mix(&rs.sunAngle, sizeof(float));
+    mix(&rs.rtShadowSamples, sizeof(int));
     mix(&rs.maxBounces, sizeof(int));
     mix(&rs.bevel, sizeof(bool));
     mix(&rs.bevelScale, sizeof(float));
@@ -1691,6 +1694,7 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
     beginCommands();
     m_giTimed = false;
     buildTLAS(scene, needAS);
+    m_asThisFrame = needAS;
 
     const Camera& cam = scene.camera;
     float3 right, up, fwd;

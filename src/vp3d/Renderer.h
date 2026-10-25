@@ -81,6 +81,11 @@ struct RenderSettings {
     int rcScreenSpacing = 8;      // pixels between the cascade-0 probes (x2 per cascade)
     int rcScreenDirRes = 8;       // directions per side of cascade 0 (x2 per cascade)
     float rcScreenInterval = 0.25f;   // ray length of cascade 0, in world probe spacings (x4 per cascade)
+    // Raster modes: the sun shadow traced per pixel against the scene (needs the acceleration structure of the frame,
+    // i.e. a GI mode) instead of the shadow map. sunAngle: angular diameter of the sun (degrees), its penumbra.
+    bool rtSunShadows = true;
+    float sunAngle = 0.53f;
+    int rtShadowSamples = 8;
 };
 
 // What the Radiance Cascades of the last frame looked like (viewer statistics).
@@ -304,6 +309,7 @@ private:
     Buffer m_rcsBuffer, m_rcsConstants;          // screen-space cascades (u16, b4)
     ComPtr<ID3D12Resource> m_screenGI;           // per pixel indirect irradiance (RCSGather.hlsl)
     bool m_screenGIOn = false;                   // the last frame filled it (raster reads it)
+    bool m_asThisFrame = false;                  // the TLAS was built this frame (ray traced shadows of the raster pass)
     RCStats m_rcStats;
 
     // Temporal history: copies of ACCUM and NORMAL of the previous frame, and the camera they were rendered with.
