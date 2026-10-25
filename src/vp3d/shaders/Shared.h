@@ -124,6 +124,29 @@ struct DDGIConstants {
 // Cube face texture size and the face field of view (90 degrees).
 #define DDGI_FACE 16
 
+// Radiance Cascades (world space, 3D). Cascade i: probes every spacing0 * 2^i, dirRes0 * 2^i octahedral directions
+// per side (4x the directions of the cascade below), rays over [tStart, tEnd] with intervals 4x longer per cascade.
+// Each texel of a cascade holds the radiance merged with the cascades above it (rgb) and the distance to the first
+// hit (w, negative = back face). Cascade 0 sits on the DDGI probe grid and fills its atlases (RCGather.hlsl).
+#define RC_MAX_CASCADES 6
+#define RC_MAX_DIR0 8         // dirRes of cascade 0 at most (groupshared size of the gather pass)
+
+struct RCCascade {
+    uint4 counts;             // probes per axis, w = total
+    float3 origin; float spacing;   // probe (0,0,0), distance between probes
+    uint dirRes; uint offset; float tStart; float tEnd;   // directions per side, first texel in the buffer, interval
+    uint maskOffset; uint pad0; uint pad1; uint pad2;     // per probe: which of its 8 parents it sees (RCVisibility)
+};
+
+struct RCConstants {
+    RCCascade c[RC_MAX_CASCADES];
+    uint cascadeCount; uint frame; uint flags; uint lightSamples;   // flags: 1 bounces (feedback), 2 animated noise
+    float hysteresis; float pad0; float pad1; float pad2;
+};
+
+#define RC_FLAG_BOUNCES 1u
+#define RC_FLAG_ANIMATED_NOISE 2u
+
 #ifdef __cplusplus
 }} // namespace vp3d::gpu
 #endif

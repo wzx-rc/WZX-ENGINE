@@ -160,6 +160,8 @@ bool Renderer::init(HWND hwnd, uint32_t width, uint32_t height, const std::wstri
 
     m_constants = createBuffer(256 * 4, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ);
     m_giConstants = createBuffer(256, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ);
+    m_rcConstants = createBuffer((sizeof(gpu::RCConstants) + 255) & ~255ull, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_FLAG_NONE,
+                                 D3D12_RESOURCE_STATE_GENERIC_READ);
 
     D3D12_QUERY_HEAP_DESC qhd = {};
     qhd.Type = D3D12_QUERY_HEAP_TYPE_TIMESTAMP;
@@ -205,7 +207,7 @@ bool Renderer::createPipelines(std::string* error) {
     capRange.NumDescriptors = 3;
     capRange.BaseShaderRegister = 12;
 
-    D3D12_ROOT_PARAMETER p[16] = {};
+    D3D12_ROOT_PARAMETER p[18] = {};
     p[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
     p[0].Descriptor.ShaderRegister = 0;
     p[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
@@ -237,6 +239,10 @@ bool Renderer::createPipelines(std::string* error) {
     p[15].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;   // u12 probe captures (raster DDGI)
     p[15].DescriptorTable.NumDescriptorRanges = 1;
     p[15].DescriptorTable.pDescriptorRanges = &capRange;
+    p[16].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;   // b3 Radiance Cascades constants
+    p[16].Descriptor.ShaderRegister = 3;
+    p[17].ParameterType = D3D12_ROOT_PARAMETER_TYPE_UAV;   // u15 Radiance Cascades buffer
+    p[17].Descriptor.ShaderRegister = 15;
 
     D3D12_STATIC_SAMPLER_DESC ss = {};   // gLinearWrap (s0) of the path tracer
     ss.Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
@@ -245,7 +251,7 @@ bool Renderer::createPipelines(std::string* error) {
     ss.ShaderRegister = 0;
 
     D3D12_ROOT_SIGNATURE_DESC rsd = {};
-    rsd.NumParameters = 16;
+    rsd.NumParameters = 18;
     rsd.pParameters = p;
     rsd.NumStaticSamplers = 1;
     rsd.pStaticSamplers = &ss;
@@ -273,7 +279,9 @@ bool Renderer::createPipelines(std::string* error) {
     };
     return make(L"PathTrace.cso", m_psoTrace) && make(L"Denoise.cso", m_psoDenoise) && make(L"Tonemap.cso", m_psoTonemap) &&
            make(L"DDGIUpdate.cso", m_psoGIUpdate) && make(L"DDGIRaster.cso", m_psoGIRaster) &&
-           make(L"DDGIBlend.cso", m_psoGIBlend) && make(L"GIShade.cso", m_psoGIShade);
+           make(L"DDGIBlend.cso", m_psoGIBlend) && make(L"GIShade.cso", m_psoGIShade) &&
+           make(L"RCVisibility.cso", m_psoRCVisibility) && make(L"RCTrace.cso", m_psoRCTrace) &&
+           make(L"RCGather.cso", m_psoRCGather);
 }
 
 void Renderer::createTargets(uint32_t w, uint32_t h) {
@@ -1027,7 +1035,7 @@ void Renderer::buildTLAS(const Scene& scene, bool buildAS) {
 // Places a regular probe grid over the scene bounds (about rs.ddgiProbeBudget probes, isotropic spacing)
 // and (re)creates the DDGI textures. Probes restart from scratch when the grid changes.
 void Renderer::setupProbeGrid(const RenderSettings& rs) {
-    int budget = std::max(8, rs.ddgiProbeBudget);
+    int budget = std::max(8, rs.giMethod == 1 ? rs.rcProbeBudget : rs.ddgiProbeBudget);
     if (m_giTex[0] && m_giGridVersion == m_sceneGeometryVersion && m_giBudget == budget) return;
     float3 mn(1e30f), mx(-1e30f);
     for (const Draw& d : m_draws) {
@@ -1251,7 +1259,9 @@ void Renderer::recordDDGI(const RenderSettings& rs, UINT gx, UINT gy, bool shade
     m_cmd->SetComputeRootConstantBufferView(10, m_giConstants.va());
     m_cmd->SetComputeRootDescriptorTable(11, giTable);
 
-    if (rs.ddgiRaster) {
+    if (rs.giMethod == 1 && !rs.ddgiRaster) {
+        recordRC(rs);   // the cascades replace the probe rays and the blend (same atlases)
+    } else if (rs.ddgiRaster) {
         // One group per probe: the captured ones integrate their faces (u12..u14) straight into their tiles, no blend pass.
         D3D12_GPU_DESCRIPTOR_HANDLE capTable = m_heap->GetGPUDescriptorHandleForHeapStart();
         capTable.ptr += (UINT64)kCapHeapSlot * m_descSize;
@@ -1283,6 +1293,83 @@ void Renderer::recordDDGI(const RenderSettings& rs, UINT gx, UINT gy, bool shade
         m_capBase = (m_capBase + m_capSlots) % total;
         if (m_capWarmup > 0) --m_capWarmup;
     }
+}
+
+// Radiance Cascades over the probe grid: cascade 0 = the probes (spacing s0), cascade i has its probes every
+// s0 * 2^i (centred on the 2x2x2 blocks of the cascade below), dirRes0 * 2^i directions per side and the interval
+// [L0 (4^i - 1) / 3, L0 (4^(i+1) - 1) / 3]; the top cascade runs to infinity. The cascades are traced from the top
+// down, each one merging with the one above (RCTrace.hlsl), then cascade 0 fills the probe atlases (RCGather.hlsl).
+// Expects the compute root signature, the scene SRVs and the DDGI constants and atlases to be bound (recordDDGI).
+void Renderer::recordRC(const RenderSettings& rs) {
+    gpu::RCConstants rc = {};
+    const int count = std::max(1, std::min(rs.rcCascades, RC_MAX_CASCADES));
+    const uint32_t dir0 = (uint32_t)std::max(2, std::min(rs.rcDirRes, RC_MAX_DIR0));
+    const float s0 = m_giSpacing, L0 = std::max(0.05f, rs.rcInterval) * s0;
+    uint32_t offset = 0;
+    m_rcStats = RCStats();
+    m_rcStats.cascades = count;
+    for (int i = 0; i < count; ++i) {
+        gpu::RCCascade& c = rc.c[i];
+        const uint32_t scale = 1u << i;
+        for (int a = 0; a < 3; ++a) {
+            uint32_t n = m_giCounts[a];
+            // parents cover the children: child k sits at (k + 0.5) / 2^i - 0.5 in parent units
+            (&c.counts.x)[a] = i == 0 ? n : (uint32_t)std::max(1, (int)std::floor((n - 0.5f) / scale - 0.5f) + 2);
+        }
+        c.counts.w = c.counts.x * c.counts.y * c.counts.z;
+        c.spacing = s0 * scale;
+        c.origin = m_giOrigin + float3(s0 * (scale - 1) * 0.5f);
+        c.dirRes = dir0 * scale;
+        c.offset = offset;
+        c.tStart = L0 * (std::pow(4.0f, (float)i) - 1.0f) / 3.0f;
+        c.tEnd = i + 1 == count ? 1e30f : L0 * (std::pow(4.0f, (float)(i + 1)) - 1.0f) / 3.0f;
+        const uint64_t texels = (uint64_t)c.counts.w * c.dirRes * c.dirRes;
+        offset += (uint32_t)texels;
+        m_rcStats.probes[i] = c.counts.w;
+        m_rcStats.dirRes[i] = c.dirRes;
+        m_rcStats.tStart[i] = c.tStart;
+        m_rcStats.tEnd[i] = c.tEnd;
+        m_rcStats.rays += texels;
+    }
+    for (int i = 0; i < count; ++i) {   // parent visibility masks after the texels, one element per probe
+        rc.c[i].maskOffset = offset;
+        offset += rc.c[i].counts.w;
+    }
+    rc.cascadeCount = (uint32_t)count;
+    rc.frame = m_giFrame;
+    rc.flags = (rs.rcBounces ? RC_FLAG_BOUNCES : 0u) | (rs.rcHysteresis > 0 ? RC_FLAG_ANIMATED_NOISE : 0u);
+    rc.lightSamples = (uint32_t)std::max(1, rs.rcLightSamples);
+    rc.hysteresis = std::max(0.0f, std::min(rs.rcHysteresis, 0.99f));
+    memcpy(m_rcConstants.mapped, &rc, sizeof(rc));
+
+    const uint64_t bytes = (uint64_t)offset * 16;
+    if (!m_rcBuffer.res || m_rcBuffer.size < bytes) {
+        waitIdle();   // the previous frame may still read the old buffer
+        m_rcBuffer = createBuffer(bytes, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS,
+                                  D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+    }
+    m_cmd->SetComputeRootConstantBufferView(16, m_rcConstants.va());
+    m_cmd->SetComputeRootUnorderedAccessView(17, m_rcBuffer.va());
+    m_cmd->SetPipelineState(m_psoRCVisibility.Get());
+    for (int i = 0; i + 1 < count; ++i) {
+        const uint32_t pass[4] = {(uint32_t)i, 0, 0, 0};
+        m_cmd->SetComputeRoot32BitConstants(1, 4, pass, 0);
+        m_cmd->Dispatch((rc.c[i].counts.w + 63) / 64, 1, 1);
+    }
+    uavBarrier(m_rcBuffer.res.Get());
+    m_cmd->SetPipelineState(m_psoRCTrace.Get());
+    for (int i = count - 1; i >= 0; --i) {
+        const uint32_t pass[4] = {(uint32_t)i, 0, 0, 0};
+        m_cmd->SetComputeRoot32BitConstants(1, 4, pass, 0);
+        const uint64_t texels = (uint64_t)rc.c[i].counts.w * rc.c[i].dirRes * rc.c[i].dirRes;
+        m_cmd->Dispatch((UINT)((texels + 63) / 64), 1, 1);
+        uavBarrier(m_rcBuffer.res.Get());
+    }
+    m_cmd->EndQuery(m_queryHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 2);
+    m_cmd->SetPipelineState(m_psoRCGather.Get());
+    m_cmd->Dispatch(rc.c[0].counts.w, 1, 1);
+    uavBarrier();
+    m_cmd->EndQuery(m_queryHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 3);
 }
 
 // Copies ACCUM and NORMAL into the history textures, after the frame's compute work and before the copy to the back buffer.
@@ -1319,6 +1406,14 @@ uint32_t renderSignature(const RenderSettings& rs) {
     mix(&rs.ddgiRaster, sizeof(bool));
     mix(&rs.ddgiCaptureProbes, sizeof(int));
     mix(&rs.ddgiHysteresis, sizeof(float));
+    mix(&rs.giMethod, sizeof(int));
+    mix(&rs.rcProbeBudget, sizeof(int));
+    mix(&rs.rcCascades, sizeof(int));
+    mix(&rs.rcDirRes, sizeof(int));
+    mix(&rs.rcInterval, sizeof(float));
+    mix(&rs.rcBounces, sizeof(bool));
+    mix(&rs.rcLightSamples, sizeof(int));
+    mix(&rs.rcHysteresis, sizeof(float));
     mix(&rs.maxBounces, sizeof(int));
     mix(&rs.bevel, sizeof(bool));
     mix(&rs.bevelScale, sizeof(float));

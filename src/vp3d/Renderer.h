@@ -63,6 +63,24 @@ struct RenderSettings {
     bool bakedProbes = false;
     // Raster modes (Lit, Metal iOS): 0 shaded, 1 wireframe only, 2 wireframe over the shaded view (override).
     int wireframe = 0;
+    // How the probes of the GI modes are computed: 0 DDGI (random rays, hysteresis), 1 Radiance Cascades (the
+    // cascades merged every frame, no temporal accumulation). Radiance Cascades need ray tracing (not ddgiRaster).
+    int giMethod = 0;
+    int rcProbeBudget = 8192;     // probes of cascade 0 (the DDGI grid of this mode)
+    int rcCascades = 4;           // cascade count (the top one traces to infinity)
+    int rcDirRes = 8;             // directions per side of cascade 0 (8 = 64 directions, x4 per cascade), 2..8
+    float rcInterval = 1.0f;      // ray length of cascade 0, in probe spacings (x4 per cascade)
+    bool rcBounces = true;        // further bounces: the hits read the previous frame's probes (else one bounce)
+    int rcLightSamples = 2;       // light samples per hit (fixed per texel: stable, no flicker)
+    float rcHysteresis = 0.0f;    // 0 = no temporal accumulation; > 0 blends the frames (the light samples then move)
+};
+
+// What the Radiance Cascades of the last frame looked like (viewer statistics).
+struct RCStats {
+    int cascades = 0;
+    uint32_t probes[RC_MAX_CASCADES] = {}, dirRes[RC_MAX_CASCADES] = {};
+    float tStart[RC_MAX_CASCADES] = {}, tEnd[RC_MAX_CASCADES] = {};
+    uint64_t rays = 0;            // texels traced per frame (all cascades)
 };
 
 struct ViewRect { int x = 0, y = 0, w = 1, h = 1; };
@@ -98,6 +116,7 @@ public:
     float giBlendMs() const { return m_giBlendMs; }       // DDGI probe blending
     uint32_t giProbeCount() const { return m_giCounts[0] * m_giCounts[1] * m_giCounts[2]; }
     float giSpacing() const { return m_giSpacing; }
+    const RCStats& rcStats() const { return m_rcStats; }   // Radiance Cascades of the last GI frame
     bool converged(const RenderSettings& rs) const { return m_sampleIndex >= (uint32_t)rs.maxSamples; }
 
     // Reads back the last tonemapped viewport image (RGBA8).
@@ -167,6 +186,7 @@ private:
     void setupProbeGrid(const RenderSettings& rs);
     void createProbeTextures(const lit::ProbeGrid& grid);
     void recordDDGI(const RenderSettings& rs, UINT gx, UINT gy, bool shade = true);   // shade: GIShade (ray traced visibility)
+    void recordRC(const RenderSettings& rs);   // Radiance Cascades: trace + merge every cascade, then fill the probe atlases
     void copyHistory();
     uint32_t sceneSignature(const Scene& scene) const;
     uint32_t transformSignature(const Scene& scene) const;
@@ -197,6 +217,7 @@ private:
     ComPtr<ID3D12RootSignature> m_rootSig;
     ComPtr<ID3D12PipelineState> m_psoTrace, m_psoDenoise, m_psoTonemap;
     ComPtr<ID3D12PipelineState> m_psoGIUpdate, m_psoGIBlend, m_psoGIShade, m_psoGIRaster;
+    ComPtr<ID3D12PipelineState> m_psoRCVisibility, m_psoRCTrace, m_psoRCGather;
     ComPtr<ID3D12DescriptorHeap> m_heap;
     uint32_t m_descSize = 0;
 
@@ -264,6 +285,9 @@ private:
     float m_giUpdateMs = 0.0f, m_giBlendMs = 0.0f;
     bool m_giTimed = false;
     Rng m_giRng;
+    // Radiance Cascades: all cascades in one buffer (u15), their constants (b3)
+    Buffer m_rcBuffer, m_rcConstants;
+    RCStats m_rcStats;
 
     // Temporal history: copies of ACCUM and NORMAL of the previous frame, and the camera they were rendered with.
     ComPtr<ID3D12Resource> m_hist[2];

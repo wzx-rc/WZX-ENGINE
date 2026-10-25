@@ -44,6 +44,10 @@ Trois modes, choisis dans le menu de rendu en haut du viewport ; leurs réglages
 - **Progressive path tracing** (touche P depuis le raster) : rendu progressif exact, avec débruiteur optionnel (option « Denoiser » de l'onglet Render, désactivée par défaut).
 - **GI probes (DDGI)** (touche L) : grille de sondes d'éclairage indirect mise à jour à chaque image, avec historique d'image. Expérimental ; rapport : `docs/RAPPORT_DDGI.md`. Options : `--ddgi 1`, `--probes N`, `--ddgi-view 0|1|2`, `--hysteresis x`.
 
+## Radiance Cascades (viewer solo)
+
+`build\bin\RCViewer.exe` (compilé par `build.bat`, ou seul par `build_rcviewer.bat`) : viewer de test de la GI **Radiance Cascades**. Les cascades de sondes sont tracées et fusionnées à chaque image, sans accumulation temporelle. Le viewer permet la comparaison avec la DDGI et le path tracing, et propose des vues d'inspection. Côté moteur, le mode correspond à `RenderSettings::giMethod = 1`. Rapport : `docs/RAPPORT_RADIANCE_CASCADES.md`.
+
 ## Transformations de vue
 
 ACES (fit de Hill, RRT+ODT), AgX, AgX Punchy, Standard. Espace de travail : linéaire Rec.709 / sRGB.
