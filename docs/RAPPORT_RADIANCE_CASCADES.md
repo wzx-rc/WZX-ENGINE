@@ -132,3 +132,31 @@ Mesures sur l'Atrium (% du path tracing), viewport 1 188 × 900 :
 - utiliser les sondes écran aussi pour les reflets brillants.
 
 Captures : `docs/rc_screens/11` à `14`.
+
+## Corrections du soir : contact, plafonds, coût du mode écran
+
+- **Halo bleu sous les sphères** : au point de contact, les sondes voisines sont cachées par l'objet, la confiance tombait et la passe raster retombait sur l'ambiance du ciel. Désormais, la lumière normalisée des sondes est gardée partout dans le volume (`DDGIProbe.hlsli`). Avant / après / référence : capture 18.
+- **Reflets** :
+  - le reflet de l'environnement est occulté par le rapport entre l'irradiance des sondes et le ciel le plus clair (hémisphère de N ou ciel autour de la réflexion), au carré ;
+  - ce que le ciel ne donne plus est remplacé par la lumière des sondes, pondérée par l'ajustement split-sum (`EnvBRDFApprox`) ;
+  - effets : les métaux ne sont plus noirs, et les plafonds ne reflètent plus le zénith. Le plafond gauche de l'Atrium passe de 145 à 111 %.
+- **Coût du mode écran** : il venait du gather par pixel (4 sondes × 64 directions, angles solides recalculés), pas des rayons. 4 fois moins de rayons ne faisait gagner que 1,5 ms. Chaque sonde de cascade 0 est maintenant projetée en harmoniques sphériques d'ordre 2 (`RCSProbeSH.hlsl`), et le pixel n'évalue plus que 4 SH : **12,1 → 5,8 ms** pour la même image (1 188 × 900).
+- **Fusion des cascades écran** :
+  - tolérance de plan des parents proportionnelle à la tuile ;
+  - quand aucun parent n'est sur la surface (face étroite, arête), la grille RC 3D prend le relais dans la direction voulue au lieu des parents les plus proches.
+- **Ray splitting de Split RC** : non fait. Le coût étant dans le gather, il n'aurait pas aidé ici.
+
+Atrium, RC écran, % du path tracing (1 188 × 900, 5,8 ms GPU) :
+
+| Zone | % |
+|---|---|
+| Bannière rouge G | 97 |
+| Bannière bleue G | 89 |
+| Plafond G | 116 |
+| Plafond D | 85 |
+| Pilier D | 75 |
+| Sol à l'ombre D | 104 |
+| Mur du fond | 85 (le direct raster y est à 31 % contre 49 % en ray tracé : ombre du soleil de la passe raster) |
+| Bannière verte D | 91 |
+
+Captures 15 à 21 dans `docs/rc_screens`.

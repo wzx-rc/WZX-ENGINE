@@ -6,6 +6,29 @@
 // Nothing is accumulated over frames.
 #include "RCSCommon.hlsli"
 
+// Merged radiance of the world cascade 0 in direction d around P: the direction texel of the 8 surrounding world probes
+// (the active ones), trilinear. Used where no screen parent lies on the child's surface.
+float3 WorldRadiance(float3 P, float3 d) {
+    RCCascade c = RC.c[0];
+    float3 f = clamp((P - c.origin) / c.spacing, 0.0, float3(c.counts.xyz) - 1.0);
+    int3 base = max(min(int3(floor(f)), int3(c.counts.xyz) - 2), 0);
+    float3 a = saturate(f - float3(base));
+    uint2 t = min(uint2((OctEncode(d) * 0.5 + 0.5) * c.dirRes), c.dirRes - 1);
+    float3 sum = 0;
+    float wsum = 0;
+    for (uint i = 0; i < 8; ++i) {
+        int3 off = int3(i & 1, (i >> 1) & 1, (i >> 2) & 1);
+        uint3 k = uint3(min(base + off, int3(c.counts.xyz) - 1));
+        uint p = RCProbeIndex(c, k);
+        if (gProbe[int2(p, 0)].x < 0.5) continue;
+        float3 tri = lerp(1.0 - a, a, float3(off));
+        float w = tri.x * tri.y * tri.z;
+        sum += gRC[c.offset + p * c.dirRes * c.dirRes + t.x + t.y * c.dirRes].rgb * w;
+        wsum += w;
+    }
+    return wsum > 0 ? sum / wsum : 0;
+}
+
 float3 MergeParents(uint j, uint2 kChild, RCSCascade child, float3 P, float3 N, uint2 t) {
     RCSCascade c = RS.c[j];
     float2 px = RCSProbePixel(child, kChild);
@@ -15,8 +38,8 @@ float3 MergeParents(uint j, uint2 kChild, RCSCascade child, float3 P, float3 N, 
     // plane tolerance of the parents: grows with the tile (x2 per cascade), not with the ray length, or parents on
     // another surface far behind (a sunlit wall seen past a ceiling) pass the test in the upper cascades
     float tol = RS.planeTolerance * float(1u << j);
-    float3 sum = 0, sumAny = 0;
-    float wsum = 0, wAny = 0;
+    float3 sum = 0;
+    float wsum = 0;
     for (uint i = 0; i < 4; ++i) {
         int2 off = int2(i & 1, i >> 1);
         uint2 k = (uint2)clamp(base + off, int2(0, 0), int2(c.grid.xy) - 1);
@@ -36,11 +59,10 @@ float3 MergeParents(uint j, uint2 kChild, RCSCascade child, float3 P, float3 N, 
         float wp = w * RCSPlaneWeight(P, N, Pp.xyz, Np, tol);
         sum += v * wp;
         wsum += wp;
-        sumAny += v * w;
-        wAny += w;
     }
-    if (wsum > 1e-4) return sum / wsum;
-    return wAny > 0 ? sumAny / wAny : 0;   // no parent on this surface: the nearest ones anyway
+    // few parents on this surface (a narrow face, an edge): the world cascades take over progressively
+    float3 world = WorldRadiance(P, RCTexelDir(t, child.grid.w));
+    return wsum > 1e-6 ? lerp(world, sum / wsum, saturate(wsum / 0.1)) : world;
 }
 
 [numthreads(64, 1, 1)]

@@ -157,7 +157,8 @@ struct RCSCascade {
 
 struct RCSConstants {
     RCSCascade c[RCS_MAX_CASCADES];
-    uint cascadeCount; uint flags; float planeTolerance; float pad0;   // planeTolerance: world size of a C0 tile
+    uint cascadeCount; uint flags; float planeTolerance; uint shOffset;   // planeTolerance: world size of a C0 tile;
+                                                                         // shOffset: irradiance SH of the C0 probes (7 float4 each)
 };
 
 #define RC_FLAG_BOUNCES 1u

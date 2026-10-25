@@ -5,7 +5,7 @@ for /f "usebackq delims=" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\
 call "%VSDIR%\VC\Auxiliary\Build\vcvars64.bat" >nul 2>nul
 set "OUT=build\bin"
 set "DXC=%WindowsSdkVerBinPath%x64\dxc.exe"
-for %%S in (PathTrace Denoise Tonemap DDGIUpdate DDGIRaster DDGIBlend GIShade RCVisibility RCTrace RCGather RCSProbes RCSTrace RCSGather) do (
+for %%S in (PathTrace Denoise Tonemap DDGIUpdate DDGIRaster DDGIBlend GIShade RCVisibility RCTrace RCGather RCSProbes RCSTrace RCSProbeSH RCSGather) do (
     "%DXC%" -nologo -T cs_6_5 -E main -HV 2021 -O3 -I src\vp3d\shaders src\vp3d\shaders\%%S.hlsl -Fo "%OUT%\shaders\%%S.cso" || exit /b 1
 )
 for %%E in (VSMain VSShadow VSBackground VSProbe) do (

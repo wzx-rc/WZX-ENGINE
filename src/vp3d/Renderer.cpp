@@ -302,7 +302,8 @@ bool Renderer::createPipelines(std::string* error) {
            make(L"DDGIBlend.cso", m_psoGIBlend) && make(L"GIShade.cso", m_psoGIShade) &&
            make(L"RCVisibility.cso", m_psoRCVisibility) && make(L"RCTrace.cso", m_psoRCTrace) &&
            make(L"RCGather.cso", m_psoRCGather) && make(L"RCSProbes.cso", m_psoRCSProbes) &&
-           make(L"RCSTrace.cso", m_psoRCSTrace) && make(L"RCSGather.cso", m_psoRCSGather);
+           make(L"RCSTrace.cso", m_psoRCSTrace) && make(L"RCSProbeSH.cso", m_psoRCSProbeSH) &&
+           make(L"RCSGather.cso", m_psoRCSGather);
 }
 
 void Renderer::createTargets(uint32_t w, uint32_t h) {
@@ -1460,6 +1461,8 @@ void Renderer::recordRCScreen(const RenderSettings& rs, UINT gx, UINT gy) {
         sc.c[i].probeOffset = probes;
         probes += sc.c[i].grid.x * sc.c[i].grid.y * 2;
     }
+    sc.shOffset = probes;   // radiance SH of the cascade-0 probes (RCSProbeSH), 7 float4 each
+    probes += sc.c[0].grid.x * sc.c[0].grid.y * 7;
     sc.cascadeCount = count;
     sc.planeTolerance = std::max(L0, 1e-3f);
     memcpy(m_rcsConstants.mapped, &sc, sizeof(sc));
@@ -1493,6 +1496,9 @@ void Renderer::recordRCScreen(const RenderSettings& rs, UINT gx, UINT gy) {
         m_cmd->Dispatch((n + 63) / 64, 1, 1);
         uavBarrier(m_rcsBuffer.res.Get());
     }
+    m_cmd->SetPipelineState(m_psoRCSProbeSH.Get());
+    m_cmd->Dispatch((sc.c[0].grid.x * sc.c[0].grid.y + 63) / 64, 1, 1);
+    uavBarrier(m_rcsBuffer.res.Get());
     m_cmd->SetPipelineState(m_psoRCSGather.Get());
     m_cmd->Dispatch(gx, gy, 1);
     uavBarrier();

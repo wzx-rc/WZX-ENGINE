@@ -33,3 +33,32 @@ float RCSPlaneWeight(float3 P, float3 N, float3 Pp, float3 Np, float tol) {
     float wn = saturate(dot(N, Np));
     return exp(-d / max(tol, 1e-4)) * (0.05 + wn * wn);
 }
+
+// Real spherical harmonics up to order 2 (9 functions) of a unit direction.
+void RCSShBasis(float3 d, out float y[9]) {
+    y[0] = 0.282095;
+    y[1] = 0.488603 * d.y;
+    y[2] = 0.488603 * d.z;
+    y[3] = 0.488603 * d.x;
+    y[4] = 1.092548 * d.x * d.y;
+    y[5] = 1.092548 * d.y * d.z;
+    y[6] = 0.315392 * (3.0 * d.z * d.z - 1.0);
+    y[7] = 1.092548 * d.x * d.z;
+    y[8] = 0.546274 * (d.x * d.x - d.y * d.y);
+}
+
+// Irradiance / pi for normal N from the radiance SH of probe p of cascade 0 (cosine lobe convolution).
+float3 RCSShIrradiance(uint p, float3 N) {
+    float v[28];
+    uint o = RS.shOffset + p * 7;
+    for (uint q = 0; q < 7; ++q) {
+        float4 f = gRCS[o + q];
+        v[q * 4] = f.x; v[q * 4 + 1] = f.y; v[q * 4 + 2] = f.z; v[q * 4 + 3] = f.w;
+    }
+    float y[9];
+    RCSShBasis(N, y);
+    const float A[9] = {3.141593, 2.094395, 2.094395, 2.094395, 0.785398, 0.785398, 0.785398, 0.785398, 0.785398};
+    float3 e = 0;
+    for (uint k = 0; k < 9; ++k) e += float3(v[k * 3], v[k * 3 + 1], v[k * 3 + 2]) * (A[k] * y[k]);
+    return max(e, 0.0) / PI;
+}

@@ -1,7 +1,7 @@
-// Screen-space Radiance Cascades, pass 2 (one thread per pixel): the indirect irradiance of the pixel's surface from
-// the 4 cascade-0 probes around it (bilinear on the screen, weighted by surface plane and normal), each integrated
-// over its directions with the cosine and the solid angle of every direction texel. Written as irradiance / pi, the
-// unit of the probe atlases, into the screen GI texture the raster pass reads instead of the probe volume.
+// Screen-space Radiance Cascades, pass 3 (one thread per pixel): the indirect irradiance of the pixel's surface from
+// the 4 cascade-0 probes around it (bilinear on the screen, weighted by surface plane and normal), each evaluated
+// from its radiance SH for the pixel's normal. Written as irradiance / pi, the unit of the probe atlases, into the
+// screen GI texture the raster pass reads instead of the probe volume.
 #include "RCSCommon.hlsli"
 
 [numthreads(8, 8, 1)]
@@ -16,7 +16,6 @@ void main(uint3 id : SV_DispatchThreadID) {
     }
     float3 P = OffsetRay(h.P, h.Ng), N = h.N;
     RCSCascade c = RS.c[0];
-    uint D = c.grid.w;
     float2 f = px / c.grid.z - 0.5;
     int2 base = int2(floor(f));
     float2 a = f - float2(base);
@@ -32,21 +31,8 @@ void main(uint3 id : SV_DispatchThreadID) {
         if (Pp.w < 0.5) continue;
         float w = bl.x * bl.y * RCSPlaneWeight(P, N, Pp.xyz, Np, RS.planeTolerance);
         if (w <= 1e-6) continue;
-        uint first = c.offset + (k.x + k.y * c.grid.x) * D * D;
-        float3 e = 0;
-        float ce = 0;
-        for (uint t = 0; t < D * D; ++t) {
-            uint2 tt = uint2(t % D, t / D);
-            float cs = dot(RCTexelDir(tt, D), N);
-            if (cs <= 0) continue;
-            float wd = cs * RCTexelSolidAngle(tt, D);
-            e += gRCS[first + t].rgb * wd;
-            ce += wd;
-        }
-        if (ce > 0) {
-            sum += e / ce * w;
-            wsum += w;
-        }
+        sum += RCSShIrradiance(k.x + k.y * c.grid.x, N) * w;   // the probe's radiance SH (RCSProbeSH.hlsl)
+        wsum += w;
     }
     gScreenGI[id.xy] = wsum > 0 ? float4(sum / wsum, saturate(wsum * 8.0)) : 0;
 }
