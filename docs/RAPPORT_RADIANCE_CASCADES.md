@@ -7,7 +7,7 @@ GPU : NVIDIA GeForce RTX 5060, Release, viewport ≈ 1 200 × 900.
 
 Radiance Cascades en 3D, dans l'espace monde, avec le ray tracing matériel (DXR 1.1, RayQuery inline).
 
-- **Cascade 0** = la grille de sondes DDGI (≈ 8 000 sondes par défaut), 8 × 8 directions octaédriques par sonde, rayons courts : intervalle [0, 1 espacement].
+- **Cascade 0** = la grille de sondes DDGI (≈ 8 000 sondes par défaut), 8 × 8 directions octaédriques par sonde, intervalle [0, 3 espacements] (voir « Correctif Atrium »).
 - **Cascade i** : sondes 2 fois plus espacées (8 fois moins nombreuses), 4 fois plus de directions, intervalle 4 fois plus long ([L₀(4ⁱ−1)/3, L₀(4ⁱ⁺¹−1)/3]). La dernière cascade trace jusqu'à l'infini et voit le ciel.
 - **Fusion** de la cascade la plus haute vers la cascade 0 : ce qu'un rayon ne touche pas dans son intervalle est pris dans la cascade du dessus (moyenne des 4 directions plus fines, trilinéaire sur les 8 sondes parentes).
 - **Visibilité des parents** (`RCVisibility.hlsl`) : une sonde ne fusionne que les parents qu'elle voit (1 rayon d'ombre par parent). Sans ce test, les parents situés derrière un mur apportent la lumière, ou le noir, de l'autre côté. Résultat avant le correctif : fuites le long des murs et GI 30 à 40 % trop sombre.
@@ -45,6 +45,29 @@ Fichiers : `src\vp3d\shaders\RCCommon.hlsli`, `RCVisibility.hlsl`, `RCTrace.hlsl
 Atrium (10 530 sondes) : 1,66 M rayons, 1,0 + 0,9 ms, 3,3 à 3,8 ms par image.
 
 Visuellement, l'éclairage indirect est proche de la DDGI convergée et du path tracing. Avec l'ombrage ray tracé (mode 2), la Cornell est quasiment identique à la référence.
+
+## Correctif Atrium (25/10, soir)
+
+L'Atrium était trop sombre sur le côté droit, qui ne reçoit que la lumière renvoyée par la bande de sol ensoleillé. Mesure de la luminance moyenne par zone, en % du path tracing (1 500 images) :
+
+| Zone | Avant (raster) | Après (raster) | Après (ray tracé) | DDGI raster |
+|---|---|---|---|---|
+| Bannière rouge G | 90 | 88 | 95 | 90 |
+| Bannière bleue G | 104 | 85 | 95 | 104 |
+| Plafond G | 139 | 129 | 108 | 109 |
+| Plafond D | 91 | 101 | 88 | 92 |
+| Pilier D | **50** | 92 | 94 | 93 |
+| Sol à l'ombre D | 115 | 119 | 114 | 105 |
+| Mur du fond | 85 | 83 | 102 | 79 |
+| Bannière verte D | **61** | 93 | 93 | 94 |
+
+- **Cause** : la visibilité des sondes (test de Tchebychev à partir des distances), pas l'énergie de la fusion. Les tests le montrent : hystérésis 0,9 et 5 cascades ne changent rien, alors que la densité des sondes et l'intervalle font varier le résultat de 53 à 131 %. Avec des rayons de cascade 0 courts (1 espacement), les distances au-delà venaient des cascades parentes, mesurées depuis une autre sonde. Les sondes au-dessus du toit ensoleillé ou derrière les bannières passaient donc le test et fuyaient dans l'ombrage.
+- **Correctif** : intervalle de la cascade 0 porté à 3 espacements (`rcInterval = 3`). Il couvre toute la portée du test de visibilité (2,6 espacements), donc les distances sont exactes. Coût : 3,2 ms GPU par image au lieu de 3,3 à 3,8 ms.
+- **Passe raster** : le reflet du ciel est occulté par le rapport irradiance des sondes / irradiance du ciel ; le sol intérieur ne reflète plus le ciel bleu.
+- **« Bilinear fix »** : essayé (un segment tracé par sonde parente, option « Correction bilinéaire ») mais moins bon ici, avec un plafond à 291 %, et 2 fois plus cher. Désactivé par défaut.
+- **Écart restant** : le mode « RC + ombrage ray tracé » est dans ±15 % du path tracing partout. Le mode raster garde un plafond gauche à +29 %, dû à l'ombrage raster plus qu'aux cascades.
+
+Captures après correctif : `docs/rc_screens/8_atrium_RC_v2.png`, `9_atrium_RC_v2_indirect_seul.png`, `10_atrium_RC_v2_ombrage_raytrace.png`.
 
 ## Limites connues
 

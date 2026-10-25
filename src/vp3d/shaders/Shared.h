@@ -146,6 +146,7 @@ struct RCConstants {
 
 #define RC_FLAG_BOUNCES 1u
 #define RC_FLAG_ANIMATED_NOISE 2u
+#define RC_FLAG_BILINEAR_FIX 4u   // merge with one traced segment per parent (RCTrace.hlsl, BilinearFixMerge)
 
 #ifdef __cplusplus
 }} // namespace vp3d::gpu

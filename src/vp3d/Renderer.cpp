@@ -1337,7 +1337,8 @@ void Renderer::recordRC(const RenderSettings& rs) {
     }
     rc.cascadeCount = (uint32_t)count;
     rc.frame = m_giFrame;
-    rc.flags = (rs.rcBounces ? RC_FLAG_BOUNCES : 0u) | (rs.rcHysteresis > 0 ? RC_FLAG_ANIMATED_NOISE : 0u);
+    rc.flags = (rs.rcBounces ? RC_FLAG_BOUNCES : 0u) | (rs.rcHysteresis > 0 ? RC_FLAG_ANIMATED_NOISE : 0u) |
+               (rs.rcBilinearFix ? RC_FLAG_BILINEAR_FIX : 0u);
     rc.lightSamples = (uint32_t)std::max(1, rs.rcLightSamples);
     rc.hysteresis = std::max(0.0f, std::min(rs.rcHysteresis, 0.99f));
     memcpy(m_rcConstants.mapped, &rc, sizeof(rc));
@@ -1351,7 +1352,7 @@ void Renderer::recordRC(const RenderSettings& rs) {
     m_cmd->SetComputeRootConstantBufferView(16, m_rcConstants.va());
     m_cmd->SetComputeRootUnorderedAccessView(17, m_rcBuffer.va());
     m_cmd->SetPipelineState(m_psoRCVisibility.Get());
-    for (int i = 0; i + 1 < count; ++i) {
+    for (int i = 0; i + 1 < count && !rs.rcBilinearFix; ++i) {   // the bilinear fix traces its own joins
         const uint32_t pass[4] = {(uint32_t)i, 0, 0, 0};
         m_cmd->SetComputeRoot32BitConstants(1, 4, pass, 0);
         m_cmd->Dispatch((rc.c[i].counts.w + 63) / 64, 1, 1);
@@ -1414,6 +1415,7 @@ uint32_t renderSignature(const RenderSettings& rs) {
     mix(&rs.rcBounces, sizeof(bool));
     mix(&rs.rcLightSamples, sizeof(int));
     mix(&rs.rcHysteresis, sizeof(float));
+    mix(&rs.rcBilinearFix, sizeof(bool));
     mix(&rs.maxBounces, sizeof(int));
     mix(&rs.bevel, sizeof(bool));
     mix(&rs.bevelScale, sizeof(float));

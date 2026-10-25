@@ -4,7 +4,7 @@
 //
 // Command line: --scene cornell|lookdev|atrium  --mode 0..5  --view 0|1|2  --probes N  --cascades N  --dirres N
 //               --interval x  --hdri file|sky  --size WxH  --shot file.png [--frames N]  --anim 1
-//               --show-probes 1  --camview N  --hysteresis x  --shot-window file.png
+//               --show-probes 1  --camview N  --hysteresis x  --bilinear 0|1  --shot-window file.png
 #include "app/Content.h"
 #include "app/ImGuiLayer.h"
 #include "backends/imgui_impl_win32.h"
@@ -55,6 +55,7 @@ struct Options {
     bool showProbes = false;
     int camView = -1;
     float hysteresis = -1;
+    int bilinear = -1;
 };
 
 bool savePng(const std::wstring& path, std::vector<uint8_t> rgba, uint32_t w, uint32_t h) {
@@ -308,6 +309,7 @@ bool Viewer::init(HINSTANCE inst, const Options& opt) {
     m_anim = opt.anim;
     m_rs.ddgiShowProbes = opt.showProbes;
     if (opt.hysteresis >= 0) m_rs.rcHysteresis = opt.hysteresis;
+    if (opt.bilinear >= 0) m_rs.rcBilinearFix = opt.bilinear != 0;
     applyMode();
     ShowWindow(m_hwnd, SW_SHOWDEFAULT);
     UpdateWindow(m_hwnd);
@@ -518,6 +520,7 @@ void Viewer::ui(float panelW) {
     ImGui::SliderFloat("##int", &m_rs.rcInterval, 0.25f, 4.0f, "Intervalle C0 : %.2f x esp.");
     ImGui::SliderInt("##ls", &m_rs.rcLightSamples, 1, 8, "Échantillons lumière : %d");
     ImGui::Checkbox("Rebonds multiples", &m_rs.rcBounces);
+    ImGui::Checkbox("Correction bilinéaire (fusion exacte)", &m_rs.rcBilinearFix);
     ImGui::SliderFloat("##hy", &m_rs.rcHysteresis, 0.0f, 0.95f, m_rs.rcHysteresis > 0 ? "Hystérésis : %.2f" : "Hystérésis : 0 (aucun temporel)");
     ImGui::EndDisabled();
     if (m_rs.giMethod == 0 && gi) {
@@ -656,6 +659,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         else if (a == L"--show-probes") opt.showProbes = _wtoi(next().c_str()) != 0;
         else if (a == L"--camview") opt.camView = _wtoi(next().c_str());
         else if (a == L"--hysteresis") opt.hysteresis = (float)_wtof(next().c_str());
+        else if (a == L"--bilinear") opt.bilinear = _wtoi(next().c_str());
         else if (a == L"--size") swscanf_s(next().c_str(), L"%dx%d", &opt.width, &opt.height);
     }
     LocalFree(argv);

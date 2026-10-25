@@ -69,10 +69,12 @@ struct RenderSettings {
     int rcProbeBudget = 8192;     // probes of cascade 0 (the DDGI grid of this mode)
     int rcCascades = 4;           // cascade count (the top one traces to infinity)
     int rcDirRes = 8;             // directions per side of cascade 0 (8 = 64 directions, x4 per cascade), 2..8
-    float rcInterval = 1.0f;      // ray length of cascade 0, in probe spacings (x4 per cascade)
+    float rcInterval = 3.0f;      // ray length of cascade 0, in probe spacings (x4 per cascade): covers the
+                                  // probe visibility range (DDGI maxDistance 2.6 spacings), so the distances are exact
     bool rcBounces = true;        // further bounces: the hits read the previous frame's probes (else one bounce)
     int rcLightSamples = 2;       // light samples per hit (fixed per texel: stable, no flicker)
     float rcHysteresis = 0.0f;    // 0 = no temporal accumulation; > 0 blends the frames (the light samples then move)
+    bool rcBilinearFix = false;   // merge with one traced segment per parent probe (8x the merge rays; not better here)
 };
 
 // What the Radiance Cascades of the last frame looked like (viewer statistics).

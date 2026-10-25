@@ -323,6 +323,7 @@ float4 Shade(VSOut i, bool ghost, float shadowBias, bool capture) {
     // Ambient of Lit: diffuse and glossy parts kept apart (the DDGI probes replace the diffuse part only).
     float3 ambDiffuse, ambGlossy;
     float3 kdAmb;
+    float3 skyN;   // mean sky radiance over the hemisphere of N, compared with the probes (glossy occlusion)
     if (R.envMapOn > 0) {
         // HDRI: SH irradiance (diffuse) and the blurred mips of the image along the reflection (glossy).
         float3 Rd = reflect(-V, N);
@@ -331,6 +332,7 @@ float4 Shade(VSOut i, bool ghost, float shadowBias, bool capture) {
         kdAmb = diffuseCol * (1 - Fe);
         ambDiffuse = kdAmb / PI * EnvIrradiance(N) * cavity;
         ambGlossy = Fe * refl * cavity;
+        skyN = EnvIrradiance(N) / PI;
     } else {
         float3 sky = Environment(N) + R.ambient * (0.65 + 0.35 * N.y);
         float3 refl = Environment(reflect(-V, N)) + R.ambient;
@@ -338,17 +340,21 @@ float4 Shade(VSOut i, bool ghost, float shadowBias, bool capture) {
         kdAmb = diffuseCol * (1 - Fa);
         ambDiffuse = diffuseCol * sky * cavity;
         ambGlossy = Fa * refl * cavity;
+        skyN = sky;
     }
 #ifdef VP3D_DDGI_PROBES
     if (R.giMode > 0) {
         // Diffuse GI from the probes instead of the ambient (view 1: indirect only, 2: direct only, as GIShade.hlsl).
-        // Where no probe answers (inside geometry, outside the volume) the ambient of Lit stays. The glossy part is
-        // the one of Lit (environment reflection): the probes are too coarse for reflections.
+        // Where no probe answers (inside geometry, outside the volume) the ambient of Lit stays.
+        // Glossy part: the environment reflection, occluded by the ratio of the probe irradiance to the sky irradiance
+        // for the same normal (indoors the probes see much less than the open sky: the floor no longer reflects it).
         if (G.view == 1 && !capture) color = 0;
         if (!capture && G.view != 2) {
             float conf;
             float3 irr = SampleIrradiance(i.wpos, N, V, conf);
-            color += lerp(ambDiffuse, kdAmb * irr, conf) + ambGlossy;
+            const float3 lw = float3(0.2126, 0.7152, 0.0722);
+            float occ = saturate(dot(irr, lw) / max(dot(skyN, lw), 1e-4));
+            color += lerp(ambDiffuse, kdAmb * irr, conf) + ambGlossy * lerp(1.0, occ, conf);
         }
     } else
 #endif
