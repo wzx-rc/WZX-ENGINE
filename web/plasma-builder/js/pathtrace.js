@@ -45,9 +45,15 @@ export class PathTrace {
 
   syncCamera(camera, force = false) {
     const s = this.settings || {};
-    const key = camera.matrixWorld.elements.join(',') + camera.projectionMatrix.elements[0] + camera.projectionMatrix.elements[5] + [s.dof, s.fStop, s.focus, s.unitsPerMeter].join(',');
-    if (!force && key === this.camKey) return;
-    this.camKey = key;
+    // Comparaison avec tolérance : l'amortissement d'OrbitControls déplace la caméra de quantités infimes
+    // pendant des centaines d'images, et une égalité stricte relançait l'accumulation à chaque image.
+    const cur = [...camera.matrixWorld.elements, camera.projectionMatrix.elements[0], camera.projectionMatrix.elements[5], s.focus || 0];
+    const prev = this.camPrev;
+    const opts = [s.dof, s.fStop, s.unitsPerMeter].join(',');
+    const same = prev && opts === this.camKey && cur.every((v, i) => Math.abs(v - prev[i]) < 1e-4 * (i === cur.length - 1 ? 100 : 1));
+    if (!force && same) return;
+    this.camPrev = cur;
+    this.camKey = opts;
     const c = this.cam;
     c.copy(camera);
     // PhysicalCamera : bokehSize = focale (mm) / f, converti en mètres par le path tracer ; la scène est une

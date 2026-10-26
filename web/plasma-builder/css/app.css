@@ -69,7 +69,7 @@ button.primary:hover { filter: brightness(1.08); }
 .rail button:disabled { color: #6b6d74; cursor: default; background: none; }
 
 .work { flex: 999 1 900px; min-width: 0; display: flex; flex-direction: column; gap: 12px; }
-.row-top { display: flex; flex-wrap: wrap; gap: 12px; align-items: stretch; }
+.row-top { flex: 1 1 auto; display: flex; flex-wrap: wrap; gap: 12px; align-items: stretch; }
 .row-bottom { display: flex; flex-wrap: wrap; gap: 12px; }
 
 .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
