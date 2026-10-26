@@ -13,3 +13,8 @@ Format du bloc MESH : nom d'attribut + NUL + drapeau, puis positions (float32 BE
 dure, à masquer), liste d'arêtes par face (bit 31 = arête inversée, bit 30 = fin de face), normales (1e20 = non
 définie), jeux d'UV (« map1 ») et index d'UV par coin de face. Le sculpt haute définition est dans
 polySurfaceShape1 (corps) et polySurfaceShape2 (tête, déjà en place) ; dents et yeux = (positions + pt) × matrice monde.
+
+## OBJ avec UV (ex. Grot Bomber)
+
+`python obj2out.py GROT_UV.obj grot` écrit `out/` (sommets dédoublés par couple position/uv, quads triangulés),
+puis `node simplify.mjs 0.25 grot.glb` (web, ~410k triangles) et `node simplify.mjs 1 grot_hd.glb` (app Windows).

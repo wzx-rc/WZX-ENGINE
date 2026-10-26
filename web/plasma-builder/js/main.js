@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { Viewport, Thumbs, RENDER_DEFAULTS } from './viewport.js';
 import { Hold } from './hold.js';
 import { TONEMAPPERS } from './render.js';
-import { TestModel } from './testmodel.js';
+import { TestModel, TEST_MODELS } from './testmodel.js';
 
 // Le path tracing n'est proposé que dans l'app Windows (desktop/ : Electron expose window.plasmaDesktop).
 const DESKTOP = !!window.plasmaDesktop;
@@ -46,7 +46,8 @@ const thumbs = new Thumbs(160, 200);
 thumbs.mode = renderSet.tonemapper;
 const figure = new Figure(tag => vp.material(tag));
 const hold = new Hold(vp);
-const testModel = new TestModel(vp, EYE_HEIGHT);
+const testModels = Object.fromEntries(Object.keys(TEST_MODELS).map(id => [id, new TestModel(vp, EYE_HEIGHT, id)]));
+let testModel = testModels.boy;
 if (!DESKTOP) {
   $('qualitySel').querySelector('option[value="pt"]').remove();
   $('ptSet').hidden = true;
@@ -525,7 +526,7 @@ document.addEventListener('click', e => {
   else if (d.kit) { const i = state.kits.indexOf(d.kit); if (i < 0) state.kits.push(d.kit); else state.kits.splice(i, 1); refresh3D(); commit(); renderKits(); renderPrintInfo(); scheduleFigureThumbs(); }
   else if (d.acc) { if (openOpts.has(d.acc)) openOpts.delete(d.acc); else openOpts.add(d.acc); renderOptions(); }
   else if (d.mirror) { const xf = state.xf[ui.slot]; const i = 'xyz'.indexOf(d.mirror); xf.m[i] = !xf.m[i]; figure.applyXf(ui.slot, xf); commit(); renderCustomize(); }
-  else if (d.shade) { ui.shade = d.shade; vp.setMode(d.shade); figure.refreshMaterials(); testModel.refresh(); renderSteps(); }
+  else if (d.shade) { ui.shade = d.shade; vp.setMode(d.shade); figure.refreshMaterials(); Object.values(testModels).forEach(t => t.refresh()); renderSteps(); }
   else if (d.export) doExport(d.export);
 });
 
@@ -549,21 +550,24 @@ $('renderSet').addEventListener('input', e => {
 $('hdriBtn').addEventListener('click', () => $('hdriInput').click());
 // Scène de test du rendu : le sculpt haute définition de l'Ork Boy à la place de la figurine assemblée.
 $('sceneSel').addEventListener('change', async e => {
-  const test = e.target.value === 'test';
+  const id = e.target.value, test = id !== 'builder';
+  testModel.root?.removeFromParent();
   ui.test = test;
   $('texBtn').hidden = !test;
   if (test) {
+    testModel = testModels[id];
     toast('Chargement du modèle test…');
     try { await testModel.load(DESKTOP); }
-    catch (err) { console.error(err); toast('Modèle test introuvable'); e.target.value = 'builder'; ui.test = false; $('texBtn').hidden = true; return; }
-    if (!ui.test) return;
+    catch (err) { console.error(err); toast('Modèle test introuvable'); e.target.value = 'builder'; ui.test = false; $('texBtn').hidden = true; figure.root.visible = true; return; }
+    if (!ui.test || testModel !== testModels[e.target.value]) return;
     vp.scene.add(testModel.root);
+    // Modèle texturé : passage en Peint pour voir la basecolor.
+    if (testModel.maps[1001] && ui.shade !== 'paint') { ui.shade = 'paint'; vp.setMode('paint'); figure.refreshMaterials(); testModel.refresh(); renderSteps(); }
     let tris = 0;
     testModel.root.traverse(m => { if (m.isMesh) tris += m.geometry.index.count / 3; });
     toast(`Modèle test : ${Math.round(tris / 1000)}k triangles${testModel.maps[1001] ? ', texture chargée' : ''}`);
-    ui.info = `Modèle test Ork Boy · ${Math.round(tris / 1000)}k triangles`;
+    ui.info = `Modèle test ${testModel.def.label} · ${Math.round(tris / 1000)}k triangles`;
   } else {
-    testModel.root?.removeFromParent();
     renderPrintInfo();
   }
   figure.root.visible = !test;

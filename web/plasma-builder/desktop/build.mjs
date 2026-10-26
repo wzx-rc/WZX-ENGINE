@@ -22,7 +22,12 @@ for (const page of ['index.html', 'rig.html']) {
   fs.writeFileSync(path.join(app, page), html);
 }
 
-// Modèle test HD : posé à côté du builder s'il a été généré (tools/mb_mesh, voir README).
-const hd = path.join(here, 'assets', 'boy_32mm_hd.glb');
-if (fs.existsSync(hd)) fs.copyFileSync(hd, path.join(app, 'assets', 'test', 'boy_32mm_hd.glb'));
-console.log('app/ prêt' + (fs.existsSync(hd) ? ' (modèle test HD inclus)' : ''));
+// Versions HD réservées à l'app (non versionnées) : sculpts complets et texture 8k du Grot.
+const HD = [['boy_32mm_hd.glb', 'boy_32mm_hd.glb'], ['grot_hd.glb', 'grot_hd.glb'], ['grot_basecolor_8k.jpg', 'grot_basecolor_8k.jpg']];
+let hdCount = 0;
+for (const [src, dst] of HD) {
+  const f = path.join(here, 'assets', src);
+  if (fs.existsSync(f)) { fs.copyFileSync(f, path.join(app, 'assets', 'test', dst)); hdCount++; }
+}
+const hd = hdCount > 0;
+console.log('app/ prêt' + (hd ? ` (${hdCount} fichiers HD inclus)` : ''));

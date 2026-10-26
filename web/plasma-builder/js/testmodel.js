@@ -1,14 +1,25 @@
-// Modèle de test du rendu : l'Ork Boy 32 mm sculpté (BOY_32mm.mb, extrait par tools/mb_mesh), corps en UDIM 1001,
-// tête / dents / yeux en UDIM 1002. Version web allégée (~400 k triangles) ; l'app Windows charge la version HD si
-// elle est livrée avec. Mis à l'échelle du rig : les yeux à la hauteur des yeux de la figurine.
+// Modèles de test du rendu (sculpts extraits par tools/mb_mesh) : version web allégée (~400 k triangles), l'app
+// Windows charge la version HD et la texture 8k si elles sont livrées avec. Même échelle pour tous : celle qui met
+// les yeux de l'Ork Boy à la hauteur des yeux de la figurine, pour garder les tailles relatives (un Grot est petit).
+// - boy : BOY_32mm.mb, corps en UDIM 1001, tête / dents / yeux en UDIM 1002.
+// - grot : GROT_UV.obj (Grot Bomber), une seule UDIM, diffuse MARI.
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
-const SRC_EYE = 28.15, SRC_FLOOR = -0.21;   // centimètres dans la scène Maya
+const SRC_EYE = 28.15;   // hauteur des yeux de l'Ork Boy, centimètres dans la scène Maya
+
+export const TEST_MODELS = {
+  boy: { label: 'Ork Boy', floor: -0.21, web: 'boy_32mm.glb', hd: 'boy_32mm_hd.glb',
+    maps: [[1001, ['basecolor_4k.jpg']], [1002, ['basecolor_1002_4k.jpg']]] },
+  grot: { label: 'Grot Bomber', floor: -0.088, web: 'grot.glb', hd: 'grot_hd.glb',
+    maps: [[1001, ['grot_basecolor_8k.jpg', 'grot_basecolor_4k.jpg']]], desktopOnly: ['grot_basecolor_8k.jpg'] },
+};
 
 export class TestModel {
-  constructor(vp, eyeHeight) {
+  constructor(vp, eyeHeight, id = 'boy') {
     this.vp = vp;
+    this.id = id;
+    this.def = TEST_MODELS[id];
     this.eyeHeight = eyeHeight;
     this.root = null;
     this.maps = { 1001: null, 1002: null };
@@ -19,28 +30,32 @@ export class TestModel {
     if (this.root) return this.root;
     const loader = new GLTFLoader();
     let gltf = null;
-    if (desktop) gltf = await loader.loadAsync('assets/test/boy_32mm_hd.glb').catch(() => null);
-    if (!gltf) gltf = await loader.loadAsync('assets/test/boy_32mm.glb').catch(() => null);
+    const D = this.def, dir = 'assets/test/';
+    if (desktop) gltf = await loader.loadAsync(dir + D.hd).catch(() => null);
+    if (!gltf) gltf = await loader.loadAsync(dir + D.web).catch(() => null);
     // Hébergeurs qui ne servent pas le .glb (démo artifact) : copie en base64.
     if (!gltf) {
-      const b64 = await (await fetch('assets/test/boy_32mm.glb.b64.txt')).text();
+      const b64 = await (await fetch(dir + D.web + '.b64.txt')).text();
       const bin = Uint8Array.from(atob(b64.trim()), c => c.charCodeAt(0));
       gltf = await loader.parseAsync(bin.buffer, '');
     }
     const root = this.root = gltf.scene;
     const s = this.eyeHeight / SRC_EYE;
     root.scale.setScalar(s);
-    root.position.y = -0.1 - SRC_FLOOR * s;
+    root.position.y = -0.1 - D.floor * s;
     root.traverse(m => {
       if (!m.isMesh) return;
       m.castShadow = m.receiveShadow = true;
       m.userData.udim = m.material.name === 'udim1002' ? 1002 : 1001;
       m.userData.tag = m.name === 'eyes' ? 'eye' : 'skin';
     });
-    // Texture livrée avec l'app (basecolor_4k.jpg = UDIM 1001, basecolor_1002_4k.jpg pour la tête si présente).
-    for (const [udim, url] of [[1001, 'assets/test/basecolor_4k.jpg'], [1002, 'assets/test/basecolor_1002_4k.jpg']]) {
-      const t = await new THREE.TextureLoader().loadAsync(url).catch(() => null);
-      if (t) this.setMap(udim, t);
+    // Textures livrées : la première trouvée par UDIM (8k réservée à l'app Windows).
+    for (const [udim, files] of D.maps) {
+      for (const f of files) {
+        if (!desktop && D.desktopOnly?.includes(f)) continue;
+        const t = await new THREE.TextureLoader().loadAsync(dir + f).catch(() => null);
+        if (t) { this.setMap(udim, t); break; }
+      }
     }
     this.refresh();
     return root;

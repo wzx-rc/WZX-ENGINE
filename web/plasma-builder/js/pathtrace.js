@@ -20,6 +20,8 @@ export class PathTrace {
     pt.fadeDuration = 0;
     pt.tiles.set(1, 1);
     pt.multipleImportanceSampling = true;
+    // Atlas de textures du path tracer (1024 par défaut) : les basecolor 4k/8k des modèles test restent nettes.
+    pt.textureSize.set(4096, 4096);
     this.cam = new m.PhysicalCamera();
     this.dnMat = new m.DenoiseMaterial({ map: null, blending: THREE.NoBlending });
     this.dnQuad = new FullScreenQuad(this.dnMat);

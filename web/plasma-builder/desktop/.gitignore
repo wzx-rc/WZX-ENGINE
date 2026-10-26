@@ -2,3 +2,4 @@ node_modules/
 app/
 dist/
 assets/*.glb
+assets/*_8k.jpg
