@@ -48,6 +48,11 @@ export class Hold {
     this.line.userData.helper = true;
     scene.add(this.line);
 
+    // Sockets de réception possibles : un petit anneau sur chacun pendant que la pièce est en main.
+    this.markGeo = new THREE.RingGeometry(0.035, 0.052, 32);
+    this.markMat = new THREE.MeshBasicMaterial({ color: SNAP_HALO, transparent: true, opacity: 0.7, depthTest: false, depthWrite: false, side: THREE.DoubleSide });
+    this.marks = [];
+
     this.flashT = -1;
     this.flashPos = new THREE.Vector3();
   }
@@ -73,7 +78,7 @@ export class Hold {
   pick(id) {
     const H = this.active;
     if (!H || H.slot === id) return;
-    for (const w of H.ghosts) w.removeFromParent();
+    for (const w of H.ghosts) (w.userData.holder || w).removeFromParent();
     H.slot = id;
     H.snapT = 0;
     H.ghosts = H.ghostOf(id);
@@ -106,12 +111,31 @@ export class Hold {
     H.onCancel?.();
   }
 
+  updateMarks(H) {
+    const list = H && H.candidates.length > 1 ? H.candidates : [];
+    while (this.marks.length < list.length) {
+      const m = new THREE.Mesh(this.markGeo, this.markMat);
+      m.renderOrder = 1002;
+      m.userData.helper = true;
+      this.vp.overlay.add(m);
+      this.marks.push(m);
+    }
+    this.marks.forEach((m, i) => {
+      m.visible = i < list.length && list[i] !== H.slot;
+      if (!m.visible) return;
+      m.position.copy(H.socketOf(list[i]));
+      m.quaternion.copy(this.vp.camera.quaternion);
+      m.scale.setScalar(1 + 0.15 * Math.sin(H.time * 4 + i));
+    });
+  }
+
   cleanup() {
     const H = this.active;
-    for (const w of H.ghosts) w.removeFromParent();
+    for (const w of H.ghosts) (w.userData.holder || w).removeFromParent();
     H.obj.removeFromParent();
     this.glow.visible = this.ring.visible = this.line.visible = false;
     this.active = null;
+    this.updateMarks(null);
   }
 
   // Petit rebond d'un emplacement qui reçoit une pièce : squash de 0.86 vers 1 sur un ressort.
@@ -135,6 +159,7 @@ export class Hold {
     H.time += dt;
     this.pick(this.nearest());
     H.target.copy(H.socketOf(H.slot));
+    this.updateMarks(H);
     const obj = H.obj;
 
     if (H.dropping) {

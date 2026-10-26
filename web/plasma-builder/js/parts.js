@@ -416,7 +416,15 @@ export const SLOTS = [
   { id: 'head', label: 'Tête', cat: 'heads', bone: 'head', variants: HEADS },
   { id: 'armL', label: 'Bras G', cat: 'arms', bone: 'shoulder_L', variants: ARMS },
   { id: 'armR', label: 'Bras D', cat: 'arms', bone: 'shoulder_R', variants: ARMS, mirror: true },
-  { id: 'weapon', label: 'Arme', cat: 'weapons', bone: 'hand_R', variants: WEAPONS },
+  // mounts : sockets de réception possibles (glisser une arme vers l'un d'eux). Les pièces construites sur l'os de
+  // l'emplacement passent sur l'os du socket, avec son décalage ; mirror retourne la pièce pour le côté gauche.
+  { id: 'weapon', label: 'Arme', cat: 'weapons', bone: 'hand_R', variants: WEAPONS, mounts: [
+    { id: 'hand_R', label: 'Main D', bone: 'hand_R' },
+    { id: 'hand_L', label: 'Main G', bone: 'hand_L', mirror: true },
+    { id: 'belt_R', label: 'Ceinture D', bone: 'pelvis', pos: [-0.36, 0.0, 0.1], rot: [0.25, 0, 0.18] },
+    { id: 'belt_L', label: 'Ceinture G', bone: 'pelvis', pos: [0.36, 0.0, 0.1], rot: [0.25, 0, -0.18], mirror: true },
+    { id: 'back', label: 'Dos', bone: 'chest', pos: [0.02, 0.12, -0.46], rot: [0, 0, 2.55] },
+  ] },
   { id: 'legs', label: 'Jambes', cat: 'legs', bone: 'pelvis', variants: LEGS },
   { id: 'back', label: 'Sac à dos', cat: 'backpacks', bone: 'chest', socket: [0, 0.2, -0.4], variants: BACKS },
   { id: 'shoulders', label: 'Épaulières', cat: 'shoulders', bone: 'clav_L', variants: SHOULDERS },
@@ -442,6 +450,8 @@ export const PRESETS = [
   { id: 'p_boss', name: 'Boss Méga', sel: { torso: 't_mega', head: 'h_boss', armL: 'a_klaw', armR: 'a_fist', weapon: 'w_plasma', legs: 'l_mega', back: 'b_reactor', shoulders: 's_spikes', base: 'base_ruin' }, kits: ['k_rokkit2'], opts: { plates: true, ornament: true } },
   { id: 'p_mek', name: 'Mékano', sel: { torso: 't_rust', head: 'h_bionik', armL: 'a_bionik', armR: 'a_bionik', weapon: 'w_plasma', legs: 'l_bionik', back: 'b_tanks', shoulders: 's_none', base: 'base_ruin' }, kits: ['k_bomb'], opts: { pouches: true } },
 ];
+
+export function mountOf(slot, id) { return slot.mounts ? slot.mounts.find(m => m.id === id) || slot.mounts[0] : null; }
 
 const cache = new Map();
 // Pièces d'une variante pour un emplacement (miroir pour le bras droit), mises en cache.

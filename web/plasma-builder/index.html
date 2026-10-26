@@ -174,6 +174,9 @@
             </div>
             <div class="pane" id="pane-V" role="tabpanel" aria-labelledby="tab-V" hidden>
               <div class="rset" id="renderSet">
+                <label>Scène<select id="sceneSel"><option value="builder">Figurine du builder</option><option value="test">Modèle test : Ork Boy 32 mm</option></select></label>
+                <button type="button" class="wide" id="texBtn" hidden>Charger une texture basecolor (.jpg, .png)</button>
+                <input type="file" id="texInput" accept="image/*" hidden>
                 <label>Transformée<select data-r="tonemapper"><option value="0">ACES</option><option value="1">AgX</option><option value="2">AgX Punchy</option><option value="3">Standard</option></select></label>
                 <label>Exposition <output data-o="ev"></output><input type="range" data-r="ev" min="-3" max="3" step="0.1"></label>
                 <label>Vignettage <output data-o="vignette"></output><input type="range" data-r="vignette" min="0" max="0.6" step="0.01"></label>
@@ -185,12 +188,14 @@
                 <label>Rotation <output data-o="envRotation"></output><input type="range" data-r="envRotation" min="0" max="6.2832" step="0.0175"></label>
                 <label class="check"><input type="checkbox" data-r="envVisible">Visible en fond</label>
                 <label class="check"><input type="checkbox" data-r="studioLights">Lumières studio (key, fill, rim)</label>
+                <div class="rset" id="ptSet">
                 <h3>Path tracing</h3>
                 <label>Rebonds <output data-o="bounces"></output><input type="range" data-r="bounces" min="1" max="12" step="1"></label>
                 <label>Filtre glossy <output data-o="filterGlossy"></output><input type="range" data-r="filterGlossy" min="0" max="1" step="0.05"></label>
                 <label class="check"><input type="checkbox" data-r="denoise">Débruitage</label>
                 <label class="check"><input type="checkbox" data-r="dof">Profondeur de champ (macro)</label>
                 <label>Ouverture<select data-r="fStop"><option value="2.8">f/2.8</option><option value="5.6">f/5.6</option><option value="8">f/8</option><option value="11">f/11</option><option value="16">f/16</option><option value="22">f/22</option></select></label>
+                </div>
               </div>
             </div>
           </section>

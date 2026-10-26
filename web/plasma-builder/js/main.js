@@ -3,9 +3,13 @@ import * as THREE from 'three';
 import { Viewport, Thumbs, RENDER_DEFAULTS } from './viewport.js';
 import { Hold } from './hold.js';
 import { TONEMAPPERS } from './render.js';
+import { TestModel } from './testmodel.js';
+
+// Le path tracing n'est proposé que dans l'app Windows (desktop/ : Electron expose window.plasmaDesktop).
+const DESKTOP = !!window.plasmaDesktop;
 import { Figure, defaultXf, xfWrappers } from './figure.js';
 import { POSES, POSABLE } from './rig.js';
-import { SLOTS, CATEGORIES, PRESETS, KITS, OPTIONS, IMPORT_SIZE, buildVariant, buildKit } from './parts.js';
+import { SLOTS, CATEGORIES, PRESETS, KITS, OPTIONS, IMPORT_SIZE, buildVariant, buildKit, mountOf } from './parts.js';
 import { readSTL, exportMerged, exportParts, exportJSON } from './io.js';
 
 const $ = id => document.getElementById(id);
@@ -16,7 +20,7 @@ const EYE_HEIGHT = 1.95; // hauteur des yeux dans le rig : c'est elle que l'éch
 
 // ---------- état ----------
 function freshState() {
-  const st = { sel: {}, xf: {}, pose: 'garde', manual: {}, kits: [], opts: { plates: false, pouches: true, ornament: false }, wear: 0, scale: 32 };
+  const st = { sel: {}, xf: {}, mount: {}, pose: 'garde', manual: {}, kits: [], opts: { plates: false, pouches: true, ornament: false }, wear: 0, scale: 32 };
   Object.assign(st.sel, PRESETS[2].sel);
   st.kits = [...PRESETS[2].kits];
   st.opts = { plates: true, pouches: false, ornament: true };
@@ -28,7 +32,7 @@ const ui = { cat: 'heads', slot: 'head', chip: 'Tous', tool: 'select', step: 'as
 
 try {
   const saved = JSON.parse(localStorage.getItem('plasmaork.project') || 'null');
-  if (saved && saved.sel) { state = Object.assign(freshState(), saved); for (const s of SLOTS) state.xf[s.id] ||= defaultXf(); }
+  if (saved && saved.sel) { state = Object.assign(freshState(), saved); state.mount ||= {}; for (const s of SLOTS) state.xf[s.id] ||= defaultXf(); }
   const n = localStorage.getItem('plasmaork.name'); if (n) $('projName').value = n;
 } catch (e) { /* stockage indisponible : on part de l'état par défaut */ }
 let renderSet = { ...RENDER_DEFAULTS };
@@ -42,6 +46,11 @@ const thumbs = new Thumbs(160, 200);
 thumbs.mode = renderSet.tonemapper;
 const figure = new Figure(tag => vp.material(tag));
 const hold = new Hold(vp);
+const testModel = new TestModel(vp, EYE_HEIGHT);
+if (!DESKTOP) {
+  $('qualitySel').querySelector('option[value="pt"]').remove();
+  $('ptSet').hidden = true;
+}
 vp.scene.add(figure.root);
 figure.apply(state, true);
 figure.setSelected(ui.slot);
@@ -198,7 +207,7 @@ function renderViews() {
 
 function renderPins() {
   $('pins').innerHTML = SLOTS.map(s => `<button type="button" class="pin" data-slot="${s.id}" aria-pressed="${ui.slot === s.id}"><i></i>${s.label}</button>`).join('');
-  $('pins').hidden = !ui.sockets;
+  $('pins').hidden = !ui.sockets || ui.test;
 }
 
 const XF_ROWS = [
@@ -241,7 +250,7 @@ function renderPrintInfo() {
   const t = figure.tris();
   $('printTris').textContent = Math.round(t).toLocaleString('fr-FR');
   $('printParts').textContent = SLOTS.filter(s => !figure.variantOf(s, state.sel[s.id]).none).length + ' emplacements';
-  ui.info = `${Math.round(t / 1000)}k triangles · ${h.toFixed(0)} mm`;
+  if (!ui.test) ui.info = `${Math.round(t / 1000)}k triangles · ${h.toFixed(0)} mm`;
   renderInfo();
   $('asmInfo').textContent = `${Math.round(t / 1000)}k triangles`;
 }
@@ -376,6 +385,21 @@ function applyPreset(p) {
 // Glisser une vignette dans le viewport : la pièce suit le socket le plus proche du pointeur (bras G / D),
 // lâcher la pose, Échap annule.
 const bonePos = name => figure.rig.bones[name].getWorldPosition(new THREE.Vector3());
+// Cibles de pose : « emplacement » ou « emplacement@socket » (arme : mains, ceinture, dos).
+const parseTarget = t => { const [sid, mid] = t.split('@'); const slot = slotById(sid); return { slot, mount: mid ? mountOf(slot, mid) : null }; };
+function targetPos(t) {
+  const { slot, mount } = parseTarget(t);
+  const bone = figure.rig.bones[mount ? mount.bone : slot.bone];
+  return new THREE.Vector3(...(mount?.pos || [0, 0, 0])).applyMatrix4(bone.matrixWorld);
+}
+function targetsFor(slot, auto) {
+  if (slot.mounts) {
+    const cur = slot.id + '@' + figure.mount(slot, state).id;
+    return auto ? [cur] : [cur, ...slot.mounts.map(m => slot.id + '@' + m.id).filter(t => t !== cur)];
+  }
+  if (slot.cat === 'arms') return auto ? [slot.id] : [slot.id, slot.id === 'armL' ? 'armR' : 'armL'];
+  return [slot.id];
+}
 let hiddenSlot = null;
 function showSlot() { if (hiddenSlot) { figure.setVisible(hiddenSlot, hiddenSlot !== 'base' || ui.showBase); hiddenSlot = null; } }
 function handObject(slot, v) {
@@ -400,22 +424,27 @@ function handObject(slot, v) {
 function startHold(slot, variantId, auto) {
   const v = slot.variants.find(x => x.id === variantId);
   if (!v || v.none || figure.variantOf(slot, state.sel[slot.id]).id === variantId && auto) { setVariant(slot.id, variantId); return; }
-  const candidates = slot.cat === 'arms' ? (auto ? [slot.id] : ['armL', 'armR']) : [slot.id];
-  if (!auto) candidates.sort((a, b) => (a === slot.id ? -1 : b === slot.id ? 1 : 0));
   vp.gizmo.detach();
   hold.start({
-    candidates, auto,
+    candidates: targetsFor(slot, auto), auto,
     object: handObject(slot, v),
-    socketOf: id => bonePos(slotById(id).bone),
-    ghostOf: id => {
+    socketOf: targetPos,
+    ghostOf: t => {
+      const { slot: s, mount } = parseTarget(t);
       showSlot();
-      hiddenSlot = id;
-      figure.setVisible(id, false);
-      const ws = figure.attach(buildVariant(slotById(id), v, state.wear), 'ghost', hold.ghostMat);
-      xfWrappers(ws, state.xf[id]);
+      hiddenSlot = s.id;
+      figure.setVisible(s.id, false);
+      const ws = figure.attach(buildVariant(s, v, state.wear), 'ghost', hold.ghostMat, mount, s.bone);
+      xfWrappers(ws, state.xf[s.id]);
       return ws;
     },
-    onDrop: id => { showSlot(); setVariant(id, variantId); toast(`${v.name} posé sur ${slotById(id).label}`); },
+    onDrop: t => {
+      const { slot: s, mount } = parseTarget(t);
+      showSlot();
+      if (mount) state.mount[s.id] = mount.id;
+      setVariant(s.id, variantId);
+      toast(`${v.name} posé sur ${mount ? mount.label : s.label}`);
+    },
     onCancel: () => { showSlot(); attachGizmo(); },
   });
 }
@@ -486,7 +515,7 @@ document.addEventListener('click', e => {
   else if (d.side) selectSlot(d.side, false);
   else if (d.variant) { if (dragTile.suppress) { dragTile.suppress = false; return; } startHold(libSlot(), d.variant, true); }
   else if (d.preset) applyPreset(PRESETS.find(p => p.id === d.preset));
-  else if (d.slot) { selectSlot(d.slot); if (t.classList.contains('pin')) hold.flash(bonePos(slotById(d.slot).bone)); }
+  else if (d.slot) { selectSlot(d.slot); if (t.classList.contains('pin')) { const sl = slotById(d.slot); hold.flash(targetPos(sl.mounts ? sl.id + '@' + figure.mount(sl, state).id : sl.id)); } }
   else if (d.clear) { const s = slotById(d.clear); setVariant(s.id, s.variants.find(v => v.none).id); }
   else if (d.tool) { ui.tool = d.tool; attachGizmo(); renderSteps(); }
   else if (d.step) setStep(d.step);
@@ -496,7 +525,7 @@ document.addEventListener('click', e => {
   else if (d.kit) { const i = state.kits.indexOf(d.kit); if (i < 0) state.kits.push(d.kit); else state.kits.splice(i, 1); refresh3D(); commit(); renderKits(); renderPrintInfo(); scheduleFigureThumbs(); }
   else if (d.acc) { if (openOpts.has(d.acc)) openOpts.delete(d.acc); else openOpts.add(d.acc); renderOptions(); }
   else if (d.mirror) { const xf = state.xf[ui.slot]; const i = 'xyz'.indexOf(d.mirror); xf.m[i] = !xf.m[i]; figure.applyXf(ui.slot, xf); commit(); renderCustomize(); }
-  else if (d.shade) { ui.shade = d.shade; vp.setMode(d.shade); figure.refreshMaterials(); renderSteps(); }
+  else if (d.shade) { ui.shade = d.shade; vp.setMode(d.shade); figure.refreshMaterials(); testModel.refresh(); renderSteps(); }
   else if (d.export) doExport(d.export);
 });
 
@@ -518,6 +547,47 @@ $('renderSet').addEventListener('input', e => {
   setRender({ [k]: el.type === 'checkbox' ? el.checked : (k === 'env' ? el.value : +el.value) });
 });
 $('hdriBtn').addEventListener('click', () => $('hdriInput').click());
+// Scène de test du rendu : le sculpt haute définition de l'Ork Boy à la place de la figurine assemblée.
+$('sceneSel').addEventListener('change', async e => {
+  const test = e.target.value === 'test';
+  ui.test = test;
+  $('texBtn').hidden = !test;
+  if (test) {
+    toast('Chargement du modèle test…');
+    try { await testModel.load(DESKTOP); }
+    catch (err) { console.error(err); toast('Modèle test introuvable'); e.target.value = 'builder'; ui.test = false; $('texBtn').hidden = true; return; }
+    if (!ui.test) return;
+    vp.scene.add(testModel.root);
+    let tris = 0;
+    testModel.root.traverse(m => { if (m.isMesh) tris += m.geometry.index.count / 3; });
+    toast(`Modèle test : ${Math.round(tris / 1000)}k triangles${testModel.maps[1001] ? ', texture chargée' : ''}`);
+    ui.info = `Modèle test Ork Boy · ${Math.round(tris / 1000)}k triangles`;
+  } else {
+    testModel.root?.removeFromParent();
+    renderPrintInfo();
+  }
+  figure.root.visible = !test;
+  vp.gizmo.detach();
+  if (!test) attachGizmo();
+  skel.visible = !test && ui.rig;
+  $('pins').hidden = test || !ui.sockets;
+  const target = test ? testModel.root : figure.root;
+  target.updateMatrixWorld(true);
+  vp.frameObject(target, new THREE.Vector3(0.55, 0.2, 1));
+  renderInfo();
+});
+$('texBtn').addEventListener('click', () => $('texInput').click());
+$('texInput').addEventListener('change', async e => {
+  const f = e.target.files[0];
+  e.target.value = '';
+  if (!f) return;
+  try {
+    const udim = await testModel.loadMapFile(f);
+    if (ui.shade !== 'paint') { ui.shade = 'paint'; vp.setMode('paint'); figure.refreshMaterials(); renderSteps(); }
+    testModel.refresh();
+    toast(`${f.name} appliquée (UDIM ${udim})`);
+  } catch (err) { console.error(err); toast(`Impossible de lire ${f.name}`); }
+});
 $('hdriInput').addEventListener('change', async e => {
   const f = e.target.files[0];
   e.target.value = '';
@@ -587,6 +657,7 @@ $('vpCanvas').addEventListener('pointerup', e => {
   if (!downAt || Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]) > 4 || vp.gizmo.dragging) return;
   const r = e.target.getBoundingClientRect();
   ray.setFromCamera(new THREE.Vector2((e.clientX - r.left) / r.width * 2 - 1, -(e.clientY - r.top) / r.height * 2 + 1), vp.camera);
+  if (ui.test) return;
   const hit = ray.intersectObjects(figure.meshes(), false).find(h => SLOTS.some(s => s.id === h.object.userData.slot));
   if (hit) selectSlot(hit.object.userData.slot);
 });
@@ -659,7 +730,10 @@ vp.onFrame = dt => {
   lastPins += dt;
   const el = $('vp'), w = el.clientWidth, h = el.clientHeight;
   for (const b of $('pins').children) {
-    const [bone, off] = PIN_AT[b.dataset.slot];
+    let [bone, off] = PIN_AT[b.dataset.slot];
+    const mt = figure.slots[b.dataset.slot]?.mount;
+    if (mt && mt.bone !== bone) { bone = mt.bone; off = [(mt.pos?.[0] || 0) * 1.15, (mt.pos?.[1] || 0) - 0.12, (mt.pos?.[2] || 0) + (mt.id === 'back' ? -0.1 : 0.14)]; }
+    else if (mt && mt.mirror) off = [-off[0], off[1], off[2]];
     const bn = figure.rig.bones[bone];
     tmp.set(...off).applyMatrix4(bn.matrixWorld).project(vp.camera);
     const vis = tmp.z < 1 && Math.abs(tmp.x) < 1.05 && Math.abs(tmp.y) < 1.05;

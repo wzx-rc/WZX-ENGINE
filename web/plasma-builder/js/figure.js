@@ -2,7 +2,7 @@
 // apply(state) ne reconstruit que ce qui a changé ; les géométries sont en cache dans parts.js.
 import * as THREE from 'three';
 import { Rig } from './rig.js';
-import { SLOTS, KITS, buildVariant, buildKit, buildOption } from './parts.js';
+import { SLOTS, KITS, buildVariant, buildKit, buildOption, mountOf } from './parts.js';
 
 const D2R = Math.PI / 180;
 
@@ -35,7 +35,8 @@ export class Figure {
   variantOf(slot, id) { return slot.variants.find(v => v.id === id) || slot.variants.find(v => !v.none); }
 
   // ghost : matériau fantôme de la pièce en main (BrickIt), hors export, hors sélection.
-  attach(pieces, owner, ghost = null) {
+  // mount : socket de réception ({ bone, pos, rot, mirror }) qui remplace l'os from pour les pièces qui y sont construites.
+  attach(pieces, owner, ghost = null, mount = null, from = null) {
     return pieces.map(pc => {
       const w = new THREE.Group();
       w.userData = { owner, mirrored: !!pc.mirrored };
@@ -45,21 +46,33 @@ export class Figure {
         m.userData = ghost ? { helper: true, noExport: true } : { slot: owner, tag, outline: owner === this.selected };
         w.add(m);
       }
-      this.rig.bones[pc.bone].add(w);
+      if (mount && pc.bone === from) {
+        const holder = new THREE.Group();
+        holder.position.fromArray(mount.pos || [0, 0, 0]);
+        holder.rotation.fromArray(mount.rot || [0, 0, 0]);
+        if (mount.mirror) holder.scale.x = -1;
+        holder.add(w);
+        w.userData.holder = holder;
+        this.rig.bones[mount.bone].add(holder);
+      } else this.rig.bones[pc.bone].add(w);
       return w;
     });
   }
 
-  detach(wrappers) { for (const w of wrappers) w.removeFromParent(); }
+  detach(wrappers) { for (const w of wrappers) (w.userData.holder || w).removeFromParent(); }
+
+  // Socket de réception courant d'un emplacement (null s'il n'en a qu'un).
+  mount(slot, state) { return mountOf(slot, state.mount?.[slot.id]); }
 
   apply(state, instantPose = false) {
     for (const slot of SLOTS) {
       const v = this.variantOf(slot, state.sel[slot.id]);
-      const key = v.id + ':' + state.wear;
+      const mount = this.mount(slot, state);
+      const key = v.id + ':' + state.wear + ':' + (mount ? mount.id : '');
       const cur = this.slots[slot.id];
       if (!cur || cur.key !== key) {
         if (cur) this.detach(cur.wrappers);
-        this.slots[slot.id] = { key, variant: v, wrappers: this.attach(buildVariant(slot, v, state.wear), slot.id) };
+        this.slots[slot.id] = { key, variant: v, mount, wrappers: this.attach(buildVariant(slot, v, state.wear), slot.id, null, mount, slot.bone) };
       }
       this.applyXf(slot.id, state.xf[slot.id]);
     }
@@ -104,7 +117,8 @@ export class Figure {
     const groups = [];
     for (const slot of SLOTS) {
       const ws = this.slots[slot.id].wrappers.filter(w => w.visible);
-      if (ws.length) groups.push({ id: slot.id, objects: ws, keyAt: this.rig.bones[slot.bone].getWorldPosition(new THREE.Vector3()) });
+      const bone = this.slots[slot.id].mount?.bone || slot.bone;
+      if (ws.length) groups.push({ id: slot.id, objects: ws, keyAt: this.rig.bones[bone].getWorldPosition(new THREE.Vector3()) });
     }
     const ex = Object.values(this.extras).flatMap(e => e.wrappers);
     if (ex.length) groups.push({ id: 'equipement', objects: ex });

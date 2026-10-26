@@ -24,10 +24,11 @@ Cinq étapes en haut du viewport : **Bibliothèque › Assemblage › Rig › Po
   - transformées ACES (fit de Hill), AgX, AgX Punchy, Standard, exposition en EV et vignettage, exactement comme `ToneCurves.hlsli` / `Tonemap.hlsl`, contour de sélection jaune ;
   - temps réel comme `Raster.hlsl` : MSAA 4x, ombre en 12 prises de Poisson, lobe spéculaire élargi par la taille des lumières de surface, terme de cavité sur l'ambiant ;
   - éclairage du Material Studio : environnements Studio / Coucher de soleil / Entrepôt avec lumières key / fill / rim, ciel procédural, ou HDRI `.hdr` / `.exr` (intensité, rotation, visible en fond) ; le soleil d'un ciel ou d'un HDRI devient une lumière ombrée en temps réel ;
-  - qualité **Temps réel**, **Haute qualité** (résolution et ombres plus fines) ou **Path tracing** progressif : rebonds, filtre glossy, débruitage mélangé à l'image brute au fil des échantillons, profondeur de champ macro à l'échelle de la figurine ;
+  - scène **Modèle test : Ork Boy 32 mm** (sculpt extrait de BOY_32mm.mb par `tools/mb_mesh`), pour juger le rendu sur un vrai modèle ; texture basecolor chargée depuis `assets/test/` ou via le bouton de l'onglet ;
+  - qualité **Temps réel**, **Haute qualité** (résolution et ombres plus fines) ou, dans l'app Windows seulement (`desktop/`), **Path tracing** progressif : rebonds, filtre glossy, débruitage mélangé à l'image brute au fil des échantillons, profondeur de champ macro à l'échelle de la figurine ;
   - affichages Résine / Peint / Filaire, rotation de l'éclairage, vues caméra Face / Trois-quarts / Dos / Profil.
 
-**Manipulation** (reprise du BrickIt Builder de VIEWPORT3D) : un clic sur une pièce de la bibliothèque la prend en main, elle vole jusqu'à son socket (fantôme, socket allumé, anneau et ligne de chute) puis s'y pose avec un petit rebond. Glisser une vignette dans le viewport laisse choisir le socket le plus proche du pointeur (bras gauche ou droit), lâcher la pose, Échap annule.
+**Manipulation** (reprise du BrickIt Builder de VIEWPORT3D) : un clic sur une pièce de la bibliothèque la prend en main, elle vole jusqu'à son socket (fantôme, socket allumé, anneau et ligne de chute) puis s'y pose avec un petit rebond. Glisser une vignette dans le viewport affiche les sockets de réception compatibles (anneaux) et vise le plus proche du pointeur : une arme va en main droite ou gauche, à la ceinture (gauche, droite) ou dans le dos, un bras à gauche ou à droite ; lâcher pose, Échap annule.
 
 **Kits & options** : accessoires (rokkits, bombe, mine), plaques d'armure, sacoches, ornements et un curseur d'usure.
 
@@ -45,7 +46,9 @@ Le projet est sauvegardé dans le navigateur (localStorage), avec annuler / rét
 - `js/viewport.js` : viewport (passes HDR, masque de sélection, aides, caméra, gizmo) et moteur de vignettes hors écran
 - `js/render.js` : portage du renderer Viewport3D (shading raster, passe Tonemap, environnements, studio, HDRI)
 - `js/pathtrace.js` : mode path tracing (chargé à la demande)
-- `js/hold.js` : pièce en main, visor et rebonds (BrickIt)
+- `js/hold.js` : pièce en main, visor, sockets de réception et rebonds (BrickIt)
+- `js/testmodel.js` : modèle test du rendu
+- `desktop/` : app Windows (Electron, hors ligne, path tracing), voir son README
 - `js/figure.js` : la figurine assemblée (pièces accrochées aux os, kits, options, groupes d'export)
 - `js/rig.js` : os, poses, os réglables par emplacement
 - `js/parts.js` : catalogue et pièces de départ **procédurales** (à remplacer par les vrais STL sculptés)
