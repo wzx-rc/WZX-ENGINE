@@ -56,7 +56,15 @@ const _q = new THREE.Quaternion(), _q2 = new THREE.Quaternion(), _v = new THREE.
 
 export class OrkModel {
   static async load(url, onProgress) {
-    const gltf = await new GLTFLoader().loadAsync(url, onProgress);
+    const loader = new GLTFLoader();
+    let gltf = await loader.loadAsync(url, onProgress).catch(() => null);
+    // Hébergeurs qui ne servent pas le .glb (démo artifact) : copie en base64 à côté.
+    if (!gltf) {
+      const res = await fetch(url + '.b64.txt');
+      if (!res.ok) throw new Error('GLB introuvable : ' + url);
+      const bin = Uint8Array.from(atob((await res.text()).trim()), c => c.charCodeAt(0));
+      gltf = await loader.parseAsync(bin.buffer, '');
+    }
     return new OrkModel(gltf);
   }
 
