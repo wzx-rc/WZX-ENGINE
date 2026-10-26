@@ -32,6 +32,29 @@ Cinq étapes en haut du viewport : **Bibliothèque › Assemblage › Rig › Po
 
 **Kits & options** : accessoires (rokkits, bombe, mine), plaques d'armure, sacoches, ornements et un curseur d'usure.
 
+## Rig Lab (`rig.html`)
+
+Le rig Maya de l'Ork Boy (`BOY_32mm.mb`) dans le navigateur, pour poser la figurine avec de vraies déformations :
+60 joints QuickRig, skinCluster du basemesh low, high-poly avec poids transférés. Même viewport et même rendu que le builder.
+
+- **Sélection** : clic sur la figurine (l'os dont l'influence domine sous le pointeur, sa zone s'allume), sur une sphère d'os ou dans la liste. Flèches haut / bas : os parent / enfant, Échap : rien.
+- **Rotation (R)** : gizmo de rotation locale sur l'os, curseurs X / Y / Z en degrés relatifs au repos.
+- **IK (G)** : on déplace une main ou un pied, bras / jambe suivent (IK deux os : le coude ou le genou garde son côté, la main garde son orientation). En IK, le bassin se déplace ; **Pieds ancrés** garde les pieds au sol pendant qu'on bouge ou tourne le bassin.
+- **Symétrie auto** recopie chaque geste sur l'autre côté ; **Os → opposé** (M) une seule fois ; **G ⇄ D**, **G → D**, **D → G** pour toute la pose.
+- **Mains** : un curseur par main ferme les doigts (de la main ouverte au poing).
+- **Poses de départ** (Repos, Garde, Charge, Waaagh !, Tir) et **Mes poses** enregistrées dans le navigateur, export / import `.json`.
+- **Affichage** : High-poly ou Low (le maillage skinné de Maya), os en rayons X (B), poids de l'os sélectionné en carte de chaleur (W).
+- **Exporter STL** : la figurine posée (high-poly réduit + tête, dents, yeux) en millimètres, échelle 32 / 54 / 75 mm à la hauteur des yeux.
+
+Le modèle est `assets/ork_boy.glb`, produit par `tools/mb2glb/mb2glb.py` à partir du `.mb` (lecteur du format binaire Maya en Python, sans Maya) :
+
+```
+pip install numpy scipy fast-simplification
+python tools/mb2glb/mb2glb.py BOY_32mm.mb web/plasma-builder/assets/ork_boy.glb --body-tris 220000 --head-tris 120000
+```
+
+Le high-poly n'est pas riggé dans Maya : chaque sommet reçoit les poids du point le plus proche sur la surface du low (interpolés entre les trois sommets du triangle), la tête high est rigide sur le joint Head comme la tête low (contrainte sur HEAD_ROT dans le rig). Trois.js limite à 4 influences par sommet : les 4 plus fortes sont gardées et renormalisées (le skin Maya en a jusqu'à 10).
+
 ## Export
 
 - **Exporter STL** : la figurine fusionnée dans la pose courante, en millimètres, Z vers le haut, posée sur le plateau.
@@ -53,5 +76,6 @@ Le projet est sauvegardé dans le navigateur (localStorage), avec annuler / rét
 - `js/rig.js` : os, poses, os réglables par emplacement
 - `js/parts.js` : catalogue et pièces de départ **procédurales** (à remplacer par les vrais STL sculptés)
 - `js/io.js` : lecture STL, export STL / ZIP / JSON
+- `rig.html`, `js/riglab/model.js` (ork riggé : pose, IK, miroir, doigts, picking, géométrie posée), `js/riglab/app.js` (interface du Rig Lab), `css/riglab.css`
 
 Pour ajouter une pièce sculptée au catalogue : l'exporter centrée sur son articulation (l'origine = le pivot de l'os) et l'ajouter comme variante dans `parts.js`, ou l'importer depuis l'interface.

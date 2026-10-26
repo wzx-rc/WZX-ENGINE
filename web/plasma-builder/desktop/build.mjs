@@ -16,9 +16,11 @@ vendor('three', 'examples/jsm');
 vendor('three-mesh-bvh', 'build');
 vendor('three-gpu-pathtracer', 'build');
 
-let html = fs.readFileSync(path.join(web, 'index.html'), 'utf8');
-html = html.replace(/https:\/\/cdn\.jsdelivr\.net\/npm\/(three|three-mesh-bvh|three-gpu-pathtracer)@[^/]+\//g, './vendor/$1/');
-fs.writeFileSync(path.join(app, 'index.html'), html);
+for (const page of ['index.html', 'rig.html']) {
+  let html = fs.readFileSync(path.join(web, page), 'utf8');
+  html = html.replace(/https:\/\/cdn\.jsdelivr\.net\/npm\/(three|three-mesh-bvh|three-gpu-pathtracer)@[^/]+\//g, './vendor/$1/');
+  fs.writeFileSync(path.join(app, page), html);
+}
 
 // Modèle test HD : posé à côté du builder s'il a été généré (tools/mb_mesh, voir README).
 const hd = path.join(here, 'assets', 'boy_32mm_hd.glb');
