@@ -48,12 +48,13 @@ export class PathTrace {
   syncCamera(camera, force = false) {
     const s = this.settings || {};
     // Comparaison avec tolérance : l'amortissement d'OrbitControls déplace la caméra de quantités infimes
-    // pendant des centaines d'images, et une égalité stricte relançait l'accumulation à chaque image.
+    // pendant des centaines d'images, et une égalité stricte relançait l'accumulation à chaque image. Seuils sous le
+    // pixel : 2e-4 sur la rotation (~0.5 px en 4K), 1e-3 sur la position (caméra à ~5 unités).
     const cur = [...camera.matrixWorld.elements, camera.projectionMatrix.elements[0], camera.projectionMatrix.elements[5], s.focus || 0];
     const prev = this.camPrev;
     const opts = [s.dof, s.fStop, s.unitsPerMeter].join(',');
-    const same = prev && opts === this.camKey && cur.every((v, i) => Math.abs(v - prev[i]) < 1e-4 * (i === cur.length - 1 ? 100 : 1));
-    if (!force && same) return;
+    const same = prev && opts === this.camKey && cur.every((v, i) => Math.abs(v - prev[i]) < (i >= 12 && i <= 14 ? 1e-3 : i === cur.length - 1 ? 1e-2 : 2e-4));
+    if (!force && same) return false;
     this.camPrev = cur;
     this.camKey = opts;
     const c = this.cam;
@@ -67,6 +68,7 @@ export class PathTrace {
     c.focusDistance = s.focus || 5;
     c.bokehSize = s.dof ? c.getFocalLength() / c.fStop * (s.unitsPerMeter || 1) : 0;
     if (this.ready) this.pt.updateCamera();
+    return true;
   }
 
   reset() { this.pt.reset(); }

@@ -228,7 +228,10 @@ export class Viewport {
       this.buildPT();
     }
     this.pt.settings.focus = this.camera.position.distanceTo(this.controls.target);
-    this.pt.syncCamera(this.camera);
+    // Caméra en mouvement : on garde le temps réel (chaque image repartirait d'un échantillon bruité),
+    // l'accumulation reprend 0.15 s après l'arrêt.
+    if (this.pt.syncCamera(this.camera)) P.movedAt = now;
+    if (now - (P.movedAt || 0) < 150) return null;
     return this.pt.sample();
   }
 
@@ -288,6 +291,8 @@ export class Viewport {
       premult: !out,
       denoised: out?.denoised,
       keepRaw: out?.keepRaw,
+      raster: out ? this.hdr.texture : null,
+      ptMix: out ? Math.min(Math.max((out.spp - 2) / 14, 0), 1) : 1,
       depth: this.hdr.depthTexture,
       mask: sel ? this.mask.texture : null,
       maskTexel: this.maskTexel,

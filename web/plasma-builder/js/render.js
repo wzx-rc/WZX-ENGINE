@@ -95,6 +95,8 @@ export const TONEMAPPERS = [
 const POST_FRAG = /* glsl */`
 uniform sampler2D tColor;
 uniform sampler2D tDenoised;
+uniform sampler2D tRaster;
+uniform float uPTMix;
 uniform sampler2D tDepth;
 uniform sampler2D tMask;
 uniform float uExposure, uVignette, uAspect, uKeepRaw;
@@ -147,6 +149,13 @@ void main() {
 	if ( uUseDenoise ) src = mix( texture2D( tDenoised, vUv ), src, uKeepRaw );
 	float a = clamp( src.a, 0.0, 1.0 );
 	vec3 color = uPremult ? ( a > 1e-4 ? src.rgb / a : vec3( 0.0 ) ) : src.rgb;
+	// Fondu temps réel -> path tracing pendant les premiers échantillons (pas de bruit brut à l'écran).
+	if ( uPTMix < 1.0 ) {
+		vec4 r = texture2D( tRaster, vUv );
+		float ra = clamp( r.a, 0.0, 1.0 );
+		color = mix( ra > 1e-4 ? r.rgb / ra : vec3( 0.0 ), color, uPTMix );
+		a = mix( ra, a, uPTMix );
+	}
 	color *= uExposure;
 	vec2 vc = vUv - 0.5;
 	vc.x *= uAspect;
@@ -184,7 +193,7 @@ export class Post {
   constructor(bg0 = 0x1b1c21, bg1 = 0x101113) {
     this.mat = new THREE.ShaderMaterial({
       uniforms: {
-        tColor: { value: null }, tDenoised: { value: null }, tDepth: { value: null }, tMask: { value: null },
+        tColor: { value: null }, tDenoised: { value: null }, tRaster: { value: null }, uPTMix: { value: 1 }, tDepth: { value: null }, tMask: { value: null },
         uExposure: { value: 1 }, uVignette: { value: 0.12 }, uAspect: { value: 1 }, uKeepRaw: { value: 1 },
         uUseDenoise: { value: false }, uUseDepth: { value: false }, uUseMask: { value: false }, uPremult: { value: true },
         uMode: { value: 0 }, uBg0: { value: srgb(bg0) }, uBg1: { value: srgb(bg1) }, uMaskTexel: { value: new THREE.Vector2() },
@@ -198,7 +207,7 @@ export class Post {
 
   setBackground(bg0, bg1) { this.mat.uniforms.uBg0.value = srgb(bg0); this.mat.uniforms.uBg1.value = srgb(bg1); }
 
-  // o : { color, premult, denoised, keepRaw, depth, mask, maskTexel, exposure, vignette, mode, aspect }
+  // o : { color, premult, denoised, keepRaw, raster, ptMix, depth, mask, maskTexel, exposure, vignette, mode, aspect }
   render(renderer, o) {
     const u = this.mat.uniforms;
     u.tColor.value = o.color;
@@ -206,6 +215,8 @@ export class Post {
     u.uUseDenoise.value = !!o.denoised;
     u.tDenoised.value = o.denoised || null;
     u.uKeepRaw.value = o.keepRaw ?? 1;
+    u.uPTMix.value = o.raster ? o.ptMix : 1;
+    u.tRaster.value = o.raster || null;
     u.uUseDepth.value = !!o.depth;
     u.tDepth.value = o.depth || null;
     u.uUseMask.value = !!o.mask;
