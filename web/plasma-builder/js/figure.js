@@ -8,6 +8,17 @@ const D2R = Math.PI / 180;
 
 export function defaultXf() { return { p: [0, 0, 0], r: [0, 0, 0], s: 1, m: [false, false, false] }; }
 
+// Transformation d'emplacement sur des wrappers (les pièces en miroir inversent x et les rotations y / z).
+// sq : petit rebond d'une pièce qui vient d'être posée (BrickIt), écrasement en y à volume constant.
+export function xfWrappers(wrappers, xf = defaultXf(), sq = 1) {
+  for (const w of wrappers) {
+    const mir = w.userData.mirrored;
+    w.position.set(mir ? -xf.p[0] : xf.p[0], xf.p[1], xf.p[2]);
+    w.rotation.set(xf.r[0] * D2R, (mir ? -xf.r[1] : xf.r[1]) * D2R, (mir ? -xf.r[2] : xf.r[2]) * D2R);
+    w.scale.set(xf.s * (xf.m[0] ? -1 : 1) / Math.sqrt(sq), xf.s * (xf.m[1] ? -1 : 1) * sq, xf.s * (xf.m[2] ? -1 : 1) / Math.sqrt(sq));
+  }
+}
+
 export class Figure {
   constructor(matFn) {
     this.matFn = matFn;
@@ -17,19 +28,21 @@ export class Figure {
     this.slots = {};
     this.extras = {};
     this.selected = null;
+    this.squash = {};
     this.rig.setPose('garde', true);
   }
 
   variantOf(slot, id) { return slot.variants.find(v => v.id === id) || slot.variants.find(v => !v.none); }
 
-  attach(pieces, owner) {
+  // ghost : matériau fantôme de la pièce en main (BrickIt), hors export, hors sélection.
+  attach(pieces, owner, ghost = null) {
     return pieces.map(pc => {
       const w = new THREE.Group();
       w.userData = { owner, mirrored: !!pc.mirrored };
       for (const tag in pc.geos) {
-        const m = new THREE.Mesh(pc.geos[tag], this.matFn(tag, owner === this.selected));
-        m.castShadow = m.receiveShadow = true;
-        m.userData = { slot: owner, tag };
+        const m = new THREE.Mesh(pc.geos[tag], ghost || this.matFn(tag));
+        m.castShadow = m.receiveShadow = !ghost;
+        m.userData = ghost ? { helper: true, noExport: true } : { slot: owner, tag, outline: owner === this.selected };
         w.add(m);
       }
       this.rig.bones[pc.bone].add(w);
@@ -65,28 +78,24 @@ export class Figure {
     this.root.updateMatrixWorld(true);
   }
 
-  applyXf(id, xf = defaultXf()) {
-    for (const w of this.slots[id].wrappers) {
-      const mir = w.userData.mirrored;
-      w.position.set(mir ? -xf.p[0] : xf.p[0], xf.p[1], xf.p[2]);
-      w.rotation.set(xf.r[0] * D2R, (mir ? -xf.r[1] : xf.r[1]) * D2R, (mir ? -xf.r[2] : xf.r[2]) * D2R);
-      w.scale.set(xf.s * (xf.m[0] ? -1 : 1), xf.s * (xf.m[1] ? -1 : 1), xf.s * (xf.m[2] ? -1 : 1));
-    }
-  }
+  applyXf(id, xf = defaultXf()) { xfWrappers(this.slots[id].wrappers, xf, this.squash[id] ?? 1); }
 
   setVisible(id, v) { for (const w of this.slots[id]?.wrappers || []) w.visible = v; }
 
-  setSelected(id) { this.selected = id; this.refreshMaterials(); }
-
-  refreshMaterials() {
-    this.root.traverse(m => { if (m.isMesh) m.material = this.matFn(m.userData.tag, m.userData.slot === this.selected); });
+  setSelected(id) {
+    this.selected = id;
+    this.root.traverse(m => { if (m.isMesh && !m.userData.helper) m.userData.outline = !!id && m.userData.slot === id; });
   }
 
-  meshes() { const out = []; this.root.traverse(m => { if (m.isMesh) out.push(m); }); return out; }
+  refreshMaterials() {
+    this.root.traverse(m => { if (m.isMesh && !m.userData.helper) m.material = this.matFn(m.userData.tag); });
+  }
+
+  meshes() { const out = []; this.root.traverse(m => { if (m.isMesh && !m.userData.helper) out.push(m); }); return out; }
 
   tris() {
     let n = 0;
-    this.root.traverseVisible(m => { if (m.isMesh) { const g = m.geometry; n += (g.index ? g.index.count : g.attributes.position.count) / 3; } });
+    this.root.traverseVisible(m => { if (m.isMesh && !m.userData.helper) { const g = m.geometry; n += (g.index ? g.index.count : g.attributes.position.count) / 3; } });
     return n;
   }
 

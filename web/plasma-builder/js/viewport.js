@@ -1,9 +1,15 @@
-// Viewport réaliste : PBR, environnement studio, ombres douces, tonemapping AgX.
-// Reprend les réglages du viewport WZX (raster temps réel + mode haute qualité).
+// Viewport réaliste, repris du renderer Viewport3D (voir render.js) :
+// - Temps réel : PBR raster, ombres Poisson, MSAA 4x, rendu HDR puis passe Tonemap (exposition, vignettage,
+//   ACES / AgX / AgX Punchy / Standard, contour de sélection) ;
+// - Haute qualité : même chose en plus fin (résolution, carte d'ombre) ;
+// - Path tracing : rendu progressif (pathtrace.js), le raster sert d'aperçu pendant les changements.
+// Les aides (gizmo, grille, visor de la pièce en main) sont dessinées après le tonemapping, testées contre la
+// profondeur de la scène.
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
-import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { Post, Studio } from './render.js';
+import { PathTrace } from './pathtrace.js';
 
 const RESIN = { color: 0x8f9297, roughness: 0.56, metalness: 0, clearcoat: 0.12, clearcoatRoughness: 0.55 };
 const PAINT = {
@@ -18,74 +24,47 @@ const PAINT = {
   imported: { color: 0x8f9297, roughness: 0.56, metalness: 0 },
 };
 
-function radialTexture() {
-  const c = document.createElement('canvas');
-  c.width = c.height = 256;
-  const g = c.getContext('2d');
-  const grd = g.createRadialGradient(128, 128, 0, 128, 128, 128);
-  grd.addColorStop(0, 'rgba(46,48,53,1)');
-  grd.addColorStop(0.55, 'rgba(30,31,35,0.9)');
-  grd.addColorStop(1, 'rgba(17,18,20,0)');
-  g.fillStyle = grd;
-  g.fillRect(0, 0, 256, 256);
-  const t = new THREE.CanvasTexture(c);
-  t.colorSpace = THREE.SRGBColorSpace;
-  return t;
-}
+export const RENDER_DEFAULTS = {
+  tonemapper: 0, ev: 0, vignette: 0.12,
+  env: 'studio', envIntensity: 1, envRotation: 0, envVisible: false, studioLights: true,
+  bounces: 6, filterGlossy: 0, denoise: true, dof: false, fStop: 11,
+};
 
-function lights(scene) {
-  const key = new THREE.DirectionalLight(0xfff3e6, 2.6);
-  key.position.set(2.2, 4.2, 2.6);
-  key.castShadow = true;
-  key.shadow.mapSize.set(2048, 2048);
-  key.shadow.camera.left = key.shadow.camera.bottom = -1.8;
-  key.shadow.camera.right = key.shadow.camera.top = 1.8;
-  key.shadow.camera.near = 0.5;
-  key.shadow.camera.far = 12;
-  key.shadow.bias = -0.0004;
-  key.shadow.normalBias = 0.02;
-  key.shadow.radius = 4;
-  scene.add(key, key.target);
-  const rim = new THREE.DirectionalLight(0xcfe0ff, 1.4);
-  rim.position.set(-2.5, 3, -3);
-  scene.add(rim);
-  scene.add(new THREE.HemisphereLight(0xdfe6ee, 0x15161a, 0.35));
-  return key;
-}
+const BLACK = new THREE.MeshBasicMaterial({ color: 0x000000 });
+const WHITE = new THREE.MeshBasicMaterial({ color: 0xffffff });
 
 export class Viewport {
   constructor(canvas) {
     this.canvas = canvas;
-    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-    this.renderer.toneMapping = THREE.AgXToneMapping;
-    this.renderer.toneMappingExposure = 1.05;
-    this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+    const r = this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+    r.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    r.shadowMap.enabled = true;
+    r.shadowMap.type = THREE.PCFShadowMap;  // remplacé par le filtre de Poisson de Raster.hlsl (render.js)
+    r.toneMapping = THREE.NoToneMapping;
+    r.outputColorSpace = THREE.SRGBColorSpace;
+    r.setClearColor(0x000000, 0);
 
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x111214);
-    const pmrem = new THREE.PMREMGenerator(this.renderer);
-    this.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-    this.scene.environmentIntensity = 0.55;
-    this.key = lights(this.scene);
-    this.lightAngle = Math.atan2(2.6, 2.2);
+    this.overlay = new THREE.Scene();
+    this.studio = new Studio(this.scene);
+    this.settings = { ...RENDER_DEFAULTS };
 
-    const floor = new THREE.Mesh(new THREE.CircleGeometry(3.2, 64), new THREE.MeshBasicMaterial({ map: radialTexture(), transparent: true, depthWrite: false }));
-    floor.rotation.x = -Math.PI / 2;
-    floor.position.y = -0.101;
-    floor.renderOrder = -1;
-    this.scene.add(floor);
-    const shadow = new THREE.Mesh(new THREE.PlaneGeometry(6, 6), new THREE.ShadowMaterial({ opacity: 0.55 }));
+    // Ombre portée sur le plateau en temps réel ; vrai sol pour le path tracer.
+    const shadow = new THREE.Mesh(new THREE.PlaneGeometry(8, 8), new THREE.ShadowMaterial({ opacity: 0.6, depthWrite: false }));
     shadow.rotation.x = -Math.PI / 2;
     shadow.position.y = -0.1;
     shadow.receiveShadow = true;
+    shadow.userData.rasterOnly = true;
     this.scene.add(shadow);
+    this.ptFloor = new THREE.Mesh(new THREE.CircleGeometry(30, 96), new THREE.MeshStandardMaterial({ color: 0x2a2c31, roughness: 0.6 }));
+    this.ptFloor.rotation.x = -Math.PI / 2;
+    this.ptFloor.position.y = -0.1005;
+    this.ptFloor.visible = false;
+    this.scene.add(this.ptFloor);
     this.grid = new THREE.GridHelper(4, 40, 0x3a3c42, 0x26282d);
     this.grid.position.y = -0.099;
     this.grid.visible = false;
-    this.scene.add(this.grid);
+    this.overlay.add(this.grid);
 
     this.camera = new THREE.PerspectiveCamera(32, 1, 0.05, 100);
     this.camera.position.set(2.4, 2.0, 4.6);
@@ -101,7 +80,13 @@ export class Viewport {
     this.gizmo.setSize(0.8);
     this.gizmo.setSpace('local');
     this.gizmo.addEventListener('dragging-changed', e => { this.controls.enabled = !e.value; });
-    this.scene.add(this.gizmo.getHelper ? this.gizmo.getHelper() : this.gizmo);
+    this.overlay.add(this.gizmo.getHelper());
+
+    // Cibles : couleur HDR + profondeur (MSAA 4x comme le temps réel du moteur), masque de sélection.
+    this.hdr = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4, depthTexture: new THREE.DepthTexture(1, 1) });
+    this.mask = new THREE.WebGLRenderTarget(1, 1);
+    this.post = new Post();
+    this.maskTexel = new THREE.Vector2();
 
     this.mode = 'resin';
     this.materials = new Map();
@@ -109,19 +94,21 @@ export class Viewport {
     this.clock = new THREE.Clock();
     this.onFrame = null;
     this.camAnim = null;
+    this.pt = null;
+    this.ptState = { sig: 0, changedAt: 0, dirty: true, studio: -1, spp: 0 };
+    this.unitsPerMeter = 61;
 
     new ResizeObserver(() => this.resize()).observe(canvas.parentElement);
     this.resize();
-    this.renderer.setAnimationLoop(() => this.frame());
+    r.setAnimationLoop(() => this.frame());
   }
 
-  material(tag, selected) {
-    const key = this.mode + ':' + tag + ':' + (selected ? 1 : 0);
+  material(tag) {
+    const key = this.mode + ':' + tag;
     if (!this.materials.has(key)) {
-      const base = this.mode === 'paint' ? (PAINT[tag] || PAINT.imported) : (tag === 'eye' ? { ...RESIN } : RESIN);
+      const base = this.mode === 'paint' ? (PAINT[tag] || PAINT.imported) : RESIN;
       const m = new THREE.MeshPhysicalMaterial(base);
       if (this.mode === 'wire') m.wireframe = true;
-      if (selected) { m.emissive = new THREE.Color(0xf0435a); m.emissiveIntensity = 0.16; }
       this.materials.set(key, m);
     }
     return this.materials.get(key);
@@ -129,21 +116,49 @@ export class Viewport {
 
   setMode(mode) { this.mode = mode; }
 
-  setQuality(q) {
+  // Réglages de rendu (panneau Rendu). Ceux de l'environnement passent au studio.
+  setRender(patch) {
+    const envChanged = 'env' in patch && patch.env !== this.studio.state.env;
+    Object.assign(this.settings, patch);
+    const s = this.settings;
+    const st = { env: s.env, intensity: s.envIntensity, rotation: s.envRotation, visible: s.envVisible };
+    // Changer d'environnement remet ses lumières par défaut (studio pour les dégradés, soleil pour ciel / HDRI).
+    if ('studioLights' in patch || !envChanged) st.lights = s.studioLights;
+    this.studio.set(st);
+    s.studioLights = this.studio.state.lights;
+    this.configurePT();
+  }
+
+  async setHDRI(file) {
+    await this.studio.setHDRI(file);
+    Object.assign(this.settings, { env: 'hdri', studioLights: this.studio.state.lights });
+  }
+
+  configurePT() {
+    if (!this.pt) return;
+    const s = this.settings;
+    const focus = this.camera.position.distanceTo(this.controls.target);
+    this.pt.configure({ bounces: s.bounces, filterGlossy: s.filterGlossy, denoise: s.denoise, dof: s.dof, fStop: s.fStop, focus, unitsPerMeter: this.unitsPerMeter });
+    this.ptState.dirty = true;
+    this.ptState.changedAt = performance.now();
+  }
+
+  async setQuality(q) {
     this.quality = q;
-    const hq = q === 'hq';
+    const hq = q !== 'rt';
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio * (hq ? 1.5 : 1), hq ? 3 : 2));
-    this.key.shadow.mapSize.set(hq ? 4096 : 2048, hq ? 4096 : 2048);
-    this.key.shadow.radius = hq ? 7 : 4;
-    if (this.key.shadow.map) { this.key.shadow.map.dispose(); this.key.shadow.map = null; }
-    this.scene.environmentIntensity = hq ? 0.7 : 0.55;
+    this.studio.setShadowSize(hq ? 4096 : 2048);
     this.resize();
+    if (q === 'pt' && !this.pt) {
+      this.ptLoading = true;
+      try { this.pt = await PathTrace.create(this.renderer); }
+      finally { this.ptLoading = false; }
+      this.configurePT();
+    }
   }
 
   rotateLight(step = Math.PI / 4) {
-    this.lightAngle += step;
-    const r = Math.hypot(2.2, 2.6);
-    this.key.position.set(Math.cos(this.lightAngle) * r, 4.2, Math.sin(this.lightAngle) * r);
+    this.setRender({ envRotation: (this.settings.envRotation + step) % (Math.PI * 2) });
   }
 
   resize() {
@@ -152,6 +167,11 @@ export class Viewport {
     this.renderer.setSize(w, h, false);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
+    const b = this.renderer.getDrawingBufferSize(new THREE.Vector2());
+    this.hdr.setSize(b.x, b.y);
+    this.mask.setSize(b.x, b.y);
+    this.maskTexel.set(1 / b.x, 1 / b.y);
+    if (this.pt) this.pt.pt.renderScale = this.quality === 'pt' ? Math.min(1, 1.25 / this.renderer.getPixelRatio()) : 1;
   }
 
   // Cadre l'objet depuis une direction (vues caméra), avec une transition douce.
@@ -167,6 +187,78 @@ export class Viewport {
     this.camAnim = { t: 0, fromP: this.camera.position.clone(), toP: to, fromT: this.controls.target.clone(), toT: c };
   }
 
+  // Signature de ce que voit le path tracer : si elle change, la scène est reconstruite quand elle se stabilise.
+  signature() {
+    let s = 0, n = 0;
+    this.scene.traverseVisible(o => {
+      if (!o.isMesh) return;
+      n++;
+      const e = o.matrixWorld.elements;
+      let k = 0;
+      for (let i = 0; i < 15; i++) k += e[i] * (i + 1.37);
+      s += k * ((n % 13) + 1) + o.material.id * 0.013 + o.geometry.id * 0.007;
+    });
+    return s + n * 1000.5;
+  }
+
+  buildPT() {
+    const hidden = [];
+    this.scene.traverse(o => {
+      if (o.isMesh && o.visible && (o.userData.helper || o.userData.rasterOnly)) { o.visible = false; hidden.push(o); }
+    });
+    this.ptFloor.visible = true;
+    this.studio.beginPT();
+    try { this.pt.build(this.scene, this.camera); }
+    finally {
+      this.studio.endPT();
+      this.ptFloor.visible = false;
+      for (const o of hidden) o.visible = true;
+    }
+  }
+
+  // Path tracing : reconstruit après 0.25 s sans changement, sinon un échantillon de plus.
+  stepPT() {
+    const P = this.ptState, now = performance.now();
+    const sig = this.signature() + this.studio.version * 0.5;
+    if (sig !== P.sig) { P.sig = sig; P.changedAt = now; P.dirty = true; }
+    if (P.dirty) {
+      if (now - P.changedAt < 250 || this.camAnim) return null;
+      this.configurePT();
+      P.dirty = false;
+      this.buildPT();
+    }
+    this.pt.settings.focus = this.camera.position.distanceTo(this.controls.target);
+    this.pt.syncCamera(this.camera);
+    return this.pt.sample();
+  }
+
+  // Masque de sélection : les meshes marqués outline en blanc, le reste en noir (occultation comprise).
+  renderMask() {
+    const swapped = [];
+    let any = false;
+    this.scene.traverseVisible(o => {
+      if (!o.isMesh || o.userData.rasterOnly) return;
+      swapped.push([o, o.material]);
+      if (o.userData.helper) o.visible = false;
+      else o.material = o.userData.outline ? WHITE : BLACK;
+      any ||= !!o.userData.outline;
+    });
+    if (any) {
+      const bg = this.scene.background, sm = this.renderer.shadowMap;
+      sm.autoUpdate = false;
+      this.scene.background = null;
+      this.renderer.setRenderTarget(this.mask);
+      this.renderer.setClearColor(0x000000, 1);
+      this.renderer.clear();
+      this.renderer.render(this.scene, this.camera);
+      this.renderer.setClearColor(0x000000, 0);
+      this.scene.background = bg;
+      sm.autoUpdate = true;
+    }
+    for (const [o, m] of swapped) { o.material = m; o.visible = true; }
+    return any;
+  }
+
   frame() {
     const dt = Math.min(this.clock.getDelta(), 0.1);
     if (this.camAnim) {
@@ -179,35 +271,64 @@ export class Viewport {
     }
     this.controls.update();
     if (this.onFrame) this.onFrame(dt);
-    this.renderer.render(this.scene, this.camera);
+    const r = this.renderer, s = this.settings;
+    this.scene.updateMatrixWorld();
+
+    r.setRenderTarget(this.hdr);
+    r.render(this.scene, this.camera);
+    const sel = this.renderMask();
+
+    let out = null;
+    if (this.quality === 'pt' && this.pt) out = this.stepPT();
+    this.spp = out ? out.spp : 0;
+
+    r.setRenderTarget(null);
+    this.post.render(r, {
+      color: out ? out.tex : this.hdr.texture,
+      premult: !out,
+      denoised: out?.denoised,
+      keepRaw: out?.keepRaw,
+      depth: this.hdr.depthTexture,
+      mask: sel ? this.mask.texture : null,
+      maskTexel: this.maskTexel,
+      exposure: Math.pow(2, s.ev),
+      vignette: s.vignette,
+      mode: s.tonemapper,
+      aspect: this.camera.aspect,
+    });
+    r.autoClear = false;
+    r.render(this.overlay, this.camera);
+    r.autoClear = true;
   }
 }
 
-// Petit moteur de vignettes : même éclairage, rendu hors écran en PNG.
+// Petit moteur de vignettes : même studio et même passe finale, rendu hors écran en PNG.
 export class Thumbs {
   constructor(w = 160, h = 200) {
     this.canvas = document.createElement('canvas');
-    this.renderer = new THREE.WebGLRenderer({ canvas: this.canvas, antialias: true, preserveDrawingBuffer: true });
+    this.renderer = new THREE.WebGLRenderer({ canvas: this.canvas, antialias: false, preserveDrawingBuffer: true });
     this.renderer.setPixelRatio(1);
-    this.renderer.setSize(w, h, false);
-    this.renderer.toneMapping = THREE.AgXToneMapping;
-    this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = THREE.PCFShadowMap;
+    this.renderer.toneMapping = THREE.NoToneMapping;
+    this.renderer.setClearColor(0x000000, 0);
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x1b1c20);
-    const pmrem = new THREE.PMREMGenerator(this.renderer);
-    this.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-    this.scene.environmentIntensity = 0.6;
-    const key = new THREE.DirectionalLight(0xfff3e6, 2.4);
-    key.position.set(2, 3, 3);
-    const rim = new THREE.DirectionalLight(0xcfe0ff, 1.2);
-    rim.position.set(-2, 2, -3);
-    this.scene.add(key, rim, new THREE.HemisphereLight(0xdfe6ee, 0x15161a, 0.3));
+    this.studio = new Studio(this.scene, { shadowSize: 1024 });
     this.camera = new THREE.PerspectiveCamera(28, w / h, 0.01, 50);
     this.mat = new THREE.MeshPhysicalMaterial(RESIN);
-    this.w = w; this.h = h;
+    this.rt = new THREE.WebGLRenderTarget(w, h, { type: THREE.HalfFloatType, samples: 4 });
+    this.post = new Post(0x232429, 0x18191c);
+    this.mode = RENDER_DEFAULTS.tonemapper;
+    this.setSize(w, h);
   }
 
-  setSize(w, h) { this.w = w; this.h = h; this.renderer.setSize(w, h, false); this.camera.aspect = w / h; this.camera.updateProjectionMatrix(); }
+  setSize(w, h) {
+    this.w = w; this.h = h;
+    this.renderer.setSize(w, h, false);
+    this.rt.setSize(w, h);
+    this.camera.aspect = w / h;
+    this.camera.updateProjectionMatrix();
+  }
 
   // obj : un Object3D déjà construit (les meshes peuvent être partagés, il n'est pas modifié).
   render(obj, dir = new THREE.Vector3(0.45, 0.25, 1), pad = 1.12) {
@@ -221,7 +342,15 @@ export class Thumbs {
     const dist = r / Math.tan(fov / 2) * pad + Math.max(s.x, s.z) / 2;
     this.camera.position.copy(c).addScaledVector(dir.clone().normalize(), dist);
     this.camera.lookAt(c);
+    // Les lumières visent toujours la pièce, centrée ou non sur la figurine.
+    const off = c.clone().sub(new THREE.Vector3(0, 0.9, 0));
+    const lights = [...this.studio.dir, this.studio.sun];
+    for (const l of lights) { l.position.add(off); l.target.position.add(off); }
+    this.renderer.setRenderTarget(this.rt);
     this.renderer.render(this.scene, this.camera);
+    this.renderer.setRenderTarget(null);
+    this.post.render(this.renderer, { color: this.rt.texture, exposure: 1, vignette: 0, mode: this.mode, aspect: this.camera.aspect });
+    for (const l of lights) { l.position.sub(off); l.target.position.sub(off); }
     const url = this.canvas.toDataURL('image/png');
     this.scene.remove(obj);
     if (parent) parent.add(obj);

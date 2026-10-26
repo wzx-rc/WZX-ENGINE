@@ -1,7 +1,9 @@
 // PlasmaOrk Builder : assemblage d'un Ork à partir de pièces STL, rig, poses, rendu et export.
 import * as THREE from 'three';
-import { Viewport, Thumbs } from './viewport.js';
-import { Figure, defaultXf } from './figure.js';
+import { Viewport, Thumbs, RENDER_DEFAULTS } from './viewport.js';
+import { Hold } from './hold.js';
+import { TONEMAPPERS } from './render.js';
+import { Figure, defaultXf, xfWrappers } from './figure.js';
 import { POSES, POSABLE } from './rig.js';
 import { SLOTS, CATEGORIES, PRESETS, KITS, OPTIONS, IMPORT_SIZE, buildVariant, buildKit } from './parts.js';
 import { readSTL, exportMerged, exportParts, exportJSON } from './io.js';
@@ -29,11 +31,17 @@ try {
   if (saved && saved.sel) { state = Object.assign(freshState(), saved); for (const s of SLOTS) state.xf[s.id] ||= defaultXf(); }
   const n = localStorage.getItem('plasmaork.name'); if (n) $('projName').value = n;
 } catch (e) { /* stockage indisponible : on part de l'état par défaut */ }
+let renderSet = { ...RENDER_DEFAULTS };
+try { Object.assign(renderSet, JSON.parse(localStorage.getItem('plasmaork.render') || '{}')); if (renderSet.env === 'hdri') renderSet.env = 'studio'; } catch (e) { /* idem */ }
 
 // ---------- 3D ----------
 const vp = new Viewport($('vpCanvas'));
+vp.setRender(renderSet);
+vp.unitsPerMeter = EYE_HEIGHT / (state.scale / 1000);
 const thumbs = new Thumbs(160, 200);
-const figure = new Figure((tag, sel) => vp.material(tag, sel));
+thumbs.mode = renderSet.tonemapper;
+const figure = new Figure(tag => vp.material(tag));
+const hold = new Hold(vp);
 vp.scene.add(figure.root);
 figure.apply(state, true);
 figure.setSelected(ui.slot);
@@ -45,7 +53,8 @@ skel.material.depthTest = false;
 skel.material.transparent = true;
 skel.renderOrder = 10;
 skel.visible = false;
-vp.scene.add(skel);
+skel.userData.helper = true;
+vp.overlay.add(skel);
 
 // ---------- historique ----------
 const history = [JSON.stringify(state)];
@@ -166,9 +175,9 @@ function renderLibrary() {
   $('libCount').textContent = slot.variants.filter(v => !v.none).length;
   const current = figure.variantOf(slot, state.sel[slot.id]).id;
   $('libGrid').innerHTML = list.map(v => {
-    const img = v.none ? `<span class="ph">Aucun</span>` : `<img alt="" src="${variantThumb(slot, v)}">`;
+    const img = v.none ? `<span class="ph">Aucun</span>` : `<img alt="" draggable="false" src="${variantThumb(slot, v)}">`;
     const badge = v.imported ? '<em class="badge">STL</em>' : '';
-    return `<button type="button" class="tile${v.none ? ' none' : ''}" data-variant="${v.id}" aria-pressed="${current === v.id}">${badge}${img}<span>${esc(v.name)}</span></button>`;
+    return `<button type="button" class="tile${v.none ? ' none' : ''}" title="Clic : poser · Glisser : choisir le socket" data-variant="${v.id}" aria-pressed="${current === v.id}">${badge}${img}<span>${esc(v.name)}</span></button>`;
   }).join('');
 }
 
@@ -205,7 +214,7 @@ function renderCustomize() {
   $('curSocket').textContent = 'socket_' + slot.id;
   $('removeBtn').disabled = !slot.variants.some(x => x.none);
   document.querySelectorAll('.tabs button').forEach(b => b.setAttribute('aria-selected', String(b.dataset.tab === ui.tab)));
-  for (const t of ['T', 'R', 'P']) $('pane-' + t).hidden = ui.tab !== t;
+  for (const t of ['T', 'R', 'P', 'V']) $('pane-' + t).hidden = ui.tab !== t;
   const xf = state.xf[slot.id];
   $('xf').innerHTML = XF_ROWS.map(([lab, ax, k, i, min, max, step]) => {
     const val = i < 0 ? xf[k] : xf[k][i];
@@ -232,9 +241,39 @@ function renderPrintInfo() {
   const t = figure.tris();
   $('printTris').textContent = Math.round(t).toLocaleString('fr-FR');
   $('printParts').textContent = SLOTS.filter(s => !figure.variantOf(s, state.sel[s.id]).none).length + ' emplacements';
-  const q = ui.quality === 'hq' ? 'Haute qualité' : 'Temps réel';
-  $('vpInfo').textContent = `${q} · AgX\n${Math.round(t / 1000)}k triangles · ${h.toFixed(0)} mm`;
+  ui.info = `${Math.round(t / 1000)}k triangles · ${h.toFixed(0)} mm`;
+  renderInfo();
   $('asmInfo').textContent = `${Math.round(t / 1000)}k triangles`;
+}
+
+const QUALITY = { rt: 'Temps réel', hq: 'Haute qualité', pt: 'Path tracing' };
+function renderInfo() {
+  const s = vp.settings;
+  let q = QUALITY[ui.quality];
+  if (ui.quality === 'pt') q += vp.ptLoading ? ' · chargement…' : vp.spp ? ` · ${Math.floor(vp.spp)} spp` : ' · préparation…';
+  $('vpInfo').textContent = `${q} · ${TONEMAPPERS[s.tonemapper].name}\n${ui.info || ''}`;
+}
+
+// Panneau Rendu : réglages repris du Viewport3D (transformée, exposition, environnement, path tracing).
+const R_FMT = { ev: v => (v > 0 ? '+' : '') + (+v).toFixed(1) + ' EV', vignette: v => (+v).toFixed(2), envIntensity: v => (+v).toFixed(2), envRotation: v => Math.round(v * 180 / Math.PI) + '°', bounces: v => v, filterGlossy: v => (+v).toFixed(2) };
+function renderRenderPanel() {
+  const s = vp.settings;
+  $('renderSet').querySelectorAll('[data-r]').forEach(el => {
+    const k = el.dataset.r;
+    if (el.type === 'checkbox') el.checked = !!s[k]; else el.value = String(s[k]);
+  });
+  $('renderSet').querySelectorAll('[data-o]').forEach(o => { o.textContent = R_FMT[o.dataset.o](s[o.dataset.o]); });
+  const hdriOpt = $('renderSet').querySelector('option[value="hdri"]');
+  hdriOpt.disabled = !vp.studio.hdri;
+  hdriOpt.textContent = vp.studio.hdri ? 'HDRI · ' + vp.studio.hdri.name : 'HDRI (à charger)';
+}
+function setRender(patch) {
+  vp.setRender(patch);
+  renderSet = { ...vp.settings };
+  thumbs.mode = renderSet.tonemapper;
+  try { localStorage.setItem('plasmaork.render', JSON.stringify(renderSet)); } catch (e) { /* ignoré */ }
+  renderRenderPanel();
+  renderInfo();
 }
 
 function renderKits() {
@@ -270,7 +309,7 @@ function renderPoses() {
 }
 
 function renderAll() {
-  renderRail(); renderLibrary(); renderSteps(); renderViews(); renderPins(); renderCustomize(); renderKits(); renderOptions(); renderAssembly(); renderPoses();
+  renderRail(); renderLibrary(); renderSteps(); renderViews(); renderPins(); renderCustomize(); renderKits(); renderOptions(); renderAssembly(); renderPoses(); renderRenderPanel();
   scheduleFigureThumbs();
 }
 
@@ -309,11 +348,15 @@ function setStep(step) {
   if (step === 'asm') { ui.sockets = true; ui.rig = false; ui.tab = 'T'; }
   if (step === 'rig') { ui.sockets = true; ui.rig = true; ui.tab = 'R'; }
   if (step === 'pose') { ui.sockets = false; ui.rig = true; ui.tab = 'R'; }
-  if (step === 'render') { ui.sockets = false; ui.rig = false; ui.tab = 'P'; setQuality('hq'); }
+  if (step === 'render') { ui.sockets = false; ui.rig = false; ui.tab = 'V'; if (ui.quality === 'rt') setQuality('hq'); }
   skel.visible = ui.rig;
   renderSteps(); renderPins(); renderCustomize();
 }
-function setQuality(q) { ui.quality = q; vp.setQuality(q); renderSteps(); renderPrintInfo(); }
+function setQuality(q) {
+  ui.quality = q;
+  vp.setQuality(q).then(renderInfo, err => { console.error(err); toast('Path tracing indisponible : ' + (err.message || err)); setQuality('hq'); });
+  renderSteps(); renderPrintInfo();
+}
 function toast(msg) {
   const t = $('toast'); t.textContent = msg; t.classList.add('show');
   clearTimeout(toast.timer); toast.timer = setTimeout(() => t.classList.remove('show'), 2600);
@@ -328,6 +371,60 @@ function applyPreset(p) {
   renderAll();
   toast(`Preset « ${p.name} » appliqué`);
 }
+// ---------- pièce en main (BrickIt) ----------
+// Clic sur une vignette : la pièce apparaît en main, vole jusqu'à son socket et s'y pose avec un rebond.
+// Glisser une vignette dans le viewport : la pièce suit le socket le plus proche du pointeur (bras G / D),
+// lâcher la pose, Échap annule.
+const bonePos = name => figure.rig.bones[name].getWorldPosition(new THREE.Vector3());
+let hiddenSlot = null;
+function showSlot() { if (hiddenSlot) { figure.setVisible(hiddenSlot, hiddenSlot !== 'base' || ui.showBase); hiddenSlot = null; } }
+function handObject(slot, v) {
+  const pieces = buildVariant(slot, v, state.wear);
+  const sb = figure.rig.bones[slot.bone];
+  sb.updateWorldMatrix(true, false);
+  const inv = sb.matrixWorld.clone().invert();
+  const inner = new THREE.Group();
+  inner.quaternion.copy(sb.getWorldQuaternion(new THREE.Quaternion()));
+  for (const pc of pieces) for (const tag in pc.geos) {
+    const m = new THREE.Mesh(pc.geos[tag], vp.material(tag));
+    figure.rig.bones[pc.bone].updateWorldMatrix(true, false);
+    m.matrixAutoUpdate = false;
+    m.matrix.multiplyMatrices(inv, figure.rig.bones[pc.bone].matrixWorld);
+    m.userData.noExport = true;
+    inner.add(m);
+  }
+  const obj = new THREE.Group();
+  obj.add(inner);
+  return obj;
+}
+function startHold(slot, variantId, auto) {
+  const v = slot.variants.find(x => x.id === variantId);
+  if (!v || v.none || figure.variantOf(slot, state.sel[slot.id]).id === variantId && auto) { setVariant(slot.id, variantId); return; }
+  const candidates = slot.cat === 'arms' ? (auto ? [slot.id] : ['armL', 'armR']) : [slot.id];
+  if (!auto) candidates.sort((a, b) => (a === slot.id ? -1 : b === slot.id ? 1 : 0));
+  vp.gizmo.detach();
+  hold.start({
+    candidates, auto,
+    object: handObject(slot, v),
+    socketOf: id => bonePos(slotById(id).bone),
+    ghostOf: id => {
+      showSlot();
+      hiddenSlot = id;
+      figure.setVisible(id, false);
+      const ws = figure.attach(buildVariant(slotById(id), v, state.wear), 'ghost', hold.ghostMat);
+      xfWrappers(ws, state.xf[id]);
+      return ws;
+    },
+    onDrop: id => { showSlot(); setVariant(id, variantId); toast(`${v.name} posé sur ${slotById(id).label}`); },
+    onCancel: () => { showSlot(); attachGizmo(); },
+  });
+}
+function applySquash(id, sq) {
+  if (!figure.slots[id]) return;
+  if (sq === 1) delete figure.squash[id]; else figure.squash[id] = sq;
+  figure.applyXf(id, state.xf[id]);
+}
+
 const projectName = () => ($('projName').value.trim() || 'plasma_ork').replace(/[^\w\-]+/g, '_');
 
 async function doExport(kind) {
@@ -387,9 +484,9 @@ document.addEventListener('click', e => {
   if (d.cat) { ui.cat = d.cat; const s = d.cat === 'arms' ? (ui.slot === 'armR' ? 'armR' : 'armL') : SLOTS.find(x => x.cat === d.cat)?.id; if (s) selectSlot(s, false); else { renderRail(); renderLibrary(); } }
   else if (d.chip) { ui.chip = d.chip; renderLibrary(); }
   else if (d.side) selectSlot(d.side, false);
-  else if (d.variant) setVariant(libSlot().id, d.variant);
+  else if (d.variant) { if (dragTile.suppress) { dragTile.suppress = false; return; } startHold(libSlot(), d.variant, true); }
   else if (d.preset) applyPreset(PRESETS.find(p => p.id === d.preset));
-  else if (d.slot) selectSlot(d.slot);
+  else if (d.slot) { selectSlot(d.slot); if (t.classList.contains('pin')) hold.flash(bonePos(slotById(d.slot).bone)); }
   else if (d.clear) { const s = slotById(d.clear); setVariant(s.id, s.variants.find(v => v.none).id); }
   else if (d.tool) { ui.tool = d.tool; attachGizmo(); renderSteps(); }
   else if (d.step) setStep(d.step);
@@ -413,7 +510,22 @@ $('rigBtn').addEventListener('click', () => { ui.rig = !ui.rig; skel.visible = u
 $('lightBtn').addEventListener('click', () => vp.rotateLight());
 $('fullBtn').addEventListener('click', () => { const el = $('vp'); if (document.fullscreenElement) document.exitFullscreen(); else el.requestFullscreen?.(); });
 $('qualitySel').addEventListener('change', e => setQuality(e.target.value));
-$('scaleSel').addEventListener('change', e => { state.scale = +e.target.value; commit(); renderPrintInfo(); });
+$('scaleSel').addEventListener('change', e => { state.scale = +e.target.value; vp.unitsPerMeter = EYE_HEIGHT / (state.scale / 1000); vp.configurePT(); commit(); renderPrintInfo(); });
+$('renderSet').addEventListener('input', e => {
+  const el = e.target, k = el.dataset.r;
+  if (!k) return;
+  if (k === 'env' && el.value === 'hdri' && !vp.studio.hdri) { $('hdriInput').click(); return; }
+  setRender({ [k]: el.type === 'checkbox' ? el.checked : (k === 'env' ? el.value : +el.value) });
+});
+$('hdriBtn').addEventListener('click', () => $('hdriInput').click());
+$('hdriInput').addEventListener('change', async e => {
+  const f = e.target.files[0];
+  e.target.value = '';
+  if (!f) { renderRenderPanel(); return; }
+  toast(`Chargement de ${f.name}…`);
+  try { await vp.setHDRI(f); setRender({}); toast(`HDRI ${f.name} chargé${vp.studio.hdri.sun ? ' (soleil extrait en lumière ombrée)' : ''}`); }
+  catch (err) { console.error(err); toast(`Impossible de lire ${f.name}`); renderRenderPanel(); }
+});
 $('gridChk').addEventListener('change', e => { vp.grid.visible = e.target.checked; });
 $('baseChk').addEventListener('change', e => { ui.showBase = e.target.checked; figure.setVisible('base', ui.showBase); renderPrintInfo(); });
 $('searchInput').addEventListener('input', e => { ui.search = e.target.value; renderLibrary(); });
@@ -479,6 +591,38 @@ $('vpCanvas').addEventListener('pointerup', e => {
   if (hit) selectSlot(hit.object.userData.slot);
 });
 
+// Glisser une vignette vers le viewport : pièce en main, posée au lâcher sur le socket visé.
+const dragTile = { el: null, x: 0, y: 0, on: false, suppress: false };
+$('libGrid').addEventListener('pointerdown', e => {
+  const t = e.target.closest('[data-variant]');
+  if (!t || e.button !== 0) return;
+  Object.assign(dragTile, { el: t, x: e.clientX, y: e.clientY, on: false });
+});
+document.addEventListener('pointermove', e => {
+  hold.pointer.x = e.clientX; hold.pointer.y = e.clientY;
+  const r = $('vp').getBoundingClientRect();
+  hold.pointer.inside = e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
+  if (!dragTile.el || dragTile.on || Math.hypot(e.clientX - dragTile.x, e.clientY - dragTile.y) < 8) return;
+  const slot = libSlot(), id = dragTile.el.dataset.variant;
+  if (slot.variants.find(v => v.id === id)?.none) { dragTile.el = null; return; }
+  dragTile.on = true;
+  dragTile.el.classList.add('dragging');
+  document.body.style.cursor = 'grabbing';
+  startHold(slot, id, false);
+});
+document.addEventListener('pointerup', () => {
+  if (!dragTile.el) return;
+  const was = dragTile.on;
+  dragTile.el.classList.remove('dragging');
+  document.body.style.cursor = '';
+  dragTile.el = null;
+  dragTile.on = false;
+  if (!was) return;
+  dragTile.suppress = true;
+  setTimeout(() => { dragTile.suppress = false; }, 0);
+  if (hold.active && hold.pointer.inside) hold.drop(); else if (hold.active) hold.cancel();
+});
+
 // Glisser-déposer de STL sur le viewport.
 const vpEl = $('vp');
 vpEl.addEventListener('dragover', e => { e.preventDefault(); $('drop').hidden = false; $('dropCat').textContent = CATEGORIES.find(c => c.id === (ui.cat === 'presets' ? slotById(ui.slot).cat : ui.cat)).label; });
@@ -488,6 +632,7 @@ vpEl.addEventListener('drop', e => { e.preventDefault(); $('drop').hidden = true
 document.addEventListener('keydown', e => {
   if (e.target.closest('input, select, textarea')) return;
   const k = e.key.toLowerCase();
+  if (k === 'escape' && hold.active) { hold.cancel(); return; }
   if ((e.ctrlKey || e.metaKey) && k === 'z') { e.preventDefault(); travel(e.shiftKey ? 1 : -1); return; }
   if ((e.ctrlKey || e.metaKey) && k === 'y') { e.preventDefault(); travel(1); return; }
   if (e.ctrlKey || e.metaKey || e.altKey) return;
@@ -504,9 +649,12 @@ const PIN_AT = {
   weapon: ['hand_R', [0, -0.25, 0.15]], legs: ['knee_L', [0.08, 0.02, 0.14]], back: ['chest', [0, 0.32, -0.46]], shoulders: ['clav_L', [0.3, 0.16, 0]], base: ['root', [0.5, 0, 0.42]],
 };
 let lastPins = 0;
+let infoT = 0;
 vp.onFrame = dt => {
   const moving = figure.rig.update(dt);
   if (moving) figure.root.updateMatrixWorld(true);
+  hold.update(dt, applySquash);
+  if (ui.quality === 'pt' && (infoT += dt) > 0.25) { infoT = 0; renderInfo(); }
   if (!ui.sockets) return;
   lastPins += dt;
   const el = $('vp'), w = el.clientWidth, h = el.clientHeight;

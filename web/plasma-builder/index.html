@@ -10,8 +10,11 @@
 <script type="importmap">
 {
   "imports": {
-    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
-    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+    "three": "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/",
+    "three/examples/jsm/": "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/",
+    "three-mesh-bvh": "https://cdn.jsdelivr.net/npm/three-mesh-bvh@0.9.1/build/index.module.js",
+    "three-gpu-pathtracer": "https://cdn.jsdelivr.net/npm/three-gpu-pathtracer@0.0.24/build/index.module.js"
   }
 }
 </script>
@@ -98,7 +101,7 @@
                   <button type="button" id="rigBtn" class="icon" aria-pressed="false" aria-label="Squelette" title="Squelette"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="4" r="2"/><path d="M12 6v8M6 9h12M12 14l-4 7M12 14l4 7"/></svg></button>
                 </div>
                 <label class="select"><span class="sr">Qualité de rendu</span>
-                  <select id="qualitySel"><option value="rt">Temps réel</option><option value="hq">Haute qualité</option></select>
+                  <select id="qualitySel"><option value="rt">Temps réel</option><option value="hq">Haute qualité</option><option value="pt">Path tracing</option></select>
                 </label>
               </div>
             </div>
@@ -138,9 +141,10 @@
             </div>
             <div class="cur"><b id="curSlot">Tête</b><span id="curName"></span><span class="grow"></span><code id="curSocket"></code></div>
             <div class="tabs" role="tablist" aria-label="Onglets">
-              <button type="button" role="tab" data-tab="T" id="tab-T" aria-controls="pane-T">Transformation</button>
+              <button type="button" role="tab" data-tab="T" id="tab-T" aria-controls="pane-T" title="Transformation">Transfo</button>
               <button type="button" role="tab" data-tab="R" id="tab-R" aria-controls="pane-R">Rig</button>
               <button type="button" role="tab" data-tab="P" id="tab-P" aria-controls="pane-P">Impression</button>
+              <button type="button" role="tab" data-tab="V" id="tab-V" aria-controls="pane-V">Rendu</button>
             </div>
             <div class="pane" id="pane-T" role="tabpanel" aria-labelledby="tab-T">
               <div class="xf" id="xf"></div>
@@ -167,6 +171,27 @@
               <label class="check"><input type="checkbox" id="keysChk" checked>Clés d'assemblage (export séparé)</label>
               <button type="button" class="wide" data-export="merged">Exporter la figurine fusionnée</button>
               <button type="button" class="wide" data-export="parts">Exporter les pièces séparées</button>
+            </div>
+            <div class="pane" id="pane-V" role="tabpanel" aria-labelledby="tab-V" hidden>
+              <div class="rset" id="renderSet">
+                <label>Transformée<select data-r="tonemapper"><option value="0">ACES</option><option value="1">AgX</option><option value="2">AgX Punchy</option><option value="3">Standard</option></select></label>
+                <label>Exposition <output data-o="ev"></output><input type="range" data-r="ev" min="-3" max="3" step="0.1"></label>
+                <label>Vignettage <output data-o="vignette"></output><input type="range" data-r="vignette" min="0" max="0.6" step="0.01"></label>
+                <h3>Environnement</h3>
+                <label>Image<select data-r="env"><option value="studio">Studio</option><option value="sunset">Coucher de soleil</option><option value="warehouse">Entrepôt</option><option value="sky">Ciel procédural</option><option value="hdri">HDRI…</option></select></label>
+                <button type="button" class="wide" id="hdriBtn">Charger un HDRI (.hdr, .exr)</button>
+                <input type="file" id="hdriInput" accept=".hdr,.exr" hidden>
+                <label>Intensité <output data-o="envIntensity"></output><input type="range" data-r="envIntensity" min="0" max="3" step="0.05"></label>
+                <label>Rotation <output data-o="envRotation"></output><input type="range" data-r="envRotation" min="0" max="6.2832" step="0.0175"></label>
+                <label class="check"><input type="checkbox" data-r="envVisible">Visible en fond</label>
+                <label class="check"><input type="checkbox" data-r="studioLights">Lumières studio (key, fill, rim)</label>
+                <h3>Path tracing</h3>
+                <label>Rebonds <output data-o="bounces"></output><input type="range" data-r="bounces" min="1" max="12" step="1"></label>
+                <label>Filtre glossy <output data-o="filterGlossy"></output><input type="range" data-r="filterGlossy" min="0" max="1" step="0.05"></label>
+                <label class="check"><input type="checkbox" data-r="denoise">Débruitage</label>
+                <label class="check"><input type="checkbox" data-r="dof">Profondeur de champ (macro)</label>
+                <label>Ouverture<select data-r="fStop"><option value="2.8">f/2.8</option><option value="5.6">f/5.6</option><option value="8">f/8</option><option value="11">f/11</option><option value="16">f/16</option><option value="22">f/22</option></select></label>
+              </div>
             </div>
           </section>
 

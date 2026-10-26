@@ -135,7 +135,7 @@ select option { background: var(--raised); }
 .cur { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--muted); }
 .cur b { color: var(--text); }
 .cur code { color: var(--accent); font-size: 11.5px; }
-.tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; }
+.tabs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; }
 .tabs button { min-height: 36px; border-radius: 6px; border: 1px solid transparent; background: none; color: #b5b7bd; }
 .tabs button[aria-selected="true"] { border-color: var(--accent); background: var(--accent-bg); color: var(--text); }
 .pane { display: flex; flex-direction: column; gap: 12px; }
@@ -149,6 +149,15 @@ select option { background: var(--raised); }
 .mirror button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
 button.wide { width: 100%; }
 button.wide:hover, .mirror button:hover { background: var(--chip); }
+.rset { display: flex; flex-direction: column; gap: 10px; font-size: 12.5px; }
+.rset > label:not(.check) { display: grid; grid-template-columns: 1fr auto; gap: 4px 8px; align-items: center; color: var(--text2); }
+.rset > label > input[type=range], .rset > label > select { grid-column: 1 / -1; width: 100%; }
+.rset input[type=range] { accent-color: var(--accent); }
+.rset select { height: 32px; padding: 0 8px; border-radius: 6px; border: 1px solid var(--line2); background: var(--raised); color: var(--text); }
+.rset output { color: var(--text); font-variant-numeric: tabular-nums; }
+.rset h3 { margin: 6px 0 0; font: 700 15px/1.2 'Barlow Condensed', sans-serif; letter-spacing: .04em; text-transform: uppercase; color: var(--text2); }
+.tile.dragging { opacity: .45; }
+#libGrid .tile { user-select: none; -webkit-user-select: none; }
 .kv { display: grid; grid-template-columns: auto 1fr; gap: 8px 12px; margin: 0; font-size: 12.5px; }
 .kv dt { color: var(--muted); }
 .kv dd { margin: 0; text-align: right; }
