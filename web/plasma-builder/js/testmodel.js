@@ -20,7 +20,13 @@ export class TestModel {
     const loader = new GLTFLoader();
     let gltf = null;
     if (desktop) gltf = await loader.loadAsync('assets/test/boy_32mm_hd.glb').catch(() => null);
-    if (!gltf) gltf = await loader.loadAsync('assets/test/boy_32mm.glb');
+    if (!gltf) gltf = await loader.loadAsync('assets/test/boy_32mm.glb').catch(() => null);
+    // Hébergeurs qui ne servent pas le .glb (démo artifact) : copie en base64.
+    if (!gltf) {
+      const b64 = await (await fetch('assets/test/boy_32mm.glb.b64.txt')).text();
+      const bin = Uint8Array.from(atob(b64.trim()), c => c.charCodeAt(0));
+      gltf = await loader.parseAsync(bin.buffer, '');
+    }
     const root = this.root = gltf.scene;
     const s = this.eyeHeight / SRC_EYE;
     root.scale.setScalar(s);
