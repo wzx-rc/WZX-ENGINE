@@ -1,6 +1,6 @@
 // Rig Lab : pose de l'ork riggé importé de Maya. Même viewport que le builder (viewport.js / render.js).
 // - clic sur la figurine : l'os dont l'influence domine sous la souris (lu dans les poids du low) ;
-// - outil Rotation (R) : gizmo de rotation locale sur l'os ; outil IK (G) : on déplace la main ou le pied,
+// - outil Rotation (R ou E) : gizmo de rotation locale sur l'os ; outil IK (W) : on déplace la main ou le pied,
 //   bras / jambe suivent (IK deux os, le coude garde son côté, la main garde son orientation) ;
 // - bassin : se déplace en IK, les pieds restent ancrés au sol si l'option est cochée ;
 // - symétrie, fermeture des mains, poses de départ et poses enregistrées, export STL posé.
@@ -492,16 +492,17 @@ async function exportSTL() {
 
 // ---------------------------------------------------------------- clavier
 addEventListener('keydown', e => {
-  if (e.target.closest('input, select, textarea')) return;
+  if (e.target.closest?.('input, select, textarea')) return;
   const k = e.key.toLowerCase();
   if ((e.ctrlKey || e.metaKey) && k === 'z') { e.preventDefault(); $(e.shiftKey ? 'redoBtn' : 'undoBtn').click(); return; }
   if ((e.ctrlKey || e.metaKey) && k === 'y') { e.preventDefault(); $('redoBtn').click(); return; }
   if (e.ctrlKey || e.metaKey || e.altKey) return;
-  if (k === 'r') setTool('fk');
-  else if (k === 'g') setTool('ik');
+  // comme Maya : W déplacer (IK), E ou R tourner
+  if (k === 'w') setTool('ik');
+  else if (k === 'e' || k === 'r') setTool('fk');
   else if (k === 'f') $('frameBtn').click();
   else if (k === 'b') toggleBones();
-  else if (k === 'w') toggleWeights();
+  else if (k === 'h') toggleWeights();
   else if (k === 'm' && state.sel) $('mirrorBoneBtn').click();
   else if (k === 'escape') select(null);
   else if (k === 'arrowup' && state.sel?.parent?.isBone) select(state.sel.parent);

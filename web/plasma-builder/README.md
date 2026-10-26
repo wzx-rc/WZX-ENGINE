@@ -38,12 +38,12 @@ Le rig Maya de l'Ork Boy (`BOY_32mm.mb`) dans le navigateur, pour poser la figur
 60 joints QuickRig, skinCluster du basemesh low, high-poly avec poids transférés. Même viewport et même rendu que le builder.
 
 - **Sélection** : clic sur la figurine (l'os dont l'influence domine sous le pointeur, sa zone s'allume), sur une sphère d'os ou dans la liste. Flèches haut / bas : os parent / enfant, Échap : rien.
-- **Rotation (R)** : gizmo de rotation locale sur l'os, curseurs X / Y / Z en degrés relatifs au repos.
-- **IK (G)** : on déplace une main ou un pied, bras / jambe suivent (IK deux os : le coude ou le genou garde son côté, la main garde son orientation). En IK, le bassin se déplace ; **Pieds ancrés** garde les pieds au sol pendant qu'on bouge ou tourne le bassin.
+- **Rotation (R ou E)** : gizmo de rotation locale sur l'os, curseurs X / Y / Z en degrés relatifs au repos.
+- **Déplacer en IK (W)** : on déplace une main ou un pied, bras / jambe suivent (IK deux os : le coude ou le genou garde son côté, la main garde son orientation). En IK, le bassin se déplace ; **Pieds ancrés** garde les pieds au sol pendant qu'on bouge ou tourne le bassin.
 - **Symétrie auto** recopie chaque geste sur l'autre côté ; **Os → opposé** (M) une seule fois ; **G ⇄ D**, **G → D**, **D → G** pour toute la pose.
 - **Mains** : un curseur par main ferme les doigts (de la main ouverte au poing).
 - **Poses de départ** (Repos, Garde, Charge, Waaagh !, Tir) et **Mes poses** enregistrées dans le navigateur, export / import `.json`.
-- **Affichage** : High-poly ou Low (le maillage skinné de Maya), os en rayons X (B), poids de l'os sélectionné en carte de chaleur (W).
+- **Affichage** : High-poly ou Low (le maillage skinné de Maya), os en rayons X (B), poids de l'os sélectionné en carte de chaleur (H).
 - **Exporter STL** : la figurine posée (high-poly réduit + tête, dents, yeux) en millimètres, échelle 32 / 54 / 75 mm à la hauteur des yeux.
 
 Le modèle est `assets/ork_boy.glb`, produit par `tools/mb2glb/mb2glb.py` à partir du `.mb` (lecteur du format binaire Maya en Python, sans Maya) :

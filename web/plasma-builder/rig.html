@@ -20,7 +20,7 @@
 }
 </script>
 </head>
-<body>
+<body class="riglab">
 <div class="app">
 
   <header class="topbar">
@@ -64,7 +64,7 @@
         <section class="panel viewport-panel" aria-label="Viewport">
           <div class="tools" role="toolbar" aria-label="Outils" id="tools">
             <button type="button" data-tool="fk" aria-label="Rotation des os (R)" title="Rotation des os (R)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-3-6.2M20 4v5h-5"/></svg></button>
-            <button type="button" data-tool="ik" aria-label="IK mains et pieds (G)" title="IK mains et pieds (G)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20l6-8 4 3 6-9"/><circle cx="20" cy="6" r="2"/></svg></button>
+            <button type="button" data-tool="ik" aria-label="Déplacer en IK : mains, pieds, bassin (W)" title="Déplacer en IK : mains, pieds, bassin (W)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20l6-8 4 3 6-9"/><circle cx="20" cy="6" r="2"/></svg></button>
           </div>
           <div class="vp-main">
             <div class="vp-bar">
@@ -76,7 +76,7 @@
                 <div class="btngroup">
                   <button type="button" id="frameBtn" class="icon" aria-label="Recadrer (F)" title="Recadrer (F)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9zM12 12l8-4.5M12 12v9M12 12L4 7.5"/></svg></button>
                   <button type="button" id="bonesBtn" class="icon" aria-pressed="true" aria-label="Afficher les os (B)" title="Afficher les os (B)"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="4" r="2"/><path d="M12 6v8M6 9h12M12 14l-4 7M12 14l4 7"/></svg></button>
-                  <button type="button" id="weightsBtn" class="icon" aria-pressed="false" aria-label="Poids de l'os (W)" title="Poids de l'os (W)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3c3 4 6 7 6 11a6 6 0 0 1-12 0c0-4 3-7 6-11z"/></svg></button>
+                  <button type="button" id="weightsBtn" class="icon" aria-pressed="false" aria-label="Poids de l'os (H)" title="Poids de l'os (H)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3c3 4 6 7 6 11a6 6 0 0 1-12 0c0-4 3-7 6-11z"/></svg></button>
                 </div>
                 <label class="select"><span class="sr">Qualité de rendu</span>
                   <select id="qualitySel"><option value="rt">Temps réel</option><option value="hq">Haute qualité</option><option value="pt">Path tracing</option></select>

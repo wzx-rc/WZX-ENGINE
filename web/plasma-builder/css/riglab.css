@@ -31,3 +31,14 @@ h3.sub { margin: 4px 0 0; font: 700 15px/1.2 'Barlow Condensed', sans-serif; let
 button.icon.tiny { width: 34px; height: 34px; }
 .cur code { max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tools button:disabled { opacity: .4; }
+
+/* Sur grand écran, la page tient dans la fenêtre : le viewport prend toute la hauteur restante. */
+@media (min-width: 1100px) and (min-height: 700px) {
+  body.riglab .app { height: 100vh; min-height: 0; }
+  body.riglab .body { min-height: 0; flex-wrap: nowrap; }
+  body.riglab .work, body.riglab .row-top { flex: 1 1 auto; min-height: 0; }
+  body.riglab .row-top { flex-wrap: nowrap; }
+  body.riglab .vp-area { min-height: 0; }
+  body.riglab .skel, body.riglab .rightcol { min-height: 0; overflow: auto; }
+  body.riglab .bonetree { max-height: none; }
+}
