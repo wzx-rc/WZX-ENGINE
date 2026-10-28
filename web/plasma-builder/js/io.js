@@ -130,3 +130,6 @@ export async function exportParts(groups, mmPerUnit, name, keys = false) {
 export function exportJSON(data, name) {
   return save([{ name: name + '.plasmaork.json', data: new TextEncoder().encode(JSON.stringify(data, null, 2)) }], name);
 }
+
+// Un fichier tel quel (bibliothèque de briques, etc.).
+export function saveFile(name, data) { return save([{ name, data }], name.replace(/\.[^.]+$/, '')); }

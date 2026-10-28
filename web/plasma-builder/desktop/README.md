@@ -22,15 +22,10 @@ Sortie : `dist\Plasma Orks Builder-win32-x64\Plasma Orks Builder.exe` (dossier �
 
 ## Modèle test HD
 
-La version web embarque l'Ork Boy allégé (~400 k triangles, `assets/test/boy_32mm.glb`). Pour l'app, une version
-HD (~1,7 M triangles) est prise si `desktop/assets/boy_32mm_hd.glb` existe au moment du build :
+Le Grot Bomber du rendu (`assets/test/grot.glb`) est pris en version HD si `desktop/assets/grot_hd.glb` existe au moment
+du build, avec `grot_basecolor_8k.jpg`.
 
-```
-python tools/mb_mesh/mb_mesh.py BOY_32mm.mb out
-python tools/mb_mesh/prep.py && node tools/mb_mesh/simplify.mjs 0.3 web/plasma-builder/desktop/assets/boy_32mm_hd.glb
-```
-
-La texture `basecolor_4k.jpg` (UDIM 1001, corps) et `basecolor_1002_4k.jpg` (tête) sont chargées depuis
-`web/plasma-builder/assets/test/` si présentes, sinon via le bouton « Charger une texture basecolor » de l'onglet Rendu.
+La bibliothèque de briques de l'app est séparée de celle du navigateur : passer par l'export / import `.zip` du menu
+Bibliothèque de l'importeur.
 
 Raccourcis : F11 plein écran, F12 outils de développement.

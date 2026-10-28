@@ -1,7 +1,6 @@
 // Modèles de test du rendu (sculpts extraits par tools/mb_mesh) : version web allégée (~400 k triangles), l'app
 // Windows charge la version HD et la texture 8k si elles sont livrées avec. Même échelle pour tous : celle qui met
 // les yeux de l'Ork Boy à la hauteur des yeux de la figurine, pour garder les tailles relatives (un Grot est petit).
-// - boy : BOY_32mm.mb, corps en UDIM 1001, tête / dents / yeux en UDIM 1002.
 // - grot : GROT_UV.obj (Grot Bomber), une seule UDIM, diffuse MARI.
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
@@ -9,14 +8,12 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 const SRC_EYE = 28.15;   // hauteur des yeux de l'Ork Boy, centimètres dans la scène Maya
 
 export const TEST_MODELS = {
-  boy: { label: 'Ork Boy', floor: -0.21, web: 'boy_32mm.glb', hd: 'boy_32mm_hd.glb',
-    maps: [[1001, ['basecolor_4k.jpg']], [1002, ['basecolor_1002_4k.jpg']]] },
   grot: { label: 'Grot Bomber', floor: -0.088, web: 'grot.glb', hd: 'grot_hd.glb',
     maps: [[1001, ['grot_basecolor_8k.jpg', 'grot_basecolor_4k.jpg']]], desktopOnly: ['grot_basecolor_8k.jpg'] },
 };
 
 export class TestModel {
-  constructor(vp, eyeHeight, id = 'boy') {
+  constructor(vp, eyeHeight, id = 'grot') {
     this.vp = vp;
     this.id = id;
     this.def = TEST_MODELS[id];
