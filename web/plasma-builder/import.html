@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Plasma Orks Importeur</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/app.css">
+<link rel="stylesheet" href="css/importer.css">
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/",
+    "three/examples/jsm/": "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/",
+    "three-mesh-bvh": "https://cdn.jsdelivr.net/npm/three-mesh-bvh@0.9.1/build/index.module.js",
+    "three-gpu-pathtracer": "https://cdn.jsdelivr.net/npm/three-gpu-pathtracer@0.0.24/build/index.module.js"
+  }
+}
+</script>
+</head>
+<body class="importer">
+<div class="app">
+
+  <header class="topbar">
+    <div class="brand">
+      <svg width="40" height="40" viewBox="0 0 40 40" aria-hidden="true"><path class="brand-skull" d="M20 4l4 6 7-4-1 8 7 1-5 6 4 6-8 0-2 8-6-5-6 5-2-8-8 0 4-6-5-6 7-1-1-8 7 4z"/><circle cx="15.5" cy="20" r="2.6" fill="#121316"/><circle cx="24.5" cy="20" r="2.6" fill="#121316"/><path d="M15 26h10l-2 3h-6z" fill="#121316"/></svg>
+      <span class="brand-name">PLASMA<br>ORKS</span>
+    </div>
+    <nav class="mainnav" aria-label="Navigation">
+      <a href="index.html"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20v-2a4 4 0 0 1 4-4h6a4 4 0 0 1 4 4v2M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z"/></svg>Builder</a>
+      <a href="rig.html"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="4" r="2"/><path d="M12 6v8M6 9h12M12 14l-4 7M12 14l4 7"/></svg>Rig Lab</a>
+      <a href="import.html" class="active" aria-current="page"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M4 20h16"/></svg>Importer</a>
+    </nav>
+    <div class="topbar-right">
+      <div class="export">
+        <button type="button" id="libMenuBtn" class="primary" aria-expanded="false" aria-controls="libMenu" style="border-radius:8px"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"/></svg>Bibliothèque</button>
+        <div id="libMenu" class="menu" hidden>
+          <button type="button" data-lib="export">Exporter toute la bibliothèque (.zip)</button>
+          <button type="button" data-lib="import">Importer une bibliothèque (.zip)…</button>
+        </div>
+        <input type="file" id="libInput" accept=".zip" hidden>
+      </div>
+    </div>
+  </header>
+
+  <div class="body">
+    <section class="panel library ilib" aria-label="Briques">
+      <div class="panel-head"><h2>Briques</h2><span class="count" id="libCount">0</span><span class="grow"></span>
+        <button type="button" id="newBtn" class="icon small" aria-label="Nouvelle brique" title="Nouvelle brique"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
+      </div>
+      <div class="ifilter" id="catFilter" role="group" aria-label="Catégorie"></div>
+      <div class="libgrid" id="libGrid"></div>
+    </section>
+
+    <section class="panel viewport-panel" aria-label="Aperçu">
+      <div class="tools" role="toolbar" aria-label="Outils" id="tools">
+        <button type="button" data-tool="orbit" aria-label="Naviguer" title="Naviguer (Q)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3l14 8-6 2-2 6z"/></svg></button>
+        <button type="button" data-tool="socket" aria-label="Ajouter un socket au clic" title="Ajouter un socket au clic sur la brique"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="8"/><path d="M12 1v3M12 20v3M1 12h3M20 12h3"/></svg></button>
+        <button type="button" data-tool="plug" aria-label="Placer le plug au clic" title="Placer le plug au clic sur la brique"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 2v6M15 2v6M6 8h12v4a6 6 0 0 1-12 0zM12 18v4"/></svg></button>
+        <button type="button" data-tool="translate" aria-label="Déplacer le socket (W)" title="Déplacer le socket sélectionné (W)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2v20M2 12h20M12 2l-3 3M12 2l3 3M12 22l-3-3M12 22l3-3M2 12l3-3M2 12l3 3M22 12l-3-3M22 12l-3 3"/></svg></button>
+        <button type="button" data-tool="rotate" aria-label="Tourner le socket (E)" title="Tourner le socket sélectionné (E)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-3-6.2M20 4v5h-5"/></svg></button>
+      </div>
+      <div class="vp-main">
+        <div class="vp-bar">
+          <div class="steps" role="group" aria-label="Affichage">
+            <button type="button" id="orkBtn" aria-pressed="true">Ork</button>
+            <button type="button" data-show="low">Low</button>
+            <button type="button" data-show="high">High</button>
+          </div>
+          <div class="vp-right">
+            <div class="btngroup" role="group" aria-label="Affichage" id="shading">
+              <button type="button" class="icon on" data-shade="resin" aria-label="Résine grise" title="Résine grise"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/></svg></button>
+              <button type="button" class="icon" data-shade="paint" aria-label="Texture" title="Texture"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 0 0 0 18c1.5 0 2-1 2-2s-1-1.5-1-2.5 1-1.5 2-1.5h2a4 4 0 0 0 4-4c0-4.4-4-8-9-8zM7.5 11h.01M10 7h.01M15 7h.01"/></svg></button>
+              <button type="button" class="icon" data-shade="wire" aria-label="Filaire" title="Filaire"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9zM12 12l8-4.5M12 12v9M12 12L4 7.5"/></svg></button>
+              <button type="button" class="icon" id="frameBtn" aria-label="Recadrer (F)" title="Recadrer sur la brique (F)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/></svg></button>
+            </div>
+          </div>
+        </div>
+        <div class="vp-area">
+          <div class="vp" id="vp">
+            <canvas id="vpCanvas"></canvas>
+            <div class="pins" id="pins"></div>
+            <div class="vp-info" id="vpInfo"></div>
+            <div class="dropzone" id="dropzone">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M4 20h16"/></svg>
+              <b>Dépose les fichiers d'une brique</b>
+              <span>Modèle .fbx, .obj, .glb ou .gltf (low et high dans le même fichier ou en deux fichiers), texture .jpg / .png, sockets .json du script Maya.</span>
+              <button type="button" id="pickBtn" class="ghostbtn">Choisir des fichiers…</button>
+            </div>
+            <div class="drop" id="drop" hidden>Lâche les fichiers pour les ajouter à la brique</div>
+            <div class="loading" id="loading"><span>Chargement de l'ork</span><i></i></div>
+          </div>
+        </div>
+        <input type="file" id="fileInput" multiple hidden accept=".fbx,.obj,.mtl,.glb,.gltf,.bin,.json,.jpg,.jpeg,.png,.webp,.tga">
+      </div>
+    </section>
+
+    <div class="rightcol iform">
+      <section class="panel" aria-label="Brique">
+        <div class="panel-head"><h2 id="formTitle">Nouvelle brique</h2><span class="grow"></span>
+          <button type="button" id="deleteBtn" class="icon small" aria-label="Supprimer la brique" title="Supprimer la brique" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg></button>
+        </div>
+        <div class="rset" id="form">
+          <label>Nom<input type="text" id="fName" spellcheck="false" placeholder="kikoup_02"></label>
+          <label>Catégorie<select id="fCat"></select></label>
+          <label>Tags<input type="text" id="fTags" spellcheck="false" placeholder="faction 1, lourd"></label>
+
+          <h3>Fichiers</h3>
+          <div id="fFiles" class="ilist"><span class="muted">Aucun fichier.</span></div>
+          <div class="irow">
+            <label>Unités de la scène<select id="fUnit"><option value="1">cm (Maya)</option><option value="100">m</option><option value="0.1">mm</option><option value="2.54">pouces</option></select></label>
+            <label class="check"><input type="checkbox" id="fZup">Z vers le haut</label>
+          </div>
+
+          <h3>Placement</h3>
+          <label>Socket de l'ork par défaut<select id="fHome"></select></label>
+          <label>Type de plug<select id="fPlugType"></select></label>
+          <div class="iradio" role="radiogroup" aria-label="Origine du plug" id="fPlacement">
+            <label class="check"><input type="radio" name="placement" value="inplace">En place : modélisée sur l'ork dans Maya</label>
+            <label class="check"><input type="radio" name="placement" value="plug">Au locator PLUG_ (ou au point cliqué)</label>
+            <label class="check"><input type="radio" name="placement" value="origin">À l'origine de la scène</label>
+          </div>
+
+          <h3>Sockets de la brique</h3>
+          <div id="fSockets" class="ilist"></div>
+          <p class="muted">Locators <code>SOCKET_type_nom</code> et <code>PLUG_type</code> lus dans le fichier, ou ajoutés au clic (outil cible). Types : head, grip, back, shoulder, chest, belt, base.</p>
+
+          <h3>Texture</h3>
+          <div id="fTex" class="ilist"><span class="muted">Aucune texture.</span></div>
+
+          <h3>Contrôles</h3>
+          <ul id="fChecks" class="checks"><li class="muted">Dépose une brique pour lancer les contrôles.</li></ul>
+
+          <button type="button" class="wide primary-wide" id="saveBtn" disabled>Enregistrer dans la bibliothèque</button>
+          <a class="small-link" href="index.html" id="openBuilder">Ouvrir le builder</a>
+        </div>
+      </section>
+    </div>
+  </div>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+</div>
+<script type="module" src="js/importer.js"></script>
+</body>
+</html>

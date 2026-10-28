@@ -16,14 +16,14 @@ vendor('three', 'examples/jsm');
 vendor('three-mesh-bvh', 'build');
 vendor('three-gpu-pathtracer', 'build');
 
-for (const page of ['index.html', 'rig.html']) {
+for (const page of ['index.html', 'rig.html', 'import.html']) {
   let html = fs.readFileSync(path.join(web, page), 'utf8');
   html = html.replace(/https:\/\/cdn\.jsdelivr\.net\/npm\/(three|three-mesh-bvh|three-gpu-pathtracer)@[^/]+\//g, './vendor/$1/');
   fs.writeFileSync(path.join(app, page), html);
 }
 
 // Versions HD réservées à l'app (non versionnées) : sculpts complets et texture 8k du Grot.
-const HD = [['boy_32mm_hd.glb', 'boy_32mm_hd.glb'], ['grot_hd.glb', 'grot_hd.glb'], ['grot_basecolor_8k.jpg', 'grot_basecolor_8k.jpg']];
+const HD = [['grot_hd.glb', 'grot_hd.glb'], ['grot_basecolor_8k.jpg', 'grot_basecolor_8k.jpg']];
 let hdCount = 0;
 for (const [src, dst] of HD) {
   const f = path.join(here, 'assets', src);

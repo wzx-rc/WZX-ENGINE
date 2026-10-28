@@ -14,23 +14,51 @@ python -m http.server 8080      ->  http://localhost:8080
 
 ## Parcours
 
-Cinq étapes en haut du viewport : **Bibliothèque › Assemblage › Rig › Pose › Rendu**.
+La base est l'ork riggé de Maya (`assets/ork_boy.glb`, le même que le Rig Lab) ; on y accroche les briques de la
+bibliothèque, importées une par une avec l'**Importeur** (`import.html`). Quatre étapes en haut du viewport :
+**Bibliothèque › Assemblage › Pose › Rendu**.
 
-- **Bibliothèque** (rail de gauche) : une catégorie par emplacement (tête, corps, bras G/D, arme, jambes, épaulières, sac à dos, socle) et des presets de figurines complètes. Le bouton `+` ou un glisser-déposer sur le viewport importe des STL dans la catégorie ouverte.
-- **Assemblage** : clic sur une pièce, un socket ou une vignette du bandeau du bas pour la sélectionner. Outils Q / G / R / S (sélection, déplacer, tourner, échelle), panneau **Personnaliser** › Transformation, miroir X/Y/Z.
-- **Rig** : squelette de 20 os. Chaque pièce est **rigide** et suit un seul os (pas de skinning), ce qui garde des pièces imprimables séparément. Les curseurs de l'onglet Rig tournent les os de l'emplacement sélectionné.
-- **Pose** : six poses (Garde, Tir, Visée, Charge, Hurlement, Waaagh !) avec transition, vignettes rendues de la figurine en cours.
+- **Bibliothèque** (rail de gauche) : Têtes, Armes, Dos, Épaulières, Torse, Ceinture, Socles. Le `+` ouvre l'importeur.
+  Une brique posée sur la tête masque la tête d'origine de l'ork.
+- **Sockets de l'ork** : tête, mains droite et gauche, dos, torse, épaules, ceinture droite et gauche, socle. Chacun suit
+  un joint du rig (`js/sockets.js`), placé au chargement à partir des joints et de la surface du low. Une brique peut
+  offrir ses propres sockets (un dos qui porte un étendard) : ils apparaissent dès qu'elle est posée.
+- **Assemblage** : clic sur une brique (viewport, pastille ou bandeau du bas) pour la sélectionner. Outils Q / W / E / S
+  (sélection, déplacer, tourner, échelle) ou panneau **Personnaliser** › Transfo : le réglage est un décalage par rapport
+  au socket (en cm), gardé quand on change de pose. Miroir X / Y / Z.
+- **Pose** : les poses de départ du Rig Lab et les poses enregistrées dans le Rig Lab (« Mes poses »), fermeture des
+  mains dans le panneau **Ork**. Les briques suivent leur joint.
+- **Low / High** (panneau Ork) : basemesh low et version low des briques, ou high-poly de l'ork et version high des
+  briques. L'export STL prend toujours le high.
 - **Rendu** : le rendu des dernières recherches du renderer Viewport3D (WZX-ENGINE `src/vp3d`), onglet **Rendu** du panneau de droite :
   - transformées ACES (fit de Hill), AgX, AgX Punchy, Standard, exposition en EV et vignettage, exactement comme `ToneCurves.hlsli` / `Tonemap.hlsl`, contour de sélection jaune ;
   - temps réel comme `Raster.hlsl` : MSAA 4x, ombre en 12 prises de Poisson, lobe spéculaire élargi par la taille des lumières de surface, terme de cavité sur l'ambiant ;
   - éclairage du Material Studio : environnements Studio / Coucher de soleil / Entrepôt avec lumières key / fill / rim, ciel procédural, ou HDRI `.hdr` / `.exr` (intensité, rotation, visible en fond) ; le soleil d'un ciel ou d'un HDRI devient une lumière ombrée en temps réel ;
-  - scène **Modèle test : Ork Boy 32 mm** (sculpt extrait de BOY_32mm.mb par `tools/mb_mesh`), pour juger le rendu sur un vrai modèle ; texture basecolor chargée depuis `assets/test/` ou via le bouton de l'onglet ;
+  - scène **Modèle test : Grot Bomber**, texturé, pour juger le rendu ; texture basecolor chargée depuis `assets/test/` ou via le bouton de l'onglet ;
   - qualité **Temps réel**, **Haute qualité** (résolution et ombres plus fines) ou, dans l'app Windows seulement (`desktop/`), **Path tracing** progressif : rebonds, filtre glossy, débruitage mélangé à l'image brute au fil des échantillons, profondeur de champ macro à l'échelle de la figurine ;
   - affichages Résine / Peint / Filaire, rotation de l'éclairage, vues caméra Face / Trois-quarts / Dos / Profil.
 
-**Manipulation** (reprise du BrickIt Builder de VIEWPORT3D) : un clic sur une pièce de la bibliothèque la prend en main, elle vole jusqu'à son socket (fantôme, socket allumé, anneau et ligne de chute) puis s'y pose avec un petit rebond. Glisser une vignette dans le viewport affiche les sockets de réception compatibles (anneaux) et vise le plus proche du pointeur : une arme va en main droite ou gauche, à la ceinture (gauche, droite) ou dans le dos, un bras à gauche ou à droite ; lâcher pose, Échap annule.
+**Manipulation** (reprise du BrickIt Builder de VIEWPORT3D) : un clic sur une brique de la bibliothèque la prend en main, elle vole jusqu'à son socket (le socket sélectionné s'il est compatible, sinon son socket d'origine) puis s'y pose avec un petit rebond. Glisser une vignette dans le viewport affiche les sockets compatibles (anneaux) et vise le plus proche du pointeur : une arme va en main droite ou gauche ; lâcher pose, Échap annule.
 
-**Kits & options** : accessoires (rokkits, bombe, mine), plaques d'armure, sacoches, ornements et un curseur d'usure.
+## Importeur (`import.html`)
+
+On dépose les fichiers d'une brique dans l'aperçu : modèle `.fbx`, `.obj`, `.glb` / `.gltf` (low et high dans le même
+fichier ou en deux fichiers), texture `.jpg` / `.png` (un nom avec « mask » est rangé comme masque de couleur de
+faction, réservé pour plus tard), sockets `.json` du script Maya `tools/maya/plasma_export_brick.py`.
+
+- **Low / high** : un objet ou un fichier dont le nom contient high, hd, decim… va en high, le reste en low (modifiable).
+  Deux fichiers sans indice : le plus lourd est le high. Pas de high : le low sert aux deux.
+- **Locators** `SOCKET_<type>_<nom>` (sockets offerts par la brique) et `PLUG_<type>` (le point qui vient sur le
+  socket). Types : head, grip, back, shoulder, chest, belt, base, any. Lus dans le FBX ou le glTF, ou dans le `.json`
+  du script Maya pour l'OBJ (qui ne sait pas porter de locators). On peut aussi en ajouter au clic sur la brique et les
+  régler au gizmo (W / E).
+- **Placement** : *en place* (la brique a été modélisée sur l'ork dans la scène de `BOY_32mm.mb` : elle retombe là où
+  elle a été modélisée, deviné automatiquement avec la catégorie), *au plug*, ou *à l'origine* de la scène.
+- **Unités** : cm par défaut (Maya), m pour le glTF, lues dans le FBX ; option Z vers le haut.
+- **Contrôles** : triangles low / high, UV, texture, taille à l'échelle 32 mm, distance au socket, écart entre le high
+  et le low (même scène, même position), maillage fermé pour l'impression.
+- **Bibliothèque** : enregistrée dans le navigateur (IndexedDB), avec vignette. Menu **Bibliothèque** : export / import
+  d'un `.zip` pour la sauvegarder ou la passer du navigateur à l'app Windows (chacun a son propre stockage).
 
 ## Rig Lab (`rig.html`)
 
@@ -58,24 +86,23 @@ Le high-poly n'est pas riggé dans Maya : chaque sommet reçoit les poids du poi
 ## Export
 
 - **Exporter STL** : la figurine fusionnée dans la pose courante, en millimètres, Z vers le haut, posée sur le plateau.
-- Menu ▾ : pièces séparées (un STL par emplacement dans un ZIP, plots d'assemblage optionnels) ou projet `.plasmaork.json`.
+- Menu ▾ : pièces séparées (l'ork et chaque brique, un STL chacun dans un ZIP) ou projet `.plasmaork.json`.
 - Échelle 32 / 54 / 75 mm : c'est la hauteur des yeux de l'Ork (convention des échelles de figurines), la hauteur totale est affichée dans l'onglet Impression.
 
-Le projet est sauvegardé dans le navigateur (localStorage), avec annuler / rétablir (Ctrl+Z / Ctrl+Y). Les STL importés ne sont pas conservés au rechargement.
+Le projet est sauvegardé dans le navigateur (localStorage), avec annuler / rétablir (Ctrl+Z / Ctrl+Y).
 
 ## Code
 
-- `js/main.js` : état, historique, interface et événements
+- `js/main.js` : le builder (état, historique, interface, briques accrochées aux sockets, export)
+- `js/sockets.js` : sockets de l'ork, noms des locators
+- `js/bricks.js` : format des briques, stockage IndexedDB, construction des objets 3D, export / import de la bibliothèque
+- `import.html`, `js/importer.js`, `css/importer.css` : l'importeur
 - `js/viewport.js` : viewport (passes HDR, masque de sélection, aides, caméra, gizmo) et moteur de vignettes hors écran
 - `js/render.js` : portage du renderer Viewport3D (shading raster, passe Tonemap, environnements, studio, HDRI)
 - `js/pathtrace.js` : mode path tracing (chargé à la demande)
 - `js/hold.js` : pièce en main, visor, sockets de réception et rebonds (BrickIt)
-- `js/testmodel.js` : modèle test du rendu
+- `js/testmodel.js` : modèle test du rendu (Grot Bomber)
+- `js/io.js` : export STL / ZIP / JSON
+- `rig.html`, `js/riglab/model.js` (ork riggé : pose, IK, miroir, doigts, picking, géométrie posée), `js/riglab/poses.js` (poses de départ partagées avec le builder), `js/riglab/app.js` (interface du Rig Lab), `css/riglab.css`
 - `desktop/` : app Windows (Electron, hors ligne, path tracing), voir son README
-- `js/figure.js` : la figurine assemblée (pièces accrochées aux os, kits, options, groupes d'export)
-- `js/rig.js` : os, poses, os réglables par emplacement
-- `js/parts.js` : catalogue et pièces de départ **procédurales** (à remplacer par les vrais STL sculptés)
-- `js/io.js` : lecture STL, export STL / ZIP / JSON
-- `rig.html`, `js/riglab/model.js` (ork riggé : pose, IK, miroir, doigts, picking, géométrie posée), `js/riglab/app.js` (interface du Rig Lab), `css/riglab.css`
-
-Pour ajouter une pièce sculptée au catalogue : l'exporter centrée sur son articulation (l'origine = le pivot de l'os) et l'ajouter comme variante dans `parts.js`, ou l'importer depuis l'interface.
+- `tools/maya/plasma_export_brick.py` (racine du dépôt) : export d'une brique depuis Maya (OBJ low / high + sockets)

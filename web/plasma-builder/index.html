@@ -30,6 +30,7 @@
     <nav class="mainnav" aria-label="Navigation">
       <a href="#" class="active" aria-current="page"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20v-2a4 4 0 0 1 4-4h6a4 4 0 0 1 4 4v2M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z"/></svg>Builder</a>
       <a href="rig.html"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="4" r="2"/><path d="M12 6v8M6 9h12M12 14l-4 7M12 14l4 7"/></svg>Rig Lab</a>
+      <a href="import.html"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M4 20h16"/></svg>Importer</a>
       <a href="#" aria-disabled="true" title="Bientôt"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"/></svg>Galerie</a>
       <a href="#" aria-disabled="true" title="Bientôt"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM3 20v-1a5 5 0 0 1 10 0v1M16 11a3 3 0 1 0 0-6M21 20v-1a5 5 0 0 0-4-4.9"/></svg>Communauté</a>
       <a href="#" aria-disabled="true" title="Bientôt"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14v16l-7-4-7 4z"/></svg>Mes créations</a>
@@ -65,18 +66,13 @@
           <div class="panel-head">
             <h2 id="libTitle">Têtes</h2><span class="count" id="libCount">0</span>
             <span class="grow"></span>
-            <button type="button" id="importBtn" class="icon small" aria-label="Importer des STL" title="Importer des STL"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
-            <input type="file" id="importInput" accept=".stl" multiple hidden>
+            <a id="importBtn" class="icon small btnlink" href="import.html" aria-label="Importer des briques" title="Importer des briques"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></a>
           </div>
           <div class="search">
             <label><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg><span class="sr">Rechercher</span><input id="searchInput" type="search" placeholder="Rechercher…"></label>
           </div>
-          <div class="chips" id="chips" role="group" aria-label="Filtres"></div>
-          <div class="sidepick" id="sidePick" role="group" aria-label="Côté" hidden>
-            <button type="button" data-side="armL">Bras G</button><button type="button" data-side="armR">Bras D</button>
-          </div>
           <div class="libgrid" id="libGrid"></div>
-          <p class="hint">Glisse un fichier STL sur le viewport pour l'ajouter à la catégorie.</p>
+          <p class="hint">Clic : la brique va sur son socket. Glisser vers le viewport : choisir le socket.</p>
         </section>
 
         <section class="panel viewport-panel" aria-label="Viewport">
@@ -91,7 +87,6 @@
               <div class="steps" role="group" aria-label="Étapes" id="steps">
                 <button type="button" data-step="lib">Bibliothèque</button>
                 <button type="button" data-step="asm">Assemblage</button>
-                <button type="button" data-step="rig">Rig</button>
                 <button type="button" data-step="pose">Pose</button>
                 <button type="button" data-step="render">Rendu</button>
               </div>
@@ -111,7 +106,7 @@
                 <canvas id="vpCanvas"></canvas>
                 <div class="pins" id="pins"></div>
                 <div class="vp-info" id="vpInfo"></div>
-                <div class="drop" id="drop" hidden>Dépose ton STL : il rejoint la catégorie <b id="dropCat"></b></div>
+                <div class="loading" id="loading"><span>Chargement de l'ork</span><i></i></div>
               </div>
               <div class="views" role="group" aria-label="Vues caméra" id="views"></div>
             </div>
@@ -143,7 +138,6 @@
             <div class="cur"><b id="curSlot">Tête</b><span id="curName"></span><span class="grow"></span><code id="curSocket"></code></div>
             <div class="tabs" role="tablist" aria-label="Onglets">
               <button type="button" role="tab" data-tab="T" id="tab-T" aria-controls="pane-T" title="Transformation">Transfo</button>
-              <button type="button" role="tab" data-tab="R" id="tab-R" aria-controls="pane-R">Rig</button>
               <button type="button" role="tab" data-tab="P" id="tab-P" aria-controls="pane-P">Impression</button>
               <button type="button" role="tab" data-tab="V" id="tab-V" aria-controls="pane-V">Rendu</button>
             </div>
@@ -154,28 +148,18 @@
                 <span class="grow"></span><button type="button" id="resetXf">Réinitialiser</button>
               </div>
             </div>
-            <div class="pane" id="pane-R" role="tabpanel" aria-labelledby="tab-R" hidden>
-              <dl class="kv">
-                <dt>Os parent</dt><dd id="rigBone"></dd>
-                <dt>Liaison</dt><dd>Rigide (pièce STL)</dd>
-                <dt>Sockets</dt><dd id="rigSockets"></dd>
-              </dl>
-              <div id="boneSliders" class="xf"></div>
-              <button type="button" id="resetPose" class="wide">Revenir à la pose</button>
-            </div>
             <div class="pane" id="pane-P" role="tabpanel" aria-labelledby="tab-P" hidden>
               <dl class="kv">
                 <dt>Hauteur</dt><dd id="printHeight"></dd>
                 <dt>Triangles</dt><dd id="printTris"></dd>
                 <dt>Pièces</dt><dd id="printParts"></dd>
               </dl>
-              <label class="check"><input type="checkbox" id="keysChk" checked>Clés d'assemblage (export séparé)</label>
               <button type="button" class="wide" data-export="merged">Exporter la figurine fusionnée</button>
               <button type="button" class="wide" data-export="parts">Exporter les pièces séparées</button>
             </div>
             <div class="pane" id="pane-V" role="tabpanel" aria-labelledby="tab-V" hidden>
               <div class="rset" id="renderSet">
-                <label>Scène<select id="sceneSel"><option value="builder">Figurine du builder</option><option value="boy">Modèle test : Ork Boy 32 mm</option><option value="grot">Modèle test : Grot Bomber</option></select></label>
+                <label>Scène<select id="sceneSel"><option value="builder">Figurine du builder</option><option value="grot">Modèle test : Grot Bomber</option></select></label>
                 <button type="button" class="wide" id="texBtn" hidden>Charger une texture basecolor (.jpg, .png)</button>
                 <input type="file" id="texInput" accept="image/*" hidden>
                 <label>Transformée<select data-r="tonemapper"><option value="0">ACES</option><option value="1">AgX</option><option value="2">AgX Punchy</option><option value="3">Standard</option></select></label>
@@ -201,13 +185,17 @@
             </div>
           </section>
 
-          <section class="panel kits" aria-label="Kits et options">
-            <div class="panel-head"><h2>Kits &amp; options</h2></div>
-            <div class="kitbox">
-              <span>Rokkit Pack</span>
-              <div class="kitgrid" id="kitGrid"></div>
+          <section class="panel kits" aria-label="Ork">
+            <div class="panel-head"><h2>Ork</h2><span class="grow"></span><a class="muted small-link" href="rig.html">Poser dans le Rig Lab</a></div>
+            <div class="orkset">
+              <div class="seg" role="group" aria-label="Définition" id="lodSel">
+                <button type="button" data-lod="low" title="Basemesh low et version low des briques">Low</button>
+                <button type="button" data-lod="high" title="High-poly de l'ork et des briques">High</button>
+              </div>
+              <label>Main gauche <output id="curlLOut"></output><input type="range" id="curlL" min="0" max="1.6" step="0.05" aria-label="Fermeture de la main gauche"></label>
+              <label>Main droite <output id="curlROut"></output><input type="range" id="curlR" min="0" max="1.6" step="0.05" aria-label="Fermeture de la main droite"></label>
+              <p class="muted" id="orkInfo"></p>
             </div>
-            <div id="options"></div>
           </section>
         </div>
       </div>

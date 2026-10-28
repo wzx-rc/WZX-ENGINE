@@ -203,3 +203,27 @@ button.wide:hover, .mirror button:hover { background: var(--chip); }
   .tools { flex-direction: row; }
   .viewport-panel { flex-direction: column; }
 }
+
+/* Chargement de l'ork (builder, Rig Lab, importeur) */
+.loading { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; background: #111214; color: var(--text2); font-family: var(--head); font-size: 20px; letter-spacing: .04em; text-transform: uppercase; }
+.loading i { width: 220px; height: 4px; border-radius: 2px; background: linear-gradient(90deg, var(--accent) var(--p, 0%), var(--chip) var(--p, 0%)); }
+.loading.err { color: var(--accent); font-family: Inter, sans-serif; font-size: 14px; text-transform: none; letter-spacing: 0; padding: 20px; text-align: center; }
+
+/* Builder sur l'ork riggé */
+a.icon.small.btnlink { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: 6px; border: 1px solid var(--line2); background: var(--raised); color: var(--text2); }
+a.icon.small.btnlink:hover { color: var(--accent); }
+.small-link { color: var(--muted); font-size: 12px; }
+.small-link:hover { color: var(--accent); }
+.seg { display: flex; gap: 2px; padding: 3px; border-radius: 8px; background: var(--bar); border: 1px solid var(--line2); }
+.seg button { flex: 1; min-height: 32px; border: 0; border-radius: 6px; background: none; color: var(--text2); font-weight: 600; }
+.seg button[aria-pressed="true"] { background: var(--accent-bg); color: var(--accent); }
+.orkset { display: flex; flex-direction: column; gap: 10px; font-size: 12.5px; }
+.orkset label { display: grid; grid-template-columns: 1fr auto; gap: 4px 8px; color: var(--text2); }
+.orkset input[type=range] { grid-column: 1 / -1; width: 100%; accent-color: var(--accent); }
+.orkset output { color: var(--text); font-variant-numeric: tabular-nums; }
+.libempty { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 10px; align-items: flex-start; padding: 14px; border-radius: 6px; border: 1px dashed var(--line2); color: var(--text2); font-size: 12.5px; }
+.libempty a { color: var(--accent); font-weight: 600; }
+.vp .loading { z-index: 5; }
+.pin:not(.free) i { background: #8e9097; }
+.pin:not(.free)[aria-pressed="true"] i { background: var(--accent); }
+.pin.free { opacity: .78; }
