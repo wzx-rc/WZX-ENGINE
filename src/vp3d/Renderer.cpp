@@ -173,10 +173,12 @@ bool Renderer::init(HWND hwnd, uint32_t width, uint32_t height, const std::wstri
                                  D3D12_RESOURCE_STATE_GENERIC_READ);
     m_rcsConstants = createBuffer((sizeof(gpu::RCSConstants) + 255) & ~255ull, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_FLAG_NONE,
                                   D3D12_RESOURCE_STATE_GENERIC_READ);
+    m_srcConstants = createBuffer((sizeof(gpu::SplitRCConstants) + 255) & ~255ull, D3D12_HEAP_TYPE_UPLOAD,
+                                  D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ);
 
     D3D12_QUERY_HEAP_DESC qhd = {};
     qhd.Type = D3D12_QUERY_HEAP_TYPE_TIMESTAMP;
-    qhd.Count = 4;   // 0 start, 1 end, 2 after DDGI probe rays, 3 after DDGI blend
+    qhd.Count = 6;   // 0 start, 1 end, 2 after DDGI probe rays, 3 after DDGI blend, 4 and 5 around Split RC
     m_device->CreateQueryHeap(&qhd, IID_PPV_ARGS(&m_queryHeap));
     m_queryReadback = createBuffer(256, D3D12_HEAP_TYPE_READBACK, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST);
     UINT64 freq = 1;
@@ -316,7 +318,11 @@ bool Renderer::createPipelines(std::string* error) {
            make(L"RCSTrace.cso", m_psoRCSTrace) && make(L"RCSProbeSH.cso", m_psoRCSProbeSH) &&
            make(L"RCSGather.cso", m_psoRCSGather) && make(L"SunShadowTrace.cso", m_psoSunTrace) &&
            make(L"SunShadowFilter.cso", m_psoSunFilter) && make(L"ReflectTrace.cso", m_psoReflTrace) &&
-           make(L"ReflectFilter.cso", m_psoReflFilter);
+           make(L"ReflectFilter.cso", m_psoReflFilter) && make(L"SRCClear.cso", m_psoSRCClear) &&
+           make(L"SRCInsert.cso", m_psoSRCInsert) && make(L"SRCAlloc.cso", m_psoSRCAlloc) &&
+           make(L"SRCCount.cso", m_psoSRCCount) && make(L"SRCTrace.cso", m_psoSRCTrace) &&
+           make(L"SRCMerge.cso", m_psoSRCMerge) && make(L"SRCIrradiance.cso", m_psoSRCIrradiance) &&
+           make(L"SRCGather.cso", m_psoSRCGather);
 }
 
 void Renderer::createTargets(uint32_t w, uint32_t h) {
@@ -1353,8 +1359,8 @@ void Renderer::recordDDGI(const RenderSettings& rs, UINT gx, UINT gy, bool shade
     f.captureSeen = rs.ddgiRaster ? std::min(total, m_capSeen + m_capSlots) : total;
     gpu::DDGIConstants c;
     lit::ddgiConstants(grid, f, m_giRng, c);
-    // Screen-space cascades: only for the raster view (shade = false), which reads their screen GI texture.
-    const bool screen = rs.giMethod == 1 && rs.rcScreen && !rs.ddgiRaster && !shade;
+    // Screen-space or split cascades: only for the raster view (shade = false), which reads their screen GI texture.
+    const bool screen = rs.giMethod == 1 && (rs.rcScreen || rs.rcSplit) && !rs.ddgiRaster && !shade;
     if (screen) c.flags |= 8u;
     memcpy(m_giConstants.mapped, &c, sizeof(c));
 
@@ -1368,7 +1374,8 @@ void Renderer::recordDDGI(const RenderSettings& rs, UINT gx, UINT gy, bool shade
     m_rcStats.screenRays = 0;
     if (rs.giMethod == 1 && !rs.ddgiRaster) {
         recordRC(rs);   // the cascades replace the probe rays and the blend (same atlases)
-        if (screen) recordRCScreen(rs, gx, gy);
+        if (screen && rs.rcSplit) recordSplitRC(rs, gx, gy);
+        else if (screen) recordRCScreen(rs, gx, gy);
     } else if (rs.ddgiRaster) {
         // One group per probe: the captured ones integrate their faces (u12..u14) straight into their tiles, no blend pass.
         D3D12_GPU_DESCRIPTOR_HANDLE capTable = m_heap->GetGPUDescriptorHandleForHeapStart();
@@ -1555,6 +1562,116 @@ void Renderer::recordRCScreen(const RenderSettings& rs, UINT gx, UINT gy) {
     m_screenGIOn = true;
 }
 
+// Split Radiance Cascades (SRC*.hlsl), rebuilt every frame, no history: hash tables cleared, probes inserted around
+// the visible surfaces and their parents allocated cascade by cascade, the ray budget split into contiguous R2
+// segments, one ray per pixel traced and split into the cascades, the cascades merged from the top down, cascade 0
+// integrated per probe, then the per-pixel gather into the screen GI texture (raster t7).
+// Expects recordRC to have run this frame (its probes light the further bounces) and its bindings.
+void Renderer::recordSplitRC(const RenderSettings& rs, UINT gx, UINT gy) {
+    gpu::SplitRCConstants sc = {};
+    const uint32_t W = m_rtW, H = m_rtH, pixels = W * H;
+    const uint32_t count = (uint32_t)std::max(1, std::min(rs.rcSplitCascades, SRC_CASCADES));
+    const auto* fc = static_cast<const gpu::FrameConstants*>(m_constants.mapped);
+    const float tanHalf = std::max(fc->tanHalfFovY, 1e-3f);
+    const float probePx = (float)std::max(2, std::min(rs.rcSplitProbePx, 64));
+    // LOD 0 spacing: small (it only matters close to the camera, the LODs take over beyond lodDist). A LOD covers one
+    // octave of distance; at its far end a cascade-0 cell is probePx pixels on screen (twice that at its near end).
+    // The keys hold cells within +-256 of the camera's: the octave is capped at 120 cells.
+    const float s0 = m_sceneRadius / 256.0f;
+    const float ratio = std::min((float)H / (4.0f * tanHalf * probePx), 120.0f);
+    const float t0 = std::max(0.25f, rs.rcSplitInterval) * s0;
+    const uint32_t maxProbes0 = std::max(4096u, std::min(65536u, pixels / 24));
+    uint32_t words = 16;   // counters
+    uint32_t caps[SRC_CASCADES], maxProbes[SRC_CASCADES];
+    for (uint32_t i = 0; i < count; ++i) {
+        // each cascade has about 4x fewer probes on a surface and 4x more directions: the same entries (2x margin)
+        maxProbes[i] = i == 0 ? maxProbes0 : std::max(64u, maxProbes0 >> (2 * i - 1));
+        maxProbes[i] = std::min(maxProbes[i], maxProbes0);
+        uint32_t cap = 1024;
+        while (cap < maxProbes[i] * 2) cap <<= 1;
+        caps[i] = cap;
+    }
+    for (uint32_t i = 0; i < count; ++i) {   // slot keys right after the counters: one clear covers them all
+        sc.c[i].keys = words;
+        words += caps[i];
+    }
+    sc.clearWords = words;
+    m_rcStats.splitCascades = (int)count;
+    for (uint32_t i = 0; i < count; ++i) {
+        gpu::SRCCascade& c = sc.c[i];
+        c.cap = caps[i];
+        c.maxProbes = maxProbes[i];
+        c.dirH = 4u << i;
+        c.dirW = 2 * c.dirH;
+        c.vals = words;
+        words += caps[i];
+        c.probes = words;
+        words += maxProbes[i] * 8;
+        c.entries = words;
+        words += maxProbes[i] * c.dirW * c.dirH * 4;
+        c.spacing = s0 * (float)(1u << i);
+        c.tEnd = i + 1 == count ? 1e30f : t0 * std::pow(4.0f, (float)i);
+        m_rcStats.splitCapacity[i] = maxProbes[i];
+        m_rcStats.splitDirs[i] = c.dirW * c.dirH;
+    }
+    sc.irr = words;
+    words += maxProbes0 * SRC_IRR_N * SRC_IRR_N * 4;
+    sc.pixels = words;
+    words += pixels * 8;
+    sc.cascadeCount = count;
+    sc.counters = 0;
+    sc.lodDist = s0 * ratio;
+    sc.lodOverlap = 0.152f;   // the LODs overlap over the last 10 % of the distance (log2(0.9)), blended there
+    if (rs.rcSplitAnimate) {   // R2 jitter of the whole ray set, per frame
+        const uint32_t n = m_giFrame;
+        sc.jitterX = (float)((n * 3242174889u) * (1.0 / 4294967296.0));
+        sc.jitterY = (float)((n * 2447445413u) * (1.0 / 4294967296.0));
+    }
+    memcpy(m_srcConstants.mapped, &sc, sizeof(sc));
+    m_rcStats.splitRays = pixels;
+    m_rcStats.splitLodDist = sc.lodDist;
+    m_rcStats.splitSpacing = s0;
+
+    const uint64_t bytes = (uint64_t)words * 4;
+    if (!m_srcBuffer.res || m_srcBuffer.size < bytes) {
+        waitIdle();
+        m_srcBuffer = createBuffer(bytes, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS,
+                                   D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+    }
+    D3D12_GPU_DESCRIPTOR_HANDLE screenTable = m_heap->GetGPUDescriptorHandleForHeapStart();
+    screenTable.ptr += (UINT64)kScreenGIUavSlot * m_descSize;
+    m_cmd->SetComputeRootConstantBufferView(18, m_srcConstants.va());
+    m_cmd->SetComputeRootUnorderedAccessView(19, m_srcBuffer.va());
+    m_cmd->SetComputeRootDescriptorTable(20, screenTable);
+    ID3D12Resource* buf = m_srcBuffer.res.Get();
+    auto pass = [&](ID3D12PipelineState* pso, uint32_t ci, uint32_t mode, UINT x, UINT y = 1) {
+        const uint32_t c[4] = {ci, mode, 0, 0};
+        m_cmd->SetPipelineState(pso);
+        m_cmd->SetComputeRoot32BitConstants(1, 4, c, 0);
+        m_cmd->Dispatch(std::max(1u, x), y, 1);
+        uavBarrier(buf);
+    };
+    auto groups = [](uint64_t n) { return (UINT)((n + 63) / 64); };
+    m_cmd->EndQuery(m_queryHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 4);
+    pass(m_psoSRCClear.Get(), 0, 0, groups(sc.clearWords));
+    pass(m_psoSRCInsert.Get(), 0, 0, gx, gy);
+    for (uint32_t i = 0; i < count; ++i) pass(m_psoSRCAlloc.Get(), i, 0, groups(caps[i]));
+    for (uint32_t i = 0; i < count; ++i)
+        pass(m_psoSRCClear.Get(), i, 1, groups((uint64_t)maxProbes[i] * sc.c[i].dirW * sc.c[i].dirH));
+    pass(m_psoSRCCount.Get(), 0, 0, groups(pixels));
+    for (uint32_t i = 0; i + 1 < count; ++i) pass(m_psoSRCCount.Get(), i, 1, groups(maxProbes[i]));
+    for (int i = (int)count - 1; i >= 0; --i) pass(m_psoSRCCount.Get(), (uint32_t)i, 2, groups(maxProbes[i]));
+    pass(m_psoSRCTrace.Get(), 0, 0, gx, gy);
+    for (int i = (int)count - 1; i >= 0; --i)
+        pass(m_psoSRCMerge.Get(), (uint32_t)i, 0, groups((uint64_t)maxProbes[i] * sc.c[i].dirW * sc.c[i].dirH));
+    pass(m_psoSRCIrradiance.Get(), 0, 0, groups((uint64_t)maxProbes0 * SRC_IRR_N * SRC_IRR_N));
+    pass(m_psoSRCGather.Get(), 0, 0, gx, gy);
+    uavBarrier();
+    m_cmd->EndQuery(m_queryHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 5);
+    m_splitTimed = true;
+    m_screenGIOn = true;
+}
+
 // Ray traced sun shadow and reflections of the raster pass. SunShadowTrace writes the visibility of every pixel with
 // its depth and normal (the guide of both filters), ReflectTrace the reflections of the glossy pixels, then the two
 // bilateral filters. Leaves the filtered sun mask (t8) and reflections (t9) in PIXEL_SHADER_RESOURCE when asked for;
@@ -1675,6 +1792,11 @@ uint32_t renderSignature(const RenderSettings& rs) {
     mix(&rs.rcScreenSpacing, sizeof(int));
     mix(&rs.rcScreenDirRes, sizeof(int));
     mix(&rs.rcScreenInterval, sizeof(float));
+    mix(&rs.rcSplit, sizeof(bool));
+    mix(&rs.rcSplitProbePx, sizeof(int));
+    mix(&rs.rcSplitInterval, sizeof(float));
+    mix(&rs.rcSplitCascades, sizeof(int));
+    mix(&rs.rcSplitAnimate, sizeof(bool));
     mix(&rs.rtSunShadows, sizeof(bool));
     mix(&rs.sunAngle, sizeof(float));
     mix(&rs.rtShadowSamples, sizeof(int));
@@ -1819,6 +1941,7 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
 
     beginCommands();
     m_giTimed = false;
+    m_splitTimed = false;
     buildTLAS(scene, needAS);
     m_asThisFrame = needAS;
 
@@ -2039,7 +2162,8 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
         m_prevCam = {fc.camPos, fc.camRight, fc.camUp, fc.camFwd, fc.tanHalfFovY, fc.aspect};
     }
     m_cmd->EndQuery(m_queryHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 1);
-    m_cmd->ResolveQueryData(m_queryHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 0, m_giTimed ? 4 : 2, m_queryReadback.res.Get(), 0);
+    m_cmd->ResolveQueryData(m_queryHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 0, m_splitTimed ? 6 : (m_giTimed ? 4 : 2),
+                            m_queryReadback.res.Get(), 0);
 
     if (!toBackBuffer) {
         executeAndWait();
@@ -2083,7 +2207,7 @@ void Renderer::present(bool vsync) {
     m_swapChain->Present(vsync ? 1 : 0, 0);
     waitIdle();
     void* p = nullptr;
-    D3D12_RANGE r = {0, 32};
+    D3D12_RANGE r = {0, 48};
     if (SUCCEEDED(m_queryReadback.res->Map(0, &r, &p))) {
         uint64_t* ts = (uint64_t*)p;
         if (ts[1] > ts[0]) m_gpuMs = (float)((ts[1] - ts[0]) * 1000.0 / m_tsFreq);
@@ -2091,6 +2215,7 @@ void Renderer::present(bool vsync) {
             m_giUpdateMs = (float)((ts[2] - ts[0]) * 1000.0 / m_tsFreq);
             m_giBlendMs = (float)((ts[3] - ts[2]) * 1000.0 / m_tsFreq);
         }
+        if (m_splitTimed && ts[5] >= ts[4]) m_splitMs = (float)((ts[5] - ts[4]) * 1000.0 / m_tsFreq);
         D3D12_RANGE w = {0, 0};
         m_queryReadback.res->Unmap(0, &w);
     }

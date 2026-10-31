@@ -215,3 +215,49 @@ Captures :
 - 29 et 30 : LookDev et Cornell entiers.
 
 **Limite** : le verre reste celui de la passe raster (pas de réfraction tracée).
+
+## Split Radiance Cascades dans l'éditeur (31/10/2026)
+
+Article : Freeman, Sannikov et Pitt-Francis, *Split Radiance Cascades: Real-Time Global Illumination via Sparse Radiance Probes* (arXiv 2607.20384, juillet 2026). Implémentation propre d'après le texte de l'article, sans code repris. PC seulement (DXR), rien pour iOS.
+
+**Dans l'éditeur** : nouveau mode de rendu « Split RC » (menu de rendu à côté de Lit / Metal iOS / Progressive / GI, ou `Viewport3D.exe --split 1`). Le mode Lit n'est pas touché. Options dans l'onglet Render : taille des sondes en pixels, premier intervalle, nombre de cascades, jitter animé, rebonds, vue indirect seul, ombre du soleil et reflets ray tracés. Les stats du viewport affichent le temps GPU de l'image et de Split RC.
+
+**Principe** (fichiers `SRC*.hlsl`, `Renderer::recordSplitRC`) :
+- **Sondes clairsemées** : une table de hachage par cascade, des sondes seulement dans les cellules qui contiennent une surface visible (et leurs parents). Cascade i : espacement s0·2ⁱ, (8·2ⁱ) × (4·2ⁱ) directions en projection à aires égales (32 à 2 048), intervalle ]t0·4ⁱ⁻¹, t0·4ⁱ], la dernière jusqu'à l'infini.
+- **Niveaux de détail** : selon la distance de Tchebychev à la caméra, une cellule de cascade 0 fait environ 12 px à l'écran à toute distance. Les LOD se recouvrent sur 10 % et sont fondus.
+- **Ray splitting** : un seul rayon par pixel, lancé depuis la surface visible. Selon sa distance d'impact, il dit « rien dans mon intervalle » aux cascades du dessous et dépose la radiance de l'impact dans la cascade de cette distance (sommes atomiques entières). Les directions viennent d'une suite R2 découpée en segments contigus par sonde et par parent, donc chaque cascade est couverte uniformément.
+- **Fusion** de haut en bas (L = R + T × cône du dessus, trilinéaire sur les parents existants), irradiance 6 × 6 par sonde de cascade 0, puis lecture par pixel dans la texture d'irradiance écran (t7) de la passe raster.
+- **Aucune accumulation temporelle**. Les rebonds suivants lisent la grille RC monde, qui n'a pas de temporel non plus.
+
+**Fantômes** (Cornell 1 068 × 581, vue indirect seul). Une scène est animée, capturée en mouvement à l'image 480, puis comparée à la même pose immobile et convergée (écart RMS, sur 255) :
+
+| Test | Split RC | DDGI (même passe raster) | GI (DDGI + historique) |
+|---|---|---|---|
+| Lumière qui se déplace | **3,0** (surtout le contour du plafonnier) | 9,0 | 10,8 |
+| Bloc qui se déplace | **1,0** | 3,3 | 4,6 |
+
+La DDGI laisse la lumière là où elle était (mur rouge trop éclairé, captures 31 et 33). Split RC suit dès l'image suivante (captures 32 et 34). Caméra qui oscille : même scintillement que la DDGI (écart type 7,58 contre 7,61).
+
+**Coût GPU** (RTX 5060, 1 068 × 581, image entière) :
+
+| Scène | Split RC | dont passes Split RC | DDGI raster | GI (DDGI) |
+|---|---|---|---|---|
+| Cornell | 4,6 ms | 1,4 ms | 2,4 ms | 1,5 ms |
+| LookDev | 6,6 ms | 2,5 ms | | |
+| Village (vide) | 4,4 ms | 1,1 ms | 3,3 ms | |
+
+Le reste du coût de Split RC vient de la grille RC monde (cache des rebonds, environ 1,6 ms) et des ombres et reflets ray tracés.
+
+**Qualité** :
+- L'indirect seul est proche de la DDGI convergée, avec un meilleur contact au pied des blocs (captures 37 et 38).
+- Le LookDev est proche du path tracing, avec un sol plus juste que la DDGI (captures 35 et 36).
+- Avec des sondes de 8 px, il reste des taches au plafond de la Cornell (trop peu de rayons par direction) : d'où le défaut à 12 px.
+- Le disque du soleil d'un HDRI vu directement par un rayon est plafonné comme les fireflies du path tracer (`fireflyClamp`). Sans cela, il fait des taches sur le sol.
+
+**Limites et suite** :
+- Le contour du plafonnier qui bouge garde une image de retard.
+- La grille RC monde des rebonds pourrait être remplacée par un cache secondaire Split RC, comme dans l'article.
+- Pas d'accumulation temporelle optionnelle (l'article en propose une pour les scènes fixes).
+- Les sondes de la cascade 0 sont limitées à pixels / 24 (au-delà, la cellule est ignorée).
+
+Test : `Viewport3D.exe --scene cornell --split 1 [--split-px 12] [--ddgi-view 1] --anim-object 6 --anim-move 0,0,12 --anim-period 240 --shot-viewport f.png --spp 480`. `--anim-light 1` fait bouger la lumière, `--anim-at F` fige la pose de l'image F (référence), et `f.png.txt` reçoit les temps GPU.

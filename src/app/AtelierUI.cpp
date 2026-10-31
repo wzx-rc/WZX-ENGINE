@@ -1110,10 +1110,10 @@ void App::atlViewport(float x, float y, float w, float h) {
     // tools (right to left): shading, view | stats, grid, frame | snapping, axes, scale, rotate, move
     float bx = hr.x + hr.w - 8 * s, by = hr.y + 6 * s;
     auto right = [&](float bw) { bx -= bw; float r0 = bx; bx -= 6 * s; return r0; };
-    static const char* modes[] = {"Lit", "Metal iOS", "Progressive", "GI"};
+    static const char* modes[] = {"Lit", "Metal iOS", "Progressive", "GI", "Split RC"};
     int mode = renderMode();
-    if (Combo("atlShading", {right(118 * s), by, 118 * s, 24 * s}, mode, modes, 4, Icon::Sun)) setRenderMode(mode);
-    Tip("Lit: real-time raster · Metal iOS: Lit + GI probes without ray tracing, as the iOS build · Progressive: path tracing, exact, denoiser optional · GI: real-time probes (DDGI, ray traced)");
+    if (Combo("atlShading", {right(118 * s), by, 118 * s, 24 * s}, mode, modes, 5, Icon::Sun)) setRenderMode(mode);
+    Tip("Lit: real-time raster · Metal iOS: Lit + GI probes without ray tracing, as the iOS build · Progressive: path tracing, exact, denoiser optional · GI: real-time probes (DDGI, ray traced) · Split RC: Split Radiance Cascades, ray traced, rebuilt every frame (no history, no ghosting)");
     {
         static const char* displays[] = {"Shaded", "Wireframe", "Wireframe Override"};
         if (Combo("atlDisplay", {right(150 * s), by, 150 * s, 24 * s}, m_rs.wireframe, displays, 3, Icon::Cube)) markDirty();
@@ -1180,11 +1180,13 @@ void App::atlViewport(float x, float y, float w, float h) {
         char v[5][32];
         snprintf(v[0], 32, "%.0f FPS", 1000.0f / std::max(m_frameMs, 0.1f));
         snprintf(v[1], 32, "%.1f ms", m_frameMs);
-        if (m_rs.raster) snprintf(v[2], 32, "%.2f ms", m_renderer.gpuFrameMs());
+        const bool gpuRow = m_rs.raster || renderMode() == 4;   // real-time modes: GPU time, else the samples
+        if (renderMode() == 4) snprintf(v[2], 32, "%.2f (RC %.2f)", m_renderer.gpuFrameMs(), m_renderer.splitMs());
+        else if (m_rs.raster) snprintf(v[2], 32, "%.2f ms", m_renderer.gpuFrameMs());
         else snprintf(v[2], 32, "%u / %u", std::min<uint32_t>(m_renderer.sampleCount(), m_rs.maxSamples), m_rs.maxSamples);
         snprintf(v[3], 32, "%s", triText);
         snprintf(v[4], 32, "%zu · %zu", objs, m_scene.lights.size());
-        const char* names[] = {"Frame rate", "Frame time", m_rs.raster ? "GPU" : "Samples", "Triangles", "Objects · lights"};
+        const char* names[] = {"Frame rate", "Frame time", gpuRow ? "GPU ms" : "Samples", "Triangles", "Objects · lights"};
         for (int i = 0; i < 5; ++i) {
             Text(st.x + 10 * s, st.y + (30 + i * 16) * s, names[i], P().muted, 9);
             Text(st.x + 92 * s, st.y + (30 + i * 16) * s, v[i], P().text, 9);
@@ -1232,7 +1234,7 @@ void App::atlViewport(float x, float y, float w, float h) {
     Text(fx + 13 * s, fr.y + 6 * s, m_magnet ? "Snapping" : "Free", P().muted, 9);
     std::string info = std::to_string(objs) + " objects  /  " + triText + " triangles";
     Text(fr.x + fr.w - 290 * s, fr.y + 6 * s, info, P().muted, 9);
-    static const char* modeNames[] = {"●  Real time", "●  Metal iOS", "●  Progressive PT", "●  GI probes"};
+    static const char* modeNames[] = {"●  Real time", "●  Metal iOS", "●  Progressive PT", "●  GI probes", "●  Split RC"};
     Text(fr.x + fr.w - 116 * s, fr.y + 6 * s, modeNames[renderMode()], m_rs.raster ? kGreen : P().accent, 9);
 }
 
@@ -1861,7 +1863,7 @@ void App::atlInspectorLighting(float x, float y, float w, float) {
 // tracing ones, and the progressive and GI engines have theirs. Each option has an info icon.
 void App::atlInspectorRender(float x, float y, float w, float) {
     bool ch = false, act = false;
-    static const char* names[] = {"Real time (raster)", "Metal iOS (raster + GI probes)", "Progressive path tracing", "GI probes (DDGI, ray traced)"};
+    static const char* names[] = {"Real time (raster)", "Metal iOS (raster + GI probes)", "Progressive path tracing", "GI probes (DDGI, ray traced)", "Split Radiance Cascades"};
     const int mode = renderMode();
     Text(x, y, names[mode], P().text, 14);
     y += 25 * s;
@@ -1984,6 +1986,34 @@ void App::atlInspectorRender(float x, float y, float w, float) {
         sliderF("##ic", "Indirect clamp", m_rs.indirectClamp, 0, 20, m_rs.indirectClamp > 0 ? "%.1f" : "off", "Caps each light contribution after a rough bounce or through subsurface scattering. Removes the sparkles of rare bright paths; lower = cleaner but the indirect light gets a little darker. 0 = off (exact).");
         Text(x, y, "HDRI and emissive objects are sampled as lights (MIS).", P().muted, 11);
         y += 22 * s;
+    } else if (mode == 4) {
+        Label(x, y, "SPLIT RADIANCE CASCADES");
+        y += 24 * s;
+        sliderI("##srpx", "Probe size (pixels)", m_rs.rcSplitProbePx, 4, 16, "%.0f px", "Size on screen of a cascade-0 probe cell (levels of detail keep it so with distance). Smaller = finer contact shadows, fewer rays per probe (noisier) and more GPU cost.");
+        sliderF("##srint", "First interval", m_rs.rcSplitInterval, 0.5f, 6, "%.1f cells", "Length of the cascade-0 rays in probe cells (x4 per cascade). Shorter = sharper near occlusion, more angular aliasing further.");
+        sliderI("##srcas", "Cascades", m_rs.rcSplitCascades, 2, 4, "%.0f", "Cascades of probes (the top one sees to infinity and the sky). Each has 2x the spacing and 4x the directions of the one below.");
+        check("##sranim", "Moving ray jitter", m_rs.rcSplitAnimate, "Turns the ray set every frame. Off: a still image stays perfectly still (nothing is accumulated over frames either way).");
+        check("##srbn", "Further bounces", m_rs.rcBounces, "The ray hits read the world cascades of the previous frame (the bounce cache, no history either). Off: one bounce.");
+        static const char* views[] = {"Full", "Indirect only", "Direct only"};
+        int view = m_rs.ddgiView;
+        ImGui::SetCursorScreenPos(ImVec2(x, y));
+        if (Combo("##srview", R{x, y, w - 22 * s, 28 * s}, view, views, 3, Icon::Sun)) { m_rs.ddgiView = view; ch = true; }
+        info("##srview_i", x + w - 18 * s, y + 5 * s, "Full image, only the indirect light, or only the direct light (debug).");
+        y += 36 * s;
+        check("##srsh", "Ray traced sun shadow", m_rs.rtSunShadows, "Sun shadow traced per pixel (soft, filtered, no history) instead of the shadow map.");
+        check("##srrf", "Ray traced reflections", m_rs.rtReflections, "Metals and glossy surfaces reflect the scene (traced per pixel, filtered, no history).");
+        y += 8 * s;
+        const vp3d::RCStats& st = m_renderer.rcStats();
+        char b[160];
+        snprintf(b, sizeof(b), "GPU %.2f ms, of which Split RC %.2f ms", m_renderer.gpuFrameMs(), m_renderer.splitMs());
+        Text(x, y, b, P().muted, 11);
+        y += 19 * s;
+        snprintf(b, sizeof(b), "%llu rays (1 per pixel), %d cascades, %u to %u directions", (unsigned long long)st.splitRays,
+                 st.splitCascades, st.splitDirs[0], st.splitDirs[std::max(0, st.splitCascades - 1)]);
+        Text(x, y, b, P().muted, 11);
+        y += 19 * s;
+        Text(x, y, "No temporal accumulation: what moves is right the next frame.", P().muted, 11);
+        y += 22 * s;
     } else {
         Label(x, y, "PROBES");
         y += 24 * s;
@@ -2032,9 +2062,9 @@ void App::atlInspectorWorld(float x, float y, float w, float) {
     y += 35 * s;
     Text(x, y, "Rendering", P().muted, 11);
     y += 19 * s;
-    static const char* modes[] = {"Real time", "Metal iOS", "Progressive", "GI probes (DDGI)"};
+    static const char* modes[] = {"Real time", "Metal iOS", "Progressive", "GI probes (DDGI)", "Split RC"};
     int mode = renderMode();
-    if (Combo("worldRender", {x, y, w, 27 * s}, mode, modes, 4, Icon::Sun)) setRenderMode(mode);
+    if (Combo("worldRender", {x, y, w, 27 * s}, mode, modes, 5, Icon::Sun)) setRenderMode(mode);
     y += 43 * s;
     Label(x, y, "SCENE SUMMARY");
     y += 25 * s;

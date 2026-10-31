@@ -81,6 +81,14 @@ struct RenderSettings {
     int rcScreenSpacing = 8;      // pixels between the cascade-0 probes (x2 per cascade)
     int rcScreenDirRes = 8;       // directions per side of cascade 0 (x2 per cascade)
     float rcScreenInterval = 0.25f;   // ray length of cascade 0, in world probe spacings (x4 per cascade)
+    // Split Radiance Cascades (needs giMethod = 1 and the raster view; replaces rcScreen): sparse world probes around
+    // the visible surfaces (hash tables, LODs from the camera distance), one ray per pixel split into the cascades by
+    // its hit distance, nothing accumulated over frames. The world cascades stay the cache of the further bounces.
+    bool rcSplit = false;
+    int rcSplitProbePx = 12;      // size of a cascade-0 probe cell on screen, in pixels (LODs keep it so with distance)
+    float rcSplitInterval = 2.0f; // end of the cascade-0 interval, in cascade-0 spacings (x4 per cascade)
+    int rcSplitCascades = 4;      // 1..4, the top one to infinity
+    bool rcSplitAnimate = false;  // jitter the ray set every frame (moving noise; off = a still image stays still)
     // Raster modes: the sun shadow traced per pixel against the scene (needs the acceleration structure of the frame,
     // i.e. a GI mode) instead of the shadow map. sunAngle: angular diameter of the sun (degrees), its penumbra.
     bool rtSunShadows = true;
@@ -101,6 +109,10 @@ struct RCStats {
     uint64_t rays = 0;            // texels traced per frame (all cascades)
     int screenCascades = 0;       // screen-space cascades (rcScreen)
     uint64_t screenRays = 0;
+    int splitCascades = 0;        // Split RC: cascades, probe capacity and directions per probe of each, rays (pixels)
+    uint32_t splitCapacity[RC_MAX_CASCADES] = {}, splitDirs[RC_MAX_CASCADES] = {};
+    uint64_t splitRays = 0;
+    float splitLodDist = 0, splitSpacing = 0;   // where LOD 1 starts, cascade-0 spacing at LOD 0
 };
 
 struct ViewRect { int x = 0, y = 0, w = 1, h = 1; };
@@ -134,6 +146,7 @@ public:
     float gpuFrameMs() const { return m_gpuMs; }
     float giUpdateMs() const { return m_giUpdateMs; }     // DDGI probe ray tracing
     float giBlendMs() const { return m_giBlendMs; }       // DDGI probe blending
+    float splitMs() const { return m_splitMs; }           // Split Radiance Cascades (all passes, gather included)
     uint32_t giProbeCount() const { return m_giCounts[0] * m_giCounts[1] * m_giCounts[2]; }
     float giSpacing() const { return m_giSpacing; }
     const RCStats& rcStats() const { return m_rcStats; }   // Radiance Cascades of the last GI frame
@@ -208,6 +221,7 @@ private:
     void recordDDGI(const RenderSettings& rs, UINT gx, UINT gy, bool shade = true);   // shade: GIShade (ray traced visibility)
     void recordRC(const RenderSettings& rs);   // Radiance Cascades: trace + merge every cascade, then fill the probe atlases
     void recordRCScreen(const RenderSettings& rs, UINT gx, UINT gy);   // screen-space cascades + per-pixel gather
+    void recordSplitRC(const RenderSettings& rs, UINT gx, UINT gy);    // Split Radiance Cascades + per-pixel gather
     void copyHistory();
     uint32_t sceneSignature(const Scene& scene) const;
     uint32_t transformSignature(const Scene& scene) const;
@@ -240,6 +254,8 @@ private:
     ComPtr<ID3D12PipelineState> m_psoGIUpdate, m_psoGIBlend, m_psoGIShade, m_psoGIRaster;
     ComPtr<ID3D12PipelineState> m_psoRCVisibility, m_psoRCTrace, m_psoRCGather;
     ComPtr<ID3D12PipelineState> m_psoRCSProbes, m_psoRCSTrace, m_psoRCSProbeSH, m_psoRCSGather;
+    ComPtr<ID3D12PipelineState> m_psoSRCClear, m_psoSRCInsert, m_psoSRCAlloc, m_psoSRCCount, m_psoSRCTrace, m_psoSRCMerge,
+        m_psoSRCIrradiance, m_psoSRCGather;
     ComPtr<ID3D12PipelineState> m_psoSunTrace, m_psoSunFilter, m_psoReflTrace, m_psoReflFilter;
     ComPtr<ID3D12DescriptorHeap> m_heap;
     uint32_t m_descSize = 0;
@@ -317,6 +333,9 @@ private:
     // Radiance Cascades: all cascades in one buffer (u15), their constants (b3)
     Buffer m_rcBuffer, m_rcConstants;
     Buffer m_rcsBuffer, m_rcsConstants;          // screen-space cascades (u16, b4)
+    Buffer m_srcBuffer, m_srcConstants;          // Split Radiance Cascades (u16 as a raw buffer, b4)
+    float m_splitMs = 0.0f;
+    bool m_splitTimed = false;                   // the frame wrote the Split RC timestamps (4, 5)
     ComPtr<ID3D12Resource> m_screenGI;           // per pixel indirect irradiance (RCSGather.hlsl)
     ComPtr<ID3D12Resource> m_sunShadowRaw, m_sunShadow;   // ray traced sun visibility: raw (+ depth, normal), filtered
     ComPtr<ID3D12Resource> m_reflRaw, m_refl;             // ray traced reflections: raw (rgb, roughness), filtered

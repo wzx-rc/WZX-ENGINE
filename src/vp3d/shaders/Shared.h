@@ -161,6 +161,34 @@ struct RCSConstants {
                                                                          // shOffset: irradiance SH of the C0 probes (7 float4 each)
 };
 
+// Split Radiance Cascades (Freeman, Sannikov, Pitt-Francis 2026): world-space probes kept sparse in a hash table per
+// cascade, only around the visible surfaces, with levels of detail that keep a probe about the same size on screen.
+// Cascade i: spacing s0 * 2^i, (2 D0 2^i) x (D0 2^i) equal-area directions, interval ]tEnd(i-1), tEnd(i)] with
+// tEnd(i) = t0 * 4^i (the top one to infinity); every LOD doubles s0 and t0. Ray splitting: one ray per pixel, from
+// the visible surface, deposited into every cascade its hit distance tells about (transparent below the hit cascade,
+// the hit radiance in it). Everything lives in one raw buffer (word offsets below) and is rebuilt every frame.
+#define SRC_CASCADES 4
+#define SRC_IRR_N 6              // per cascade-0 probe: 6x6 octahedral irradiance texels (rgb / pi, valid weight)
+#define SRC_SCALE 2048.0         // fixed point of the deposited radiance (atomic integer sums)
+
+struct SRCCascade {
+    uint cap; uint maxProbes; uint dirW; uint dirH;   // hash slots (power of 2), probe capacity, directions per row, rows
+    uint keys; uint vals; uint probes; uint entries;  // word offsets: slot keys, slot probe index, probe records (8 words:
+                                                      // cell xyz, lod, rays, offset, cursor, parent), entries (4 words
+                                                      // per probe and direction: deposits, then the merged radiance)
+    float spacing; float tEnd; float pad0; float pad1;   // at LOD 0
+};
+
+struct SplitRCConstants {
+    SRCCascade c[SRC_CASCADES];
+    uint cascadeCount; uint counters; uint pixels; uint irr;   // word offsets: counters (probes per cascade, then the
+                                                               // ray offset of the top cascade), pixel records (8 words),
+                                                               // irradiance texels of the cascade-0 probes (4 words each)
+    float lodDist; float lodOverlap; float jitterX; float jitterY;   // distance where LOD 1 starts, overlap of the LODs
+                                                                     // (fraction of an octave), jitter of the ray set
+    uint clearWords; uint flags; uint pad0; uint pad1;   // words cleared at the start (counters and slot keys)
+};
+
 #define RC_FLAG_BOUNCES 1u
 #define RC_FLAG_ANIMATED_NOISE 2u
 #define RC_FLAG_BILINEAR_FIX 4u   // merge with one traced segment per parent (RCTrace.hlsl, BilinearFixMerge)

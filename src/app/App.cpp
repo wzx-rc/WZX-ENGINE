@@ -118,7 +118,11 @@ bool App::init(HINSTANCE inst, const Options& opt) {
     m_rs.ddgiView = opt.ddgiView;
     m_rs.temporalCap = opt.temporalCap;
     m_rs.ddgiHysteresis = opt.hysteresis;
-    if (!opt.raster) setRenderMode(opt.ddgi ? (opt.ddgiRaster ? 1 : 3) : 2);
+    if (opt.splitPx > 0) m_rs.rcSplitProbePx = opt.splitPx;
+    if (opt.splitInterval > 0) m_rs.rcSplitInterval = opt.splitInterval;
+    if (opt.splitCascades > 0) m_rs.rcSplitCascades = opt.splitCascades;
+    if (opt.split) setRenderMode(4);
+    else if (!opt.raster) setRenderMode(opt.ddgi ? (opt.ddgiRaster ? 1 : 3) : 2);
     ShowWindow(m_hwnd, SW_SHOWDEFAULT);
     UpdateWindow(m_hwnd);
 
@@ -276,12 +280,19 @@ void App::updateBake() {
 }
 
 // Modes of the viewport: 0 Lit (real-time raster), 1 Metal iOS (Lit + DDGI probes without ray tracing, what the iOS
-// build renders), 2 progressive path tracing (exact, denoiser optional), 3 GI probes with ray tracing (DDGI).
+// build renders), 2 progressive path tracing (exact, denoiser optional), 3 GI probes with ray tracing (DDGI),
+// 4 Split Radiance Cascades (raster view lit by sparse cascades rebuilt every frame: no history, so no ghosting).
 void App::setRenderMode(int mode) {
     m_rs.raster = mode == 0;
     m_rs.historyFixes = true;
-    m_rs.ddgi = mode == 1 || mode == 3;
+    m_rs.ddgi = mode == 1 || mode == 3 || mode == 4;
     m_rs.ddgiRaster = mode == 1;
+    // the raster view of the probes: Split RC's own, else kept (diagnostic --ddgi-raster-view of the DDGI modes)
+    m_rs.ddgiRasterView = mode == 4 || (m_rs.ddgiRasterView && !m_rs.rcSplit);
+    m_rs.giMethod = mode == 4 ? 1 : 0;
+    m_rs.rcSplit = mode == 4;
+    m_rs.rcScreen = false;
+    m_rs.rcHysteresis = 0.0f;
     // progressive: exact, no denoiser by default (the option is in the Render tab); GI: off by default (it blurs shadows)
     m_rs.denoise = false;
     m_quality = mode == 2 ? 1 : 0;
@@ -291,7 +302,7 @@ void App::setRenderMode(int mode) {
 
 int App::renderMode() const {
     if (m_rs.raster) return 0;
-    if (m_rs.ddgi) return m_rs.ddgiRaster ? 1 : 3;
+    if (m_rs.ddgi) return m_rs.ddgiRaster ? 1 : (m_rs.rcSplit && m_rs.giMethod == 1 ? 4 : 3);
     return 2;
 }
 
@@ -532,6 +543,26 @@ void App::frame() {
             markDirty();
         }
     }
+    // Ghosting test (command line): an object and / or the first light swing by a vector, sin(2 pi frame / period).
+    // --anim-at F: frozen at the pose of frame F (the converged reference of that pose).
+    if (m_opt.animObject >= 0 || m_opt.animLight) {
+        if (m_frameCounter <= 1) {
+            if (m_opt.animObject < (int)m_scene.objects.size()) m_animObjBase = m_scene.objects[m_opt.animObject].position;
+            if (!m_scene.lights.empty()) {
+                m_animLightBase = m_scene.lights[0].position;
+                m_animLightTarget = m_scene.lights[0].target;
+            }
+        }
+        const int frame = m_opt.animAt >= 0 ? m_opt.animAt : m_frameCounter;
+        const float k = std::sin((float)frame * 2.0f * kPi / (float)std::max(2, m_opt.animPeriod));
+        if (m_opt.animObject >= 0 && m_opt.animObject < (int)m_scene.objects.size())
+            m_scene.objects[m_opt.animObject].position = m_animObjBase + m_opt.animMove * k;
+        if (m_opt.animLight && !m_scene.lights.empty()) {
+            m_scene.lights[0].position = m_animLightBase + m_opt.animMove * k;
+            m_scene.lights[0].target = m_animLightTarget + m_opt.animMove * k;
+        }
+        if (m_opt.animAt < 0 || m_frameCounter <= 1) markDirty();
+    }
     if (!m_opt.statPath.empty() && m_frameCounter >= m_opt.statFrom) {
         std::vector<uint8_t> img;
         uint32_t w, h;
@@ -560,12 +591,17 @@ void App::frame() {
     }
     // Automated capture (command line): window image once the viewport has enough samples.
     // (stability tests reset the accumulation every frame: their capture comes at frame shotSpp)
-    const bool moving = m_opt.sway > 0 || m_opt.anim;
+    const bool moving = m_opt.sway > 0 || m_opt.anim || ((m_opt.animObject >= 0 || m_opt.animLight) && m_opt.animAt < 0);
     if (!m_opt.shotPath.empty() && (moving ? m_frameCounter >= m_opt.shotSpp : ((int)m_renderer.sampleCount() >= m_opt.shotSpp || !m_viewportRendered)) && m_frameCounter > 6) {
         std::vector<uint8_t> img;
         uint32_t w, h;
         bool ok = m_opt.shotViewport ? m_renderer.readViewport(img, w, h) : m_renderer.readBackBuffer(img, w, h);
         if (ok) savePng(m_opt.shotPath, img, w, h);
+        if (FILE* tf = _wfopen((m_opt.shotPath + L".txt").c_str(), L"w")) {   // GPU timings of the last frame
+            fprintf(tf, "gpu_ms=%.3f split_ms=%.3f gi_update_ms=%.3f gi_blend_ms=%.3f frames=%d size=%ux%u\n", m_renderer.gpuFrameMs(),
+                    m_renderer.splitMs(), m_renderer.giUpdateMs(), m_renderer.giBlendMs(), m_frameCounter, w, h);
+            fclose(tf);
+        }
         if (const char* dump = getenv("VP3D_DUMP_CAPTURE")) {   // debug: the probe cube captures of the last frame
             std::vector<float> cap;
             uint32_t cw, ch;
@@ -1131,6 +1167,15 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         else if (a == L"--probes") opt.probes = _wtoi(next().c_str());
         else if (a == L"--ddgi-raster") opt.ddgiRaster = _wtoi(next().c_str()) != 0;
         else if (a == L"--ddgi-raster-view") opt.ddgiRasterView = _wtoi(next().c_str()) != 0;
+        else if (a == L"--split") opt.split = _wtoi(next().c_str()) != 0;
+        else if (a == L"--split-px") opt.splitPx = _wtoi(next().c_str());
+        else if (a == L"--anim-object") opt.animObject = _wtoi(next().c_str());
+        else if (a == L"--anim-light") opt.animLight = _wtoi(next().c_str()) != 0;
+        else if (a == L"--anim-period") opt.animPeriod = _wtoi(next().c_str());
+        else if (a == L"--anim-at") opt.animAt = _wtoi(next().c_str());
+        else if (a == L"--anim-move") swscanf_s(next().c_str(), L"%f,%f,%f", &opt.animMove.x, &opt.animMove.y, &opt.animMove.z);
+        else if (a == L"--split-interval") opt.splitInterval = (float)_wtof(next().c_str());
+        else if (a == L"--split-cascades") opt.splitCascades = _wtoi(next().c_str());
         else if (a == L"--show-probes") opt.showProbes = _wtoi(next().c_str()) != 0;
         else if (a == L"--baked") opt.baked = _wtoi(next().c_str()) != 0;
         else if (a == L"--sway") opt.sway = (float)_wtof(next().c_str());
