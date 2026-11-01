@@ -112,51 +112,12 @@ void BrickApp::mechUpdate(float dt) {
     mechApplyPose();
 }
 
-static const char* keyName(int k) { return k ? ImGui::GetKeyName((ImGuiKey)k) : ""; }
-
-void BrickApp::drawMech(float x, float y) {
+void BrickApp::drawMechOverlay() {
+    if (!m_mechOn || !m_mechJoints) return;
     const float s = m_ui;
-    ImGui::SetNextWindowPos(ImVec2(x, y));
-    ImGui::SetNextWindowSize(ImVec2(300 * s, 0));
-    ImGui::SetNextWindowBgAlpha(0.92f);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8 * s, 6 * s));
-    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(4 * s, 3 * s));
-    ImGui::Begin("##mech", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_AlwaysAutoResize);
-    if (m_gui.fontSmall) ImGui::PushFont(m_gui.fontSmall);
-    ImGui::TextDisabled("MODE MÉCANIQUE");
-    const int moving = m_mm.bodyCount - (int)m_mm.roots.size();
-    ImGui::Text("%d corps (%d mobiles) · %d pivots · %d engrènements", m_mm.bodyCount, moving, (int)(m_mm.tree.size() + m_mm.closures.size()), (int)m_mm.meshes.size());
-    ImGui::Text("%d boucles · %d DDL · analyse %.1f ms", (int)m_mm.closures.size(), m_mm.dof, m_mm.buildMs);
-    for (const std::string& w : m_mm.warnings) ImGui::TextColored(ImVec4(1, 0.7f, 0.3f, 1), "%s", w.c_str());
-    if (m_mm.cmds.empty()) ImGui::TextDisabled("Aucune commande : ajoute un train d'engrenages\nsur des axes tenus par des briques à trou.");
-    for (size_t k = 0; k < m_mm.cmds.size(); ++k) {
-        MechCmd& c = m_mm.cmds[k];
-        ImGui::PushID((int)k);
-        std::string ratio;
-        for (auto& r : c.ratio) {
-            char b[32];
-            snprintf(b, sizeof(b), "%s1:%.2g", ratio.empty() ? "" : ", ", std::fabs(1.0f / r.second));
-            ratio += b;
-        }
-        ImGui::Text("%s  %s/%s%s%s", c.name.c_str(), keyName(c.keyMinus), keyName(c.keyPlus), ratio.empty() ? "" : "  ", ratio.c_str());
-        float deg = c.value * 180.0f / kPi;
-        ImGui::SetNextItemWidth(-1);
-        if (ImGui::SliderFloat("##v", &deg, -720.0f, 720.0f, "%.0f°")) c.value = deg * kPi / 180.0f;
-        ImGui::PopID();
-    }
-    if (ImGui::SmallButton("Pose de départ")) {
-        for (MechCmd& c : m_mm.cmds) c.value = 0;
-        std::fill(m_mm.q.begin(), m_mm.q.end(), 0.0);
-        m_mech.solve(m_mm);
-        mechApplyPose();
-    }
-    if (m_gui.fontSmall) ImGui::PopFont();
-    ImGui::End();
-    ImGui::PopStyleVar(2);
-
     // overlay: pivots (yellow rings), loop pivots (orange), gear meshes (pink lines with the ratio)
     View v = view();
-    ImDrawList* dl = ImGui::GetForegroundDrawList();
+    ImDrawList* dl = ImGui::GetBackgroundDrawList();   // over the 3D view (drawn after it), under the panels
     auto ring = [&](const float3& p, const float3& u, int body, ImU32 col) {
         const Affine& M = m_mm.mats[body];
         float3 c = M.point(p), uu = normalize(M.vector(u));
@@ -182,10 +143,6 @@ void BrickApp::drawMech(float x, float y) {
         char lab[16];
         snprintf(lab, sizeof(lab), "%d:%d", A.teeth, B.teeth);
         dl->AddText(ImVec2((ax + bx) * 0.5f, (ay + by) * 0.5f - 16 * s), IM_COL32(255, 95, 210, 255), lab);
-    }
-    if (!m_mechFlash.empty() && ImGui::GetTime() - m_mechFlashTime < 1.0) {
-        ImVec2 d = ImGui::GetIO().DisplaySize;
-        dl->AddText(ImVec2(d.x * 0.5f - 150 * s, 60 * s), IM_COL32(255, 120, 90, 255), m_mechFlash.c_str());
     }
 }
 

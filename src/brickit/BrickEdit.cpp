@@ -112,9 +112,9 @@ void BrickApp::beginMove(int brick, float sx, float sy) {
     if (m_holding) cancelHeld();
     pushUndo();
     m_build.beginHold(m_held, brick, false);
-    // the pivot = the voxel of the brick nearest to where it was grabbed
+    // Auto Pivot: the voxel of the brick nearest to where it was grabbed becomes its pivot
     const Part& p = m_lib.parts[m_bricks[brick].part];
-    float best = 1e30f;
+    float best = m_autoPivot ? 1e30f : -1.0f;
     for (size_t v = 0; v < p.voxels.size(); ++v) {
         float d = length(m_build.worldVoxel(m_bricks[brick], p.voxels[v]) - m_pressPoint);
         if (d < best) { best = d; m_held.grab = p.voxels[v]; m_bricks[brick].grab = (int)v; }
@@ -247,6 +247,48 @@ void BrickApp::rotateSelected(int dir) {
     pushUndo();
     for (int i : s) m_build.rotatePlaced(i, dir);
     syncObjects();
+}
+
+// Radial menu: tilt towards the viewer (around the camera right axis snapped to world X or Z), about the pivot.
+void BrickApp::tiltSelected(int dir) {
+    float3 r, u, f;
+    m_scene.camera.basis(r, u, f);
+    float3 axis = std::fabs(r.x) > std::fabs(r.z) ? float3(r.x > 0 ? 1.0f : -1.0f, 0, 0) : float3(0, 0, r.z > 0 ? 1.0f : -1.0f);
+    if (m_holding) {
+        m_build.rotateHeld(m_held, axis, -dir);
+        ImVec2 mp = ImGui::GetIO().MousePos;
+        updateHeld(mp.x, mp.y);
+        syncObjects();
+        return;
+    }
+    std::vector<int> sel = selection();
+    if (sel.empty()) return;
+    pushUndo();
+    for (int i : sel) m_build.rotatePlacedAxis(i, axis, -dir);
+    syncObjects();
+}
+
+// Voxels shown as dots: studs and anti-studs yellow, pins and pin holes cyan, axles and axle holes magenta.
+void BrickApp::drawVoxels() {
+    if (!m_showVox) return;
+    static const ImU32 col[3] = {IM_COL32(0xff, 0xc2, 0x1a, 230), IM_COL32(0x38, 0xd0, 0xe8, 230), IM_COL32(0xe0, 0x5a, 0xd7, 230)};
+    View v = view();
+    ImDrawList* dl = ImGui::GetBackgroundDrawList();
+    const float r = 2.5f * m_ui;
+    int drawn = 0;
+    for (size_t i = 0; i < m_bricks.size() && drawn < 20000; ++i) {
+        const Object& o = m_scene.objects[m_firstBrickObject + i];
+        Affine xf = o.transform();
+        const Part& p = m_lib.parts[m_bricks[i].part];
+        for (size_t k = 0; k < p.voxels.size(); ++k) {
+            float sx, sy;
+            if (!v.project(xf.point(p.voxels[k]), sx, sy)) continue;
+            uint8_t c = p.conn[k];
+            int t = (c == CONN_PIN || c == CONN_PINHOLE) ? 1 : (c == CONN_AXLE || c == CONN_AXLEHOLE) ? 2 : 0;
+            dl->AddCircleFilled(ImVec2(sx, sy), r, col[t], 8);
+            ++drawn;
+        }
+    }
 }
 
 void BrickApp::applyColor(int color) {
@@ -405,7 +447,7 @@ void BrickApp::editInput() {
         m_pressPos = mp;
         m_pressBrick = pickBrick(mp.x, mp.y, &m_pressPoint);
     }
-    if (m_pressed && ImGui::IsMouseDown(ImGuiMouseButton_Left) && !m_dragStarted && m_pressBrick >= 0 &&
+    if (m_pressed && m_mode == 1 && ImGui::IsMouseDown(ImGuiMouseButton_Left) && !m_dragStarted && m_pressBrick >= 0 &&
         (std::fabs(mp.x - m_pressPos.x) + std::fabs(mp.y - m_pressPos.y)) > 6) {
         m_dragStarted = true;
         m_pressed = false;

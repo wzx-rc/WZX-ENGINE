@@ -129,6 +129,7 @@ bool BrickApp::init(HINSTANCE inst, const Options& opt) {
     m_color = colorIndex(4);   // red
     m_focusDim = opt.focusDim;
     setupStage();
+    applyLook();
     if (!opt.openPath.empty()) openScene(opt.openPath);
     else if (opt.mechDemo) buildMechDemo();
     else if (opt.demo) buildDemo();
@@ -140,7 +141,11 @@ bool BrickApp::init(HINSTANCE inst, const Options& opt) {
     if (opt.yaw > -999) m_scene.camera.yaw = radians(opt.yaw);
     if (opt.pitch > -999) m_scene.camera.pitch = radians(opt.pitch);
     m_scene.camera.focusDistance = m_scene.camera.distance;
-    if (opt.libCategory >= 0 && opt.libCategory < (int)m_nav.size()) m_navSel = opt.libCategory;
+    if (opt.libCategory >= 0 && opt.libCategory < (int)m_nav.size()) {   // --cat: 0 recents, 1 favourites, families, Technic sub-families
+        const NavItem& n = m_nav[opt.libCategory];
+        if (n.kind == 3) { m_fam = "Technic"; m_cat = "Technic"; m_sub = n.key; }
+        else m_fam = n.key;
+    }
     if (opt.selectBrick >= 0 && opt.selectBrick < (int)m_bricks.size()) select(opt.selectBrick);
     if (opt.duplicate) duplicateSelected();   // scripted test of Ctrl+D
     if (opt.mech) {
@@ -237,6 +242,7 @@ void BrickApp::setupStage() {
     // transparent = tinted glass, metal colours = metal; bevel on every edge (rounded edges and the groove between
     // two bricks that touch, path tracing)
     m_colorMaterial.clear();
+    m_tintMaterial.clear();
     for (const Color& c : m_lib.palette) {
         Material m;
         m.name = c.name;
@@ -302,10 +308,41 @@ void BrickApp::setupStage() {
     m_scene.env.bottom = float3(0.6f, 0.6f, 0.62f);
 
     Camera& cam = m_scene.camera;
-    cam.yaw = radians(35.0f);
-    cam.pitch = radians(42.0f);
-    cam.fovY = radians(30.0f);
+    cam.yaw = radians(38.0f);     // the camera of the web: fov 32, yaw 38, pitch 32
+    cam.pitch = radians(32.0f);
+    cam.fovY = radians(32.0f);
     cam.distance = 40.0f;
+}
+
+// Real time: the stage of the web builder (background and fog 0x111214, ground 0x0e0f11 with the stud grid, warm key
+// light 3.4 from (-28, 34, 30) with shadows, environment at 0.55, ACES exposure 1). Path tracing: the bright studio
+// (light floor and background, HDRI studio, exposure 1.3) validated by Wzx on the captures 03b.
+void BrickApp::applyLook() {
+    auto lin = [](int hex) { return float3(srgbToLinear(((hex >> 16) & 255) / 255.0f), srgbToLinear(((hex >> 8) & 255) / 255.0f), srgbToLinear((hex & 255) / 255.0f)); };
+    Material& g = m_scene.materials[0];
+    if (m_rs.raster) {
+        m_scene.env.top = m_scene.env.horizon = m_scene.env.bottom = lin(0x111214);
+        m_scene.env.hdriIntensity = 0.55f;
+        g.baseColor = lin(0x0e0f11);
+        g.roughness = 0.8f;
+        m_scene.sun.enabled = true;
+        m_scene.sun.direction = normalize(float3(-28, 34, 30));
+        m_scene.sun.color = lin(0xfff1e0);
+        m_scene.sun.intensity = 3.4f;
+        m_rs.exposure = 1.0f;
+        m_rs.tonemapper = 0;
+    } else {
+        m_scene.env.top = float3(0.82f, 0.83f, 0.86f);
+        m_scene.env.horizon = float3(0.90f, 0.90f, 0.91f);
+        m_scene.env.bottom = float3(0.6f, 0.6f, 0.62f);
+        m_scene.env.hdriIntensity = 1.0f;
+        g.baseColor = float3(0.70f, 0.71f, 0.73f);
+        g.roughness = 0.5f;
+        m_scene.sun.enabled = false;
+        m_rs.exposure = m_opt.exposure;
+    }
+    ++m_scene.objectsVersion;
+    m_renderer.resetAccumulation();
 }
 
 int BrickApp::meshOf(int part) {
@@ -353,6 +390,20 @@ void BrickApp::syncObjects() {
         const bool focus = (int)i == m_selected || (m_holding && (int)i == m_held.brick) ||
                            std::find(m_multi.begin(), m_multi.end(), (int)i) != m_multi.end();
         o.material = dim && !focus ? m_dimMaterial[c] : m_colorMaterial[c];
+        if (m_mechOn && m_mechTint && i < m_mm.brickBody.size()) {   // Mechanical mode: one colour per body (golden angle hues)
+            const int body = m_mm.brickBody[i];
+            while ((int)m_tintMaterial.size() <= body) {
+                const int k = (int)m_tintMaterial.size();
+                float h = std::fmod(k * 0.618034f, 1.0f) * 6.0f, x = 1.0f - std::fabs(std::fmod(h, 2.0f) - 1.0f);
+                float3 rgb = h < 1 ? float3(1, x, 0) : h < 2 ? float3(x, 1, 0) : h < 3 ? float3(0, 1, x) : h < 4 ? float3(0, x, 1) : h < 5 ? float3(x, 0, 1) : float3(1, 0, x);
+                Material t;
+                t.name = "Body tint";
+                t.baseColor = float3(srgbToLinear(0.075f + rgb.x * 0.85f), srgbToLinear(0.075f + rgb.y * 0.85f), srgbToLinear(0.075f + rgb.z * 0.85f));
+                t.roughness = 0.45f;
+                m_tintMaterial.push_back(m_scene.addMaterial(t));
+            }
+            o.material = m_tintMaterial[body];
+        }
         o.ghost = false;
         if (m_holding && (int)i == m_held.brick && m_held.blocked) {
             o.material = m_blockedMaterial;
@@ -546,7 +597,7 @@ void BrickApp::cameraInput() {
     }
     if (!io.WantTextInput) {
         if (ImGui::IsKeyPressed(ImGuiKey_F)) { frameAll(); changed = true; }
-        if (ImGui::IsKeyPressed(ImGuiKey_P)) { m_rs.raster = !m_rs.raster; changed = true; }
+        if (ImGui::IsKeyPressed(ImGuiKey_P)) { m_rs.raster = !m_rs.raster; applyLook(); changed = true; }
         if (ImGui::IsKeyPressed(ImGuiKey_L)) {   // levels of detail on / off (comparison)
             std::swap(m_scene.lods, m_lodsOff);
             changed = true;
@@ -588,6 +639,8 @@ void BrickApp::frame() {
     m_rs.pixelScale = scale;
     m_renderer.renderToTexture(m_scene, m_rs, m_vp, selObj);
     ImGui::GetBackgroundDrawList()->AddImage(m_gui.viewportTexture(), ImVec2(0, 0), ds);
+    drawVoxels();          // over the 3D view, under the panels
+    drawMechOverlay();
     LARGE_INTEGER t1;
     QueryPerformanceCounter(&t1);
     m_cpuMs = m_cpuMs * 0.9 + 0.1 * (t1.QuadPart - t0.QuadPart) * 1000.0 / m_qpf.QuadPart;

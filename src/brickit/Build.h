@@ -92,6 +92,7 @@ public:
     // edits
     int stackedCopy(int src);                 // copy right above (first free place), -1 if none
     void rotatePlaced(int brick, int dir);    // 90 degrees around Y through its pivot
+    void rotatePlacedAxis(int brick, const float3& axis, int dir);   // 90 degrees around a world axis through its pivot
 
     // scene file (vp3d-scene v1, compatible with the web builder)
     std::string toJson(const vp3d::Camera& cam) const;

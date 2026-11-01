@@ -1,345 +1,942 @@
-// BrickIt - compact panels for a 4K monitor (WZX Engine theme): toolbar on top, library on two rows at the bottom
-// (fixed height), colours on the right, stats on the left, toasts above the library.
+// BrickIt - the interface of the web builder v26 (docs/brickit/web/BrickIt_Builder.html), element by element: the CSS
+// colours (--bg, --panel, --card, --line, --accent ...), the compact sizes (top bar 24 px buttons, tray, 84 px cards),
+// the SVG icons (Svg.cpp), the French texts. Everything is drawn with ImDrawList in one window behind the ImGui popups;
+// clicks are hit-tested here. m_ui scales the whole interface (4K: 2).
 #include "BrickApp.h"
-#include "app/Icons.h"
+#include "Svg.h"
 #include "app/Theme.h"
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <cstring>
 
 namespace brickit {
 
-namespace th = app::th;
+// ------------------------------------------------------------------ web CSS colours
+static const ImU32 C_BG = IM_COL32(0x13, 0x14, 0x17, 255);
+static const ImU32 C_PANEL = IM_COL32(24, 25, 29, 235);           // rgba(24, 25, 29, 0.92)
+static const ImU32 C_PANEL_SOLID = IM_COL32(0x1b, 0x1c, 0x20, 255);
+static const ImU32 C_CARD = IM_COL32(0x25, 0x26, 0x2b, 255);
+static const ImU32 C_CARD_HI = IM_COL32(0x30, 0x32, 0x3a, 255);
+static const ImU32 C_LINE = IM_COL32(0x2f, 0x31, 0x37, 255);
+static const ImU32 C_TEXT = IM_COL32(0xec, 0xec, 0xee, 255);
+static const ImU32 C_DIM = IM_COL32(0x9a, 0x9c, 0xa4, 255);
+static const ImU32 C_FAINT = IM_COL32(0x67, 0x6a, 0x72, 255);
+static const ImU32 C_ACCENT = IM_COL32(0xf7, 0xc5, 0x1e, 255);
+static const ImU32 C_INK = IM_COL32(0x17, 0x17, 0x1a, 255);
+static const ImU32 C_LYEL = IM_COL32(0xf2, 0xcd, 0x37, 255);
+static const ImU32 C_LBLU = IM_COL32(0x00, 0x55, 0xbf, 255);
+static const ImU32 C_OVERLAY = IM_COL32(15, 16, 19, 219);        // rgba(15, 16, 19, 0.86)
+static const ImU32 C_HUD = IM_COL32(15, 16, 19, 184);            // rgba(15, 16, 19, 0.72)
+static const ImU32 C_DEV = IM_COL32(0x7f, 0xe3, 0xff, 255);
 
-#define ICON_CLOCK u8""
-#define ICON_DUP   u8""
-#define ICON_TURN  u8""
-#define ICON_TRASH u8""
-#define ICON_UNDO_ u8""
-#define ICON_REDO_ u8""
-#define ICON_SAVE_ u8""
-#define ICON_OPEN_ u8""
-#define ICON_FIND  u8""
-#define ICON_STAR_ u8""
-#define ICON_STARF u8""
-#define ICON_SIZE  u8""
-#define ICON_FOCUS_ u8""
-#define ICON_GRID_ u8""
-#define ICON_RT    u8""
-#define ICON_CUBE_ u8""
+static ImU32 alphaOf(ImU32 c, float a) { return (c & 0x00FFFFFF) | ((ImU32)(((c >> 24) & 0xFF) * a) << 24); }
 
-static const ImGuiWindowFlags kPanel = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |
-                                       ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoBringToFrontOnFocus;
-
-// French labels of the LDraw categories and the LDraw families (same tree as the web builder).
+// LDraw families of the web (line 1 of the library) and their categories (line 2, empty ones dashed)
+struct Fam { const char* name; std::vector<const char*> cats; };
+static const std::vector<Fam>& families() {
+    static const std::vector<Fam> f = {
+        {"Basique", {"Brick", "Plate", "Tile", "Baseplate", "Bracket", "Panel"}},
+        {"Formes", {"Slope", "Wedge", "Arch", "Cylinder", "Cone", "Dish", "Sphere"}},
+        {"Technic", {"Technic", "Electric", "Znap", "Constraction", "Constraction Accessory"}},
+        {"Mécanique", {"Hinge", "Turntable", "Bar", "Lever", "Winch", "Crane", "Grab", "Magnet", "Conveyor", "Screw", "Rack", "Hose", "Tap"}},
+        {"Véhicules", {"Wheel", "Tyre", "Car", "Vehicle", "Train", "Monorail", "Boat", "Plane", "Wing", "Tail", "Propeller", "Cockpit", "Windscreen", "Exhaust", "Tractor", "Trailer", "Tipper", "Forklift"}},
+        {"Bâtiment", {"Door", "Window", "Glass", "Fence", "Ladder", "Staircase", "Support", "Platform", "Garage", "Container", "Roadsign", "Flag", "Antenna"}},
+        {"Personnages", {"Minifig", "Minifig Accessory", "Minifig Footwear", "Minifig Headwear", "Minifig Hipwear", "Minifig Neckwear", "Figure", "Figure Accessory", "Arm"}},
+        {"Nature", {"Animal", "Plant", "Rock"}},
+        {"Autres gammes", {"Duplo", "Scala", "Belville", "Clikits", "Homemaker", "Freestyle", "Sticker", "Sheet Cardboard", "Sheet Fabric", "Sheet Plastic", "Obsolete", "Pov-RAY"}},
+    };
+    return f;
+}
 static const char* catFr(const std::string& c) {
     static const std::pair<const char*, const char*> t[] = {
-        {"Brick", "Briques"}, {"Plate", "Plaques"}, {"Tile", "Tuiles"}, {"Slope", "Pentes"}, {"Wedge", "Biseaux"}, {"Arch", "Arches"},
-        {"Cylinder", "Cylindres"}, {"Cone", "Cônes"}, {"Dish", "Paraboles"}, {"Sphere", "Sphères"}, {"Technic", "Technic"},
-        {"Panel", "Panneaux"}, {"Bracket", "Équerres"}, {"Hinge", "Charnières"}, {"Wheel", "Roues"}};
+        {"Brick", "Briques"}, {"Plate", "Plaques"}, {"Tile", "Tuiles"}, {"Baseplate", "Plaques de base"}, {"Bracket", "Équerres"},
+        {"Panel", "Panneaux"}, {"Slope", "Pentes"}, {"Wedge", "Biseaux"}, {"Arch", "Arches"}, {"Cylinder", "Cylindres"}, {"Cone", "Cônes"},
+        {"Dish", "Paraboles"}, {"Sphere", "Sphères"}, {"Electric", "Électrique"}, {"Hinge", "Charnières"}, {"Turntable", "Plateaux tournants"},
+        {"Bar", "Barres"}, {"Lever", "Leviers"}, {"Winch", "Treuils"}, {"Crane", "Grues"}, {"Grab", "Pinces"}, {"Magnet", "Aimants"},
+        {"Conveyor", "Convoyeurs"}, {"Screw", "Vis"}, {"Rack", "Crémaillères"}, {"Hose", "Tuyaux"}, {"Tap", "Robinets"}, {"Wheel", "Roues"},
+        {"Tyre", "Pneus"}, {"Car", "Voiture"}, {"Vehicle", "Véhicule"}, {"Train", "Train"}, {"Boat", "Bateau"}, {"Plane", "Avion"},
+        {"Wing", "Ailes"}, {"Tail", "Dérives"}, {"Propeller", "Hélices"}, {"Cockpit", "Cockpits"}, {"Windscreen", "Pare-brise"},
+        {"Door", "Portes"}, {"Window", "Fenêtres"}, {"Glass", "Vitres"}, {"Fence", "Clôtures"}, {"Ladder", "Échelles"},
+        {"Staircase", "Escaliers"}, {"Support", "Supports"}, {"Platform", "Plateformes"}, {"Container", "Conteneurs"},
+        {"Roadsign", "Panneaux routiers"}, {"Flag", "Drapeaux"}, {"Antenna", "Antennes"}, {"Minifig", "Minifigs"}, {"Animal", "Animaux"},
+        {"Plant", "Plantes"}, {"Rock", "Rochers"}};
     for (auto& e : t)
         if (c == e.first) return e.second;
     return c.c_str();
 }
+static const char* kTechSubs[] = {"Poutres", "Axes", "Pins", "Connecteurs", "Engrenages", "Briques", "Panneaux", "Direction", "Pneumatique",
+                                  "Chenilles", "Moteurs", "Rotation", "Flex", "Bionicle", "Divers"};
 
-// Row 1: LDraw families (as the web builder); row 2: the categories of the family (Technic: its sub-families).
-void BrickApp::buildNav() {
-    m_nav.clear();
-    m_families = {"Basique", "Formes", "Technic"};
-    m_nav.push_back({"Récents", 0, ""});
-    m_nav.push_back({"Favoris", 1, ""});
-    static const char* basic[] = {"Brick", "Plate", "Tile", "Baseplate", "Bracket", "Panel"};
-    static const char* shapes[] = {"Slope", "Wedge", "Arch", "Cylinder", "Cone", "Dish", "Sphere"};
-    auto addCats = [&](const char* const* cats, int n, int fam) {
-        for (int k = 0; k < n; ++k) {
-            bool any = false;
-            for (const Part& p : m_lib.parts) any |= p.base && p.category == cats[k];
-            if (any) m_nav.push_back({catFr(cats[k]), 2, cats[k], fam});
-        }
-    };
-    addCats(basic, 6, 0);
-    addCats(shapes, 7, 1);
-    static const char* techBase[] = {"Technic"};
-    addCats(techBase, 1, 2);
-    m_nav.back().label = "Base";
-    static const char* subs[] = {"Poutres", "Axes", "Pins", "Connecteurs", "Engrenages", "Briques", "Panneaux", "Direction",
-                                 "Pneumatique", "Chenilles", "Moteurs", "Rotation", "Flex", "Bionicle", "Divers"};
-    for (const char* s : subs) {
-        bool any = false;
-        for (const Part& p : m_lib.parts) any |= !p.base && p.sub == s;
-        if (any) m_nav.push_back({s, 3, s, 2});
-    }
-    m_navSel = std::min<int>(2, (int)m_nav.size() - 1);
+std::string BrickApp::partCat(int part) const {
+    const Part& p = m_lib.parts[part];
+    return p.category.empty() ? std::string("Autre") : p.category;
 }
 
-static std::string lower(std::string s) {
-    for (char& c : s) c = (char)std::tolower((unsigned char)c);
-    return s;
+void BrickApp::buildNav() {
+    // Technic parts of the base set get their sub-family from the second word of their title, as the web (techSub)
+    static const std::pair<const char*, std::vector<const char*>> subs[] = {
+        {"Poutres", {"Beam", "Liftarm"}}, {"Axes", {"Axle"}}, {"Pins", {"Pin"}}, {"Connecteurs", {"Connector", "Cross", "Angle", "Bush", "Link"}},
+        {"Engrenages", {"Gear", "Worm", "Differential", "Gearbox", "Sprocket", "Clutch", "Changeover", "Transmission", "Cam"}},
+        {"Briques", {"Brick", "Plate", "Tile"}}, {"Panneaux", {"Panel", "Fairing", "Dome", "Wedge", "Bumper", "Grille", "Windscreen", "Wing"}},
+        {"Direction", {"Steering", "Suspension", "Shock", "Universal", "Ball"}}, {"Pneumatique", {"Pneumatic"}},
+        {"Chenilles", {"Chain", "Tread", "Belt", "Rubber", "Track", "Wheel", "Pulley"}}, {"Moteurs", {"Engine", "Linear", "Piston", "Cylinder"}},
+        {"Rotation", {"Turntable", "Rotor", "Rotation"}}, {"Flex", {"Flex-System", "Cable"}}, {"Bionicle", {"Bionicle", "Disc", "Sword"}}};
+    for (Part& p : m_lib.parts) {
+        if (p.category != "Technic" || !p.sub.empty()) continue;
+        std::string w;
+        size_t a = p.label.find(' ');
+        if (a != std::string::npos) { size_t b = p.label.find(' ', a + 1); w = p.label.substr(a + 1, b == std::string::npos ? std::string::npos : b - a - 1); }
+        p.sub = "Divers";
+        for (auto& sbs : subs)
+            for (const char* k : sbs.second)
+                if (w == k) p.sub = sbs.first;
+    }
+    // --cat N (scripted tests): 0 recents, 1 favourites, then the families
+    m_nav.clear();
+    m_nav.push_back({"Récentes", 0, "recent"});
+    m_nav.push_back({"Favoris", 1, "fav"});
+    for (const Fam& f : families()) m_nav.push_back({f.name, 2, f.name});
+    for (const char* s : kTechSubs) m_nav.push_back({s, 3, s, 2});
 }
 
 std::vector<int> BrickApp::visibleParts() const {
     std::vector<int> out;
-    if (m_searchOpen && !m_search.empty()) {   // search: every category
+    auto lower = [](std::string s) { for (char& c : s) c = (char)std::tolower((unsigned char)c); return s; };
+    if (m_searchOpen && !m_search.empty()) {
         const std::string q = lower(m_search);
         for (int i = 0; i < (int)m_lib.parts.size(); ++i) {
             const Part& p = m_lib.parts[i];
-            if (p.loaded && (lower(p.label).find(q) != std::string::npos || p.name.find(q) != std::string::npos)) out.push_back(i);
+            if (!p.loaded) continue;
+            std::string c = partCat(i);
+            if (lower(p.name).find(q) != std::string::npos || lower(p.label).find(q) != std::string::npos || lower(catFr(c)).find(q) != std::string::npos ||
+                lower(c).find(q) != std::string::npos)
+                out.push_back(i);
         }
         return out;
     }
-    if (m_navSel < 0 || m_navSel >= (int)m_nav.size()) return out;
-    const NavItem& n = m_nav[m_navSel];
-    if (n.kind == 0) return m_recent;
-    if (n.kind == 1) return m_fav;
+    if (m_fam == "fav") return m_fav;
+    if (m_fam == "recent") return m_recent;
+    const Fam* fam = nullptr;
+    for (const Fam& f : families()) if (m_fam == f.name) fam = &f;
     for (int i = 0; i < (int)m_lib.parts.size(); ++i) {
         const Part& p = m_lib.parts[i];
         if (!p.loaded) continue;
-        if ((n.kind == 2 && p.base && p.category == n.key) || (n.kind == 3 && !p.base && p.sub == n.key)) out.push_back(i);
+        if (m_fam == "all") { out.push_back(i); continue; }
+        if (!fam) continue;
+        std::string c = partCat(i);
+        bool in = m_cat.empty() ? std::find_if(fam->cats.begin(), fam->cats.end(), [&](const char* x) { return c == x; }) != fam->cats.end() : c == m_cat;
+        if (in && (m_sub.empty() || p.sub == m_sub)) out.push_back(i);
     }
     return out;
 }
 
-// Thumbnail card: the image alone (no text), framed; label in the tooltip; right click = favourite.
-bool BrickApp::partCard(int part, float size) {
-    ImGui::PushID(part);
-    ImVec2 p0 = ImGui::GetCursorScreenPos();
-    bool clicked = ImGui::InvisibleButton("card", ImVec2(size, size));
-    const bool hovered = ImGui::IsItemHovered();
-    ImDrawList* dl = ImGui::GetWindowDrawList();
-    ImVec2 p1(p0.x + size, p0.y + size);
-    const float rr = 4.0f * m_ui;
-    ImTextureID tex;
-    ImVec2 uv0, uv1;
-    if (thumbUv(part, tex, uv0, uv1)) dl->AddImageRounded(tex, p0, p1, uv0, uv1, IM_COL32_WHITE, rr);
-    else dl->AddRectFilled(p0, p1, th::field(), rr);
-    dl->AddRect(p0, p1, hovered ? th::strong() : th::border(), rr, 0, hovered ? 2.0f * m_ui : 1.0f * m_ui);
-    const bool fav = std::find(m_fav.begin(), m_fav.end(), part) != m_fav.end();
-    if (fav) dl->AddText(ImVec2(p1.x - 16 * m_ui, p0.y + 2 * m_ui), IM_COL32(255, 196, 40, 255), ICON_STARF);
-    if (hovered) {
-        ImGui::SetTooltip("%s\n%s", m_lib.parts[part].label.c_str(), m_lib.parts[part].name.c_str());
-        if (ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
-            if (fav) m_fav.erase(std::find(m_fav.begin(), m_fav.end(), part));
-            else m_fav.push_back(part);
+// ------------------------------------------------------------------ drawing helpers
+
+namespace {
+struct Ui {
+    ImDrawList* dl;
+    float s;
+    ImVec2 mouse;
+    bool pressed, released;
+    ImFont* font;
+    ImFont* bold;
+    static constexpr float kFont = 1.22f;   // Segoe UI in ImGui reads smaller than in the browser at the same px size
+    float fs(float px) const { return px * s * kFont; }
+    bool hover(ImVec2 a, ImVec2 b) const { return mouse.x >= a.x && mouse.y >= a.y && mouse.x < b.x && mouse.y < b.y; }
+    ImVec2 text(ImVec2 p, float px, ImU32 col, const char* t, bool b = false) {
+        ImFont* f = b ? bold : font;
+        dl->AddText(f, fs(px), p, col, t);
+        return f->CalcTextSizeA(fs(px), 1e9f, 0, t);
+    }
+    float textW(float px, const char* t, bool b = false) const { return (b ? bold : font)->CalcTextSizeA(fs(px), 1e9f, 0, t).x; }
+    void grip(ImVec2 p, float w, const char* label, bool collapsed, bool chev = true) {   // dots + LABEL + chevron
+        for (int r = 0; r < 2; ++r)
+            for (int c = 0; c < 6; ++c) dl->AddCircleFilled(ImVec2(p.x + (3 + c * 6) * s, p.y + (3 + r * 4) * s), 1.1f * s, C_FAINT, 6);
+        if (label) text(ImVec2(p.x + 42 * s, p.y - 1 * s), 10, C_FAINT, label);
+        if (chev) {
+            ImVec2 c(p.x + w - 6 * s, p.y + 5 * s);
+            float k = 3.5f * s;
+            if (!collapsed) dl->AddPolyline(std::vector<ImVec2>{ImVec2(c.x - k, c.y - k * 0.5f), c, ImVec2(c.x + k, c.y - k * 0.5f)}.data(), 3, C_FAINT, 0, 2 * s);
+            else dl->AddPolyline(std::vector<ImVec2>{ImVec2(c.x - k, c.y + k * 0.5f), ImVec2(c.x, c.y - k * 0.5f), ImVec2(c.x + k, c.y + k * 0.5f)}.data(), 3, C_FAINT, 0, 2 * s);
         }
     }
-    ImGui::PopID();
-    return clicked;
+};
 }
 
-// --------------------------------------------------------------------------- panels
+static Ui ui(float s) {
+    Ui u;
+    u.dl = ImGui::GetWindowDrawList();
+    u.s = s;
+    u.mouse = ImGui::GetIO().MousePos;
+    u.pressed = ImGui::IsMouseClicked(ImGuiMouseButton_Left);
+    u.released = ImGui::IsMouseReleased(ImGuiMouseButton_Left);
+    u.font = ImGui::GetFont();
+    u.bold = ImGui::GetFont();
+    return u;
+}
 
-void BrickApp::drawToolbar(float x, float y, float w) {
+// ------------------------------------------------------------------ top bar
+
+void BrickApp::uiHeader() {
+    Ui u = ui(m_ui);
+    if (m_gui.fontBold) u.bold = m_gui.fontBold;
     const float s = m_ui;
-    ImGui::SetNextWindowPos(ImVec2(x, y));
-    ImGui::SetNextWindowBgAlpha(0.92f);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(4 * s, 4 * s));
-    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(2 * s, 2 * s));
-    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(5 * s, 3 * s));
-    ImGui::Begin("##toolbar", nullptr, kPanel | ImGuiWindowFlags_AlwaysAutoResize);
-    auto tool = [&](const char* icon, const char* tip, bool on = false) {
-        if (on) ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
-        bool c = ImGui::Button(icon);
-        if (on) ImGui::PopStyleColor();
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", tip);
-        ImGui::SameLine();
-        return c;
+    ImVec2 d = ImGui::GetIO().DisplaySize;
+    const float H = 30 * s;
+    u.dl->AddRectFilled(ImVec2(0, 0), ImVec2(d.x, H), C_PANEL);
+    u.dl->AddLine(ImVec2(0, H - 0.5f), ImVec2(d.x, H - 0.5f), C_LINE, 1.0f);
+    m_uiRects.push_back(ImVec4(0, 0, d.x, H));
+    // logo: yellow 20 px square "3D" + BrickIt Builder
+    ImVec2 l(10 * s, 5 * s);
+    u.dl->AddRectFilled(l, ImVec2(l.x + 20 * s, l.y + 20 * s), C_ACCENT, 5 * s);
+    float tw = u.textW(9, "3D", true);
+    u.text(ImVec2(l.x + 10 * s - tw * 0.5f, l.y + 4.5f * s), 9, C_INK, "3D", true);
+    u.text(ImVec2(l.x + 26 * s, l.y + 3 * s), 12, C_TEXT, "BrickIt Builder", true);
+
+    // buttons, right aligned, in the order of the web
+    struct B { int kind; svg::Icon icon; const char* label; const char* tip; bool on, enabled; int id; };   // kind 0 icon, 1 select, 2 icon+text, 3 text, 4 sep
+    const bool sel = m_selected >= 0 || !m_multi.empty();
+    const char* tmNames[4] = {"ACES", "AgX", "AgX", "Std"};
+    std::vector<B> bs = {
+        {0, svg::I_UNDO, nullptr, "Annuler (Ctrl+Z)", false, !m_undo.empty() || m_holding, 1},
+        {0, svg::I_REDO, nullptr, "Rétablir", false, !m_redo.empty(), 2},
+        {4, svg::I_UNDO, nullptr, nullptr, false, true, 0},
+        {0, svg::I_SELECT, nullptr, "Mode Sélection : touche une brique, ou trace un rectangle pour en sélectionner plusieurs", m_mode == 0, true, 3},
+        {0, svg::I_VISOR, nullptr, "Mode Viseur : toucher une brique la prend en main", m_mode == 1, true, 4},
+        {0, svg::I_MOVE, nullptr, "Mode Déplacer : flèches sur la brique sélectionnée", m_mode == 2, true, 5},
+        {0, svg::I_ROTATE, nullptr, "Mode Tourner : anneaux sur la brique sélectionnée", m_mode == 3, true, 6},
+        {4, svg::I_UNDO, nullptr, nullptr, false, true, 0},
+        {0, svg::I_GRID, nullptr, "Grille ON : snap sur la grille du sol · OFF : pas de sol, snap sur le voxel le plus proche", m_build.gridSnap, true, 7},
+        {0, svg::I_PIVOT, nullptr, "Auto Pivot : le point touché devient le pivot", m_autoPivot, true, 8},
+        {0, svg::I_SAFETY, nullptr, "Sécurité : refuse de poser si plus de 50 % de la brique est dans une autre", m_build.safety, true, 9},
+        {0, svg::I_FOCUS, nullptr, "Mode focus : la brique sélectionnée reste claire, les autres passent à 50 % (F)", m_focusDim, true, 10},
+        {0, svg::I_ANIM, nullptr, "Animations des briques (A)", m_animOn, true, 11},
+        {4, svg::I_UNDO, nullptr, nullptr, false, true, 0},
+        {0, svg::I_VOXELS, nullptr, "Voir les voxels : tenons jaunes, pins cyan, axles magenta (V)", m_showVox, true, 12},
+        {0, svg::I_DELETE, nullptr, "Supprimer la sélection", false, sel && !m_holding, 13},
+        {1, svg::I_UNDO, m_quality ? "HQ" : "Rapide", "Qualité", false, true, 14},
+        {1, svg::I_UNDO, tmNames[std::clamp(m_rs.tonemapper, 0, 3)], "Transformation de vue", false, true, 15},
+        {4, svg::I_UNDO, nullptr, nullptr, false, true, 0},
+        {2, svg::I_MECH, "Mécanique", "Mode Mécanique : animer pivots, engrenages et axes (cinématique)", m_mechOn, true, 16},
+        {3, svg::I_UNDO, "DEV", "Mode développeur : connecteurs LDraw, export / réimport Maya des pièces", m_dev, true, 17},
+        {0, svg::I_WINDOWS, nullptr, "Fenêtres : afficher / masquer les panneaux", m_popup == 3, true, 18},
+        {0, svg::I_FILE, nullptr, "Scène : ouvrir / enregistrer (.v3d.json)", m_popup == 4, true, 19},
     };
-    auto sep = [&]() { ImGui::TextDisabled("|"); ImGui::SameLine(); };
-    if (tool(ICON_UNDO_, "Annuler (Ctrl+Z)")) undo();
-    if (tool(ICON_REDO_, "Rétablir (Ctrl+Y)")) redo();
-    sep();
-    if (tool(ICON_DUP, "Dupliquer au-dessus (Ctrl+D)")) duplicateSelected();
-    if (tool(ICON_TURN, "Tourner de 90° (R, Maj+R)")) rotateSelected(1);
-    if (tool(ICON_TRASH, "Supprimer (Suppr)")) deleteSelected();
-    sep();
-    if (tool(ICON_FOCUS_, "Mode focus : le reste assombri à 50 % (H)", m_focusDim)) { m_focusDim = !m_focusDim; syncObjects(); }
-    if (tool(ICON_GRID_, "Grille des tenons au sol (G)", m_build.gridSnap)) m_build.gridSnap = !m_build.gridSnap;
-    if (tool(ICON_RT, m_rs.raster ? "Path tracing (P)" : "Temps réel (P)", !m_rs.raster)) { m_rs.raster = !m_rs.raster; m_renderer.resetAccumulation(); }
-    if (tool(u8"\uE90F", "Mode Mécanique (M)", m_mechOn)) { if (m_mechOn) mechExit(); else mechEnter(); }
-    sep();
-    if (tool(ICON_SAVE_, "Enregistrer .v3d.json (Ctrl+S)")) saveDialog();
-    if (tool(ICON_OPEN_, "Ouvrir .v3d.json (Ctrl+O)")) openDialog();
-    ImGui::NewLine();
-    ImGui::End();
-    ImGui::PopStyleVar(3);
-    (void)w;
+    auto width = [&](const B& b) {
+        switch (b.kind) {
+        case 0: return 26 * s;
+        case 1: return u.textW(11, b.label) + 24 * s;
+        case 2: return u.textW(11, b.label) + 32 * s;
+        case 3: return u.textW(12, b.label, true) + 12 * s;
+        default: return 5 * s;
+        }
+    };
+    float total = 0;
+    for (const B& b : bs) total += width(b) + 4 * s;
+    float x = d.x - 10 * s - total + 4 * s;
+    const float y0 = 3 * s, y1 = 27 * s;
+    for (const B& b : bs) {
+        const float w = width(b);
+        ImVec2 a(x, y0), c(x + w, y1);
+        x += w + 4 * s;
+        if (b.kind == 4) { u.dl->AddLine(ImVec2(a.x + 2.5f * s, 8 * s), ImVec2(a.x + 2.5f * s, 22 * s), C_LINE, 1.0f); continue; }
+        const bool h = b.enabled && u.hover(a, c) && m_popup == 0;
+        ImU32 bg = b.on ? (b.id == 17 ? C_DEV : C_ACCENT) : (h ? C_CARD_HI : C_CARD);
+        ImU32 fg = b.on ? (b.id == 17 ? IM_COL32(0x0d, 0x1a, 0x1f, 255) : C_INK) : C_TEXT;
+        if (!b.enabled) { bg = alphaOf(bg, 0.4f); fg = alphaOf(fg, 0.4f); }
+        u.dl->AddRectFilled(a, c, bg, 6 * s);
+        const float cy = (y0 + y1) * 0.5f;
+        if (b.kind == 0) svg::icon(u.dl, b.icon, ImVec2((a.x + c.x) * 0.5f, cy), 14 * s, fg);
+        else if (b.kind == 1) {
+            u.text(ImVec2(a.x + 6 * s, cy - 7 * s), 11, fg, b.label);
+            ImVec2 k(c.x - 10 * s, cy);
+            u.dl->AddTriangleFilled(ImVec2(k.x - 3 * s, k.y - 1.5f * s), ImVec2(k.x + 3 * s, k.y - 1.5f * s), ImVec2(k.x, k.y + 2 * s), C_DIM);
+        } else if (b.kind == 2) {
+            svg::icon(u.dl, b.icon, ImVec2(a.x + 13 * s, cy), 14 * s, fg);
+            u.text(ImVec2(a.x + 24 * s, cy - 7 * s), 11, fg, b.label, b.on);
+        } else u.text(ImVec2(a.x + 6 * s, cy - 8 * s), 12, fg, b.label, true);
+        if (h && b.tip && ImGui::GetIO().MouseDownDuration[0] < 0) ImGui::SetTooltip("%s", b.tip);
+        if (!(h && u.pressed)) continue;
+        switch (b.id) {
+        case 1: undo(); break;
+        case 2: redo(); break;
+        case 3: case 4: case 5: case 6:
+            m_mode = b.id - 3;
+            if (m_mode >= 2) toast(m_mode == 2 ? "Mode Déplacer : les flèches arrivent bientôt dans la version native" : "Mode Tourner : les anneaux arrivent bientôt dans la version native");
+            break;
+        case 7: m_build.gridSnap = !m_build.gridSnap; toast(m_build.gridSnap ? "Grille ON : snap sur la grille du sol" : "Grille OFF : snap sur le voxel le plus proche"); break;
+        case 8: m_autoPivot = !m_autoPivot; toast(m_autoPivot ? "Auto Pivot : le point touché devient le pivot" : "Auto Pivot désactivé"); break;
+        case 9: m_build.safety = !m_build.safety; toast(m_build.safety ? "Sécurité ON : refus au-delà de 50 % de recouvrement" : "Sécurité OFF"); break;
+        case 10: m_focusDim = !m_focusDim; syncObjects(); break;
+        case 11: m_animOn = !m_animOn; break;
+        case 12: m_showVox = !m_showVox; toast(m_showVox ? "Voxels : affichés (tenons jaunes, pins cyan, axles magenta)" : "Voxels : masqués"); break;
+        case 13: deleteSelected(); break;
+        case 14: m_popup = m_popup == 1 ? 0 : 1; m_popupAt = ImVec2(a.x, y1 + 4 * s); break;
+        case 15: m_popup = m_popup == 2 ? 0 : 2; m_popupAt = ImVec2(a.x, y1 + 4 * s); break;
+        case 16: if (m_mechOn) mechExit(); else mechEnter(); break;
+        case 17: m_dev = !m_dev; toast(m_dev ? "Mode DEV : le panneau développeur arrive bientôt dans la version native" : "Mode DEV désactivé"); break;
+        case 18: m_popup = m_popup == 3 ? 0 : 3; m_popupAt = ImVec2(d.x - 220 * s, y1 + 4 * s); break;
+        case 19: m_popup = m_popup == 4 ? 0 : 4; m_popupAt = ImVec2(d.x - 230 * s, y1 + 4 * s); break;
+        }
+    }
 }
 
-void BrickApp::drawStats(float x, float y) {
+// ------------------------------------------------------------------ left-hand radial menu
+
+void BrickApp::uiRadial() {
+    if (!m_pOpts.visible || m_mechOn) return;
+    Ui u = ui(m_ui);
     const float s = m_ui;
-    ImGui::SetNextWindowPos(ImVec2(x, y));
-    ImGui::SetNextWindowBgAlpha(0.8f);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(6 * s, 4 * s));
-    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(4 * s, 1 * s));
-    ImGui::Begin("##stats", nullptr, kPanel | ImGuiWindowFlags_AlwaysAutoResize);
-    if (m_gui.fontSmall) ImGui::PushFont(m_gui.fontSmall);
-    ImGui::Text("%s · %d briques", m_rs.raster ? "Temps réel" : "Path tracing", (int)m_bricks.size());
-    ImGui::Text("GPU %.2f ms · CPU %.2f ms · %.0f i/s", m_renderer.gpuFrameMs(), m_cpuMs, m_frameMs > 0 ? 1000.0 / m_frameMs : 0.0);
-    if (m_rs.raster) ImGui::Text("Triangles dessinés %.2f M%s", m_renderer.rasterTriangles() / 1e6, m_scene.lods.empty() ? " (sans LOD)" : "");
-    else ImGui::Text("Échantillons %u", m_renderer.sampleCount());
-    if (m_holding) ImGui::TextColored(m_held.blocked ? ImVec4(1, 0.4f, 0.35f, 1) : ImVec4(1, 0.85f, 0.3f, 1), "%s",
-                                      m_held.blocked ? "Bloquée : chevauchement > 50 %" : (m_held.suggested ? "Pivot voisin proposé" : "Brique en main"));
-    if (m_gui.fontSmall) ImGui::PopFont();
-    ImGui::End();
-    ImGui::PopStyleVar(2);
+    ImVec2 d = ImGui::GetIO().DisplaySize;
+    const float trayTop = m_uiRects.size() > 1 ? m_uiRects[1].y : d.y;   // the tray is drawn before (index 1)
+    const float size = 200 * s, k = size / 220.0f;   // the web svg is 220 x 220 (viewBox -110..110)
+    const float titleH = 30 * s;
+    ImVec2 p0(10 * s, trayTop - 14 * s - size - titleH - (m_holding ? 40 * s : 0));
+    ImVec2 c(p0.x + size * 0.5f, p0.y + titleH + size * 0.5f);
+    m_uiRects.push_back(ImVec4(p0.x, p0.y, p0.x + size, p0.y + titleH + size + (m_holding ? 40 * s : 0)));
+    // grip (56 px) + title
+    u.grip(ImVec2(c.x - 18 * s, p0.y + 2 * s), 36 * s, nullptr, m_pOpts.collapsed, false);
+    if (u.hover(ImVec2(c.x - 28 * s, p0.y), ImVec2(c.x + 28 * s, p0.y + 14 * s)) && u.pressed) m_pOpts.collapsed = !m_pOpts.collapsed;
+    std::string title = "AUCUNE BRIQUE";
+    int focus = m_holding ? m_held.brick : m_selected;
+    if (focus >= 0) title = m_lib.parts[m_bricks[focus].part].label;
+    std::string up = title;
+    for (char& ch : up) ch = (char)std::toupper((unsigned char)ch);
+    if (up.size() > 28) up = up.substr(0, 27) + "…";
+    float tw = u.textW(10.5f, up.c_str());
+    u.text(ImVec2(c.x - tw * 0.5f, p0.y + 14 * s), 10.5f, C_DIM, up.c_str());
+    if (m_pOpts.collapsed) return;
+    const bool active = focus >= 0;
+    const float alpha = active ? 1.0f : 0.45f;   // .opts.radial.idle #radial { opacity: 0.45 }
+    const float RIN = 58 * k, ROUT = 100 * k, RDUP = 50 * k;
+    struct Wedge { const char* act; float a; const char* icon; const char* tip; };
+    static const Wedge W[4] = {{"rotU", -90, "M-9 4 L0 -5 L9 4", "Basculer vers le haut"},
+                               {"rotR", 0, "M-6 -7 A9 9 0 1 1 -8 3 M-6 -7 L-6 -1 M-6 -7 L0 -7", "Tourner à droite 90°"},
+                               {"rotD", 90, "M-9 -4 L0 5 L9 -4", "Basculer vers le bas"},
+                               {"rotL", 180, "M6 -7 A9 9 0 1 0 8 3 M6 -7 L6 -1 M6 -7 L0 -7", "Tourner à gauche 90°"}};
+    const float dx = u.mouse.x - c.x, dy = u.mouse.y - c.y, dist = std::sqrt(dx * dx + dy * dy);
+    int hot = -1;   // 0..3 wedges, 4 duplicate
+    if (dist <= RDUP + 4 * k) hot = 4;
+    else if (dist >= RIN - 3 * k && dist <= ROUT + 6 * k) {
+        float a = std::atan2(dy, dx) * 180.0f / 3.14159265f, bd = 360;
+        for (int i = 0; i < 4; ++i) { float diff = std::fabs(std::fmod(a - W[i].a + 540.0f, 360.0f) - 180.0f); if (diff < bd) { bd = diff; hot = i; } }
+    }
+    const float half = 41.0f * 3.14159265f / 180.0f;
+    for (int i = 0; i < 4; ++i) {
+        float a = W[i].a * 3.14159265f / 180.0f;
+        u.dl->PathArcTo(c, ROUT, a - half, a + half, 16);
+        u.dl->PathArcTo(c, RIN, a + half, a - half, 12);
+        const bool on = hot == i && active;
+        u.dl->PathFillConvex(alphaOf(on ? C_CARD_HI : IM_COL32(27, 28, 32, 240), alpha));
+        u.dl->PathArcTo(c, ROUT, a - half, a + half, 16);
+        u.dl->PathArcTo(c, RIN, a + half, a - half, 12);
+        u.dl->PathStroke(alphaOf(on ? C_LYEL : C_LINE, alpha), ImDrawFlags_Closed, 1.5f * k);
+        ImVec2 ic(c.x + std::cos(a) * (RIN + ROUT) * 0.5f, c.y + std::sin(a) * (RIN + ROUT) * 0.5f);
+        svg::path(u.dl, W[i].icon, ic, k, alphaOf(C_TEXT, alpha), 2.4f * k);
+        if (hot == i) ImGui::SetTooltip("%s", W[i].tip);
+    }
+    const bool onDup = hot == 4 && active;
+    u.dl->AddCircleFilled(c, RDUP, alphaOf(onDup ? C_LYEL : IM_COL32(27, 28, 32, 245), alpha), 48);
+    u.dl->AddCircle(c, RDUP, alphaOf(C_LYEL, alpha), 48, 2 * k);
+    svg::path(u.dl, "M-14 -10 h16 a3 3 0 0 1 3 3 v16 a3 3 0 0 1 -3 3 h-16 a3 3 0 0 1 -3 -3 v-16 a3 3 0 0 1 3 -3 z M5 -16 h11 a3 3 0 0 1 3 3 v13",
+              c, k, alphaOf(onDup ? IM_COL32(0x1b, 0x15, 0x00, 255) : C_TEXT, alpha), 2.4f * k);
+    float lw = u.textW(8 * k / s, "Dupliquer");
+    u.text(ImVec2(c.x - lw * 0.5f, c.y + 22 * k), 8 * k / s, alphaOf(C_DIM, alpha), "Dupliquer");
+    if (hot == 4) ImGui::SetTooltip("Dupliquer la brique");
+    if (u.pressed && active && hot >= 0) {
+        if (hot == 4) duplicateSelected();
+        else if (hot == 0) tiltSelected(-1);
+        else if (hot == 2) tiltSelected(1);
+        else rotateSelected(hot == 1 ? -1 : 1);
+    }
+    // pills while a brick is in hand: Poser / Annuler
+    if (m_holding) {
+        float py = p0.y + titleH + size + 4 * s;
+        const char* labels[2] = {"Poser", "Annuler"};
+        float x = c.x - 70 * s;
+        for (int i = 0; i < 2; ++i) {
+            ImVec2 a(x, py), b(x + 66 * s, py + 34 * s);
+            bool h = u.hover(a, b);
+            u.dl->AddRectFilled(a, b, i == 0 ? C_LBLU : (h ? C_CARD_HI : IM_COL32(27, 28, 32, 240)), 17 * s);
+            float w = u.textW(12.5f, labels[i], i == 0);
+            u.text(ImVec2((a.x + b.x) * 0.5f - w * 0.5f, py + 9 * s), 12.5f, C_TEXT, labels[i], i == 0);
+            if (h && u.pressed) { if (i == 0) dropHeld(); else cancelHeld(); }
+            x += 74 * s;
+        }
+    }
 }
 
-void BrickApp::drawColors(float x, float y, float w, float h) {
+// ------------------------------------------------------------------ colours panel (right)
+
+void BrickApp::uiColors() {
+    if (!m_pColors.visible || m_mechOn) return;
+    Ui u = ui(m_ui);
     const float s = m_ui;
-    ImGui::SetNextWindowPos(ImVec2(x, y));
-    ImGui::SetNextWindowSize(ImVec2(w, h));   // h = 0: the height of the content
-    ImGui::SetNextWindowBgAlpha(0.92f);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(6 * s, 6 * s));
-    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(3 * s, 3 * s));
-    ImGui::Begin("##colors", nullptr, kPanel | ImGuiWindowFlags_AlwaysAutoResize);
-    if (m_gui.fontSmall) ImGui::PushFont(m_gui.fontSmall);
-    ImGui::TextDisabled("COULEURS");
-    const float sw = 18 * s;
-    const int perRow = std::max(1, (int)((w - 12 * s + 3 * s) / (sw + 3 * s)));
+    ImVec2 d = ImGui::GetIO().DisplaySize;
+    const float W = 104 * s, pad = 6 * s, sw = 28 * s, gap = 4 * s;
+    // height of the content
+    int nStd = 0, nTr = 0, nMe = 0;
+    for (const Color& c : m_lib.palette) (c.group == "transparent" ? nTr : c.group == "metallic" ? nMe : nStd)++;
+    auto rows = [](int n) { return (n + 2) / 3; };
+    const float h6 = 16 * s;
+    float H = pad + 14 * s + 6 * s;
+    if (!m_pColors.collapsed) H += 14 * s + 6 * s + 3 * h6 + (rows(nStd) + rows(nTr) + rows(nMe)) * (sw + gap) + pad;
+    const float headerH = 30 * s, trayTop = m_uiRects.size() > 1 ? m_uiRects[1].y : d.y;
+    float y = std::max(headerH + 12 * s, headerH + (trayTop - headerH - H) * 0.5f);
+    ImVec2 p0(d.x - 10 * s - W, y), p1(d.x - 10 * s, y + H);
+    u.dl->AddRectFilled(p0, p1, C_OVERLAY, 14 * s);
+    m_uiRects.push_back(ImVec4(p0.x, p0.y, p1.x, p1.y));
+    u.grip(ImVec2(p0.x + pad, p0.y + pad), W - 2 * pad, "COULEURS", m_pColors.collapsed);
+    if (u.hover(p0, ImVec2(p1.x, p0.y + pad + 14 * s)) && u.pressed) m_pColors.collapsed = !m_pColors.collapsed;
+    if (m_pColors.collapsed) return;
+    float cy = p0.y + pad + 14 * s + 6 * s;
+    const Color& cur = m_lib.palette[std::clamp(m_color, 0, (int)m_lib.palette.size() - 1)];
+    ImU32 curCol = IM_COL32((int)(cur.srgb.x * 255), (int)(cur.srgb.y * 255), (int)(cur.srgb.z * 255), 255);
+    u.dl->AddRectFilled(ImVec2(p0.x + pad, cy + 1 * s), ImVec2(p0.x + pad + 12 * s, cy + 13 * s), curCol, 3 * s);
+    u.dl->AddRect(ImVec2(p0.x + pad, cy + 1 * s), ImVec2(p0.x + pad + 12 * s, cy + 13 * s), IM_COL32(255, 255, 255, 51), 3 * s);
+    char buf[96];
+    snprintf(buf, sizeof(buf), "%s · %d", cur.name.c_str(), cur.id);
+    u.dl->PushClipRect(ImVec2(p0.x, cy), ImVec2(p1.x - pad, cy + 16 * s), true);
+    u.text(ImVec2(p0.x + pad + 18 * s, cy), 10.5f, C_DIM, buf);
+    u.dl->PopClipRect();
+    cy += 14 * s + 6 * s;
     auto group = [&](const char* title, const char* key) {
-        ImGui::TextDisabled("%s", title);
+        u.text(ImVec2(p0.x + pad + 2 * s, cy + 3 * s), 9.5f, C_FAINT, title, true);
+        cy += h6;
         int k = 0;
         for (int i = 0; i < (int)m_lib.palette.size(); ++i) {
             const Color& c = m_lib.palette[i];
             if (c.group != key) continue;
-            if (k++ % perRow) ImGui::SameLine();
-            ImGui::PushID(i);
-            ImVec2 p0 = ImGui::GetCursorScreenPos();
-            if (ImGui::InvisibleButton("sw", ImVec2(sw, sw))) applyColor(i);
-            ImDrawList* dl = ImGui::GetWindowDrawList();
-            ImU32 col = IM_COL32((int)(c.srgb.x * 255), (int)(c.srgb.y * 255), (int)(c.srgb.z * 255), c.group == "transparent" ? 150 : 255);
-            dl->AddRectFilled(p0, ImVec2(p0.x + sw, p0.y + sw), col, 3 * s);
-            const bool cur = i == m_color;
-            dl->AddRect(p0, ImVec2(p0.x + sw, p0.y + sw), cur ? IM_COL32_WHITE : th::border(), 3 * s, 0, cur ? 2.0f * s : 1.0f);
-            if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s (%d)", c.name.c_str(), c.id);
-            ImGui::PopID();
+            ImVec2 a(p0.x + pad + 2 * s + (k % 3) * (sw + gap), cy + (k / 3) * (sw + gap)), b(a.x + sw, a.y + sw);
+            ImU32 col = IM_COL32((int)(c.srgb.x * 255), (int)(c.srgb.y * 255), (int)(c.srgb.z * 255), 255);
+            u.dl->AddRectFilled(a, b, col, 7 * s);
+            if (c.group == "transparent")   // .sw.trans::after: light diagonal
+                u.dl->AddRectFilledMultiColor(ImVec2(a.x + 4 * s, a.y + 4 * s), ImVec2(b.x - 4 * s, b.y - 4 * s), IM_COL32(255, 255, 255, 115), IM_COL32(255, 255, 255, 20), IM_COL32(255, 255, 255, 0), IM_COL32(255, 255, 255, 20));
+            if (c.group == "metallic")   // .sw.metal::after: vertical sheen
+                u.dl->AddRectFilledMultiColor(a, ImVec2(b.x, (a.y + b.y) * 0.5f), IM_COL32(255, 255, 255, 115), IM_COL32(255, 255, 255, 115), IM_COL32(255, 255, 255, 0), IM_COL32(255, 255, 255, 0));
+            u.dl->AddRect(a, b, IM_COL32(255, 255, 255, 26), 7 * s);
+            if (i == m_color) u.dl->AddRect(ImVec2(a.x - 3 * s, a.y - 3 * s), ImVec2(b.x + 3 * s, b.y + 3 * s), C_ACCENT, 9 * s, 0, 2 * s);
+            if (u.hover(a, b)) {
+                ImGui::SetTooltip("%s · %d", c.name.c_str(), c.id);
+                if (u.pressed) applyColor(i);
+            }
+            ++k;
         }
+        cy += rows(k) * (sw + gap);
     };
-    group("Standard", "standard");
-    group("Transparent", "transparent");
-    group("Métal", "metallic");
-    if (m_gui.fontSmall) ImGui::PopFont();
-    ImGui::End();
-    ImGui::PopStyleVar(2);
+    group("UNIES", "standard");
+    group("TRANSPARENTES", "transparent");
+    group("MÉTAL", "metallic");
 }
 
-void BrickApp::drawLibrary(float x, float y, float w, float h) {
-    const float s = m_ui;
-    static const float kSizes[3] = {56, 72, 96};
-    const float card = kSizes[std::clamp(m_thumbSize, 0, 2)] * s;
-    ImGui::SetNextWindowPos(ImVec2(x, y));
-    ImGui::SetNextWindowSize(ImVec2(w, h));
-    ImGui::SetNextWindowBgAlpha(0.94f);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(6 * s, 5 * s));
-    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(3 * s, 4 * s));
-    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(6 * s, 2 * s));
-    ImGui::Begin("##library", nullptr, kPanel);
-    // row 1: recents (clock), favourites (star), search (magnifier opening a field), thumbnail size, categories
-    auto iconToggle = [&](const char* icon, const char* tip, bool on) {
-        if (on) ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
-        bool c = ImGui::Button(icon);
-        if (on) ImGui::PopStyleColor();
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", tip);
-        ImGui::SameLine();
-        return c;
-    };
-    if (iconToggle(ICON_CLOCK, "Récents", m_navSel == 0 && !m_searchOpen)) { m_navSel = 0; m_searchOpen = false; }
-    if (iconToggle(ICON_STAR_, "Favoris (clic droit sur une pièce)", m_navSel == 1 && !m_searchOpen)) { m_navSel = 1; m_searchOpen = false; }
-    if (iconToggle(ICON_FIND, "Rechercher", m_searchOpen)) m_searchOpen = !m_searchOpen;
-    if (m_searchOpen) {
-        char buf[128];
-        snprintf(buf, sizeof(buf), "%s", m_search.c_str());
-        ImGui::SetNextItemWidth(180 * s);
-        if (ImGui::IsWindowAppearing() || ImGui::IsItemDeactivated()) {}
-        if (ImGui::InputTextWithHint("##q", "nom ou référence…", buf, sizeof(buf))) m_search = buf;
-        ImGui::SameLine();
-    }
-    if (iconToggle(ICON_SIZE, "Taille des miniatures", false)) m_thumbSize = (m_thumbSize + 1) % 3;
-    ImGui::TextDisabled("|");
-    ImGui::SameLine();
-    // row 1: families
-    const int curFam = (m_navSel >= 0 && m_navSel < (int)m_nav.size()) ? m_nav[m_navSel].fam : -1;
-    for (int f = 0; f < (int)m_families.size(); ++f) {
-        const bool on = f == curFam && !m_searchOpen;
-        if (on) ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
-        if (ImGui::Button(m_families[f].c_str())) {
-            for (int i = 0; i < (int)m_nav.size(); ++i)
-                if (m_nav[i].fam == f) { m_navSel = i; break; }
-            m_searchOpen = false;
-        }
-        if (on) ImGui::PopStyleColor();
-        ImGui::SameLine();
-    }
-    ImGui::NewLine();
-    // row 2: categories (sub-families) of the family, a strip that scrolls with the wheel
-    ImGui::BeginChild("##cats", ImVec2(0, ImGui::GetFrameHeight()), false, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_HorizontalScrollbar);
-    for (int i = 2; i < (int)m_nav.size(); ++i) {
-        if (m_nav[i].fam != curFam) continue;
-        const bool on = i == m_navSel && !m_searchOpen;
-        if (on) ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
-        if (ImGui::SmallButton(m_nav[i].label.c_str())) { m_navSel = i; m_searchOpen = false; }
-        if (on) ImGui::PopStyleColor();
-        ImGui::SameLine();
-    }
-    if (curFam < 0) ImGui::TextDisabled(m_navSel == 0 ? "Pièces utilisées récemment" : "Clic droit sur une miniature pour l'ajouter aux favoris");
-    if (ImGui::IsWindowHovered() && ImGui::GetIO().MouseWheel != 0) ImGui::SetScrollX(ImGui::GetScrollX() - ImGui::GetIO().MouseWheel * 60 * s);
-    ImGui::EndChild();
+// ------------------------------------------------------------------ library (tray, bottom)
 
-    // rows 2-3: the cards of the category on two rows, scrolling horizontally (column by column)
+void BrickApp::uiTray() {
+    if (!m_pTray.visible) { m_uiRects.push_back(ImVec4(0, ImGui::GetIO().DisplaySize.y, 0, ImGui::GetIO().DisplaySize.y)); return; }
+    Ui u = ui(m_ui);
+    if (m_gui.fontBold) u.bold = m_gui.fontBold;
+    const float s = m_ui;
+    ImVec2 d = ImGui::GetIO().DisplaySize;
+    static const float kTh[3] = {64, 84, 112};
+    const float th = kTh[std::clamp(m_thumbSize, 0, 2)] * s;
+    const float padX = 12 * s, padT = 4 * s, padB = 6 * s, gap = 4 * s;
+    const float gripH = 14 * s, famH = 30 * s, catH = 26 * s, cardsH = th * 2 + 6 * s + 6 * s;
+    const float H = padT + gripH + (m_pTray.collapsed ? 0 : gap + famH + gap + catH + gap + cardsH) + padB;
+    ImVec2 p0(0, d.y - H), p1(d.x, d.y);
+    const float alpha = m_mechOn ? 0.45f : 1.0f;   // #app.mech-on .tray { opacity: .45 }
+    u.dl->AddRectFilled(p0, p1, C_PANEL);
+    u.dl->AddLine(ImVec2(0, p0.y + 0.5f), ImVec2(d.x, p0.y + 0.5f), C_LINE, 1.0f);
+    m_uiRects.push_back(ImVec4(p0.x, p0.y, p1.x, p1.y));
+    float y = p0.y + padT;
+    u.grip(ImVec2(padX, y), d.x - 2 * padX, "BIBLIOTHÈQUE", m_pTray.collapsed);
+    if (u.hover(ImVec2(0, y - 2 * s), ImVec2(d.x, y + gripH)) && u.pressed) m_pTray.collapsed = !m_pTray.collapsed;
+    if (m_pTray.collapsed) return;
+    const bool live = !m_mechOn;
+    y += gripH + gap;
+    // ---- row 1: recent / favourites icons, families with counts, then search and size tools on the right
+    float x = padX;
+    auto famTab = [&](const char* label, int n, bool selected, svg::Icon icon, bool isIcon, float& xx) {
+        char cnt[16];
+        snprintf(cnt, sizeof(cnt), "%d", n);
+        float w = isIcon ? 32 * s : 12 * s + u.textW(13, label, selected) + (n >= 0 ? 4 * s + u.textW(11, cnt) : 0) + 12 * s;
+        ImVec2 a(xx, y), b(xx + w, y + famH);
+        bool h = live && u.hover(a, b);
+        if (selected) u.dl->AddRectFilled(a, b, alphaOf(C_CARD_HI, alpha), 15 * s);
+        ImU32 col = alphaOf(selected ? C_ACCENT : (h ? C_TEXT : C_DIM), alpha);
+        if (isIcon) svg::icon(u.dl, icon, ImVec2((a.x + b.x) * 0.5f, (a.y + b.y) * 0.5f), 16 * s, col);
+        else {
+            ImVec2 ts = u.text(ImVec2(a.x + 12 * s, a.y + 7 * s), 13, col, label, selected);
+            if (n >= 0) u.text(ImVec2(a.x + 12 * s + ts.x + 4 * s, a.y + 9 * s), 11, alphaOf(col, 0.55f), cnt);
+        }
+        xx += w + 4 * s;
+        return h && u.pressed;
+    };
+    if (famTab("", -1, m_fam == "recent" && !m_searchOpen, svg::I_RECENT, true, x)) { m_fam = "recent"; m_cat.clear(); m_sub.clear(); m_searchOpen = false; m_cardsScroll = 0; }
+    if (u.hover(ImVec2(x - 36 * s, y), ImVec2(x - 4 * s, y + famH))) ImGui::SetTooltip("Récentes");
+    if (famTab("", -1, m_fam == "fav" && !m_searchOpen, svg::I_FAV, true, x)) { m_fam = "fav"; m_cat.clear(); m_sub.clear(); m_searchOpen = false; m_cardsScroll = 0; }
+    if (u.hover(ImVec2(x - 36 * s, y), ImVec2(x - 4 * s, y + famH))) ImGui::SetTooltip("Favoris (appui long sur une pièce pour l'ajouter)");
+    int loaded = 0;
+    for (const Part& p : m_lib.parts) loaded += p.loaded;
+    if (famTab("Toutes", loaded, m_fam == "all" && !m_searchOpen, svg::I_RECENT, false, x)) { m_fam = "all"; m_cat.clear(); m_sub.clear(); m_searchOpen = false; m_cardsScroll = 0; }
+    for (const Fam& f : families()) {
+        int n = 0;
+        for (int i = 0; i < (int)m_lib.parts.size(); ++i) {
+            if (!m_lib.parts[i].loaded) continue;
+            std::string c = partCat(i);
+            for (const char* k : f.cats) if (c == k) { ++n; break; }
+        }
+        if (famTab(f.name, n, m_fam == f.name && !m_searchOpen, svg::I_RECENT, false, x)) { m_fam = f.name; m_cat.clear(); m_sub.clear(); m_searchOpen = false; m_cardsScroll = 0; }
+    }
+    // tools on the right: [search field] search, size
+    float tx = d.x - padX - 32 * s;
+    {
+        ImVec2 a(tx, y), b(tx + 32 * s, y + famH);
+        bool h = live && u.hover(a, b);
+        svg::icon(u.dl, svg::I_SIZE, ImVec2(a.x + 16 * s, a.y + 15 * s), 16 * s, alphaOf(h ? C_TEXT : C_DIM, alpha));
+        static const char* sizes[3] = {"petites", "moyennes", "grandes"};
+        if (h) ImGui::SetTooltip("Taille des miniatures (%s)", sizes[std::clamp(m_thumbSize, 0, 2)]);
+        if (h && u.pressed) m_thumbSize = (m_thumbSize + 1) % 3;
+        tx -= 36 * s;
+        a = ImVec2(tx, y); b = ImVec2(tx + 32 * s, y + famH);
+        h = live && u.hover(a, b);
+        if (m_searchOpen) u.dl->AddRectFilled(a, b, C_CARD_HI, 15 * s);
+        svg::icon(u.dl, svg::I_SEARCH, ImVec2(a.x + 16 * s, a.y + 15 * s), 16 * s, alphaOf(m_searchOpen ? C_ACCENT : (h ? C_TEXT : C_DIM), alpha));
+        if (h) ImGui::SetTooltip("Chercher une pièce");
+        if (h && u.pressed) { m_searchOpen = !m_searchOpen; if (!m_searchOpen) m_search.clear(); }
+        if (m_searchOpen) {   // input.search: 190 px, 28 px high, round, card background
+            ImVec2 sa(tx - 194 * s, y + 1 * s);
+            ImGui::SetNextWindowPos(sa);
+            ImGui::SetNextWindowSize(ImVec2(190 * s, 28 * s));
+            ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+            ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 14 * s);
+            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(12 * s, 6 * s));
+            ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
+            ImGui::PushStyleColor(ImGuiCol_FrameBg, ImGui::ColorConvertU32ToFloat4(C_CARD));
+            ImGui::PushStyleColor(ImGuiCol_Border, ImGui::ColorConvertU32ToFloat4(C_LINE));
+            ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0, 0, 0, 0));
+            ImGui::Begin("##search", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoBackground);
+            char buf[128];
+            snprintf(buf, sizeof(buf), "%s", m_search.c_str());
+            ImGui::SetNextItemWidth(190 * s);
+            if (ImGui::IsWindowAppearing()) ImGui::SetKeyboardFocusHere();
+            if (ImGui::InputTextWithHint("##q", "Nom ou réf. LDraw…", buf, sizeof(buf))) { m_search = buf; m_cardsScroll = 0; }
+            if (ImGui::IsItemActive() && ImGui::IsKeyPressed(ImGuiKey_Escape)) { m_search.clear(); m_searchOpen = false; }
+            ImGui::End();
+            ImGui::PopStyleColor(3);
+            ImGui::PopStyleVar(4);
+        }
+    }
+    y += famH + gap;
+    // ---- row 2: categories (pills) or a note
+    x = padX;
+    auto catPill = [&](const char* label, int n, bool selected, bool empty) {
+        char cnt[16];
+        snprintf(cnt, sizeof(cnt), "%d", n);
+        float w = 10 * s + u.textW(12, label) + (n > 0 ? 4 * s + u.textW(10.5f, cnt) : 0) + 10 * s;
+        ImVec2 a(x, y + 1 * s), b(x + w, y + 25 * s);
+        bool h = live && !empty && u.hover(a, b);
+        float al = (empty ? 0.38f : 1.0f) * alpha;
+        ImU32 border = selected ? C_ACCENT : C_LINE;
+        if (empty) {   // dashed border
+            for (float dx = a.x + 8 * s; dx < b.x - 8 * s; dx += 6 * s) {
+                u.dl->AddLine(ImVec2(dx, a.y), ImVec2(dx + 3 * s, a.y), alphaOf(border, al), 1.0f);
+                u.dl->AddLine(ImVec2(dx, b.y), ImVec2(dx + 3 * s, b.y), alphaOf(border, al), 1.0f);
+            }
+        } else u.dl->AddRect(a, b, alphaOf(border, al), 12 * s, 0, 1.0f);
+        ImU32 col = alphaOf(selected ? C_ACCENT : (h ? C_TEXT : C_DIM), al);
+        ImVec2 ts = u.text(ImVec2(a.x + 10 * s, a.y + 4.5f * s), 12, col, label);
+        if (n > 0) u.text(ImVec2(a.x + 10 * s + ts.x + 4 * s, a.y + 6 * s), 10.5f, alphaOf(col, 0.55f), cnt);
+        x += w + 4 * s;
+        return h && u.pressed;
+    };
+    const Fam* fam = nullptr;
+    for (const Fam& f : families()) if (m_fam == f.name) fam = &f;
+    if (m_searchOpen && !m_search.empty()) { std::string t = "Recherche « " + m_search + " »"; u.text(ImVec2(x + 4 * s, y + 6 * s), 11.5f, C_FAINT, t.c_str()); }
+    else if (!fam) {
+        const char* t = m_fam == "recent" ? "Récentes : les 24 dernières pièces posées" : m_fam == "fav" ? "Favoris : appui long sur une pièce > Ajouter aux favoris" : "Toutes les pièces importées";
+        u.text(ImVec2(x + 4 * s, y + 6 * s), 11.5f, C_FAINT, t);
+    } else {
+        if (catPill("Tout", 0, m_cat.empty(), false)) { m_cat.clear(); m_sub.clear(); m_cardsScroll = 0; }
+        std::vector<std::pair<const char*, int>> cs;
+        for (const char* c : fam->cats) {
+            int n = 0;
+            for (int i = 0; i < (int)m_lib.parts.size(); ++i) n += m_lib.parts[i].loaded && partCat(i) == c;
+            cs.push_back({c, n});
+        }
+        std::stable_sort(cs.begin(), cs.end(), [](const std::pair<const char*, int>& a, const std::pair<const char*, int>& b) { return (a.second > 0) > (b.second > 0); });
+        for (auto& c : cs) {
+            if (std::string(c.first) == "Technic" && c.second) {   // 700+ Technic parts: one chip per sub-family
+                for (const char* sn : kTechSubs) {
+                    int k = 0;
+                    for (const Part& p : m_lib.parts) k += p.loaded && p.category == "Technic" && p.sub == sn;
+                    if (!k) continue;
+                    if (catPill(sn, k, m_cat == "Technic" && m_sub == sn, false)) { m_cat = "Technic"; m_sub = sn; m_cardsScroll = 0; }
+                }
+                continue;
+            }
+            if (catPill(catFr(c.first), c.second, m_cat == c.first, c.second == 0)) { m_cat = c.first; m_sub.clear(); m_cardsScroll = 0; }
+        }
+    }
+    y += catH + gap;
+    // ---- cards on two rows (column by column), horizontal scroll with the wheel
     std::vector<int> parts = visibleParts();
-    ImGui::BeginChild("##cards", ImVec2(0, 0), false, ImGuiWindowFlags_HorizontalScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
-    const float gap = 4 * s;
-    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(gap, gap));
+    const float cgap = 6 * s;
     const int cols = (int)(parts.size() + 1) / 2;
-    for (int c = 0; c < cols; ++c) {
-        ImGui::BeginGroup();
-        for (int r = 0; r < 2; ++r) {
-            int k = c * 2 + r;
-            if (k >= (int)parts.size()) break;
-            if (partCard(parts[k], card)) {
-                ImVec2 d = ImGui::GetIO().DisplaySize;
-                spawn(parts[k], d.x * 0.5f, d.y * 0.45f);
+    const float contentW = cols * (th + cgap), viewW = d.x - 2 * padX;
+    ImVec2 ca(padX, y), cb(d.x - padX, y + cardsH);
+    if (live && u.hover(ca, cb) && ImGui::GetIO().MouseWheel != 0) m_cardsScroll -= ImGui::GetIO().MouseWheel * th;
+    m_cardsScroll = std::clamp(m_cardsScroll, 0.0f, std::max(0.0f, contentW - viewW));
+    u.dl->PushClipRect(ca, cb, true);
+    if (parts.empty()) {
+        const char* msg = (m_searchOpen && !m_search.empty()) ? "Aucune pièce pour cette recherche" : m_fam == "recent" ? "Les pièces que tu poses apparaîtront ici"
+                        : m_fam == "fav" ? "Aucun favori : appui long sur une pièce, puis Ajouter aux favoris" : "Aucune pièce importée dans cette catégorie";
+        u.text(ImVec2(padX + 8 * s, y + th - 8 * s), 12, C_FAINT, msg);
+    }
+    const double now = ImGui::GetTime();
+    for (int k = 0; k < (int)parts.size(); ++k) {
+        int c = k / 2, r = k % 2;
+        ImVec2 a(padX + c * (th + cgap) - m_cardsScroll, y + r * (th + cgap)), b(a.x + th, a.y + th);
+        if (b.x < ca.x || a.x > cb.x) continue;
+        const int part = parts[k];
+        bool h = live && u.hover(a, b) && u.hover(ca, cb);
+        u.dl->AddRectFilled(a, b, alphaOf(h ? C_CARD_HI : C_CARD, alpha), 10 * s);
+        ImTextureID tex;
+        ImVec2 uv0, uv1;
+        if (thumbUv(part, tex, uv0, uv1)) {   // img: object-fit contain, scale(1.4): the middle of the thumbnail, zoomed
+            ImVec2 du((uv1.x - uv0.x) * (1 - 1 / 1.4f) * 0.5f, (uv1.y - uv0.y) * (1 - 1 / 1.4f) * 0.5f);
+            u.dl->AddImageRounded(tex, ImVec2(a.x + 1.5f * s, a.y + 1.5f * s), ImVec2(b.x - 1.5f * s, b.y - 1.5f * s), ImVec2(uv0.x + du.x, uv0.y + du.y),
+                                  ImVec2(uv1.x - du.x, uv1.y - du.y), alphaOf(IM_COL32_WHITE, alpha), 9 * s);
+        }
+        u.dl->AddRect(a, b, alphaOf(h || m_libPress == part ? C_ACCENT : C_LINE, alpha), 10 * s, 0, 1.5f * s);
+        if (std::find(m_fav.begin(), m_fav.end(), part) != m_fav.end()) u.text(ImVec2(b.x - 14 * s, a.y + 2 * s), 11, C_ACCENT, "★");
+        if (h) {
+            char tip[200];
+            snprintf(tip, sizeof(tip), "%s · %s", m_lib.parts[part].label.c_str(), m_lib.parts[part].name.c_str());
+            if (m_libPress < 0) ImGui::SetTooltip("%s", tip);
+            if (u.pressed) { m_libPress = part; m_libPressPos = u.mouse; m_libPressTime = now; m_libLong = false; }
+        }
+    }
+    u.dl->PopClipRect();
+    // scrollbar (thin)
+    if (contentW > viewW) {
+        float bw = viewW * viewW / contentW, bx = padX + (viewW - bw) * (m_cardsScroll / (contentW - viewW));
+        u.dl->AddRectFilled(ImVec2(bx, cb.y - 3 * s), ImVec2(bx + bw, cb.y - 1 * s), C_LINE, 2 * s);
+    }
+    // press on a card: long press (480 ms, still) = part sheet; drag out of the tray = brick in hand following the
+    // cursor (drop on release); click = brick in hand in the middle of the view
+    if (m_libPress >= 0) {
+        ImVec2 dm(u.mouse.x - m_libPressPos.x, u.mouse.y - m_libPressPos.y);
+        const bool moved = dm.x * dm.x + dm.y * dm.y > 64 * s * s;
+        if (!m_libLong && !moved && now - m_libPressTime > 0.48) { m_libLong = true; m_infoPart = m_libPress; }
+        if (moved && u.mouse.y < p0.y) {   // out of the tray: drag and drop
+            int part = m_libPress;
+            m_libPress = -1;
+            spawn(part, u.mouse.x, u.mouse.y);
+            m_dragStarted = true;   // released over the view = dropped (editInput)
+            m_pressed = false;
+        } else if (!ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+            if (!m_libLong && !moved) spawn(m_libPress, d.x * 0.5f, (30 * s + p0.y) * 0.55f);
+            m_libPress = -1;
+        }
+    }
+}
+
+// ------------------------------------------------------------------ Mechanical panel (right)
+
+void BrickApp::uiMechPanel() {
+    if (!m_mechOn) return;
+    Ui u = ui(m_ui);
+    if (m_gui.fontBold) u.bold = m_gui.fontBold;
+    const float s = m_ui;
+    ImVec2 d = ImGui::GetIO().DisplaySize;
+    const float W = 280 * s, pad = 12 * s;
+    ImVec2 p0(d.x - 16 * s - W, 30 * s + 12 * s);
+    // content height first (two passes would be cleaner; the layout is linear)
+    float H = pad + 20 * s + 38 * s + 38 * s + 44 * s + m_mm.warnings.size() * 18 * s + m_mm.cmds.size() * 78 * s + 30 * s + pad;
+    if (m_mm.cmds.empty()) H += 34 * s;
+    ImVec2 p1(p0.x + W, p0.y + H);
+    u.dl->AddRectFilled(p0, p1, C_PANEL, 12 * s);
+    u.dl->AddRect(p0, p1, C_LINE, 12 * s);
+    m_uiRects.push_back(ImVec4(p0.x, p0.y, p1.x, p1.y));
+    float y = p0.y + pad, x = p0.x + pad;
+    u.text(ImVec2(x, y), 14, C_TEXT, "Mécanique", true);
+    {   // close: back to building
+        ImVec2 a(p1.x - pad - 30 * s, y - 4 * s), b(p1.x - pad, y + 22 * s);
+        bool h = u.hover(a, b);
+        u.dl->AddRectFilled(a, b, h ? C_CARD_HI : C_CARD, 7 * s);
+        svg::icon(u.dl, svg::I_CLOSE, ImVec2((a.x + b.x) * 0.5f, (a.y + b.y) * 0.5f), 12 * s, C_TEXT);
+        if (h) ImGui::SetTooltip("Revenir au montage");
+        if (h && u.pressed) { mechExit(); return; }
+    }
+    y += 26 * s;
+    auto smallBtn = [&](const char* label, bool on, float& bx, float by) {
+        float w = u.textW(12, label, on) + 20 * s;
+        ImVec2 a(bx, by), b(bx + w, by + 30 * s);
+        bool h = u.hover(a, b);
+        u.dl->AddRectFilled(a, b, on ? C_ACCENT : (h ? C_CARD_HI : C_CARD), 7 * s);
+        u.text(ImVec2(a.x + 10 * s, a.y + 8 * s), 12, on ? C_INK : C_TEXT, label, on);
+        bx += w + 6 * s;
+        return h && u.pressed;
+    };
+    float bx = x;
+    if (smallBtn("Pose de montage", false, bx, y)) {
+        for (MechCmd& c : m_mm.cmds) c.value = 0;
+        std::fill(m_mm.q.begin(), m_mm.q.end(), 0.0);
+        m_mech.solve(m_mm);
+        mechApplyPose();
+    }
+    y += 38 * s;
+    bx = x;
+    if (smallBtn("Liaisons", m_mechJoints, bx, y)) m_mechJoints = !m_mechJoints;
+    if (smallBtn("Couleurs par corps", m_mechTint, bx, y)) { m_mechTint = !m_mechTint; syncObjects(); mechApplyPose(); }
+    y += 38 * s;
+    // stats
+    int nRev = (int)(m_mm.tree.size() + m_mm.closures.size());
+    char line[200];
+    snprintf(line, sizeof(line), "%d corps (%d mobiles) · %d pivots · 0 vérins", m_mm.bodyCount, m_mm.bodyCount - (int)m_mm.roots.size(), nRev);
+    u.text(ImVec2(x, y), 11.5f, C_DIM, line);
+    snprintf(line, sizeof(line), "%d engrenages · %d boucles · %d DDL pour %d commandes", (int)m_mm.meshes.size(), (int)m_mm.closures.size(), m_mm.dof, (int)m_mm.cmds.size());
+    u.text(ImVec2(x, y + 20 * s), 11.5f, C_DIM, line);
+    y += 44 * s;
+    for (const std::string& w : m_mm.warnings) { u.text(ImVec2(x, y), 12, IM_COL32(0xff, 0x8a, 0x80, 255), w.c_str()); y += 18 * s; }
+    if (m_mm.cmds.empty()) {
+        u.text(ImVec2(x, y), 12, C_DIM, "Aucune commande : ajoute un vérin ou un train");
+        u.text(ImVec2(x, y + 16 * s), 12, C_DIM, "d'engrenages, ou attrape une pièce mobile.");
+        y += 34 * s;
+    }
+    ImGuiIO& io = ImGui::GetIO();
+    for (size_t k = 0; k < m_mm.cmds.size(); ++k) {
+        MechCmd& c = m_mm.cmds[k];
+        u.dl->AddLine(ImVec2(x, y), ImVec2(p1.x - pad, y), C_LINE, 1.0f);
+        y += 9 * s;
+        ImVec2 ns = u.text(ImVec2(x, y), 12.5f, C_TEXT, c.name.c_str(), true);
+        std::string ratio;
+        for (auto& r : c.ratio) {
+            char b[24];
+            float v = std::fabs(1.0f / r.second);
+            snprintf(b, sizeof(b), "%s1:%.1f", ratio.empty() ? "" : ", ", v);
+            std::string t(b);
+            size_t z = t.find(".0");
+            if (z != std::string::npos && z + 2 == t.size()) t.erase(z);
+            ratio += t;
+        }
+        if (!ratio.empty()) u.text(ImVec2(x + ns.x + 6 * s, y + 1 * s), 11.5f, C_FAINT, ratio.c_str());
+        snprintf(line, sizeof(line), "%d°", (int)std::lround(c.value * 180.0f / 3.14159265f));
+        float vw = u.textW(12, line);
+        u.text(ImVec2(p1.x - pad - vw, y), 12, C_ACCENT, line);
+        y += 20 * s;
+        // range -720..720 degrees, accent colour
+        ImVec2 ra(x, y + 6 * s), rb(p1.x - pad, y + 10 * s);
+        u.dl->AddRectFilled(ra, rb, C_CARD_HI, 2 * s);
+        float deg = std::clamp(c.value * 180.0f / 3.14159265f, -720.0f, 720.0f), t = (deg + 720.0f) / 1440.0f;
+        float kx = ra.x + (rb.x - ra.x) * t;
+        u.dl->AddRectFilled(ra, ImVec2(kx, rb.y), C_ACCENT, 2 * s);
+        u.dl->AddCircleFilled(ImVec2(kx, (ra.y + rb.y) * 0.5f), 7 * s, C_ACCENT, 20);
+        static int dragCmd = -1;
+        if (u.hover(ImVec2(ra.x, y), ImVec2(rb.x, y + 16 * s)) && u.pressed) dragCmd = (int)k;
+        if (dragCmd == (int)k) {
+            if (!ImGui::IsMouseDown(ImGuiMouseButton_Left)) dragCmd = -1;
+            else c.value = (-720.0f + 1440.0f * std::clamp((u.mouse.x - ra.x) / (rb.x - ra.x), 0.0f, 1.0f)) * 3.14159265f / 180.0f;
+        }
+        y += 20 * s;
+        // keys: ◀ Q / A ▶ (hold buttons)
+        auto hold = [&](const char* glyph, float hx, int dir) {
+            ImVec2 a(hx, y), b(hx + 34 * s, y + 28 * s);
+            bool h = u.hover(a, b), down = h && ImGui::IsMouseDown(ImGuiMouseButton_Left);
+            u.dl->AddRectFilled(a, b, down ? C_ACCENT : C_CARD, 7 * s);
+            (void)glyph;   // ◀ / ▶ drawn as triangles (the UI font has no such glyphs)
+            ImVec2 m((a.x + b.x) * 0.5f, (a.y + b.y) * 0.5f);
+            const float t = 5 * s;
+            if (dir < 0) u.dl->AddTriangleFilled(ImVec2(m.x - t, m.y), ImVec2(m.x + t * 0.8f, m.y - t), ImVec2(m.x + t * 0.8f, m.y + t), down ? C_INK : C_TEXT);
+            else u.dl->AddTriangleFilled(ImVec2(m.x + t, m.y), ImVec2(m.x - t * 0.8f, m.y - t), ImVec2(m.x - t * 0.8f, m.y + t), down ? C_INK : C_TEXT);
+            if (down) c.value += dir * c.speed * io.DeltaTime;
+        };
+        hold("◀", x, -1);
+        float kx2 = x + 40 * s;
+        auto kbd = [&](const char* t) {
+            float w = u.textW(11.5f, t) + 12 * s;
+            u.dl->AddRectFilled(ImVec2(kx2, y + 5 * s), ImVec2(kx2 + w, y + 23 * s), C_CARD, 4 * s);
+            u.text(ImVec2(kx2 + 6 * s, y + 7 * s), 11.5f, C_TEXT, t);
+            kx2 += w + 4 * s;
+        };
+        kbd(c.keyMinus ? ImGui::GetKeyName((ImGuiKey)c.keyMinus) : "");
+        u.text(ImVec2(kx2, y + 6 * s), 12, C_DIM, "/");
+        kx2 += 10 * s;
+        kbd(c.keyPlus ? ImGui::GetKeyName((ImGuiKey)c.keyPlus) : "");
+        hold("▶", kx2 + 2 * s, 1);
+        y += 36 * s;
+    }
+    u.text(ImVec2(x, y + 4 * s), 10.5f, C_DIM, "Glisse une pièce mobile : tout ce qui y est relié suit.");
+    if (!m_mechFlash.empty() && ImGui::GetTime() - m_mechFlashTime < 0.9) {
+        ImVec2 a(x, y + 24 * s), b(p1.x - pad, y + 50 * s);
+        u.dl->AddRectFilled(a, b, IM_COL32(229, 72, 77, 46), 8 * s);
+        u.text(ImVec2(a.x + 8 * s, a.y + 6 * s), 12, IM_COL32(0xff, 0xb3, 0xb5, 255), m_mechFlash.c_str());
+    }
+}
+
+// ------------------------------------------------------------------ HUD (Fenêtres > Infos), part sheet, popups, toast
+
+void BrickApp::uiHud() {
+    if (!m_pHud.visible) return;
+    Ui u = ui(m_ui);
+    const float s = m_ui;
+    char l1[160], l2[200];
+    snprintf(l1, sizeof(l1), "%d pièces · %d fps · GPU %.2f ms", (int)m_bricks.size(), (int)std::lround(m_frameMs > 0 ? 1000.0 / m_frameMs : 0.0), m_renderer.gpuFrameMs());
+    const char* st = m_mechOn ? "Mode Mécanique : touches du panneau ou glisse une pièce mobile"
+                   : m_holding ? (m_held.suggested ? "Pivot voisin valide proposé" : m_held.blocked ? "Placement refusé (> 50 %)" : "Brique en main")
+                   : m_selected >= 0 ? m_lib.parts[m_bricks[m_selected].part].label.c_str() : "Touche une brique pour la prendre";
+    snprintf(l2, sizeof(l2), "%s", st);
+    float w = std::max(u.textW(11, l1), u.textW(11, l2)) + 16 * s;
+    ImVec2 a(10 * s, 30 * s + 8 * s), b(a.x + w, a.y + 40 * s);
+    u.dl->AddRectFilled(a, b, C_HUD, 10 * s);
+    u.text(ImVec2(a.x + 8 * s, a.y + 4 * s), 11, C_DIM, l1);
+    u.text(ImVec2(a.x + 8 * s, a.y + 20 * s), 11, C_DIM, l2);
+}
+
+void BrickApp::uiInfoSheet() {
+    if (m_infoPart < 0) return;
+    Ui u = ui(m_ui);
+    if (m_gui.fontBold) u.bold = m_gui.fontBold;
+    const float s = m_ui;
+    ImVec2 d = ImGui::GetIO().DisplaySize;
+    u.dl->AddRectFilled(ImVec2(0, 0), d, IM_COL32(0, 0, 0, 128));
+    const float W = 560 * s, H = 300 * s;
+    ImVec2 p0((d.x - W) * 0.5f, (d.y - H) * 0.5f), p1(p0.x + W, p0.y + H);
+    u.dl->AddRectFilled(p0, p1, C_PANEL_SOLID, 14 * s);
+    u.dl->AddRect(p0, p1, C_LINE, 14 * s);
+    m_uiRects.push_back(ImVec4(0, 0, d.x, d.y));
+    const Part& p = m_lib.parts[m_infoPart];
+    ImVec2 ia(p0.x + 18 * s, p0.y + 18 * s), ib(ia.x + 240 * s, ia.y + 192 * s);
+    u.dl->AddRectFilled(ia, ib, IM_COL32(0x2a, 0x2b, 0x31, 255), 12 * s);
+    ImTextureID tex;
+    ImVec2 uv0, uv1;
+    if (thumbUv(m_infoPart, tex, uv0, uv1)) u.dl->AddImageRounded(tex, ImVec2(ia.x + 24 * s, ia.y), ImVec2(ib.x - 24 * s, ib.y), uv0, uv1, IM_COL32_WHITE, 12 * s);
+    float x = ib.x + 18 * s, y = ia.y;
+    u.text(ImVec2(x, y), 17, C_TEXT, p.label.c_str(), true);
+    y += 28 * s;
+    std::string path = std::string(catFr(partCat(m_infoPart))) + (p.sub.empty() ? "" : " › " + p.sub);
+    u.text(ImVec2(x, y), 13, C_DIM, path.c_str());
+    y += 20 * s;
+    std::string ref = "LDraw " + p.name + ".dat";
+    u.text(ImVec2(x, y), 13, C_FAINT, ref.c_str());
+    y += 34 * s;
+    const bool fav = std::find(m_fav.begin(), m_fav.end(), m_infoPart) != m_fav.end();
+    const char* fl = fav ? "★ Retirer des favoris" : "☆ Ajouter aux favoris";
+    float fw = u.textW(13, fl) + 24 * s;
+    ImVec2 fa(x, y), fb(x + fw, y + 36 * s);
+    bool fh = u.hover(fa, fb);
+    u.dl->AddRectFilled(fa, fb, fav ? C_ACCENT : (fh ? C_CARD_HI : C_CARD), 9 * s);
+    u.text(ImVec2(fa.x + 12 * s, fa.y + 10 * s), 13, fav ? C_INK : C_TEXT, fl, fav);
+    if (fh && u.pressed) { if (fav) m_fav.erase(std::find(m_fav.begin(), m_fav.end(), m_infoPart)); else m_fav.push_back(m_infoPart); }
+    ImVec2 ca(p1.x - 18 * s - 80 * s, p1.y - 18 * s - 36 * s), cb(p1.x - 18 * s, p1.y - 18 * s);
+    bool ch = u.hover(ca, cb);
+    u.dl->AddRectFilled(ca, cb, ch ? C_CARD_HI : C_CARD, 9 * s);
+    float cw = u.textW(13, "Fermer");
+    u.text(ImVec2((ca.x + cb.x) * 0.5f - cw * 0.5f, ca.y + 10 * s), 13, C_TEXT, "Fermer");
+    if ((ch && u.pressed) || ImGui::IsKeyPressed(ImGuiKey_Escape) || (u.pressed && !u.hover(p0, p1))) m_infoPart = -1;
+}
+
+void BrickApp::uiPopups() {
+    if (!m_popup) return;
+    Ui u = ui(m_ui);
+    const float s = m_ui;
+    struct Item { const char* label; bool on; int id; };
+    std::vector<Item> items;
+    if (m_popup == 1) items = {{"Rapide", m_quality == 0, 0}, {"HQ", m_quality == 1, 1}};
+    else if (m_popup == 2) items = {{"ACES", m_rs.tonemapper == 0, 0}, {"AgX", m_rs.tonemapper == 1, 1}, {"Std", m_rs.tonemapper == 3, 3}};
+    else if (m_popup == 3) items = {{"Bibliothèque", m_pTray.visible, 0}, {"Options de brique", m_pOpts.visible, 1}, {"Couleurs", m_pColors.visible, 2},
+                                    {"Infos (pièces, fps)", m_pHud.visible, 3}, {"Manuel", m_pManual.visible, 4}, {"Réinitialiser les panneaux", false, 5}};
+    else items = {{"Nouvelle scène", false, 0}, {"Ouvrir… (.v3d.json)", false, 1}, {"Enregistrer… (.v3d.json)", false, 2}};
+    const bool checks = m_popup == 3;
+    float w = 0;
+    for (const Item& it : items) w = std::max(w, u.textW(12.5f, it.label));
+    w += (checks ? 44 : 28) * s;
+    w = std::max(w, (m_popup >= 3 ? 210.0f : 90.0f) * s);
+    ImVec2 d = ImGui::GetIO().DisplaySize;
+    ImVec2 p0(std::min(m_popupAt.x, d.x - w - 10 * s), m_popupAt.y), p1(p0.x + w, p0.y + 12 * s + items.size() * 32 * s);
+    u.dl->AddRectFilled(p0, p1, C_PANEL_SOLID, 10 * s);
+    u.dl->AddRect(p0, p1, C_LINE, 10 * s);
+    m_uiRects.push_back(ImVec4(p0.x, p0.y, p1.x, p1.y));
+    float y = p0.y + 6 * s;
+    bool clickedItem = false;
+    for (const Item& it : items) {
+        ImVec2 a(p0.x + 6 * s, y), b(p1.x - 6 * s, y + 30 * s);
+        bool h = u.hover(a, b);
+        if (h) u.dl->AddRectFilled(a, b, C_CARD_HI, 7 * s);
+        float tx = a.x + 10 * s;
+        if (checks && it.id < 5) {
+            ImVec2 ca(tx, a.y + 8 * s), cb(tx + 14 * s, a.y + 22 * s);
+            if (it.on) {
+                u.dl->AddRectFilled(ca, cb, C_ACCENT, 4 * s);
+                u.dl->AddPolyline(std::vector<ImVec2>{ImVec2(ca.x + 3.5f * s, ca.y + 7 * s), ImVec2(ca.x + 6 * s, ca.y + 10 * s), ImVec2(ca.x + 11 * s, ca.y + 4 * s)}.data(), 3, C_INK, 0, 2 * s);
+            } else u.dl->AddRect(ca, cb, C_FAINT, 4 * s, 0, 1.5f * s);
+            tx += 24 * s;
+        }
+        u.text(ImVec2(tx, a.y + 7 * s), 12.5f, (it.on && !checks) ? C_ACCENT : C_TEXT, it.label);
+        if (h && u.pressed) {
+            clickedItem = true;
+            if (m_popup == 1) { m_quality = it.id; m_rs.msaaSamples = m_quality ? 4 : 1; }
+            else if (m_popup == 2) { m_rs.tonemapper = it.id; m_renderer.resetAccumulation(); }
+            else if (m_popup == 3) {
+                PanelState* ps[5] = {&m_pTray, &m_pOpts, &m_pColors, &m_pHud, &m_pManual};
+                if (it.id < 4) ps[it.id]->visible = !ps[it.id]->visible;
+                else if (it.id == 4) toast("Manuel : le module arrive bientôt dans la version native");
+                else { m_pTray = m_pOpts = m_pColors = PanelState(); m_pHud = PanelState{false, false}; }
+            } else {
+                if (it.id == 0) { pushUndo(); m_bricks.clear(); m_selected = -1; m_multi.clear(); rebuildScene(); toast("Nouvelle scène"); }
+                else if (it.id == 1) openDialog();
+                else saveDialog();
             }
         }
-        ImGui::EndGroup();
-        ImGui::SameLine();
+        y += 32 * s;
     }
-    if (parts.empty()) ImGui::TextDisabled(m_navSel == 1 ? "Pas encore de favoris : clic droit sur une miniature." : "Rien ici pour l'instant.");
-    ImGui::PopStyleVar();
-    if (ImGui::IsWindowHovered() && ImGui::GetIO().MouseWheel != 0) ImGui::SetScrollX(ImGui::GetScrollX() - ImGui::GetIO().MouseWheel * card);
-    ImGui::EndChild();
-    ImGui::End();
-    ImGui::PopStyleVar(3);
+    if (u.pressed && !clickedItem && !u.hover(p0, p1) && u.mouse.y > 30 * s) m_popup = 0;
+    if (clickedItem && m_popup != 3) m_popup = 0;
 }
 
 void BrickApp::drawToast() {
-    if (m_toast.empty() || ImGui::GetTime() - m_toastTime > 3.5) return;
-    ImVec2 d = ImGui::GetIO().DisplaySize;
-    ImVec2 ts = ImGui::CalcTextSize(m_toast.c_str());
+    // .toast: top 8 px of the view, round, dark, thin yellow border
+    if (m_toast.empty() || ImGui::GetTime() - m_toastTime > 3.2) return;
     const float s = m_ui;
-    ImVec2 p0(d.x * 0.5f - ts.x * 0.5f - 10 * s, d.y * 0.62f);
     ImDrawList* dl = ImGui::GetForegroundDrawList();
-    dl->AddRectFilled(p0, ImVec2(p0.x + ts.x + 20 * s, p0.y + ts.y + 10 * s), IM_COL32(20, 22, 26, 220), 6 * s);
-    dl->AddText(ImVec2(p0.x + 10 * s, p0.y + 5 * s), IM_COL32(235, 237, 240, 255), m_toast.c_str());
+    ImFont* f = ImGui::GetFont();
+    ImVec2 ts = f->CalcTextSizeA(12 * s, 1e9f, 0, m_toast.c_str());
+    ImVec2 d = ImGui::GetIO().DisplaySize;
+    float a = (float)std::clamp(3.2 - (ImGui::GetTime() - m_toastTime), 0.0, 0.4) / 0.4f;
+    ImVec2 p0(d.x * 0.5f - ts.x * 0.5f - 12 * s, 30 * s + 8 * s), p1(d.x * 0.5f + ts.x * 0.5f + 12 * s, p0.y + ts.y + 10 * s);
+    dl->AddRectFilled(p0, p1, alphaOf(IM_COL32(15, 16, 19, 224), a), 18 * s);
+    dl->AddRect(p0, p1, alphaOf(IM_COL32(247, 197, 30, 115), a), 18 * s);
+    dl->AddText(f, 12 * s, ImVec2(p0.x + 12 * s, p0.y + 5 * s), alphaOf(C_TEXT, a), m_toast.c_str());
 }
 
+// ------------------------------------------------------------------ frame of the interface
+
 void BrickApp::drawUi() {
-    const float s = m_ui;
     ImVec2 d = ImGui::GetIO().DisplaySize;
-    static const float kSizes[3] = {56, 72, 96};
-    const float card = kSizes[std::clamp(m_thumbSize, 0, 2)] * s;
-    const float m = 8 * s;
-    // library: fixed height, exactly two nav rows and two rows of cards (+ the horizontal scrollbar), whatever the category holds
-    const float spacing = 4 * s;   // ItemSpacing.y of the panel
-    const float libH = 5 * s * 2 + ImGui::GetFrameHeight() * 2 + spacing * 2 + 2 * card + 4 * s + ImGui::GetStyle().ScrollbarSize + 2 * s;
-    const float colW = 8 * (18 * s + 3 * s) + 12 * s;
-    drawLibrary(m, d.y - libH - m, d.x - colW - 3 * m, libH);
-    drawColors(d.x - colW - m, 48 * s, colW, 0);
-    drawToolbar(d.x * 0.5f - 200 * s, m, 400 * s);
-    drawStats(m, m);
-    if (m_mechOn) drawMech(m, 64 * s);
+    m_uiRects.clear();
+    // one window covering the screen, behind every ImGui window, holding the draw list of the panels
+    ImGui::SetNextWindowPos(ImVec2(0, 0));
+    ImGui::SetNextWindowSize(d);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0);
+    ImGui::Begin("##webui", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoInputs |
+                 ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav);
+    uiHeader();      // m_uiRects[0]
+    uiTray();        // m_uiRects[1]
+    uiRadial();
+    uiColors();
+    uiMechPanel();
+    uiHud();
+    uiPopups();
+    uiInfoSheet();
+    ImGui::End();
+    ImGui::PopStyleVar(2);
     drawToast();
-    m_overUi = ImGui::IsWindowHovered(ImGuiHoveredFlags_AnyWindow) || ImGui::IsAnyItemActive();
+    const ImVec2 mp = ImGui::GetIO().MousePos;
+    m_overUi = m_libPress >= 0 || ImGui::GetIO().WantCaptureMouse;
+    for (const ImVec4& r : m_uiRects)
+        if (mp.x >= r.x && mp.y >= r.y && mp.x < r.z && mp.y < r.w) m_overUi = true;
 }
 
 } // namespace brickit

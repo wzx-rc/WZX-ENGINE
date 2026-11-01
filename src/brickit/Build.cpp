@@ -284,6 +284,14 @@ int Builder::stackedCopy(int src) {
     return -1;
 }
 
+void Builder::rotatePlacedAxis(int i, const float3& axis, int dir) {
+    Brick& b = bricks[i];
+    float3 pivot = worldVoxel(b, grabOf(b));
+    float4 r = qAxisAngle(axis, dir * kPi * 0.5f);
+    b.rot = snapQuat(qMul(r, b.rot));
+    b.pos = pivot + qRot(r, b.pos - pivot);
+}
+
 void Builder::rotatePlaced(int i, int dir) {
     Brick& b = bricks[i];
     float3 pivot = worldVoxel(b, grabOf(b));

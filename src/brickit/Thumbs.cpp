@@ -3,6 +3,7 @@
 #include "BrickApp.h"
 #include "vp3d/AssetImport.h"
 #include "vp3d/shaders/Shared.h"
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 
@@ -22,7 +23,7 @@ void BrickApp::buildThumbs() {
     std::vector<std::vector<uint8_t>> pix(atlases, std::vector<uint8_t>((size_t)atlasPx * atlasPx * 4, 0));
 
     wchar_t name[128];
-    swprintf_s(name, L"\\cache\\thumbs4_%d_%d.bin", px, slots);   // 2: neutral grey studio of the web
+    swprintf_s(name, L"\\cache\\thumbs6_%d_%d.bin", px, slots);   // 5: transparent background (alpha)   // 2: neutral grey studio of the web
     const std::wstring cacheDir = m_exeDir + L"\\cache", cacheFile = m_exeDir + name;
     bool cached = false;
     FILE* f = nullptr;
@@ -49,6 +50,7 @@ void BrickApp::buildThumbs() {
         }
         ts.env.hdriIntensity = 0.75f;   // fill; the key and the rim do the shape
         ts.env.visibleToCamera = false;
+        ts.objectsVersion = 1;
         ts.env.top = float3(0.93f, 0.94f, 0.96f);   // light card background
         ts.env.horizon = float3(0.96f, 0.96f, 0.97f);
         ts.env.bottom = float3(0.88f, 0.89f, 0.91f);
@@ -102,12 +104,27 @@ void BrickApp::buildThumbs() {
             c.pitch = std::atan2(0.8f, std::sqrt(1.0f + 1.69f));
             c.target = (p.bmin + p.bmax) * 0.5f;
             float r = std::max(length(p.bmax - p.bmin) * 0.5f, 0.2f);
-            c.distance = r / std::sin(c.fovY * 0.5f) * 1.02f;
+            c.distance = r / std::sin(c.fovY * 0.5f) * 1.4f;   // margin: the cards zoom the image x1.4 (as the web)
+            // the part over a black then a white background: alpha = 1 - (white - black), colour = black / alpha
+            std::vector<uint8_t> img, imgW;
+            uint32_t w = 0, h = 0, w2 = 0, h2 = 0;
+            ts.env.top = ts.env.horizon = ts.env.bottom = float3(0);
+            ++ts.objectsVersion;
             m_renderer.render(ts, rs, vp, -1, false);
+            bool ok = m_renderer.readViewport(img, w, h);
+            ts.env.top = ts.env.horizon = ts.env.bottom = float3(1000);
+            ++ts.objectsVersion;
+            m_renderer.render(ts, rs, vp, -1, false);
+            ok = ok && m_renderer.readViewport(imgW, w2, h2);
             ts.objects[objOf[i]].visible = false;
-            std::vector<uint8_t> img;
-            uint32_t w = 0, h = 0;
-            if (!m_renderer.readViewport(img, w, h) || (int)w != px || (int)h != px) continue;
+            if (!ok || (int)w != px || (int)h != px || imgW.size() != img.size()) continue;
+            for (size_t q = 0; q + 3 < img.size(); q += 4) {
+                int diff = 0;
+                for (int ch = 0; ch < 3; ++ch) diff = std::max(diff, (int)imgW[q + ch] - (int)img[q + ch]);
+                int a = 255 - std::clamp(diff, 0, 255);
+                for (int ch = 0; ch < 3; ++ch) img[q + ch] = a > 0 ? (uint8_t)std::min(255, img[q + ch] * 255 / a) : 0;
+                img[q + 3] = (uint8_t)a;
+            }
             const int s = m_thumbSlot[i], a = s / perAtlas, cell = s % perAtlas;
             const int ox = (cell % cols) * px, oy = (cell / cols) * px;
             for (int y = 0; y < px; ++y)
@@ -121,10 +138,7 @@ void BrickApp::buildThumbs() {
             fclose(f);
         }
     }
-    for (auto& a : pix) {
-        for (size_t k = 3; k < a.size(); k += 4) a[k] = 255;
-        m_thumbAtlas.push_back(m_gui.createTexture(a.data(), atlasPx, atlasPx));
-    }
+    for (auto& a : pix) m_thumbAtlas.push_back(m_gui.createTexture(a.data(), atlasPx, atlasPx));
 }
 
 bool BrickApp::thumbUv(int part, ImTextureID& tex, ImVec2& uv0, ImVec2& uv1) const {

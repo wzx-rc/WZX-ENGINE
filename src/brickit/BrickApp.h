@@ -76,6 +76,7 @@ private:
     void buildDemo();
     int colorIndex(int ldrawId) const;   // palette index of an LDraw colour code
     void setupStage();        // ground, HDRI, materials of the palette
+    void applyLook();         // real time = the dark stage of the web; path tracing = the bright studio
     void frameAll();
     bool savePng(const std::wstring& path, std::vector<uint8_t> rgba, uint32_t w, uint32_t h);
     void toast(const std::string& text);
@@ -105,23 +106,29 @@ private:
     void openDialog();
     void noteRecent(int part);
 
-    // BrickUi.cpp
+    // BrickUi.cpp: the interface of the web builder v26, element by element (CSS colours, sizes, icons, texts)
     void drawUi();
-    void drawToolbar(float x, float y, float w);
-    void drawLibrary(float x, float y, float w, float h);
-    void drawColors(float x, float y, float w, float h);
-    void drawStats(float x, float y);
+    void uiHeader();
+    void uiRadial();
+    void uiColors();
+    void uiTray();
+    void uiMechPanel();
+    void uiHud();
+    void uiInfoSheet();
+    void uiPopups();
     void drawToast();
-    void buildNav();                        // library categories (LDraw families, Technic sub-families)
-    std::vector<int> visibleParts() const;  // parts of the current category / search
-    bool partCard(int part, float size);    // thumbnail card, returns true when clicked
+    void buildNav();                        // library families / categories counts
+    std::vector<int> visibleParts() const;  // parts of the current family / category / search
+    std::string partCat(int part) const;    // LDraw category of a part
+    void tiltSelected(int dir);             // radial: tilt towards the viewer (up / down)
+    void drawVoxels();                      // voxel display (studs yellow, pins cyan, axles magenta)
 
     // Mechanical mode (BrickMech.cpp)
     void mechEnter();
     void mechExit();
     void mechUpdate(float dt);
     void mechApplyPose();     // bricks drawn at the pose of their body
-    void drawMech(float x, float y);
+    void drawMechOverlay();
     void buildMechDemo();
 
     // Thumbs.cpp
@@ -143,6 +150,7 @@ private:
     std::vector<int> m_partMesh;       // part -> scene mesh (-1 = not uploaded)
     std::vector<int> m_colorMaterial;  // palette index -> scene material
     std::vector<int> m_dimMaterial;    // palette index -> same material at 50 % (focus mode)
+    std::vector<int> m_tintMaterial;   // Mechanical mode: one material per body (Couleurs par corps)
     int m_blockedMaterial = -1;        // brick in hand that cannot be dropped (red ghost)
     int m_firstBrickObject = 0;        // scene objects before it: the stage
     ViewRect m_vp;
@@ -170,20 +178,36 @@ private:
     std::vector<Box> m_pickBoxes;      // world boxes of the bricks (picking), for the scene revision m_pickVersion
     uint32_t m_pickVersion = 0;
 
-    // UI
-    // kind 0 recents, 1 favourites, 2 LDraw category, 3 Technic sub-family; fam: family (row 1 of the library)
-    struct NavItem { std::string label; int kind; std::string key; int fam = -1; };
+    // UI (web builder state)
+    struct NavItem { std::string label; int kind; std::string key; int fam = -1; };   // kept for --cat
     std::vector<std::string> m_families;
     std::vector<NavItem> m_nav;
     int m_navSel = 2;
+    std::string m_fam = "Basique";     // "recent", "fav", "all" or an LDraw family
+    std::string m_cat, m_sub;          // LDraw category / Technic sub-family ("" = Tout)
     std::string m_search;
     bool m_searchOpen = false;
     std::vector<int> m_recent, m_fav;
-    int m_thumbSize = 1;               // 0 small, 1 medium, 2 large
+    int m_thumbSize = 0;               // 0 small, 1 medium, 2 large (64 / 84 / 112 px as the web; the web starts at 64)
     float m_ui = 1.0f;                 // UI scale (dpi or --ui-scale)
     std::string m_toast;
     double m_toastTime = -10.0;
     bool m_overUi = false;             // the mouse is over a panel this frame
+    int m_mode = 1;                    // 0 select, 1 visor, 2 move, 3 rotate
+    bool m_autoPivot = false, m_animOn = true, m_showVox = false, m_dev = false;
+    int m_quality = 1;                 // 0 Rapide, 1 HQ
+    struct PanelState { bool visible = true, collapsed = false; };
+    PanelState m_pTray, m_pOpts, m_pColors, m_pHud{false, false}, m_pManual{false, false};
+    int m_popup = 0;                   // 0 none, 1 quality, 2 tonemap, 3 windows, 4 scene
+    ImVec2 m_popupAt;
+    int m_libPress = -1;               // library card pressed (drag / long press)
+    ImVec2 m_libPressPos;
+    double m_libPressTime = 0;
+    bool m_libLong = false;
+    int m_infoPart = -1;               // part sheet (long press on a card)
+    float m_cardsScroll = 0, m_famScroll = 0, m_catScroll = 0;
+    std::vector<ImVec4> m_uiRects;     // panels of this frame (x0, y0, x1, y1): the mouse over one = UI
+    bool m_mechJoints = true, m_mechTint = false;
 
     // Mechanical mode
     Mech m_mech{m_lib};
