@@ -444,6 +444,107 @@ void buildStudioScene(Scene& s) {
 }
 
 
+
+// Concept: the editor reference picture (selected cube at the origin, sphere on the left, cylinder on the right) on a
+// dark glossy floor under a night-blue sky, warm lights pooling on the floor. Pivots at the centre of the shapes.
+void buildConceptScene(Scene& s) {
+    s = Scene();
+    s.name = "Concept";
+    s.unitsPerMeter = 1.0f;
+    s.gridScale = 2.0f;
+    s.env.top = float3(0.018f, 0.024f, 0.038f);
+    s.env.horizon = float3(0.060f, 0.075f, 0.100f);
+    s.env.bottom = float3(0.010f, 0.012f, 0.016f);
+    s.env.intensity = 1.0f;
+    s.env.ambient = float3(0.085f, 0.095f, 0.120f);
+
+    {
+        Material g;
+        g.name = "Dark Floor";
+        g.baseColor = float3(0.040f, 0.045f, 0.056f);
+        applyPreset(g, PRESET_PLASTIC, 1.0f);
+        g.subsurface = 0.0f;
+        g.roughness = 0.18f;   // glossy: the shapes reflect in it (path tracing)
+        g.specular = 0.9f;
+        Object o;
+        o.name = "Floor";
+        o.part = "GROUND";
+        o.mesh = s.addMesh("concept floor", makePlane(80.0f));
+        o.material = s.addMaterial(g);
+        o.selectable = false;
+        s.addObject(o);
+    }
+    // a primitive mesh moved so that its pivot is its centre (quads kept for the wireframe display)
+    auto centred = [&](const char* name, const PrimitiveParams& pp, float lift) {
+        MeshData m;
+        m.append(makePrimitive(pp), Affine::trs(float3(0, -lift, 0), 0.0f, float3(1, 1, 1)));
+        m.quadEdges();
+        return s.addMesh(name, m);
+    };
+    auto shape = [&](const char* name, int mesh, float3 pos, float3 color, float rough) {
+        Material m;
+        m.name = std::string("M_") + name;
+        m.baseColor = color;
+        applyPreset(m, PRESET_PLASTIC, 1.0f);
+        m.subsurface = 0.0f;
+        m.roughness = rough;
+        m.specular = 0.5f;
+        Object o;
+        o.name = name;
+        o.part = std::string("PRIM_") + name;
+        o.mesh = mesh;
+        o.material = s.addMaterial(m);
+        o.position = pos;
+        return s.addObject(o);
+    };
+    PrimitiveParams cube;
+    cube.type = PRIM_CUBE;
+    cube.size = float3(2, 2, 2);
+    PrimitiveParams sphere;
+    sphere.type = PRIM_SPHERE;
+    sphere.radius = 1.25f;
+    sphere.segments = 24;
+    sphere.rings = 12;
+    PrimitiveParams cyl;
+    cyl.type = PRIM_CYLINDER;
+    cyl.radius = 1.0f;
+    cyl.size = float3(1, 2.3f, 1);
+    cyl.segments = 32;
+    shape("Cube", centred("concept cube", cube, 1.0f), float3(0, 1.0f, 0), float3(0.44f, 0.47f, 0.54f), 0.36f);
+    shape("Sphere", centred("concept sphere", sphere, 1.25f), float3(-3.4f, 1.25f, 1.3f), float3(0.46f, 0.47f, 0.50f), 0.34f);
+    shape("Cylinder", centred("concept cylinder", cyl, 1.15f), float3(1.6f, 1.15f, -3.6f), float3(0.43f, 0.44f, 0.48f), 0.38f);
+
+    // cool sun from above and in front (the key: short soft shadows behind the shapes); warm lights placed so that the camera sees their glossy
+    // reflections on the floor, in front of the sphere and of the cube, as in the reference picture
+    auto light = [&](const char* name, float3 pos, float3 target, float size, float3 color, float intensity) {
+        AreaLight l;
+        l.name = name;
+        l.position = pos;
+        l.target = target;
+        l.width = l.height = size;
+        l.color = color;
+        l.intensity = intensity;
+        l.visibleToCamera = false;
+        s.lights.push_back(l);
+    };
+    s.sun.enabled = true;
+    s.sun.direction = normalize(float3(0.45f, 1.0f, 0.55f));   // towards the sun
+    s.sun.color = float3(0.82f, 0.88f, 1.0f);
+    s.sun.intensity = 1.1f;
+    light("Warm Back Left", {-9.0f, 4.0f, -1.0f}, {-2.5f, 0.0f, 3.0f}, 6.0f, float3(1.0f, 0.68f, 0.40f), 11.0f);   // large: soft reflections
+    light("Warm Back", {-4.1f, 5.2f, -1.3f}, {1.5f, 0.0f, 3.5f}, 5.0f, float3(1.0f, 0.72f, 0.45f), 5.5f);
+    light("Cool Fill", {0.0f, 9.0f, -2.0f}, {0.0f, 0.0f, 0.0f}, 6.0f, float3(0.55f, 0.68f, 1.0f), 2.5f);
+
+    Camera& c = s.camera;
+    c.target = {0.0f, 0.9f, 0.0f};
+    c.yaw = radians(42.0f);
+    c.pitch = radians(24.0f);
+    c.distance = 14.0f;
+    c.fovY = radians(34.0f);
+    c.dof = false;
+    c.focusDistance = 14.0f;
+    c.sensorScale = s.unitsPerMeter;
+}
 // Look development: a neutral floor and five spheres with reference materials, lit by the HDRI (set by the app).
 void buildLookDevScene(Scene& s) {
     s = Scene();

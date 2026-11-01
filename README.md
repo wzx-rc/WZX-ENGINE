@@ -15,8 +15,23 @@ Prérequis : Visual Studio 2022 Build Tools (C++), Windows SDK 10.0.22621+, GPU 
 `build.bat` compile tous les `.cpp` de `src\vp3d` et `src\app` et lie tous les `.obj` de `build\obj` :
 après la suppression d'un fichier source, supprimer aussi son `.obj` dans `build\obj`.
 
-Options : `--scene cornell|studio|lookdev`, `--hdri fichier.hdr|sky`, `--open scene.v3d.json`, `--view N`, `--select N`, `--tool 1|2`,
-`--quality 0|1`, `--raster 0|1`, `--shot fichier.png --spp N` (capture fenêtre puis quitte), `--shot-viewport fichier.png`.
+Options : `--scene cornell|studio|lookdev|concept`, `--hdri fichier.hdr|sky`, `--open scene.v3d.json`, `--view N`, `--select N`, `--tool 1|2|3`,
+`--quality 0|1`, `--raster 0|1`, `--aa 1|4|8|16`, `--shot fichier.png --spp N` (capture fenêtre puis quitte), `--shot-viewport fichier.png`,
+`--cam persp|top|front|side|bottom|back|left|render`, `--layout 0..5` (disposition de la vue), `--demo-cameras` (deux caméras de démonstration),
+`--open-menu vmCamera|atlLayout|...` (menu ouvert pour une capture).
+
+## Autotest de l'éditeur
+
+```
+tools\selftest.bat            compile, lance l'autotest et affiche le rapport (build\selftest_report.txt)
+tools\selftest.bat nobuild    sans recompiler ; "debug" en plus : couche de validation DirectX 12 (outils graphiques Windows)
+```
+L'éditeur s'ouvre et se pilote seul pendant une quinzaine de secondes (ne pas toucher la souris ni le clavier) : vrais
+clics et raccourcis sur l'interface (outils QWER, boutons, menus de la vue, Grid Options, cube de vue, sélection, marking
+menu, manipulateurs, Advanced Scale), images lues et mesurées (grille, wireframe, glow de sélection, MSAA x4 / x8 / x16,
+overlay du path tracing), caméras (vues orthographiques, objets caméra, RenderCam, aperçu, dispositions 2 x 2 et 4 x 4,
+Espace), Play du Village, changement de taille de fenêtre. Code : `src/app/SelfTest.cpp` et
+`src/app/ManipulatorsTest.inl` (`--gizmo-test rapport.txt` : la partie logique seule).
 
 ## Scènes
 
@@ -48,13 +63,49 @@ Trois modes, choisis dans le menu de rendu en haut du viewport ; leurs réglages
 
 ACES (fit de Hill, RRT+ODT), AgX, AgX Punchy, Standard. Espace de travail : linéaire Rec.709 / sRGB.
 
+## Caméras et vues
+
+Comme dans Maya (`src/app/Cameras.cpp`, `src/app/Panes.cpp`) :
+
+- **Caméras intégrées** : `persp` (la caméra de la scène) et les vues orthographiques `top`, `front`, `side`, `bottom`,
+  `back`, `left` (menu caméra en haut à gauche de la vue). Une vue orthographique ne tourne pas : le clic droit y fait un
+  pan, la molette change sa taille. Chaque caméra garde sa position quand on passe de l'une à l'autre.
+- **Objets caméra** : Create › Camera from View / Render Camera from View, ou « New Camera from View » du menu caméra. Ils
+  apparaissent comme des icônes de caméra dans la vue (cliquables), avec leurs réglages dans l'Inspector (focale,
+  orthographique, taille de vue, format de l'aperçu, caméra de rendu, Look Through). Naviguer à travers une caméra la
+  déplace. Une seule **caméra de rendu** (orange, « R ») ; elle est enregistrée dans le `.wzx` avec les autres.
+- **Persp / RenderCam** : les deux boutons de la barre de la vue passent de la caméra persp à la caméra de rendu (créée
+  depuis la vue si la scène n'en a pas).
+- **Dispositions** : bouton à quatre cases de l'en-tête du viewport : une vue, deux côte à côte ou superposées, 2 x 2
+  (top, persp / front, side), 3 x 3, 4 x 4. La vue active (dernier clic, cadre de couleur) a le rendu complet et les
+  outils ; les autres sont des vues raster de leur caméra. **Espace** : la vue sous la souris seule, et retour.
+- **Aperçu** : la caméra sélectionnée s'affiche en bas à droite de la vue active (comme Unreal), épinglable, avec un
+  bouton Look Through. Pendant Play, la caméra RTS prend la vue persp et rend la vue d'origine à l'arrêt.
+- **Espace** (comme Maya) : un appui bref passe d'une vue aux quatre vues, puis met la vue sous la souris seule et
+  revient ; maintenu, menu des vues (Top, Side, Front, Persp) et liste des caméras de la scène ; un geste rapide
+  choisit sans afficher le menu.
+
+## Snapping, placement, pivot
+
+`src/app/Snapping.cpp` :
+
+- Bouton aimant : snapping toujours actif (sinon Maj pendant le glisser) ; **Maj+clic** : fenêtre Snapping Options.
+- Trois icônes de la barre : snap absolu sur la grille aux **intersections**, aux **centres des cases** ou aux
+  **milieux des arêtes** (les points sont dessinés autour de l'objet déplacé) ; re-cliquer revient aux pas relatifs.
+- **V** maintenu pendant un déplacement : le pivot va sur le sommet le plus proche du curseur.
+- **Place** (icône de la barre) : un objet sélectionné glissé au clic gauche suit les surfaces de la scène (le sol à
+  défaut), posé dessus, tourné vers la surface si l'option est cochée.
+- **Edit Pivot** : C ou Insert (interrupteur) ; le manipulateur de déplacement bouge le pivot, la
+  géométrie reste. **Center Pivot** : Alt+Y (aussi dans le marking menu W, à gauche). Le pivot est enregistré dans
+  le `.wzx`.
+
 ## Contrôles
 
 - Clic droit (ou Alt+clic gauche) : orbite · Clic milieu / Maj+clic droit : pan · Molette : zoom
 - Clic gauche : sélection · Maj+clic / rectangle : sélection multiple · Double-clic : pivot + mise au point
 - Q / G / R : sélectionner / déplacer / tourner (gizmos flèches et anneaux) · Flèches, PgUp/PgDn : déplacer de 1 cm
 - Ctrl+Z / Ctrl+Y / Ctrl+D / Suppr · F : recadrer · T : rotation auto · F12 : capture PNG · F1 / F2 : scènes
-- P : path tracing / viewport · L : GI sondes temps réel (DDGI)
+- P : path tracing / viewport · L : GI sondes temps réel (DDGI) · Espace : vue sous la souris seule / disposition
 
 ## Structure
 

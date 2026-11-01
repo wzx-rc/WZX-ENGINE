@@ -562,6 +562,63 @@ void loadSettings(const std::wstring& file) {
         else if (k == "graphOutlineWeight") g_settings.graphOutlineWeight = std::clamp((float)atof(v.c_str()), 0.1f, 3.0f);
         else if (k == "graphSelectColor") { if (parseVec(v, c, 4)) g_settings.graphSelectColor = ImVec4(c[0], c[1], c[2], 1); }
         else if (k == "graphOutputHeight") g_settings.graphOutputHeight = std::clamp((float)atof(v.c_str()), 70.0f, 2000.0f);
+        else if (k.rfind("snap.", 0) == 0) {   // snapping
+            SnapOptions& o = g_settings.snap;
+            const std::string n = k.substr(5);
+            if (n == "gridPoint") o.gridPoint = std::clamp(atoi(v.c_str()), 0, 2);
+            else if (n == "gridStep") o.gridStep = v != "0";
+            else if (n == "showPoints") o.showPoints = v != "0";
+            else if (n == "vertexRadius") o.vertexRadius = std::clamp((float)atof(v.c_str()), 5.0f, 200.0f);
+            else if (n == "alignToSurface") o.alignToSurface = v != "0";
+        }
+        else if (k.rfind("advScale.", 0) == 0) {   // Advanced Scale tool
+            AdvScaleOptions& a = g_settings.advScale;
+            const std::string n = k.substr(9);
+            const float x = (float)atof(v.c_str());
+            if (n == "handleSize") a.handleSize = std::clamp(x, 3.0f, 20.0f);
+            else if (n == "interactDist") a.interactDist = std::clamp(x, 3.0f, 40.0f);
+            else if (n == "snapRadius") a.snapRadius = std::clamp(x, 5.0f, 200.0f);
+            else if (n == "flatThreshold") a.flatThreshold = std::clamp(x, 0.0f, 0.5f);
+            else if (n == "menuOffset") a.menuOffset = std::clamp(x, 0.0f, 500.0f);
+            else if (n == "showHints") a.showHints = v != "0";
+            else if (parseVec(v, c, 4)) {
+                ImVec4 col(c[0], c[1], c[2], c[3]);
+                if (n == "colorEdge") a.colorEdge = col;
+                else if (n == "colorFace") a.colorFace = col;
+                else if (n == "colorEdgeHandle") a.colorEdgeHandle = col;
+                else if (n == "colorCorner") a.colorCorner = col;
+            }
+        }
+        else if (k.rfind("grid.", 0) == 0) {   // editor grid (Grid Options)
+            GridOptions& g = g_settings.grid;
+            const std::string n = k.substr(5);
+            const float x = (float)atof(v.c_str());
+            const bool on = v != "0";
+            if (n == "visible") g.visible = on;
+            else if (n == "sceneSpacing") g.sceneSpacing = on;
+            else if (n == "every") g.every = std::clamp(x, 0.001f, 100000.0f);
+            else if (n == "subdivisions") g.subdivisions = std::clamp((int)x, 1, 100);
+            else if (n == "extent") g.extent = std::clamp(x, 0.0f, 1000000.0f);
+            else if (n == "lines") g.lines = on;
+            else if (n == "subdivLines") g.subdivLines = on;
+            else if (n == "axes") g.axes = on;
+            else if (n == "thickAxes") g.thickAxes = on;
+            else if (n == "arrows") g.arrows = on;
+            else if (n == "numbers") g.numbers = on;
+            else if (n == "fade") g.fade = on;
+            else if (n == "widthGrid") g.widthGrid = std::clamp(x, 0.25f, 8.0f);
+            else if (n == "widthSub") g.widthSub = std::clamp(x, 0.25f, 8.0f);
+            else if (n == "widthAxis") g.widthAxis = std::clamp(x, 0.25f, 8.0f);
+            else if (n == "opacity") g.opacity = std::clamp(x, 0.0f, 1.0f);
+            else if (parseVec(v, c, 4)) {
+                ImVec4 col(c[0], c[1], c[2], c[3]);
+                if (n == "colorGrid") g.colorGrid = col;
+                else if (n == "colorSub") g.colorSub = col;
+                else if (n == "colorX") g.colorX = col;
+                else if (n == "colorY") g.colorY = col;
+                else if (n == "colorZ") g.colorZ = col;
+            }
+        }
     }
 }
 
@@ -580,6 +637,23 @@ void saveSettings(const std::wstring& file) {
       << "\nlockBrightness=" << (s.lockBrightness ? 1 : 0) << "\nlanguage=" << s.language
       << "\ngraphOutline=" << (s.graphOutline ? 1 : 0) << "\ngraphOutlineWeight=" << s.graphOutlineWeight
       << "\ngraphSelectColor=" << sc << "\n";
+    const GridOptions& g = s.grid;   // editor grid (Grid Options)
+    auto col = [](const ImVec4& v) { char b[64]; snprintf(b, sizeof(b), "%.3f %.3f %.3f %.3f", v.x, v.y, v.z, v.w); return std::string(b); };
+    f << "grid.visible=" << (g.visible ? 1 : 0) << "\ngrid.sceneSpacing=" << (g.sceneSpacing ? 1 : 0) << "\ngrid.every=" << g.every
+      << "\ngrid.subdivisions=" << g.subdivisions << "\ngrid.extent=" << g.extent << "\ngrid.lines=" << (g.lines ? 1 : 0)
+      << "\ngrid.subdivLines=" << (g.subdivLines ? 1 : 0) << "\ngrid.axes=" << (g.axes ? 1 : 0) << "\ngrid.thickAxes=" << (g.thickAxes ? 1 : 0)
+      << "\ngrid.arrows=" << (g.arrows ? 1 : 0) << "\ngrid.numbers=" << (g.numbers ? 1 : 0) << "\ngrid.fade=" << (g.fade ? 1 : 0)
+      << "\ngrid.widthGrid=" << g.widthGrid << "\ngrid.widthSub=" << g.widthSub << "\ngrid.widthAxis=" << g.widthAxis
+      << "\ngrid.opacity=" << g.opacity << "\ngrid.colorGrid=" << col(g.colorGrid) << "\ngrid.colorSub=" << col(g.colorSub)
+      << "\ngrid.colorX=" << col(g.colorX) << "\ngrid.colorY=" << col(g.colorY) << "\ngrid.colorZ=" << col(g.colorZ) << "\n";
+    const SnapOptions& sn = s.snap;   // snapping
+    f << "snap.gridPoint=" << sn.gridPoint << "\nsnap.gridStep=" << (sn.gridStep ? 1 : 0) << "\nsnap.showPoints=" << (sn.showPoints ? 1 : 0)
+      << "\nsnap.vertexRadius=" << sn.vertexRadius << "\nsnap.alignToSurface=" << (sn.alignToSurface ? 1 : 0) << "\n";
+    const AdvScaleOptions& as = s.advScale;   // Advanced Scale tool
+    f << "advScale.colorEdge=" << col(as.colorEdge) << "\nadvScale.colorFace=" << col(as.colorFace)
+      << "\nadvScale.colorEdgeHandle=" << col(as.colorEdgeHandle) << "\nadvScale.colorCorner=" << col(as.colorCorner)
+      << "\nadvScale.handleSize=" << as.handleSize << "\nadvScale.interactDist=" << as.interactDist << "\nadvScale.snapRadius=" << as.snapRadius
+      << "\nadvScale.flatThreshold=" << as.flatThreshold << "\nadvScale.menuOffset=" << as.menuOffset << "\nadvScale.showHints=" << (as.showHints ? 1 : 0) << "\n";
 }
 
 } // namespace th

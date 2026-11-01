@@ -112,6 +112,9 @@ private:
     void updateRtsCamera(float dt);
     bool groundUnderMouse(vp3d::float3& p) const;
     bool m_rtsCam = false;            // "Caméra RTS" node is active
+    int m_rtsPane = -1;               // the pane the RTS camera took (it looks through persp meanwhile), -1: none
+    int m_rtsPaneCam = 0;             // what that pane looked through before (ViewCam, VCAM_OBJECT), back on Stop
+    uint32_t m_rtsPaneObject = 0;
     bool m_rmbDrag = false;
     vp3d::float3 m_rmbGrab;
     game::RtsCamera m_cam;

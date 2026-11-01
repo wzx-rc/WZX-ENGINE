@@ -86,7 +86,7 @@ struct FrameConstants {
     uint selectedInstance; float fireflyClamp; float sssScale; float gridScale;
     float denoiseStrength; float lightScale; float vignette; float bevelSamples;
 
-    uint selMoreCount; uint pad0; uint pad1; uint pad2;   // extra selected instances (multi-selection), instance id + 1
+    uint selMoreCount; float selAge; uint selStyle; float selPixelScale;   // extra selected instances (multi-selection), instance id + 1; selection glow: seconds since the selection changed, 1 = blue glow, render pixels per screen pixel
     uint4 selMore[8];
 
     // Temporal reprojection: camera of the previous frame (the history holds that frame).
@@ -94,11 +94,14 @@ struct FrameConstants {
     float3 prevCamRight; float prevAspect;
     float3 prevCamUp;    uint historyValid;     // 1 = history textures hold the previous frame
     float3 prevCamFwd;   float historyCap;      // history length in frames (exponential average window)
-    uint pad3; uint pad4; uint pad5; uint pad6;
-    float denoiseEdgeLuma; float pad7; float pad8; float pad9;   // edge sensitivity of the denoiser (lower = keeps shadows)
+    uint selCovValid; uint pad4; uint pad5; uint pad6;   // selCovValid: the selection coverage (t8 of the tonemapper) was drawn this frame
+    float denoiseEdgeLuma; float selCenterX; float selCenterY; float selRadius;   // edge sensitivity of the denoiser (lower = keeps shadows); selection glow: screen centre and radius (pixels) of the selection
     // HDRI: lat-long texture (gEnvTex) and its importance sampling tables (gEnvDist, see EnvSample in PathTrace.hlsl)
     uint envW; uint envH; float envRotation; float envMapIntensity;   // table size, rotation (radians), intensity
     float envPdfScale; float envMips; float filterGlossy; float indirectClamp;   // W*H / sum of the table, mip count of gEnvTex; see TracePath
+    // Orthographic camera (0 = perspective): half the height of the view (scene units) and how far behind the eye the
+    // parallel rays start (the whole scene in front of them); the same for the previous frame (reprojection)
+    float orthoHalfH; float orthoBack; float prevOrthoHalfH; float prevOrthoBack;
 };
 
 // DDGI probe volume (real-time GI test). Atlases: irradiance 8x8 octahedral texels per probe, distance

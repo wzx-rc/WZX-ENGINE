@@ -34,6 +34,43 @@ struct ThemeDef {
     float fontSize = 15.0f;
 };
 
+// Editor grid of the viewport (Grid button, Grid Options window): saved with the UI settings.
+struct GridOptions {
+    bool visible = true;
+    bool sceneSpacing = true;          // grid lines every the scene grid spacing (else `every`)
+    float every = 1.0f;                // grid lines every (units)
+    int subdivisions = 1;              // cells between two grid lines (1 = none)
+    float extent = 0.0f;               // length and width (0 = infinite)
+    bool lines = true, subdivLines = true, axes = true, thickAxes = true, arrows = true, numbers = false, fade = true;
+    float widthGrid = 1.0f, widthSub = 1.0f, widthAxis = 1.4f;   // screen pixels
+    float opacity = 1.0f;
+    ImVec4 colorGrid = ImVec4(0.58f, 0.63f, 0.72f, 0.40f), colorSub = ImVec4(0.58f, 0.63f, 0.72f, 0.20f);
+    ImVec4 colorX = ImVec4(0.93f, 0.36f, 0.36f, 0.90f), colorY = ImVec4(0.42f, 0.86f, 0.50f, 0.95f), colorZ = ImVec4(0.36f, 0.56f, 0.98f, 0.90f);
+};
+
+// Advanced Scale tool (bounding box scaling): its settings, saved with the UI settings.
+struct AdvScaleOptions {
+    ImVec4 colorEdge = ImVec4(0.10f, 0.78f, 0.95f, 1.0f);      // frame of the bounding box
+    ImVec4 colorFace = ImVec4(0.28f, 0.60f, 1.00f, 1.0f);      // handles at the centre of the faces (one axis)
+    ImVec4 colorEdgeHandle = ImVec4(0.20f, 0.86f, 0.82f, 1.0f);// handles on the edges (two axes)
+    ImVec4 colorCorner = ImVec4(0.50f, 0.86f, 0.32f, 1.0f);    // handles at the corners (three axes)
+    float handleSize = 7.0f;          // screen pixels
+    float interactDist = 10.0f;       // screen pixels: how close the cursor must be to a handle
+    float snapRadius = 25.0f;         // screen pixels: vertex snapping (V)
+    float flatThreshold = 0.05f;      // a side thinner than this fraction of the others: flat mode
+    float menuOffset = 10.0f;         // distance of the menu from the bottom of the viewport (pixels)
+    bool showHints = true;            // modifier hints at the bottom of the viewport
+};
+
+// Snapping (Snapping Options, Shift + the Snapping button): saved with the UI settings.
+struct SnapOptions {
+    int gridPoint = 0;                // the points of the grid a move snaps to: 0 intersections, 1 centres of the cells, 2 middles of the edges
+    bool gridStep = true;             // absolute snapping on the cells of the editor grid (else on the move step)
+    bool showPoints = true;           // the snap points of the grid drawn around the moved object
+    float vertexRadius = 40.0f;       // screen pixels: V (vertex snapping) takes the vertex nearest to the cursor within this
+    bool alignToSurface = false;      // placement on the surfaces: the object turned to the surface
+};
+
 struct UiSettings {
     std::string theme = "Atelier";        // "Atelier" (Blue 01, main / accent colours), "Ambre" or "Corail" (fixed colours)
     bool light = false;
@@ -52,6 +89,9 @@ struct UiSettings {
     float graphOutlineWeight = 0.5f;      // Graph tab: outline thickness in px (the selected node gets twice this)
     ImVec4 graphSelectColor = ImVec4(0.400f, 0.729f, 0.816f, 1.0f);   // Graph tab: outline of the selected node (cyan)
     float graphOutputHeight = 151.0f;     // Graph tab: height of the Output panel (DIPs), dragged from its top edge
+    GridOptions grid;                     // editor grid of the viewport
+    AdvScaleOptions advScale;             // Advanced Scale tool
+    SnapOptions snap;                     // snapping
 };
 
 namespace th {

@@ -36,6 +36,22 @@ bool IsSelected(uint id) {
 
 float Luminance(float3 c) { return dot(c, float3(0.2126, 0.7152, 0.0722)); }
 
+// Primary ray through the image point ndc (-1..1, y up): from the eye (perspective), or parallel to the view from
+// F.orthoBack behind the eye (orthographic camera, F.orthoHalfH > 0: the whole scene lies in front of the rays).
+void CameraRay(float2 ndc, out float3 org, out float3 dir) {
+    if (F.orthoHalfH > 0) {
+        org = F.camPos + F.camRight * (ndc.x * F.aspect * F.orthoHalfH) + F.camUp * (ndc.y * F.orthoHalfH) - F.camFwd * F.orthoBack;
+        dir = F.camFwd;
+    } else {
+        org = F.camPos;
+        dir = normalize(F.camFwd + F.camRight * (ndc.x * F.aspect * F.tanHalfFovY) + F.camUp * (ndc.y * F.tanHalfFovY));
+    }
+}
+
+// Distance at which a perspective camera would see P as this camera does (pixel footprint): line widths and fading
+// of the procedural ground grid.
+float ViewDistance(float3 P) { return F.orthoHalfH > 0 ? F.orthoHalfH / max(F.tanHalfFovY, 1e-3) : length(P - F.camPos); }
+
 uint Hash(uint x) {
     x ^= x >> 16; x *= 0x7feb352du;
     x ^= x >> 15; x *= 0x846ca68bu;

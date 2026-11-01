@@ -16,14 +16,64 @@ float3 Camera::eye() const {
 
 void Camera::basis(float3& right, float3& up, float3& fwd) const {
     fwd = normalize(target - eye());
-    right = normalize(cross(fwd, float3(0, 1, 0)));
+    const float3 r = cross(fwd, float3(0, 1, 0));
+    // looking straight down or up (top / bottom views): the right vector the yaw gives at that limit
+    right = length(r) > 1e-5f ? normalize(r) : float3(std::cos(yaw), 0.0f, -std::sin(yaw));
     up = cross(right, fwd);
 }
 
 float Camera::apertureRadius() const {
-    if (!dof) return 0.0f;
+    if (!dof || ortho) return 0.0f;
     float diameterMeters = (focalLengthMm / std::max(fStop, 0.5f)) * 0.001f;
     return 0.5f * diameterMeters * sensorScale;
+}
+
+void Camera::ray(float x, float y, float aspect, float3& origin, float3& dir, float back) const {
+    float3 r, u, f;
+    basis(r, u, f);
+    if (ortho) {
+        const float hh = orthoHeight * 0.5f;
+        origin = eye() + r * (x * hh * aspect) + u * (y * hh) - f * back;
+        dir = f;
+        return;
+    }
+    const float t = std::tan(fovY * 0.5f);
+    origin = eye();
+    dir = normalize(f + r * (x * aspect * t) + u * (y * t));
+}
+
+bool Camera::project(const float3& p, float aspect, float2& ndc, float* depth) const {
+    float3 r, u, f;
+    basis(r, u, f);
+    const float3 v = p - eye();
+    const float z = dot(v, f);
+    if (depth) *depth = z;
+    if (ortho) {
+        const float hh = orthoHeight * 0.5f;
+        ndc = float2(dot(v, r) / (hh * aspect), dot(v, u) / hh);
+        return true;
+    }
+    if (z < 1e-3f) return false;
+    const float t = std::tan(fovY * 0.5f);
+    ndc = float2(dot(v, r) / (z * t * aspect), dot(v, u) / (z * t));
+    return true;
+}
+
+float Camera::pixelSize(const float3& p, float pixelsHigh) const {
+    if (ortho) return orthoHeight / std::max(pixelsHigh, 1.0f);
+    float3 r, u, f;
+    basis(r, u, f);
+    const float z = std::max(dot(p - eye(), f), 1e-3f);
+    return 2.0f * z * std::tan(fovY * 0.5f) / std::max(pixelsHigh, 1.0f);
+}
+
+float3 Camera::toViewer(const float3& p) const {
+    if (ortho) {
+        float3 r, u, f;
+        basis(r, u, f);
+        return -f;
+    }
+    return normalize(eye() - p);
 }
 
 size_t Scene::triangleCount() const {

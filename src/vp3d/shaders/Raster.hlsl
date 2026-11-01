@@ -19,9 +19,14 @@ struct RasterConstants {
     float3 sunRadiance; float sunFromEnv;   // sunFromEnv: the key is the sun of the HDRI (its highlight is in the reflections)
     float4 shIrr[9];                     // HDRI irradiance (cosine-convolved SH, without the sun), image space
     float envMapOn; float envRotation; float envMapIntensity; float envMips;
-    float envVisible; uint sunLight; float giMode; float pad3;   // sunLight: index of the path tracer's sun quad (skipped here); giMode: DDGI probes (see Shade)
+    float envVisible; uint sunLight; float giMode; float orthoHalfH;   // sunLight: index of the path tracer's sun quad (skipped here); giMode: DDGI probes (see Shade); orthoHalfH: orthographic camera (half the view height, 0 = perspective)
 };
 ConstantBuffer<RasterConstants> R : register(b0);
+
+// Direction from a surface point towards the viewer (orthographic camera: the opposite of the view direction).
+float3 ToViewer(float3 wpos) { return R.orthoHalfH > 0 ? -R.camFwd : normalize(R.camPos - wpos); }
+// Distance at which a perspective view would see wpos as this one does (pixel footprint of the procedural grid).
+float ViewDist(float3 wpos) { return R.orthoHalfH > 0 ? R.orthoHalfH / max(R.tanHalfFovY, 1e-3) : length(wpos - R.camPos); }
 
 struct DrawConstants {
     float4 row0;
@@ -104,10 +109,11 @@ VSOut VSMain(VSIn i) {
     return o;
 }
 
-// Wireframe display: the edge moved 0.2 % of its distance towards the camera, in front of its own faces.
+// Wireframe display: the edge moved 0.2 % of its distance towards the camera, in front of its own faces (orthographic
+// camera: a small fraction of the view height).
 VSOut VSWire(VSIn i) {
     VSOut o = VSMain(i);
-    o.wpos += (R.camPos - o.wpos) * 0.002;
+    o.wpos += R.orthoHalfH > 0 ? -R.camFwd * (R.orthoHalfH * 0.004) : (R.camPos - o.wpos) * 0.002;
     o.pos = mul(R.viewProj, float4(o.wpos, 1));
     return o;
 }
@@ -165,7 +171,8 @@ float3 EnvIrradiance(float3 n) {
 float3 Environment(float3 d) { return R.envMapOn > 0 ? EnvMap(d, 0) : Gradient(d); }
 
 float4 PSBackground(BgOut i) : SV_Target {
-    float3 d = normalize(R.camFwd + R.camRight * (i.ndc.x * R.aspect * R.tanHalfFovY) + R.camUp * (i.ndc.y * R.tanHalfFovY));
+    // (orthographic camera: every pixel looks the same way)
+    float3 d = R.orthoHalfH > 0 ? R.camFwd : normalize(R.camFwd + R.camRight * (i.ndc.x * R.aspect * R.tanHalfFovY) + R.camUp * (i.ndc.y * R.tanHalfFovY));
     return float4(R.envMapOn > 0 && R.envVisible > 0 ? EnvMap(d, 0) : Gradient(d), 1);
 }
 
@@ -224,14 +231,14 @@ float3 GridColor(float3 base, float3 wpos, inout float3 emission) {
     float2 p = wpos.xz / g;
     float2 w = fwidth(p);
     float2 d = abs(frac(p + 0.5) - 0.5) / max(w, 1e-4);
-    float minor = 1 - saturate(min(d.x, d.y) - 0.5);
+    float minor = 1 - saturate(min(d.x, d.y));   // thin lines (about 1 pixel), like the editor grid
     float2 pm = p / 10.0;
     float2 dm = abs(frac(pm + 0.5) - 0.5) / max(fwidth(pm), 1e-4);
-    float major = 1 - saturate(min(dm.x, dm.y) - 0.8);
-    float fade = saturate(1 - length(wpos - R.camPos) / (g * 160));
-    base = lerp(base, base * 2.2 + 0.015, max(minor * 0.55, major) * fade);
-    float ax = 1 - saturate(abs(wpos.z) / max(fwidth(wpos.z), 1e-4) - 1.0);
-    float az = 1 - saturate(abs(wpos.x) / max(fwidth(wpos.x), 1e-4) - 1.0);
+    float major = 1 - saturate(min(dm.x, dm.y) - 0.3);
+    float fade = saturate(1 - ViewDist(wpos) / (g * 160));
+    base = lerp(base, base * 2.2 + 0.015, max(minor * 0.4, major * 0.8) * fade);
+    float ax = 1 - saturate(abs(wpos.z) / max(fwidth(wpos.z), 1e-4) - 0.2);
+    float az = 1 - saturate(abs(wpos.x) / max(fwidth(wpos.x), 1e-4) - 0.2);
     base = lerp(base, float3(0.5, 0.06, 0.05), ax);
     emission += float3(0.25, 0.02, 0.02) * ax;
     base = lerp(base, float3(0.06, 0.12, 0.6), az);
@@ -244,7 +251,7 @@ float3 GridColor(float3 base, float3 wpos, inout float3 emission) {
 float4 Shade(VSOut i, bool ghost, float shadowBias, bool capture) {
     GpuMaterial m = gMats[D.materialId];
     float3 N = normalize(i.nrm);
-    float3 V = normalize((capture ? PF.origin : R.camPos) - i.wpos);   // the probe is the viewer of its capture
+    float3 V = capture ? normalize(PF.origin - i.wpos) : ToViewer(i.wpos);   // the probe is the viewer of its capture
     if (dot(N, V) < 0) N = -N;
     float3 base = m.baseColor;
     float3 emission = m.emission;
@@ -368,12 +375,13 @@ float4 PSMain(VSOut i) : SV_Target {
 #ifdef VP3D_DDGI_PROBES
     // Debug (G.flags bit 1): the probes drawn as small spheres shaded with their irradiance (red = disabled), as GIShade.
     if (R.giMode > 0 && (G.flags & 1u)) {
-        float3 dir = normalize(i.wpos - R.camPos);
-        float best = length(i.wpos - R.camPos);
+        float3 eyeP = R.orthoHalfH > 0 ? i.wpos + R.camFwd * -1000.0 : R.camPos;   // (orthographic: from far along the view)
+        float3 dir = normalize(i.wpos - eyeP);
+        float best = length(i.wpos - eyeP);
         float r = min(G.spacing.x, min(G.spacing.y, G.spacing.z)) * 0.1;
         uint hitProbe = 0xFFFFFFFFu;
         for (uint p = 0; p < G.counts.w; ++p) {
-            float3 oc = R.camPos - ProbePos(ProbeCoord(p));
+            float3 oc = eyeP - ProbePos(ProbeCoord(p));
             float b = dot(oc, dir), c = dot(oc, oc) - r * r;
             float disc = b * b - c;
             if (disc <= 0) continue;
@@ -381,7 +389,7 @@ float4 PSMain(VSOut i) : SV_Target {
             if (t > 0 && t < best) { best = t; hitProbe = p; }
         }
         if (hitProbe != 0xFFFFFFFFu) {
-            float3 n = normalize(R.camPos + dir * best - ProbePos(ProbeCoord(hitProbe)));
+            float3 n = normalize(eyeP + dir * best - ProbePos(ProbeCoord(hitProbe)));
             float3 c = gProbe[int2(hitProbe, 0)].x > 0.5 ? SampleTile(gIrr, hitProbe, DDGI_IRR_N, n).rgb : float3(0.6, 0.02, 0.02);
             return float4(c, 1);
         }
@@ -390,9 +398,20 @@ float4 PSMain(VSOut i) : SV_Target {
     return Shade(i, false, 0.0015, false);
 }
 float4 PSGhost(VSOut i) : SV_Target { return Shade(i, true, 0.0015, false); }
-float4 PSId(VSOut i) : SV_Target { return float4(0, 0, 0, (float)D.id); }
+// id in w; the world normal in rgb lets the selection glow find the creases of the selected object (Tonemap.hlsl)
+float4 PSId(VSOut i) : SV_Target { return float4(normalize(i.nrm) * 0.5 + 0.5, (float)D.id); }
+// selection mask (coverage of the selected objects, see Renderer::recordSelectionMask)
+float4 PSSelect(VSOut i) : SV_Target { return 1.0; }
 // Editor wireframe display: flat lines, grey level in D.alpha (blended, no depth write).
-float4 PSWire(VSOut i) : SV_Target { return float4(D.alpha.xxx, 0.75); }
+// Flag 8 (Wireframe Override): faint light lines with a facing ratio gradient, clear where the surface faces the
+// camera and fading towards the silhouettes (where the lines crowd).
+float4 PSWire(VSOut i) : SV_Target {
+    if (D.flags & 8u) {
+        float facing = abs(dot(normalize(i.nrm), ToViewer(i.wpos)));
+        return float4(D.alpha.xxx, 0.02 + 0.24 * facing * facing);
+    }
+    return float4(D.alpha.xxx, 0.75);
+}
 
 // ---------------------------------------------------------------- DDGI probe capture
 // One 90-degree cube face per draw: the view-projection of the face and the probe position (32-bit root constants b3).
