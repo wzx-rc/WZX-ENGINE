@@ -101,12 +101,14 @@ void buildSceneData(const Scene& scene, const Geometry& geo, const std::vector<b
         g.coat = m.coat;
         g.coatRoughness = m.coatRoughness;
         g.baseColorTex = NO_TEXTURE;
+        g.roughTex = NO_TEXTURE;
         if (m.baseColorTex >= 0 && m.baseColorTex < (int)textureValid.size() && textureValid[m.baseColorTex])
             g.baseColorTex = (uint32_t)m.baseColorTex;
         mats.push_back(g);
     }
     gpu::GpuMaterial none = {};
     none.baseColorTex = NO_TEXTURE;
+    none.roughTex = NO_TEXTURE;
     if (mats.empty()) mats.push_back(none);
 
     // Same instance numbering as the DirectX 12 renderer (ids of the selection pass).
@@ -135,6 +137,7 @@ void buildSceneData(const Scene& scene, const Geometry& geo, const std::vector<b
         l.basis(U, V, N);
         gpu::GpuMaterial lm = {};
         lm.baseColorTex = NO_TEXTURE;
+        lm.roughTex = NO_TEXTURE;
         lm.emission = l.color * l.intensity;
         lm.roughness = 1.0f;
         lm.ior = 1.5f;
@@ -162,6 +165,7 @@ void buildSceneData(const Scene& scene, const Geometry& geo, const std::vector<b
         float3 radiance = scene.sun.color * (scene.sun.intensity * dist * dist / (size * size));
         gpu::GpuMaterial lm = {};
         lm.baseColorTex = NO_TEXTURE;
+        lm.roughTex = NO_TEXTURE;
         lm.emission = radiance;
         lm.roughness = 1.0f;
         lm.ior = 1.5f;

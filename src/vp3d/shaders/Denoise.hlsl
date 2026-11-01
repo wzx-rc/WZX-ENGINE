@@ -26,6 +26,7 @@ void main(uint3 id : SV_DispatchThreadID) {
     float lc = Luminance(c);
     bool idEdges = (F.flags & FRAME_FLAG_ID_EDGES) != 0;
     float objId = gTex[SLOT_ALBEDO][p].w;
+    float3 albP = gTex[SLOT_ALBEDO][p].rgb;
 
     const float kernel[3] = {3.0 / 8.0, 1.0 / 4.0, 1.0 / 16.0};
     float sigmaL = F.denoiseStrength * F.denoiseEdgeLuma / sqrt(spp);
@@ -43,7 +44,10 @@ void main(uint3 id : SV_DispatchThreadID) {
             float wz = exp(-abs(z - ndq.w) / (0.01 * z * step + 1e-4));
             float lq = Luminance(cq);
             float wl = exp(-abs(lc - lq) / (sigmaL * max(max(lc, lq), 0.02) + 1e-4));
-            float w = kernel[abs(dx)] * kernel[abs(dy)] * wn * wz * wl;
+            // albedo edges: the demodulated radiance of a dark channel (green of a red brick) is huge, it must not
+            // bleed into the next colour (cyan lines along the seams of red and white bricks)
+            float wa = exp(-length(albP - gTex[SLOT_ALBEDO][q].rgb) * 12.0);
+            float w = kernel[abs(dx)] * kernel[abs(dy)] * wn * wz * wl * wa;
             if (idEdges && abs(gTex[SLOT_ALBEDO][q].w - objId) > 0.5) w = 0;
             sum += cq * w;
             wsum += w;

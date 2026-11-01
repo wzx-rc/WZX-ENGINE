@@ -2,6 +2,7 @@
 #include "MeshLod.h"
 #include "app/Theme.h"
 #include "backends/imgui_impl_win32.h"
+#include "vp3d/AssetImport.h"
 #include "vp3d/shaders/Shared.h"
 #include <algorithm>
 #include <cmath>
@@ -104,18 +105,29 @@ bool BrickApp::init(HINSTANCE inst, const Options& opt) {
     }
     m_rs.raster = !opt.pathTrace;
     m_rs.denoise = true;
-    m_rs.exposure = 1.0f;
-    m_rs.tonemapper = 1;   // AgX
+    m_rs.exposure = m_opt.exposure;   // bright "product shot" look
+    m_rs.vignette = 0.06f;
+    // path tracing: the denoiser stays useful longer (its strength fades as 1/sqrt(samples)), the sparkles of the
+    // glossy coat in the studio lights are clamped and the caustics through the rough bounces filtered
+    m_rs.denoiseEdgeLuma = 4.0f;
+    m_rs.denoisePasses = 4;
+    m_rs.fireflyClamp = 8.0f;
+    m_rs.filterGlossy = 0.15f;
+    m_rs.bevelScale = 1.0f;
+    m_rs.tonemapper = m_opt.tonemapper;   // AgX Punchy by default
     m_rs.idPass = false;   // selection: coverage outline only
     if (opt.bounces > 0) m_rs.maxBounces = opt.bounces;
     if (opt.denoise >= 0) m_rs.denoise = opt.denoise != 0;
     if (opt.bevelSpp >= 0) { m_rs.bevel = opt.bevelSpp > 0; m_rs.bevelSamples = std::max(1, opt.bevelSpp); }
     setupStage();
-    if (opt.grid) buildPartGrid();
+    if (opt.demo) buildDemo();
+    else if (opt.grid) buildPartGrid();
     else if (opt.bench > 0) buildBench(opt.bench);
     rebuildScene();
     frameAll();
     m_scene.camera.distance *= opt.zoom;
+    if (opt.yaw > -999) m_scene.camera.yaw = radians(opt.yaw);
+    if (opt.pitch > -999) m_scene.camera.pitch = radians(opt.pitch);
     m_scene.camera.focusDistance = m_scene.camera.distance;
 
     ShowWindow(m_hwnd, SW_SHOWDEFAULT);
@@ -176,9 +188,9 @@ void BrickApp::setupStage() {
 
     Material g;
     g.name = "Ground";
-    g.baseColor = float3(0.62f, 0.63f, 0.65f);
-    g.roughness = 0.55f;
-    g.flags = MAT_FLAG_GRID;
+    g.baseColor = float3(0.70f, 0.71f, 0.73f);   // light studio floor
+    g.roughness = 0.5f;
+    g.flags = m_opt.cleanGround ? 0u : MAT_FLAG_GRID;
     Object o;
     o.name = "Ground";
     o.part = "GROUND";
@@ -189,25 +201,45 @@ void BrickApp::setupStage() {
     m_scene.addObject(o);
     m_firstBrickObject = (int)m_scene.objects.size();
 
-    // one material per palette colour: ABS plastic (light clear coat), transparent = tinted glass, metal colours = metal
+    // fingerprints: roughness mask shared by the plastic colours (assets/brickit/fingerprints.jpg)
+    int fpTex = -1;
+    {
+        Texture t;
+        std::string terr;
+        if (loadImage(m_exeDir + L"\\assets\\brickit\\fingerprints.jpg", t, &terr, 2048)) fpTex = m_scene.addTexture(std::move(t));
+    }
+    // one material per palette colour: ABS plastic (light clear coat, discreet subsurface on the light colours),
+    // transparent = tinted glass, metal colours = metal; bevel on every edge (rounded edges and the groove between
+    // two bricks that touch, path tracing)
     m_colorMaterial.clear();
     for (const Color& c : m_lib.palette) {
         Material m;
         m.name = c.name;
         m.baseColor = float3(srgbToLinear(c.srgb.x), srgbToLinear(c.srgb.y), srgbToLinear(c.srgb.z));
-        m.roughness = 0.25f;
+        m.roughness = 0.24f;
         m.specular = 0.5f;
-        m.coat = 0.25f;
-        m.coatRoughness = 0.08f;
-        m.bevelRadius = 0.025f;
+        m.coat = 0.35f;
+        m.coatRoughness = 0.05f;
+        m.bevelRadius = 0.035f;
+        m.roughnessTex = fpTex;
+        m.roughTexScale = 1.0f / 6.0f;   // the map covers 6 cm: prints at the scale of a finger on the bricks
+        m.roughTexStrength = m_opt.fingerprints;
+        const float lum = 0.2126f * m.baseColor.x + 0.7152f * m.baseColor.y + 0.0722f * m.baseColor.z;
+        if (lum > 0.25f && m_opt.sss) {   // light colours: a little light goes through the plastic (short radius: no light
+            m.subsurface = 0.05f;                             // leaking into the next brick through the groove)
+            m.sssRadius = (m.baseColor * 0.8f + float3(0.2f)) * 0.03f;
+        }
         if (c.group.find("trans") != std::string::npos) {
             m.transmission = 1.0f;
-            m.roughness = 0.04f;
+            m.roughness = 0.03f;
             m.coat = 0.0f;
+            m.subsurface = 0.0f;
+            m.roughTexStrength *= 0.5f;
         } else if (c.group.find("metal") != std::string::npos || c.group.find("chrome") != std::string::npos) {
             m.metallic = 1.0f;
-            m.roughness = 0.22f;
+            m.roughness = 0.2f;
             m.coat = 0.0f;
+            m.subsurface = 0.0f;
         }
         m_colorMaterial.push_back(m_scene.addMaterial(m));
     }
@@ -219,11 +251,11 @@ void BrickApp::setupStage() {
     if (!m_opt.noHdri && fileExists(hdr) && loadEnvImage(hdr, *img, &err)) m_status = "HDRI studio_small_09_2k";
     else { makeProceduralSky(*img); m_status = "HDRI: procedural sky (studio_small_09_2k.hdr not found)"; }
     m_scene.env.hdri = img;
-    m_scene.env.hdriIntensity = 1.6f;
+    m_scene.env.hdriIntensity = 1.0f;
     m_scene.env.visibleToCamera = false;
-    m_scene.env.top = float3(0.80f, 0.82f, 0.86f);
-    m_scene.env.horizon = float3(0.86f, 0.87f, 0.89f);
-    m_scene.env.bottom = float3(0.5f, 0.5f, 0.52f);
+    m_scene.env.top = float3(0.82f, 0.83f, 0.86f);   // background behind the bricks (the HDRI only lights)
+    m_scene.env.horizon = float3(0.90f, 0.90f, 0.91f);
+    m_scene.env.bottom = float3(0.6f, 0.6f, 0.62f);
 
     Camera& cam = m_scene.camera;
     cam.yaw = radians(35.0f);
@@ -340,6 +372,78 @@ void BrickApp::buildBench(int count) {
         b.rot = float4(0, std::sin(a * 0.5f), 0, std::cos(a * 0.5f));
         m_bricks.push_back(b);
     }
+}
+
+int BrickApp::colorIndex(int ldrawId) const {
+    for (int i = 0; i < (int)m_lib.palette.size(); ++i)
+        if (m_lib.palette[i].id == ldrawId) return i;
+    return 0;
+}
+
+// Small showcase on the stud grid (beauty captures): a running bond wall, coloured steps, round and transparent
+// bricks, slopes, Technic gears and axles. The bricks touch: the bevel makes the grooves between them.
+void BrickApp::buildDemo() {
+    auto add = [&](const char* part, int color, float x, float y, float z, float yawDeg = 0) {
+        int pi = m_lib.find(part);
+        if (pi < 0 || !m_lib.get(part)) return;
+        Brick b;
+        b.part = pi;
+        b.color = colorIndex(color);
+        float a = radians(yawDeg);
+        b.rot = float4(0, std::sin(a * 0.5f), 0, std::cos(a * 0.5f));
+        // (x, y, z) = minimum corner of the turned part
+        const Part& p = m_lib.parts[pi];
+        const float c = std::cos(a), sn = std::sin(a);
+        float3 mn(1e30f);
+        for (int k = 0; k < 8; ++k) {
+            float3 q((k & 1) ? p.bmax.x : p.bmin.x, (k & 2) ? p.bmax.y : p.bmin.y, (k & 4) ? p.bmax.z : p.bmin.z);
+            mn = minv(mn, float3(c * q.x + sn * q.z, q.y, -sn * q.x + c * q.z));
+        }
+        b.pos = float3(x, y, z) - mn;
+        m_bricks.push_back(b);
+    };
+    const float P = 0.8f, B = 0.96f, L = 0.32f;
+    // wall: 2 x 4 bricks in running bond, 5 rows
+    const int wallColors[5] = {4, 15, 4, 15, 4};
+    for (int r = 0; r < 5; ++r)
+        for (int k = 0; k < 4; ++k) {
+            float off = (r % 2) ? 2 * P : 0.0f;
+            if (r % 2 && k == 3) { add("3003", wallColors[r], 4 * P * k + off, r * B, 0); continue; }
+            add("3001", wallColors[r], 4 * P * k + off, r * B, 0);
+        }
+    add("3003", 15, 0, 1 * B, 0);
+    add("3003", 15, 0, 3 * B, 0);
+    // slopes on top of the wall
+    add("15068", 1, 0, 5 * B, 0);
+    add("15068", 1, 2 * P, 5 * B, 0);
+    add("3022", 14, 10 * P, 5 * B, 0);
+    add("15068", 14, 12 * P, 5 * B, 0);
+    add("15068", 14, 14 * P, 5 * B, 0);
+    // steps of 2 x 2 bricks
+    const int stepColors[4] = {14, 1, 10, 25};
+    for (int i = 0; i < 4; ++i)
+        for (int h = 0; h <= i; ++h) add("3003", stepColors[i], 18 * P + i * 2 * P, h * B, 0);
+    // round, transparent and metal bricks in front
+    for (int h = 0; h < 4; ++h) add("3062a", 47, 2 * P, h * B, 4 * P);
+    for (int h = 0; h < 3; ++h) add("3062a", 36, 4 * P, h * B, 4 * P);
+    add("3941", 15, 6 * P, 0, 4 * P);
+    add("3941", 72, 6 * P, B, 4 * P);
+    add("30367a", 297, 6 * P, 2 * B, 4 * P);
+    add("3022", 0, 9 * P, 0, 4 * P);
+    add("3022", 0, 9 * P, L, 4 * P);
+    add("15068", 4, 9 * P, 2 * L, 4 * P);
+    add("24947", 191, 12 * P, 0, 4 * P);
+    // Technic: beam, axles, gears
+    add("3707", 71, 0, 0, 8 * P);
+    add("3705", 0, 0, 0, 9 * P);
+    add("94925", 72, 10 * P, 0, 8 * P);
+    add("3647", 72, 13 * P, 0, 8 * P);
+    add("32064a", 4, 16 * P, 0, 8 * P);
+    add("6541", 14, 19 * P, 0, 8 * P);
+    add("60483", 71, 21 * P, 0, 8 * P);
+    char buf[64];
+    snprintf(buf, sizeof(buf), "Demo : %d briques", (int)m_bricks.size());
+    m_status = buf;
 }
 
 void BrickApp::frameAll() {
@@ -478,6 +582,15 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         else if (a == L"--bounces") opt.bounces = _wtoi(next().c_str());
         else if (a == L"--bevel-spp") opt.bevelSpp = _wtoi(next().c_str());
         else if (a == L"--opaque") opt.opaque = true;
+        else if (a == L"--demo") opt.demo = true;
+        else if (a == L"--no-sss") opt.sss = false;
+        else if (a == L"--no-bevel") opt.bevelSpp = 0;
+        else if (a == L"--tonemap") opt.tonemapper = _wtoi(next().c_str());
+        else if (a == L"--clean") opt.cleanGround = true;
+        else if (a == L"--exposure") opt.exposure = (float)_wtof(next().c_str());
+        else if (a == L"--fingerprints") opt.fingerprints = (float)_wtof(next().c_str());
+        else if (a == L"--yaw") opt.yaw = (float)_wtof(next().c_str());
+        else if (a == L"--pitch") opt.pitch = (float)_wtof(next().c_str());
         else if (a == L"--no-hdri") opt.noHdri = true;
         else if (a == L"--no-ground") opt.noGround = true;
         else if (a == L"--ground") opt.groundSize = (float)_wtof(next().c_str());

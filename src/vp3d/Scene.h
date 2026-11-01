@@ -24,6 +24,11 @@ struct Material {
     float coatRoughness = 0.05f;
     uint32_t flags = 0;            // MAT_FLAG_*
     int baseColorTex = -1;         // index in Scene::textures multiplied with baseColor (-1 = none)
+    // Roughness mask (fingerprints, smudges): Scene::textures index projected in object space (triplanar, roughTexScale
+    // repeats per unit, a random offset per object), its dark areas raise the roughness by up to roughTexStrength.
+    int roughnessTex = -1;
+    float roughTexScale = 0.125f;
+    float roughTexStrength = 0.0f;
     int preset = 0;                // app-defined preset id (UI only)
     int colorId = -1;              // app-defined palette colour id (UI only)
 };

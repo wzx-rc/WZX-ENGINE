@@ -27,6 +27,13 @@ struct Options {
     bool noHdri = false, noGround = false;   // --no-hdri, --no-ground (render cost tests)
     float groundSize = 2000.0f;   // --ground size (cm)
     float ptMoveScale = 0.5f;     // path tracing resolution while the view moves
+    bool sss = true;              // --no-sss
+    bool demo = false;            // --demo: showcase of a few bricks (beauty captures)
+    bool cleanGround = false;     // --clean: floor without the grid lines
+    float exposure = 1.5f;        // --exposure
+    int tonemapper = 2;           // --tonemap 0 ACES, 1 AgX, 2 AgX Punchy, 3 Standard
+    float fingerprints = 0.35f;   // --fingerprints: strength of the roughness mask (0 = off)
+    float yaw = -1000, pitch = -1000;   // --yaw / --pitch degrees (camera)
     float zoom = 1.0f;        // --zoom f: camera distance x f after framing everything
 };
 
@@ -53,6 +60,8 @@ private:
     int meshOf(int part);     // scene mesh of a part (uploaded once)
     void buildPartGrid();
     void buildBench(int count);
+    void buildDemo();
+    int colorIndex(int ldrawId) const;   // palette index of an LDraw colour code
     void setupStage();        // ground, HDRI, materials of the palette
     void frameAll();
     bool savePng(const std::wstring& path, std::vector<uint8_t> rgba, uint32_t w, uint32_t h);

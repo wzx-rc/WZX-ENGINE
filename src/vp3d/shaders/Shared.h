@@ -61,6 +61,9 @@ struct GpuMaterial {
     float3 sssRadius;  float subsurface;
     float transmission; float ior; float bevelRadius; uint flags;
     float specular;    float coat; float coatRoughness; uint baseColorTex;   // NO_TEXTURE or index in the texture table
+    // Roughness mask (fingerprints): texture projected in object space (triplanar, scale = repeats per unit, offset
+    // per instance), its dark areas raise the roughness by up to `strength` and lower the specular a little.
+    uint roughTex;     float roughTexScale; float roughTexStrength; float pad2;
 };
 
 struct GpuLight {

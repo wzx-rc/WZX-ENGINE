@@ -62,6 +62,8 @@ Texture2D<float4> gTextures[MAX_TEXTURES] : register(t4);
 Texture2D<float4> gTextures[MAX_TEXTURES] : register(t0, space1);
 #endif
 SamplerState gLinearWrap : register(s1);
+#define FP_SAMPLE(t, uv) gTextures[NonUniformResourceIndex(t)].Sample(gLinearWrap, (uv))
+#include "Fingerprint.hlsli"
 Texture2D<float4> gEnvTex : register(t3);   // HDRI (lat-long, with mips)
 
 static const float PI = 3.14159265;
@@ -105,6 +107,8 @@ struct VSOut {
     float3 wpos : WORLDPOS;
     float3 nrm : NORMAL;
     float2 uv : TEXCOORD;
+    float3 opos : OBJPOS;   // object space position and normal (roughness mask projection)
+    float3 onrm : OBJNRM;
 #ifndef VP3D_ATTRIB_SEMANTICS
     nointerpolation uint inst : INSTIDX;   // index in gDraws
 #endif
@@ -125,6 +129,8 @@ VSOut VSMain(VSIn i) {
     float3 n = float3(dot(D.row0.xyz, i.nrm), dot(D.row1.xyz, i.nrm), dot(D.row2.xyz, i.nrm));
     o.nrm = normalize(n);
     o.uv = i.uv;
+    o.opos = i.pos;
+    o.onrm = i.nrm;
     o.pos = mul(R.viewProj, float4(o.wpos, 1));
     return o;
 }
@@ -281,10 +287,17 @@ float4 Shade(VSOut i, bool ghost, float shadowBias, bool capture) {
     if (D.flags & DRAW_LIGHT) return float4(m.emission * R.lightScale, 1);
 
     float rough = max(m.roughness, 0.04);
+    float specular = m.specular, coatRough = m.coatRoughness;
+    if (m.roughTex != NO_TEXTURE) {   // fingerprints (same mask as the path tracer: seed = instance index)
+        float fp = FingerprintMask(m.roughTex, m.roughTexScale, i.opos, i.onrm, D.id - 1) * m.roughTexStrength;
+        rough = saturate(rough + fp);
+        specular *= 1.0 - 0.35 * fp;
+        coatRough = saturate(coatRough + fp * 0.8);
+    }
     float a = rough * rough;
     float metal = m.metallic;
     float trans = m.transmission;
-    float3 f0 = lerp(0.08 * m.specular.xxx, base, metal);
+    float3 f0 = lerp(0.08 * specular.xxx, base, metal);
     float3 diffuseCol = base * (1 - metal);
     if (trans > 0.5) { diffuseCol = base * 0.18; f0 = 0.05; }
     float NoV = saturate(dot(N, V)) + 1e-4;
@@ -328,7 +341,7 @@ float4 Shade(VSOut i, bool ghost, float shadowBias, bool capture) {
         float3 spec = D_GGX(NoH, aL) * V_Smith(NoV, NoL, aL) * F * (a * a) / max(aL * aL, 1e-4);
         float3 diff = diffuseCol / PI * (1 - F);
         if (m.coat > 0) {
-            float ac = max(m.coatRoughness * m.coatRoughness, 0.002);
+            float ac = max(coatRough * coatRough, 0.002);
             float acL = saturate(ac + size / (3.0 * sqrt(d2)));
             spec += D_GGX(NoH, acL) * V_Smith(NoV, NoL, acL) * 0.04 * m.coat * (ac * ac) / max(acL * acL, 1e-4);
         }
@@ -456,6 +469,8 @@ VSOut VSProbe(VSIn i) {
     float3 n = float3(dot(D.row0.xyz, i.nrm), dot(D.row1.xyz, i.nrm), dot(D.row2.xyz, i.nrm));
     o.nrm = normalize(n);
     o.uv = i.uv;
+    o.opos = i.pos;
+    o.onrm = i.nrm;
     o.pos = mul(PF.viewProj, float4(o.wpos, 1));
     return o;
 }

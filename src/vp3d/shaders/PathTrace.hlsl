@@ -3,6 +3,8 @@
 // rough dielectrics, random-walk subsurface scattering, Cycles-style bevel
 // normals, thin-lens depth of field, procedural ground grid.
 #include "Common.hlsli"
+#define FP_SAMPLE(t, uv) gTextures[NonUniformResourceIndex(t)].SampleLevel(gLinearWrap, (uv), 0)
+#include "Fingerprint.hlsli"
 
 struct Hit {
     float t;
@@ -12,6 +14,8 @@ struct Hit {
     uint inst;
     bool front;  // ray hit the outward side
     float2 uv;   // texture coordinates of the hit point
+    float3 Po;   // object space position and geometric normal (roughness mask projection)
+    float3 No;
 };
 
 struct Surf {
@@ -86,6 +90,9 @@ bool TraceClosest(float3 o, float3 d, float tmax, uint mask, out Hit h) {
         h.uv = v0.uv * (1.0 - bc.x - bc.y) + v1.uv * bc.x + v2.uv * bc.y;
     }
     h.Ng = ng;
+    float3x4 w2o = q.CommittedWorldToObject3x4();
+    h.Po = mul(w2o, float4(h.P, 1));
+    h.No = mul((float3x3)w2o, ng);
     return true;
 }
 
@@ -194,6 +201,12 @@ Surf MakeSurf(GpuMaterial m, Hit h) {
     s.coat = m.coat;
     s.coatRough = m.coatRoughness;
     s.flags = m.flags;
+    if (m.roughTex != NO_TEXTURE) {   // fingerprints
+        float fp = FingerprintMask(m.roughTex, m.roughTexScale, h.Po, h.No, h.inst) * m.roughTexStrength;
+        s.rough = saturate(s.rough + fp);
+        s.spec *= 1.0 - 0.35 * fp;
+        s.coatRough = saturate(m.coatRoughness + fp * 0.8);
+    }
     if (m.flags & MAT_FLAG_GRID) {
         float g = F.gridScale;
         float dist = ViewDistance(h.P);

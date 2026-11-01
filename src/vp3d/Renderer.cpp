@@ -882,12 +882,18 @@ void Renderer::buildInstances(const Scene& scene) {
         g.coat = m.coat;
         g.coatRoughness = m.coatRoughness;
         g.baseColorTex = NO_TEXTURE;
+        g.roughTex = NO_TEXTURE;
         if (m.baseColorTex >= 0 && m.baseColorTex < (int)m_materialTex.size() && m_materialTex[m.baseColorTex])
             g.baseColorTex = (uint32_t)m.baseColorTex;
+        if (m.roughnessTex >= 0 && m.roughnessTex < (int)m_materialTex.size() && m_materialTex[m.roughnessTex] && m.roughTexStrength > 0)
+            g.roughTex = (uint32_t)m.roughnessTex;
+        g.roughTexScale = m.roughTexScale;
+        g.roughTexStrength = m.roughTexStrength;
         mats.push_back(g);
     }
     gpu::GpuMaterial none = {};
     none.baseColorTex = NO_TEXTURE;
+    none.roughTex = NO_TEXTURE;
     if (mats.empty()) mats.push_back(none);
 
     auto addInstance = [&](int meshIdx, const Affine& xf, uint32_t matId, uint32_t lightId, uint32_t mask) -> int {
@@ -925,6 +931,7 @@ void Renderer::buildInstances(const Scene& scene) {
         l.basis(U, V, N);
         gpu::GpuMaterial lm = {};
         lm.baseColorTex = NO_TEXTURE;
+        lm.roughTex = NO_TEXTURE;
         lm.emission = l.color * l.intensity;
         lm.roughness = 1.0f;
         lm.ior = 1.5f;
@@ -955,6 +962,7 @@ void Renderer::buildInstances(const Scene& scene) {
         float3 radiance = scene.sun.color * (scene.sun.intensity * dist * dist / (size * size));
         gpu::GpuMaterial lm = {};
         lm.baseColorTex = NO_TEXTURE;
+        lm.roughTex = NO_TEXTURE;
         lm.emission = radiance;
         lm.roughness = 1.0f;
         lm.ior = 1.5f;
