@@ -16,7 +16,7 @@ Cases : `[x]` porté et vérifié · `[~]` partiel (ce qui manque est dit) · `[
 - [x] Grille, [x] Auto Pivot, [x] Sécurité 50 %, [x] Focus, [x] Animations
 - [x] Voxels (points de la brique sélectionnée / en main seulement, la brique à 30 % pour voir ses points ; cycle à 2 états du web v26 : masqués / affichés — le filtre par famille n'existe plus dans `VOX_STEPS`)
 - [x] Supprimer (grisé sans sélection)
-- [~] Qualité Rapide / HQ (MSAA ; pas de SSAO) + Path tracing (natif en plus) ; [x] Tonemap ACES / AgX / Std
+- [~] Qualité Rapide / HQ : MSAA comme le web ; [ ] SSAO du HQ (web : SSAOPass rayon 0,6, min 0,0006, max 0,04) — le moteur n'a pas encore de passe d'occlusion : il faut un tampon de profondeur lisible (R32 typeless) et une passe AO + flou avant le tonemap ; + Path tracing (natif en plus) ; [x] Tonemap ACES / AgX / Std
 - [x] Mécanique ; [x] DEV (bouton cyan, toasts du web, panneau « Mode développeur » : Connecteurs / Contour LDraw / Remplacements, légende, liste avec pastilles à jour / LDraw modifié / absente, Exporter / Retirer (confirmation), résumé, Importer un maillage… ; connecteurs par type sur toutes les briques, contour LDraw à 30° sous un remplacement, badge « M » sur les cartes) — capture 16 ; [x] Fenêtres ; [x] Scène (ouvre la fiche « Scène partagée »)
 - [x] Infobulles (titres du web)
 
