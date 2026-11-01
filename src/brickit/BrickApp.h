@@ -63,7 +63,8 @@ struct Options {
     bool floatTray = false, optsRight = false;   // --float-tray x y, --opts-right (captures)
     float floatX = 0, floatY = 0;
     std::string ttBase, ttTop;
-    std::string mouseTest;      // --mouse-test marquee | gizmo | ring | mech  // --turntable-test <base> <top>: mechanics self-test
+    std::string mouseTest;
+    int quality = -1;           // --quality 0 | 1      // --mouse-test marquee | gizmo | ring | mech  // --turntable-test <base> <top>: mechanics self-test
     std::string devRoundtrip;
     std::wstring mayaOut;       // --maya <file.zip>: export the scene to Maya then quit (tests)   // --dev-roundtrip <part>: OBJ export / import self-test
     int libCategory = -1;     // --cat N

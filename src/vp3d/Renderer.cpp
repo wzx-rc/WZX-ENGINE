@@ -155,6 +155,9 @@ bool Renderer::init(HWND hwnd, uint32_t width, uint32_t height, const std::wstri
             D3D12_CPU_DESCRIPTOR_HANDLE ch = m_heap->GetCPUDescriptorHandleForHeapStart();
             ch.ptr += (SIZE_T)kSelCovSlot * m_descSize;
             m_device->CreateShaderResourceView(nullptr, &cv, ch);
+            cv.Format = DXGI_FORMAT_R32_FLOAT;
+            ch.ptr += m_descSize;   // t9: no depth yet
+            m_device->CreateShaderResourceView(nullptr, &cv, ch);
         }
         // no probe grid yet: null views in the probe SRV slots of the raster pass
         for (uint32_t k = 0; k < 3; ++k) {
@@ -217,7 +220,7 @@ bool Renderer::createPipelines(std::string* error) {
 
     D3D12_DESCRIPTOR_RANGE selRange = {};   // t8 coverage of the selection (tonemapper)
     selRange.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
-    selRange.NumDescriptors = 1;
+    selRange.NumDescriptors = 2;   // t8 coverage of the selection, t9 viewport depth (ambient occlusion)
     selRange.BaseShaderRegister = 8;
 
     D3D12_ROOT_PARAMETER p[17] = {};
@@ -289,6 +292,13 @@ bool Renderer::createPipelines(std::string* error) {
         }
         return true;
     };
+    {   // ambient occlusion of the raster viewport: optional
+        std::string ignore;
+        std::string* keep = error;
+        error = &ignore;
+        if (!make(L"SSAO.cso", m_psoSSAO) || !make(L"SSAO_MS.cso", m_psoSSAOMS) || !make(L"SSAOBlur.cso", m_psoSSAOBlur)) { m_psoSSAO.Reset(); m_psoSSAOMS.Reset(); m_psoSSAOBlur.Reset(); }
+        error = keep;
+    }
     return make(L"PathTrace.cso", m_psoTrace) && make(L"Denoise.cso", m_psoDenoise) && make(L"Tonemap.cso", m_psoTonemap) &&
            make(L"DDGIUpdate.cso", m_psoGIUpdate) && make(L"DDGIRaster.cso", m_psoGIRaster) &&
            make(L"DDGIBlend.cso", m_psoGIBlend) && make(L"GIShade.cso", m_psoGIShade);
@@ -1632,6 +1642,7 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
         }
         m_cmd->EndQuery(m_queryHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 0);
         recordRaster(scene, rs, vp);
+        if (rs.ssao) recordSSAO(rs, vp, scene);
         m_denoisedSlot = 0xFFFFFFFF;
         m_sampleIndex = (uint32_t)std::max(rs.maxSamples, 1);
         m_cmd->SetComputeRootSignature(m_rootSig.Get());

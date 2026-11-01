@@ -493,14 +493,15 @@ void Renderer::createRasterTargets(uint32_t w, uint32_t h) {
     cc.Format = d.Format;
     m_msaaColor.Reset();
     m_device->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &d, D3D12_RESOURCE_STATE_RENDER_TARGET, &cc, IID_PPV_ARGS(&m_msaaColor));
-    // MSAA depth
-    d.Format = DXGI_FORMAT_D32_FLOAT;
+    // MSAA depth (typeless: also read as R32 by the ambient occlusion, SRV t9)
+    d.Format = DXGI_FORMAT_R32_TYPELESS;
     d.Flags = D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;
     D3D12_CLEAR_VALUE dc = {};
     dc.Format = DXGI_FORMAT_D32_FLOAT;
     dc.DepthStencil.Depth = 1.0f;
     m_msaaDepth.Reset();
     m_device->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &d, D3D12_RESOURCE_STATE_DEPTH_WRITE, &dc, IID_PPV_ARGS(&m_msaaDepth));
+    d.Format = DXGI_FORMAT_D32_FLOAT;
     // id depth (single sample)
     d.SampleDesc.Count = 1;
     m_idDepth.Reset();
@@ -511,7 +512,20 @@ void Renderer::createRasterTargets(uint32_t w, uint32_t h) {
     rtv.ptr += m_rtvSize;
     m_device->CreateRenderTargetView(m_tex[kTexAlbedo].Get(), nullptr, rtv);
     D3D12_CPU_DESCRIPTOR_HANDLE dsv = m_dsvHeap->GetCPUDescriptorHandleForHeapStart();
-    m_device->CreateDepthStencilView(m_msaaDepth.Get(), nullptr, dsv);
+    {
+        D3D12_DEPTH_STENCIL_VIEW_DESC dv = {};
+        dv.Format = DXGI_FORMAT_D32_FLOAT;
+        dv.ViewDimension = m_msaa > 1 ? D3D12_DSV_DIMENSION_TEXTURE2DMS : D3D12_DSV_DIMENSION_TEXTURE2D;
+        m_device->CreateDepthStencilView(m_msaaDepth.Get(), &dv, dsv);
+        D3D12_SHADER_RESOURCE_VIEW_DESC zs = {};
+        zs.Format = DXGI_FORMAT_R32_FLOAT;
+        zs.ViewDimension = m_msaa > 1 ? D3D12_SRV_DIMENSION_TEXTURE2DMS : D3D12_SRV_DIMENSION_TEXTURE2D;
+        zs.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+        if (m_msaa <= 1) zs.Texture2D.MipLevels = 1;
+        D3D12_CPU_DESCRIPTOR_HANDLE zh = m_heap->GetCPUDescriptorHandleForHeapStart();
+        zh.ptr += (SIZE_T)kDepthSrvSlot * m_descSize;
+        m_device->CreateShaderResourceView(m_msaaDepth.Get(), &zs, zh);
+    }
     dsv.ptr += m_dsvSize;
     m_device->CreateDepthStencilView(m_idDepth.Get(), nullptr, dsv);
 
@@ -1182,6 +1196,34 @@ bool Renderer::readView(int slot, std::vector<uint8_t>& rgba, uint32_t& w, uint3
     D3D12_RANGE wr = {0, 0};
     m_readback.res->Unmap(0, &wr);
     return true;
+}
+
+// Ambient occlusion of the raster viewport (SSAO.hlsl): occlusion from the viewport depth into the alpha of the
+// resolved HDR slot, then a 4 x 4 blur multiplied into its colour, before the tonemapper reads it.
+void Renderer::recordSSAO(const RenderSettings& rs, const ViewRect& vp, const Scene& scene) {
+    ID3D12PipelineState* pso = m_msaa > 1 ? m_psoSSAOMS.Get() : m_psoSSAO.Get();
+    if (!pso || !m_psoSSAOBlur || !m_msaaDepth || scene.camera.ortho) return;
+    const Camera& cam = scene.camera;
+    const float zn = std::max(cam.distance * 0.005f, 0.02f), zf = cam.distance * 40.0f + 2000.0f;   // (recordRaster)
+    struct { uint32_t slot; float A, B, radius; } c = {(uint32_t)kTexDenoiseA, zf / (zf - zn), -zf * zn / (zf - zn), rs.ssaoRadius};
+    transition(m_msaaDepth.Get(), D3D12_RESOURCE_STATE_DEPTH_WRITE, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+    m_cmd->SetComputeRootSignature(m_rootSig.Get());
+    m_cmd->SetComputeRootConstantBufferView(0, m_constants.va());
+    m_cmd->SetComputeRootDescriptorTable(8, m_heap->GetGPUDescriptorHandleForHeapStart());
+    D3D12_GPU_DESCRIPTOR_HANDLE t8 = m_heap->GetGPUDescriptorHandleForHeapStart();
+    t8.ptr += (UINT64)kSelCovSlot * m_descSize;
+    m_cmd->SetComputeRootDescriptorTable(16, t8);
+    m_cmd->SetComputeRoot32BitConstants(1, 4, &c, 0);
+    m_cmd->SetPipelineState(pso);
+    m_cmd->Dispatch((vp.w + 7) / 8, (vp.h + 7) / 8, 1);
+    D3D12_RESOURCE_BARRIER b = {};
+    b.Type = D3D12_RESOURCE_BARRIER_TYPE_UAV;
+    b.UAV.pResource = m_tex[kTexDenoiseA].Get();
+    m_cmd->ResourceBarrier(1, &b);
+    m_cmd->SetPipelineState(m_psoSSAOBlur.Get());
+    m_cmd->Dispatch((vp.w + 7) / 8, (vp.h + 7) / 8, 1);
+    m_cmd->ResourceBarrier(1, &b);
+    transition(m_msaaDepth.Get(), D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_DEPTH_WRITE);
 }
 
 } // namespace vp3d

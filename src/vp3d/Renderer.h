@@ -63,6 +63,9 @@ struct RenderSettings {
     float2 selectionCenter{0, 0};   // screen centre (viewport pixels) and radius of the selection: the glow light runs around it
     float selectionRadius = 100.0f;
     float pixelScale = 1.0f;        // render pixels per screen pixel (viewport supersampling): lines and the glow keep their size
+    // raster: screen-space ambient occlusion (radius in scene units), multiplied into the image before the tone mapping
+    bool ssao = false;
+    float ssaoRadius = 0.6f;
     int tonemapper = 0;           // 0 ACES (Hill fit), 1 AgX, 2 AgX Punchy, 3 Standard (clip)          // light raster viewport instead of path tracing
     // Stable history (interactive, GI): the history is dropped when an object moves, edges are validated on the
     // pixel centre, the denoiser strength is bounded. Off = the previous behaviour (marks behind moved objects).
@@ -300,9 +303,13 @@ private:
     // coverage of the selection (resolved MSAA mask of the selected objects) read by the tonemapper (t8)
     static constexpr uint32_t kSelCovSlot = kProbeSrvSlot + 3;
     // extra views (renderView): per view, the u0..u5 table of the tonemapper then its selection coverage (t8)
-    static constexpr uint32_t kViewHeapBase = kSelCovSlot + 1, kViewHeapStride = kTexCount + 1;
+    // depth of the viewport read by the ambient occlusion (t9, right after t8)
+    static constexpr uint32_t kDepthSrvSlot = kSelCovSlot + 1;
+    static constexpr uint32_t kViewHeapBase = kDepthSrvSlot + 1, kViewHeapStride = kTexCount + 1;
     static constexpr uint32_t kProbeFace = 16;   // texels per cube face of a probe capture
     std::vector<ComPtr<ID3D12Resource>> m_materialTex;
+    ComPtr<ID3D12PipelineState> m_psoSSAO, m_psoSSAOMS, m_psoSSAOBlur;   // ambient occlusion of the raster viewport (optional)
+    void recordSSAO(const RenderSettings& rs, const ViewRect& vp, const Scene& scene);
     ComPtr<ID3D12Resource> m_tex[kTexCount];
     uint32_t m_rtW = 0, m_rtH = 0;
 
