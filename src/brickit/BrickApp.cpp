@@ -91,13 +91,13 @@ bool BrickApp::init(HINSTANCE inst, const Options& opt) {
         MessageBoxA(m_hwnd, err.c_str(), "BrickIt - DirectX 12", MB_ICONERROR);
         return false;
     }
-    if (!m_gui.init(m_hwnd, m_renderer, m_dpi)) {
+    m_ui = m_opt.uiScale > 0 ? m_opt.uiScale : m_dpi;   // fonts and layout at the UI scale (100 % / 150 % tests)
+    if (!m_gui.init(m_hwnd, m_renderer, m_ui)) {
         MessageBoxA(m_hwnd, "Dear ImGui initialisation failed", "BrickIt", MB_ICONERROR);
         return false;
     }
     th::loadThemes(m_exeDir + L"\\assets\\themes");
     th::loadSettings(m_exeDir + L"\\brickit_settings.ini");
-    m_ui = m_opt.uiScale > 0 ? m_opt.uiScale : m_dpi;
     th::apply(m_ui);
 
     if (!m_lib.load(m_exeDir + L"\\assets\\brickit", &err)) {
