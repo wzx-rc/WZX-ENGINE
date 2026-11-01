@@ -105,7 +105,8 @@ Cases : `[x]` porté et vérifié · `[~]` partiel (ce qui manque est dit) · `[
 ## 7. Mécanique (détails)
 - [x] Connecteurs, corps, pivots, engrènements, arbre, boucles, solveur LM, butées, rapports, phase des dents, couleurs par corps, liaisons
 - [~] Glisser une pièce mobile (codé, à tester)
-- [ ] Vérins (glissières) et plateaux tournants (métadonnées `cyl` / `pair` à dériver)
+- [x] Plateaux tournants : pivot entre une moitié « Bottom / Base » et sa moitié « Top » de la même famille (5 familles : 5 x 5, 28 dents, 60 dents, Type 1, Type 2), vérifié par `--turntable-test` (2 corps, 1 pivot pour chacune) ; sans engrenage il n'a pas de moteur et se manipule au glisser, comme la règle du web
+- [ ] Vérins : inactifs comme dans le web v26 (aucune pièce ne reçoit `cyl`) ; la conversion LDraw → BrickIt ne porte pas les glissières LDCad (axe, course), il faut les ajouter au convertisseur (`ldraw2brickit.mjs`) avant de pouvoir les détecter
 
 ## Écarts voulus
 
@@ -114,7 +115,11 @@ Cases : `[x]` porté et vérifié · `[~]` partiel (ce qui manque est dit) · `[
   (l'intention est 84 px). Le natif reprend 64 px pour l'identique visuel ; à corriger dans le web si 84 était voulu.
 
 ### Corrections mécanique
-- (aucune pour l'instant)
+- Plateaux tournants : le web v26 contient la détection (`metas[i].pair`) mais aucune pièce ne reçoit cette donnée, donc
+  ils ne tournent jamais. Le natif la dérive du titre LDraw (Top / Bottom / Base, même famille, axe vertical par le centre
+  de la pièce). Le test du web (centres à 1 mm près le long de l'axe) échoue toujours pour deux moitiés de hauteurs
+  différentes : le natif demande que leurs étendues le long de l'axe se touchent ou se recouvrent (0,1 cm de jeu), et ne
+  soude pas les deux moitiés par leurs tenons (le dessus tourne sur la base).
 
 ### Stockage / formats (mode DEV)
 - Remplacements gardés dans `dev_overrides\<id>.obj` + `<id>.json` à côté de l'exe (le web : IndexedDB « stocké sur cet appareil » ou base de l'artifact). Préférences DEV dans `brickit_prefs.json` (clé `dev`).

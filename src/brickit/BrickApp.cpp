@@ -708,6 +708,29 @@ void BrickApp::frame() {
     }
     pdfPump();
     if (m_prefsDirty && !ImGui::IsMouseDown(ImGuiMouseButton_Left)) { m_prefsDirty = false; savePrefs(); }
+    if (m_frame == 1 && !m_opt.ttBase.empty()) {   // self-test: a turntable base and its top on one axis -> one pivot
+        Part* b = m_lib.get(m_opt.ttBase);
+        Part* t = m_lib.get(m_opt.ttTop);
+        FILE* f = nullptr;
+        if (b && t && _wfopen_s(&f, (m_exeDir + L"\\mech_test.txt").c_str(), L"w") == 0 && f) {
+            m_bricks.clear();
+            Brick bb, tb;
+            bb.part = m_lib.find(m_opt.ttBase);
+            tb.part = m_lib.find(m_opt.ttTop);
+            bb.color = tb.color = m_color;
+            bb.pos = float3(0, -b->bmin.y, 0);
+            const float3 cb = (b->bmin + b->bmax) * 0.5f, ct = (t->bmin + t->bmax) * 0.5f;
+            tb.pos = float3(cb.x - ct.x, bb.pos.y + b->bmax.y - t->bmin.y, cb.z - ct.z);
+            m_bricks.push_back(bb);
+            m_bricks.push_back(tb);
+            rebuildScene();
+            MechModel mm;
+            const bool ok = m_mech.build(m_bricks, mm);
+            fprintf(f, "base=%s top=%s ok=%d bodies=%d joints=%zu cmds=%zu warnings=%zu\n", m_opt.ttBase.c_str(), m_opt.ttTop.c_str(), ok, mm.bodyCount, mm.tree.size(), mm.cmds.size(), mm.warnings.size());
+            for (auto& w : mm.warnings) fprintf(f, "  %s\n", w.c_str());
+            fclose(f);
+        }
+    }
     if (m_frame == 3 && !m_opt.mayaOut.empty()) mayaExportScene(m_opt.mayaOut);   // scripted test: Maya export
     if (m_frame == 3 && !m_opt.devRoundtrip.empty()) {   // self-test: OBJ export of a part, re-import, fit (offset and scale must be identity)
         int pi = m_lib.find(m_opt.devRoundtrip);
@@ -862,6 +885,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         else if (a == L"--manual") opt.manual = true;
         else if (a == L"--float-tray") { opt.floatTray = true; opt.floatX = (float)_wtof(next().c_str()); opt.floatY = (float)_wtof(next().c_str()); }
         else if (a == L"--opts-right") opt.optsRight = true;
+        else if (a == L"--turntable-test") { std::wstring w1 = next(), w2 = next(); opt.ttBase.assign(w1.begin(), w1.end()); opt.ttTop.assign(w2.begin(), w2.end()); }
         else if (a == L"--maya") opt.mayaOut = next();
         else if (a == L"--dev-roundtrip") { std::wstring w = next(); opt.devRoundtrip.assign(w.begin(), w.end()); }   // 0 select, 1 visor, 2 move, 3 rotate
         else if (a == L"--cat") opt.libCategory = _wtoi(next().c_str());

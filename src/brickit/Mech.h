@@ -14,6 +14,12 @@ struct MechMeta {
     std::vector<MechConn> holes, males;   // males: cross = axle, else pin
     std::vector<float3> top, bottom;      // studs, anti-studs
     std::vector<MechGear> gears;
+    // turntable half (web: metas[i].pair, never filled by the web v26): role 1 base / bottom, 2 top, family from the
+    // LDraw title, vertical axis through the centre of the part, extent along the axis
+    int pairRole = 0;
+    std::string pairKind;
+    float3 pairC, pairAxis{0, 1, 0};
+    float pairLo = 0, pairHi = 0;
 };
 
 struct MechGearW { int brick, body, teeth; float3 c, u, ex; float spin = 0; int local = 0; };   // spin: tooth phase at rest (radians around u)

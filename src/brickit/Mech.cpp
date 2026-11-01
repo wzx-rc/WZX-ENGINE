@@ -1,4 +1,5 @@
 #include "Mech.h"
+#include <sstream>
 #include "imgui.h"
 #include <algorithm>
 #include <cmath>
@@ -51,6 +52,28 @@ const MechMeta& Mech::meta(int part) {
     if (m_metaDone[part]) return m;
     m_metaDone[part] = true;
     const Part& p = m_lib.parts[part];
+    {   // turntable halves: "Technic Turntable 28 Tooth Bottom" / "... Top", "Turntable 5 x 5 Base" / "... Top"
+        const std::string t = p.title.empty() ? p.label : p.title;
+        if (t.find("Turntable") != std::string::npos) {
+            std::string kind;
+            int role = 0;
+            std::istringstream ws(t);
+            std::string w;
+            while (ws >> w) {
+                if (w == "Top") role = 2;
+                else if (w == "Bottom" || w == "Base") role = 1;
+                else kind += w + " ";
+            }
+            if (role && p.loaded) {
+                m.pairRole = role;
+                m.pairKind = kind;
+                m.pairC = float3((p.bmin.x + p.bmax.x) * 0.5f, (p.bmin.y + p.bmax.y) * 0.5f, (p.bmin.z + p.bmax.z) * 0.5f);
+                m.pairAxis = float3(0, 1, 0);
+                m.pairLo = p.bmin.y - m.pairC.y;
+                m.pairHi = p.bmax.y - m.pairC.y;
+            }
+        }
+    }
     for (size_t i = 0; i < p.voxels.size(); ++i) {
         if (p.conn[i] == CONN_STUD) m.top.push_back(p.voxels[i]);
         else if (p.conn[i] == CONN_ANTISTUD) m.bottom.push_back(p.voxels[i]);
@@ -159,6 +182,31 @@ bool Mech::build(const std::vector<Brick>& bricks, MechModel& M) {
     auto wDir = [&](int i, const float3& v) { return normalize(qRot(bricks[i].rot, v)); };
     auto key = [](const float3& v) { return ((int64_t)std::lround(v.x * 50) * 73856093) ^ ((int64_t)std::lround(v.y * 50) * 19349663) ^ ((int64_t)std::lround(v.z * 50) * 83492791); };
 
+    // 0) turntable halves (same family, same axis, touching along it) = pivot (web step 3; the two halves are not
+    // fused by their studs: the top turns on the base)
+    struct Rev { int i, j; float3 p, u; };
+    std::vector<Rev> revs;
+    std::set<std::pair<int, int>> pairs;
+    for (int i = 0; i < n; ++i) {
+        const MechMeta& c = meta(bricks[i].part);
+        if (c.pairRole != 1) continue;
+        const float3 pc = wPos(i, c.pairC), u = wDir(i, c.pairAxis);
+        for (int j = 0; j < n; ++j) {
+            const MechMeta& ct = meta(bricks[j].part);
+            if (j == i || ct.pairRole != 2 || ct.pairKind != c.pairKind) continue;
+            const float3 tc = wPos(j, ct.pairC), ut = wDir(j, ct.pairAxis);
+            if (!parallel(u, ut) || !onLine(tc, pc, u)) continue;
+            // extents along the axis must touch or overlap (the web compares the two centres within 1 mm, which two
+            // halves of different heights never satisfy)
+            const float d = dot(tc - pc, u);
+            const float aLo = c.pairLo, aHi = c.pairHi;
+            const float s = dot(ut, u) > 0 ? 1.0f : -1.0f;
+            const float bLo = d + std::min(s * ct.pairLo, s * ct.pairHi), bHi = d + std::max(s * ct.pairLo, s * ct.pairHi);
+            if (bLo > aHi + 0.1f || bHi < aLo - 0.1f) continue;
+            revs.push_back({i, j, pc, u});
+            pairs.insert({std::min(i, j), std::max(i, j)});
+        }
+    }
     // 1) a stud of one brick in an anti-stud of another = rigid
     std::unordered_map<int64_t, std::vector<int>> tops;
     for (int i = 0; i < n; ++i)
@@ -168,7 +216,7 @@ bool Mech::build(const std::vector<Brick>& bricks, MechModel& M) {
             auto it = tops.find(key(wPos(i, v)));
             if (it != tops.end())
                 for (int j : it->second)
-                    if (j != i) unite(i, j);
+                    if (j != i && !pairs.count({std::min(i, j), std::max(i, j)})) unite(i, j);
         }
     // 2) axles and pins through holes
     struct WH { int i; float3 p, u; bool cross; float half; };
@@ -178,8 +226,6 @@ bool Mech::build(const std::vector<Brick>& bricks, MechModel& M) {
         for (const MechConn& h : mt.holes) holes.push_back({i, wPos(i, h.p), wDir(i, h.axis), h.cross, h.half});
         for (const MechConn& h : mt.males) males.push_back({i, wPos(i, h.p), wDir(i, h.axis), h.cross, h.half});
     }
-    struct Rev { int i, j; float3 p, u; };
-    std::vector<Rev> revs;
     for (const WH& m : males) {
         std::vector<const WH*> hit;
         for (const WH& h : holes) {
