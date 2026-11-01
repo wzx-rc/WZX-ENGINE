@@ -293,6 +293,20 @@ void BrickApp::setupStage() {
         m_dimMaterial.push_back(m_scene.addMaterial(d));
     }
     {
+        Material gm;   // ghostMat of the web: 0xffe08a, emissive 0x6b5a1a
+        gm.name = "Ghost";
+        gm.baseColor = float3(1.0f, 0.75f, 0.25f);
+        gm.emission = float3(0.15f, 0.10f, 0.01f);
+        gm.emissionStrength = 1.0f;
+        m_ghostMaterial = m_scene.addMaterial(gm);
+        Material gr;   // blocked: 0xff6b6b, emissive 0x5a1010
+        gr.name = "Ghost blocked";
+        gr.baseColor = float3(1.0f, 0.15f, 0.15f);
+        gr.emission = float3(0.10f, 0.005f, 0.005f);
+        gr.emissionStrength = 1.0f;
+        m_ghostBlockedMaterial = m_scene.addMaterial(gr);
+    }
+    {
         Material bl;
         bl.name = "Blocked";
         bl.baseColor = float3(0.9f, 0.12f, 0.1f);
@@ -380,6 +394,17 @@ void BrickApp::rebuildScene() {
         o.useRot = true;
         m_scene.addObject(o);
     }
+    {   // ghost of the brick in hand (placement preview), after the bricks
+        Object g;
+        g.ghost = true;
+        g.ghostAlpha = 0.32f;
+        g.visible = false;
+        g.selectable = false;
+        g.useRot = true;
+        g.material = m_ghostMaterial;
+        m_ghostObject = m_scene.addObject(g);
+    }
+    m_settles.clear();
     syncObjects();
 }
 
@@ -411,7 +436,7 @@ void BrickApp::syncObjects() {
             o.material = m_tintMaterial[body];
         }
         o.ghost = false;
-        if (m_holding && (int)i == m_held.brick && m_held.blocked) {
+        if (m_holding && (int)i == m_held.brick && m_held.blocked && !m_animOn) {   // no preview: the brick itself turns red
             o.material = m_blockedMaterial;
             o.ghost = true;
             o.ghostAlpha = 0.55f;
@@ -631,6 +656,7 @@ void BrickApp::frame() {
     cameraInput();
     if (m_mechOn) mechUpdate((float)ImGui::GetIO().DeltaTime);
     else editInput();
+    updateAnim(std::min(0.05f, (float)ImGui::GetIO().DeltaTime));
     if (ImGui::IsKeyPressed(ImGuiKey_M) && !ImGui::GetIO().WantTextInput && !ImGui::GetIO().KeyCtrl) { if (m_mechOn) mechExit(); else mechEnter(); }
 
     ImVec2 ds = ImGui::GetIO().DisplaySize;
@@ -652,6 +678,7 @@ void BrickApp::frame() {
     ImGui::GetBackgroundDrawList()->AddRectFilled(ImVec2(0, 0), ds, IM_COL32(0x13, 0x14, 0x17, 255));
     ImGui::GetBackgroundDrawList()->AddImage(m_gui.viewportTexture(), ImVec2(m_stage.x, m_stage.y), ImVec2(m_stage.z, m_stage.w));
     drawVoxels();          // over the 3D view, under the panels
+    drawHoldOverlay();
     drawMechOverlay();
     LARGE_INTEGER t1;
     QueryPerformanceCounter(&t1);

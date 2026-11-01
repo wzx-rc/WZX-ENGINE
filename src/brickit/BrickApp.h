@@ -142,6 +142,18 @@ private:
     void pickUpSelected();           // Space: the selected brick comes into the hand
     void cycleGrab();                // C: next pivot voxel of the selection / brick in hand
 
+    // BrickAnim.cpp: animations of the web (brick in hand, drop, settle), placement preview (ghost, visor, drop
+    // line, ring, glow of the aimed voxel), selection rectangle
+    void updateAnim(float dt);
+    void finishDrop();
+    void drawHoldOverlay();
+    void placeAnimated(int brick, const float3& pos, const float4& rot, float squash, float tiltX, float tiltZ);
+    struct Settle { int brick; float s, v, t; };
+    std::vector<Settle> m_settles;
+    int m_ghostObject = -1;            // translucent copy of the brick in hand at its landing spot
+    bool m_marquee = false;
+    ImVec2 m_marquee0, m_marquee1;
+
     // Thumbs.cpp
     void buildThumbs();
     bool thumbUv(int part, ImTextureID& tex, ImVec2& uv0, ImVec2& uv1) const;
@@ -163,6 +175,7 @@ private:
     std::vector<int> m_dimMaterial;    // palette index -> same material at 50 % (focus mode)
     std::vector<int> m_tintMaterial;   // Mechanical mode: one material per body (Couleurs par corps)
     int m_blockedMaterial = -1;        // brick in hand that cannot be dropped (red ghost)
+    int m_ghostMaterial = -1, m_ghostBlockedMaterial = -1;   // placement preview (ghostMat of the web)
     int m_firstBrickObject = 0;        // scene objects before it: the stage
     ViewRect m_vp;
     int m_frame = 0;

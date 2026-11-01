@@ -10,9 +10,9 @@ Cases : `[x]` porté et vérifié · `[~]` partiel (ce qui manque est dit) · `[
 - [x] Logo « 3D » jaune + « BrickIt Builder »
 - [x] Annuler / Rétablir (grisés quand la pile est vide)
 - [x] Modes Sélection / Viseur / Déplacer / Tourner (boutons, état jaune)
-- [~] Mode Sélection : clic = sélection ; [ ] rectangle de sélection (`#marquee`)
+- [x] Mode Sélection : clic = sélection ; [~] rectangle de sélection (`#marquee`, codé, à tester à la souris)
 - [ ] Mode Déplacer : gizmo flèches (crans tenon / plaque) ; [ ] Mode Tourner : anneaux 90°
-- [x] Grille, [x] Auto Pivot, [x] Sécurité 50 %, [x] Focus, [~] Animations (bouton seulement, pas encore les animations)
+- [x] Grille, [x] Auto Pivot, [x] Sécurité 50 %, [x] Focus, [x] Animations
 - [x] Voxels (affichage en points) ; [ ] cycle des voxels (touche V) et filtre
 - [x] Supprimer (grisé sans sélection)
 - [~] Qualité Rapide / HQ (MSAA ; pas de SSAO) + Path tracing (natif en plus) ; [x] Tonemap ACES / AgX / Std
@@ -78,12 +78,13 @@ Cases : `[x]` porté et vérifié · `[~]` partiel (ce qui manque est dit) · `[
 ## 3. Souris / doigt
 - [x] Viseur : toucher une brique la prend en main, relâcher la pose
 - [x] Glisser depuis la bibliothèque
-- [ ] Rectangle de sélection (mode Sélection, Maj/Ctrl ajoute)
+- [~] Rectangle de sélection (mode Sélection, Maj/Ctrl ajoute, toast « n briques sélectionnées ») : codé, à tester
 - [x] Orbite / pan / zoom
 - [ ] Gizmo flèches et anneaux
 
 ## 4. Animations et timings
-- [ ] Brique qui tombe dans la main (écrasement 0,55, ressort), rebond à la pose (0,86), bascule pendant le déplacement, durée de pose 0,15 s, halo du voxel visé (0,18 s, pulsation)
+- [x] Brique qui tombe dans la main (écrasement 0,55, ressort w22 z.35), flottement 0,9 + oscillation, ressort w14, bascule selon la vitesse, pose 0,15 s (t²), rebond à la pose (0,86, w30 z.28, 0,6 s), halo du voxel visé (0,18 s, pulsation) — capture 12
+- [x] Aperçu de pose : fantôme jaune / rouge 32 %, carrés du viseur au sol, ligne pointillée, anneau pulsant au pivot ; Animations coupées = pas d'aperçu (comme le web)
 - [x] Toast 3,2 s avec fondu
 
 ## 5. Préférences et sauvegarde (localStorage du web → fichiers à côté de l'exe)

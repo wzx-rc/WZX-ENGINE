@@ -67,6 +67,14 @@ struct Held {
     std::vector<uint8_t> conn;
     BoxHash boxes;
     bool cacheValid = false;
+    // animation of the web (updateHold): the brick floats above its target on a spring, tilts with its speed, squashes
+    float3 vpos, vvel;
+    float4 vrot{0, 0, 0, 1};
+    float squash = 1, squashVel = 0, tiltX = 0, tiltZ = 0, time = 0, snapT = 0;
+    bool dropping = false, keepCopy = false;
+    float dropT = 0;
+    float3 dropFrom, lastSnap;
+    float4 dropRotFrom{0, 0, 0, 1};
 };
 
 class Builder {
