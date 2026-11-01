@@ -1,4 +1,4 @@
-﻿#include "Renderer.h"
+#include "Renderer.h"
 #include "shaders/Shared.h"
 #include <cstring>
 #include <fstream>
@@ -1540,7 +1540,7 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
     fc.resolution = {(uint32_t)vp.w, (uint32_t)vp.h};
     fc.frameIndex = m_frameIndex++;
     fc.sampleIndex = m_sampleIndex;
-    fc.maxBounces = (uint32_t)std::max(1, rs.maxBounces);
+    fc.maxBounces = (uint32_t)std::max(0, rs.maxBounces);   // 0: primary rays only (profiling)
     fc.lightCount = m_lightCount;
     fc.samplesPerFrame = (uint32_t)std::max(1, rs.samplesPerFrame);
     fc.flags = (cam.dof ? FRAME_FLAG_DOF : 0) | (rs.bevel ? FRAME_FLAG_BEVEL : 0) | (rs.denoise ? FRAME_FLAG_DENOISE : 0) |
@@ -1571,6 +1571,7 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
     }
     // the raster pass draws the coverage of the selection whenever there is one (the path traced view gets the overlay pass)
     fc.selCovValid = (!m_selIds.empty() && m_psoSelect && m_psoDepth) ? 1u : 0u;
+    fc.traceStride = (rs.traceStride == 4 && m_sampleIndex > 0) ? 4u : 1u;
     fc.fireflyClamp = rs.fireflyClamp;
     fc.sssScale = rs.sssScale;
     fc.gridScale = scene.gridScale;
@@ -1752,7 +1753,8 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
         traced = true;
     } else if (m_sampleIndex < (uint32_t)rs.maxSamples) {
         m_cmd->SetPipelineState(m_psoTrace.Get());
-        m_cmd->Dispatch(gx, gy, 1);
+        if (fc.traceStride == 4) m_cmd->Dispatch((vp.w / 2 + 8) / 8, (vp.h / 2 + 8) / 8, 1);
+        else m_cmd->Dispatch(gx, gy, 1);
         uavBarrier();
         m_sampleIndex += fc.samplesPerFrame;
         traced = true;

@@ -91,6 +91,9 @@ struct RenderSettings {
     // Raster: object id pass (normal + id per pixel, used by the editor's id outline). Off: the target is only cleared
     // (the selection coverage still gives the outline), one geometry pass less.
     bool idPass = true;
+    // Path tracing: 1 = every pixel each frame; 4 = one pixel of each 2 x 2 block per frame, in turn (a quarter of the
+    // rays per frame, same convergence over time; the first frame after a reset traces every pixel)
+    int traceStride = 1;
 };
 
 struct ViewRect { int x = 0, y = 0, w = 1, h = 1; };

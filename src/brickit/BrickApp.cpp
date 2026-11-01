@@ -118,7 +118,9 @@ bool BrickApp::init(HINSTANCE inst, const Options& opt) {
     m_rs.tonemapper = m_opt.tonemapper;   // ACES by default
     m_rs.idPass = false;   // selection: coverage outline only
     m_rs.selectionStyle = 2;   // thin white line at 45 % and a light fill
-    if (opt.bounces > 0) m_rs.maxBounces = opt.bounces;
+    m_rs.traceStride = opt.stride > 0 ? opt.stride : (opt.shotPath.empty() ? 4 : 1);   // interactive: a quarter of the pixels per frame
+    m_rs.maxBounces = 4;   // plastic and a light floor: 4 bounces look the same as 6, a third cheaper
+    if (opt.bounces >= 0) m_rs.maxBounces = opt.bounces;
     if (opt.denoise >= 0) m_rs.denoise = opt.denoise != 0;
     if (opt.bevelSpp >= 0) { m_rs.bevel = opt.bevelSpp > 0; m_rs.bevelSamples = std::max(1, opt.bevelSpp); }
     m_lib.loadAll(&err);   // every Technic pack (about 10 MB): the library shows them all, the thumbnails need them
@@ -660,6 +662,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         else if (a == L"--dup") opt.duplicate = true;
         else if (a == L"--mechdemo") opt.mechDemo = true;
         else if (a == L"--mech") opt.mech = true;
+        else if (a == L"--stride") opt.stride = _wtoi(next().c_str());
         else if (a == L"--motor") opt.motor = (float)_wtof(next().c_str());
         else if (a == L"--size") {
             std::wstring s = next();

@@ -25,7 +25,7 @@ struct Options {
     bool grid = false;        // --grid: every part of the library side by side
     int bench = 0;            // --bench N: N random bricks
     bool pathTrace = false;   // --pt: progressive path tracing
-    int bounces = 0;          // --bounces N (path tracing)
+    int bounces = -1;         // --bounces N (path tracing, 0 = primary rays only)
     int bevelSpp = -1;        // --bevel-spp N (0 = bevel off)
     bool opaque = false;      // --opaque: benchmark bricks in standard colours only
     int denoise = -1;         // --denoise 0|1
@@ -40,6 +40,7 @@ struct Options {
     int tonemapper = 0;           // --tonemap 0 ACES (default, as the web builder), 1 AgX, 2 AgX Punchy, 3 Standard
     float fingerprints = 0.6f;    // --fingerprints: strength of the roughness mask (0 = off)
     float yaw = -1000, pitch = -1000;   // --yaw / --pitch degrees (camera)
+    int stride = 0;           // --stride 1|4: path tracing pixels per frame (0 = 4 interactive, 1 for captures)
     float zoom = 1.0f;        // --zoom f: camera distance x f after framing everything
     bool noUi = false;        // --no-ui: viewport and stats only (benchmarks, beauty captures)
     float uiScale = 0.0f;     // --ui-scale f: forced UI scale (1 = 100 %, 1.5 = 150 %), 0 = the monitor's
