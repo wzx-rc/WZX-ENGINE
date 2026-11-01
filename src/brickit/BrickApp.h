@@ -190,6 +190,9 @@ private:
     MechModel m_mm;
     bool m_mechOn = false;
     std::string m_mechFlash;
+    Mech::Drag m_mechDrag;
+    float3 m_mechDragPlaneN;
+    bool m_mechDragging = false;
     double m_mechFlashTime = -10;
 
     // thumbnails

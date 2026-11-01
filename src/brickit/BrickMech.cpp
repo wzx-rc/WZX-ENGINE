@@ -50,6 +50,35 @@ void BrickApp::mechUpdate(float dt) {
     if (!m_mechOn) return;
     ImGuiIO& io = ImGui::GetIO();
     if (!io.WantTextInput && ImGui::IsKeyPressed(ImGuiKey_Escape)) { mechExit(); return; }
+    // left drag on a moving part: the point grabbed follows the cursor on the plane facing the camera
+    if (!m_overUi && !io.WantCaptureMouse && ImGui::IsMouseClicked(ImGuiMouseButton_Left) && !io.KeyAlt) {
+        float3 hit;
+        int b = pickBrick(io.MousePos.x, io.MousePos.y, &hit);
+        if (b >= 0) {
+            int body = m_mm.brickBody[b];
+            if (std::find(m_mm.roots.begin(), m_mm.roots.end(), body) == m_mm.roots.end()) {
+                m_mechDrag.body = body;
+                m_mechDrag.local = m_mm.mats[body].inverse().point(hit);
+                m_mechDrag.target = hit;
+                float3 r, u, f;
+                m_scene.camera.basis(r, u, f);
+                m_mechDragPlaneN = f;
+                m_mechDragging = true;
+            }
+        }
+    }
+    if (m_mechDragging && !ImGui::IsMouseDown(ImGuiMouseButton_Left)) m_mechDragging = false;
+    if (m_mechDragging && (io.MouseDelta.x != 0 || io.MouseDelta.y != 0)) {
+        float3 o, d;
+        view().ray(io.MousePos.x, io.MousePos.y, o, d);
+        float3 p0 = m_mm.mats[m_mechDrag.body].point(m_mechDrag.local);
+        float den = dot(d, m_mechDragPlaneN);
+        if (std::fabs(den) > 1e-5f) {
+            m_mechDrag.target = o + d * (dot(p0 - o, m_mechDragPlaneN) / den);
+            m_mech.solve(m_mm, &m_mechDrag);
+            mechApplyPose();
+        }
+    }
     std::vector<float> before;
     bool moved = false;
     for (MechCmd& c : m_mm.cmds) {

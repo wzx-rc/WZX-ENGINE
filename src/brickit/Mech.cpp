@@ -128,7 +128,15 @@ const MechMeta& Mech::meta(int part) {
             float3 c = bc;
             for (int j = 0; j < 3; ++j)
                 if ((&h0->axis.x)[j] > 0.5f) (&c.x)[j] = (&h0->p.x)[j];
-            m.gears.push_back({t, c, h0->axis});
+            float3 ex(1, 0, 0);
+            float best = -1;
+            for (const Vertex& v : p.mesh.vertices) {
+                float3 r = v.pos - c;
+                r = r - h0->axis * dot(r, h0->axis);
+                float l = length(r);
+                if (l > best) { best = l; ex = l > 1e-5f ? r * (1.0f / l) : float3(1, 0, 0); }
+            }
+            m.gears.push_back({t, c, h0->axis, ex});
         }
         MechConn keep = *h0;
         if (!m.gears.empty()) keep.p = m.gears[0].c;   // the axle goes through the centre
@@ -239,7 +247,7 @@ bool Mech::build(const std::vector<Brick>& bricks, MechModel& M) {
     // gears and meshes
     for (int i = 0; i < n; ++i)
         for (const MechGear& g : meta(bricks[i].part).gears)
-            M.gears.push_back({i, M.brickBody[i], g.teeth, wPos(i, g.c), wDir(i, g.axis)});
+            M.gears.push_back({i, M.brickBody[i], g.teeth, wPos(i, g.c), wDir(i, g.axis), wDir(i, g.ex), 0.0f, (int)(&g - meta(bricks[i].part).gears.data())});
     for (size_t x = 0; x < M.gears.size(); ++x)
         for (size_t y = x + 1; y < M.gears.size(); ++y) {
             const MechGearW &A = M.gears[x], &B = M.gears[y];
@@ -255,6 +263,48 @@ bool Mech::build(const std::vector<Brick>& bricks, MechModel& M) {
                 M.warnings.push_back(buf);
             }
         }
+
+    // tooth phases: from the biggest gear of each train, every meshing gear turned so its teeth fall between the teeth
+    // of the gear it meshes with (spin around its own axis, applied to its brick at rest)
+    {
+        const int ng = (int)M.gears.size();
+        std::vector<std::vector<int>> gadj0(ng);
+        for (auto& ms : M.meshes) { gadj0[ms.first].push_back(ms.second); gadj0[ms.second].push_back(ms.first); }
+        auto angAbout = [](const float3& dir, const float3& ex, const float3& u) { return std::atan2(dot(dir, cross(u, ex)), dot(dir, ex)); };
+        auto frac = [](float v) { return v - std::floor(v); };
+        std::vector<bool> vis(ng, false);
+        std::vector<int> order(ng);
+        for (int i = 0; i < ng; ++i) order[i] = i;
+        std::sort(order.begin(), order.end(), [&](int a, int b) { return M.gears[a].teeth > M.gears[b].teeth; });
+        for (int s0 : order) {
+            if (vis[s0]) continue;
+            vis[s0] = true;
+            M.gears[s0].spin = 0;
+            std::vector<int> st{s0};
+            while (!st.empty()) {
+                int a = st.back();
+                st.pop_back();
+                const MechGearW& A = M.gears[a];
+                for (int b : gadj0[a]) {
+                    if (vis[b]) continue;
+                    MechGearW& B = M.gears[b];
+                    const float3 u = A.u, d = B.c - A.c;
+                    const float sgn = dot(B.u, u) < 0 ? -1.0f : 1.0f;
+                    const float aA = angAbout(d, A.ex, u), aB = angAbout(d * -1.0f, B.ex, u);
+                    const float eA = frac((aA - A.spin) * A.teeth / (2 * kPi));
+                    const float phiBu = aB + (eA - 0.5f) * 2 * kPi / B.teeth;
+                    B.spin = sgn * phiBu;
+                    vis[b] = true;
+                    st.push_back(b);
+                }
+            }
+        }
+        for (const MechGearW& g : M.gears) {
+            if (g.spin == 0) continue;
+            const MechGear& lg = meta(bricks[g.brick].part).gears[g.local];
+            M.spins.push_back({g.brick, rotAbout(lg.c, lg.axis, g.spin)});
+        }
+    }
 
     // kinematic tree. Ground: per connected group, a structural body (studs), the lowest, the biggest
     std::vector<int> comp(nb);
@@ -487,16 +537,17 @@ static std::vector<double> solveLinear(std::vector<std::vector<double>> A, std::
 
 // Commands set their joints, the free joints are solved (Levenberg-Marquardt) so that every loop stays closed, pulled
 // towards the previous pose. On failure the previous pose stays (a stop).
-bool Mech::solve(MechModel& m) {
+bool Mech::solve(MechModel& m, const Drag* drag) {
     const int nq = (int)m.q.size();
     std::vector<double> prev = m.q;
     std::vector<int> freeV;
     for (int i = 0; i < nq; ++i) {
         const MechModel::QMode& md = m.qmode[i];
-        if (md.kind == 1) m.q[i] = m.cmds[md.cmd].value;
-        else if (md.kind == 0) freeV.push_back(i);
+        if (md.kind == 1 && !drag) m.q[i] = m.cmds[md.cmd].value;
+        else if (md.kind == 0 || md.kind == 1) freeV.push_back(i);   // a drag moves the commands too
     }
-    const int rowsC = (int)m.closures.size() * 6, nf = (int)freeV.size(), rows = rowsC + nf;
+    const double WD = 0.35;
+    const int rowsC = (int)m.closures.size() * 6, nf = (int)freeV.size(), rowsD = drag ? 3 : 0, rows = rowsC + rowsD + nf;
     const double LAM = 0.01, TOL = 0.004;
     std::vector<Affine> mats(m.bodyCount);
     std::vector<double> xRef(nf);
@@ -506,6 +557,12 @@ bool Mech::solve(MechModel& m) {
         applyGears(m, m.q);
         fk(m, m.q, mats);
         int k = closureRes(m, mats, out.data());
+        if (drag) {
+            float3 p = mats[drag->body].point(drag->local);
+            out[k++] = (p.x - drag->target.x) * WD;
+            out[k++] = (p.y - drag->target.y) * WD;
+            out[k++] = (p.z - drag->target.z) * WD;
+        }
         for (int j = 0; j < nf; ++j) out[k++] = LAM * (x[j] - xRef[j]);
         double s = 0;
         for (int r = 0; r < rows; ++r) s += out[r] * out[r];
@@ -518,7 +575,7 @@ bool Mech::solve(MechModel& m) {
         double mu = 1e-3;
         std::vector<std::vector<double>> J(nf, std::vector<double>(rows));
         for (int it = 0; it < 30; ++it) {
-            if (closureMax(r) < 1e-4) break;
+            if (!drag && closureMax(r) < 1e-4) break;
             for (int c = 0; c < nf; ++c) {
                 std::vector<double> xs = x;
                 xs[c] += 1e-6;
@@ -559,11 +616,17 @@ bool Mech::solve(MechModel& m) {
     }
     applyGears(m, m.q);
     fk(m, m.q, m.mats);
+    if (drag)
+        for (int i : freeV)
+            if (m.qmode[i].kind == 1) m.cmds[m.qmode[i].cmd].value = (float)m.q[i];
     return true;
 }
 
 Affine Mech::brickMatrix(const MechModel& m, const Brick& b, int brick) const {
-    return mul(m.mats[m.brickBody[brick]], Affine::trsQuat(b.pos, b.rot, float3(1)));
+    Affine a = mul(m.mats[m.brickBody[brick]], Affine::trsQuat(b.pos, b.rot, float3(1)));
+    for (auto& s : m.spins)
+        if (s.first == brick) a = mul(a, s.second);
+    return a;
 }
 
 } // namespace brickit

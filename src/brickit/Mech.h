@@ -9,14 +9,14 @@
 namespace brickit {
 
 struct MechConn { float3 p, axis; float half = 0.4f; bool cross = false; };   // hole or male (axle / pin), local
-struct MechGear { int teeth = 0; float3 c, axis; };
+struct MechGear { int teeth = 0; float3 c, axis, ex; };   // ex: direction of a tooth tip (phase)
 struct MechMeta {
     std::vector<MechConn> holes, males;   // males: cross = axle, else pin
     std::vector<float3> top, bottom;      // studs, anti-studs
     std::vector<MechGear> gears;
 };
 
-struct MechGearW { int brick, body, teeth; float3 c, u; };
+struct MechGearW { int brick, body, teeth; float3 c, u, ex; float spin = 0; int local = 0; };   // spin: tooth phase at rest (radians around u)
 struct MechJoint { int a, b; float3 p, u; float3 p2; };   // revolute between bodies a and b, axis u through p
 struct MechTreeJ { MechJoint j; int parent, child, qi; };
 struct MechCmd { std::string name; int qi; float value = 0, speed = 3.2f; std::vector<std::pair<int, float>> ratio; int keyPlus = 0, keyMinus = 0; };
@@ -36,6 +36,7 @@ struct MechModel {
     std::vector<std::string> warnings;
     std::vector<double> q;
     std::vector<vp3d::Affine> mats;       // per body
+    std::vector<std::pair<int, vp3d::Affine>> spins;   // brick -> local rotation of its gear (teeth interleaved at rest)
     int dof = 0;
     double buildMs = 0;
 };
@@ -45,7 +46,9 @@ public:
     explicit Mech(Library& lib) : m_lib(lib) {}
     const MechMeta& meta(int part);
     bool build(const std::vector<Brick>& bricks, MechModel& out);   // false: empty scene
-    bool solve(MechModel& m);                                         // commands -> joint values; false at a stop
+    // Mouse drag of a moving part: a point of body `body` (local = in its rest frame) pulled towards `target`.
+    struct Drag { int body = -1; float3 local, target; };
+    bool solve(MechModel& m, const Drag* drag = nullptr);              // commands -> joint values; false at a stop
     void fk(const MechModel& m, const std::vector<double>& q, std::vector<vp3d::Affine>& mats) const;
     // world matrix of a brick in the current pose
     vp3d::Affine brickMatrix(const MechModel& m, const Brick& b, int brick) const;
