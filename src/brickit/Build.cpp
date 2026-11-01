@@ -149,8 +149,20 @@ void Builder::buildCache(Held& H) const {
             else ++it->second.count;
         }
     }
-    for (auto& kv : owners)
-        if (kv.second.count < 2) { H.vox.push_back(kv.second.w); H.conn.push_back(kv.second.conn); }
+    // a free stud covered by another brick (a curved slope sits on it with its anti-stud higher up) or a free anti-stud
+    // resting on one is not a target either: the point just above the stud (below the anti-stud) is inside a body
+    for (auto& kv : owners) {
+        if (kv.second.count >= 2) continue;
+        const Owner& ow = kv.second;
+        float dy = ow.conn == CONN_STUD ? 0.1f : ow.conn == CONN_ANTISTUD ? -0.1f : 0.0f;
+        if (dy != 0.0f) {
+            float3 q = ow.w + float3(0, dy, 0);
+            Box probe{q - float3(0.02f), q + float3(0.02f)};
+            if (H.boxes.any(probe)) continue;
+        }
+        H.vox.push_back(ow.w);
+        H.conn.push_back(ow.conn);
+    }
     H.cacheValid = true;
 }
 
