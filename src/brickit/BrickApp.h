@@ -50,6 +50,7 @@ struct Options {
     float spawnX = 0.5f, spawnY = 0.5f;   // --at x y (fractions of the viewport)
     int selectBrick = -1;     // --select N
     int mode = -1;
+    bool pivotEdit = false;
     int libCategory = -1;     // --cat N
     bool focusDim = false;    // --focus
     std::wstring savePath;    // --save file: the scene saved at the capture (file format test)
@@ -175,6 +176,10 @@ private:
     void gizmoStart(const GizmoHandle& h, float sx, float sy);
     void gizmoDragTo(float sx, float sy);
     void drawGizmo();
+    // pivot edit (P): the voxels of the focus brick as markers, the cursor aims the nearest one
+    int focusBrick() const { return m_holding ? m_held.brick : m_selected; }
+    void aimPivot(float sx, float sy);
+    void drawPivots();
     GizmoHandle m_gizmoHover;
     bool m_gizmoDragging = false, m_leftOrbit = false;
     GizmoDrag m_gz;

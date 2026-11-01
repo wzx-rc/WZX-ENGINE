@@ -14,7 +14,7 @@ Cases : `[x]` porté et vérifié · `[~]` partiel (ce qui manque est dit) · `[
 - [x] Mode Déplacer : gizmo flèches rouge / jaune / bleu (crans tenon / plaque, sol respecté, multi-sélection), sphère blanche = déplacement libre en main ; [x] Mode Tourner : anneaux 90° autour du pivot (+ rebond 0,92) ; taille 0,07 × distance, blanc au survol — captures 13 / 13b
 - [x] Modes Déplacer / Tourner : un clic sélectionne (Auto Pivot déplace le pivot), glisser fait orbiter ; Viseur : glisser le vide fait orbiter (comme le web)
 - [x] Grille, [x] Auto Pivot, [x] Sécurité 50 %, [x] Focus, [x] Animations
-- [x] Voxels (affichage en points) ; [ ] cycle des voxels (touche V) et filtre
+- [x] Voxels (points de la brique sélectionnée / en main seulement, comme le web) ; [ ] filtre par famille
 - [x] Supprimer (grisé sans sélection)
 - [~] Qualité Rapide / HQ (MSAA ; pas de SSAO) + Path tracing (natif en plus) ; [x] Tonemap ACES / AgX / Std
 - [x] Mécanique ; [~] DEV (bouton, panneau à faire) ; [x] Fenêtres ; [x] Scène (ouvre la fiche « Scène partagée »)
@@ -31,7 +31,7 @@ Cases : `[x]` porté et vérifié · `[~]` partiel (ce qui manque est dit) · `[
 ### Menu radial `#opts` (main gauche)
 - [x] Grip, titre (nom de la pièce ou « AUCUNE BRIQUE »), 4 coins + Dupliquer au centre, état inactif à 45 %
 - [x] Tourner G/D, Basculer haut/bas, Dupliquer (empilé)
-- [x] Pilules Poser / Annuler pendant la prise en main ; [ ] Pivot (✎) et Prendre (✋)
+- [x] Pilules Poser / Annuler pendant la prise en main ; [x] Pivot (✎) et Prendre (✋) : masquées dans le web v26 (`display: none !important`), donc masquées aussi
 - [ ] Panneau déplaçable / ancrable à droite (`optsRight`)
 
 ### Couleurs `#colpanel`
@@ -70,7 +70,7 @@ Cases : `[x]` porté et vérifié · `[~]` partiel (ce qui manque est dit) · `[
 ## 2. Clavier (web)
 - [x] Ctrl+Z / Ctrl+Y
 - [x] R ou E = tourner +90°, Q = −90°
-- [x] C = cycle du pivot d'accroche (toast « Pivot d'accroche : voxel n / N »), V = voxels, A = animations, F = focus (toasts du web) ; [~] P = édition du pivot (bascule sans affichage)
+- [x] C = cycle du pivot d'accroche (toast « Pivot d'accroche : voxel n / N »), V = voxels, A = animations, F = focus (toasts du web) ; [x] P = édition du pivot (sphères 0,2 par voxel aux couleurs tenon / pin / axle, pivot courant blanc ×1,5, le curseur vise le voxel le plus proche, la brique en main ne flotte plus, le clic ne pose pas) — capture 14
 - [x] Échap = annuler la prise / désélectionner ; [x] Suppr / Retour arrière
 - [x] Espace = prendre en main la brique sélectionnée
 - [x] Mécanique : A/Q, Z/S, E/D, R/F… ; Échap quitte

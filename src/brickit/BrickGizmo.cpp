@@ -206,4 +206,62 @@ void BrickApp::drawGizmo() {
     }
 }
 
+// --------------------------------------------------------------------------- pivot edit (web: aimPivot, refreshOverlays)
+
+// Nearest voxel of the focus brick to the cursor, on screen.
+void BrickApp::aimPivot(float sx, float sy) {
+    const int b = focusBrick();
+    if (b < 0 || b >= (int)m_bricks.size()) return;
+    const Part& p = m_lib.parts[m_bricks[b].part];
+    Affine xf = m_scene.objects[m_firstBrickObject + b].transform();
+    View v = view();
+    float best = 1e30f;
+    int bi = -1;
+    for (size_t i = 0; i < p.voxels.size(); ++i) {
+        float x, y;
+        if (!v.project(xf.point(p.voxels[i]), x, y)) continue;
+        float d = (x - sx) * (x - sx) + (y - sy) * (y - sy);
+        if (d < best) { best = d; bi = (int)i; }
+    }
+    if (bi < 0 || bi == m_bricks[b].grab) return;
+    m_bricks[b].grab = bi;
+    if (m_holding && m_held.brick == b) {
+        m_held.grab = p.voxels[bi];
+        m_held.cacheValid = false;
+        updateHeld(sx, sy);
+    }
+}
+
+// Spheres of radius 0.2 on every voxel (stud yellow, pin cyan, axle magenta, 90 %), the current pivot white and 1.5x,
+// over everything (depthTest false).
+void BrickApp::drawPivots() {
+    if (!m_pivotEdit) return;
+    const int b = focusBrick();
+    if (b < 0 || b >= (int)m_bricks.size()) return;
+    static const ImU32 col[3] = {IM_COL32(0xff, 0xc2, 0x1a, 230), IM_COL32(0x38, 0xd0, 0xe8, 230), IM_COL32(0xe0, 0x5a, 0xd7, 230)};
+    const Part& p = m_lib.parts[m_bricks[b].part];
+    Affine xf = m_scene.objects[m_firstBrickObject + b].transform();
+    View v = view();
+    float3 r, u, f;
+    m_scene.camera.basis(r, u, f);
+    const float3 cur = m_holding && m_held.brick == b ? m_held.grab : m_build.grabOf(m_bricks[b]);
+    ImDrawList* dl = ImGui::GetBackgroundDrawList();
+    int curIdx = -1;
+    for (size_t i = 0; i < p.voxels.size(); ++i) {
+        const float3& vx = p.voxels[i];
+        if (std::fabs(vx.x - cur.x) < 1e-3f && std::fabs(vx.y - cur.y) < 1e-3f && std::fabs(vx.z - cur.z) < 1e-3f) { curIdx = (int)i; continue; }
+        float3 w = xf.point(vx);
+        float x, y, ex, ey;
+        if (!v.project(w, x, y) || !v.project(w + r * 0.2f, ex, ey)) continue;
+        uint8_t c = p.conn[i];
+        int t = (c == CONN_PIN || c == CONN_PINHOLE) ? 1 : (c == CONN_AXLE || c == CONN_AXLEHOLE) ? 2 : 0;
+        dl->AddCircleFilled(ImVec2(x, y), std::max(2.0f, std::fabs(ex - x)), col[t], 18);
+    }
+    if (curIdx >= 0) {   // drawn last, on top
+        float3 w = xf.point(p.voxels[curIdx]);
+        float x, y, ex, ey;
+        if (v.project(w, x, y) && v.project(w + r * 0.3f, ex, ey)) dl->AddCircleFilled(ImVec2(x, y), std::max(3.0f, std::fabs(ex - x)), IM_COL32(255, 255, 255, 255), 24);
+    }
+}
+
 } // namespace brickit

@@ -275,7 +275,9 @@ void BrickApp::drawVoxels() {
     ImDrawList* dl = ImGui::GetBackgroundDrawList();
     const float r = 2.5f * m_ui;
     int drawn = 0;
+    const int fb = focusBrick();   // as the web: the voxels of the selected / held brick only
     for (size_t i = 0; i < m_bricks.size() && drawn < 20000; ++i) {
+        if ((int)i != fb) continue;
         const Object& o = m_scene.objects[m_firstBrickObject + i];
         Affine xf = o.transform();
         const Part& p = m_lib.parts[m_bricks[i].part];
@@ -436,6 +438,11 @@ void BrickApp::editInput() {
     const ImVec2 mp = io.MousePos;
     const bool inView = !io.WantCaptureMouse && !m_overUi;
     // the brick in hand follows the cursor
+    // pivot edit: the cursor aims a voxel of the focus brick (no exact click needed); a click does not drop
+    if (m_pivotEdit && focusBrick() >= 0 && inView) {
+        if (io.MouseDelta.x != 0 || io.MouseDelta.y != 0 || ImGui::IsMouseClicked(ImGuiMouseButton_Left)) aimPivot(mp.x, mp.y);
+        if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) || ImGui::IsMouseDown(ImGuiMouseButton_Left)) return;
+    }
     if (m_holding && inView && m_opt.spawnPart.empty() && (io.MouseDelta.x != 0 || io.MouseDelta.y != 0)) updateHeld(mp.x, mp.y);
 
     // right button: a click without moving cancels the brick in hand (a drag orbits the camera)

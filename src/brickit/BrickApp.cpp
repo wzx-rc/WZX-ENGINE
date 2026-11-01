@@ -152,6 +152,7 @@ bool BrickApp::init(HINSTANCE inst, const Options& opt) {
         else m_fam = n.key;
     }
     if (opt.mode >= 0) m_mode = opt.mode;
+    if (opt.pivotEdit) m_pivotEdit = true;
     if (opt.selectBrick >= 0 && opt.selectBrick < (int)m_bricks.size()) select(opt.selectBrick);
     if (opt.duplicate) duplicateSelected();   // scripted test of Ctrl+D
     if (opt.mech) {
@@ -682,7 +683,8 @@ void BrickApp::frame() {
     ImGui::GetBackgroundDrawList()->AddImage(m_gui.viewportTexture(), ImVec2(m_stage.x, m_stage.y), ImVec2(m_stage.z, m_stage.w));
     drawVoxels();          // over the 3D view, under the panels
     drawHoldOverlay();
-    drawGizmo();
+    drawPivots();
+    drawGizmo();   // over the pivot markers (renderOrder 1010 > 1003 in the web)
     drawMechOverlay();
     LARGE_INTEGER t1;
     QueryPerformanceCounter(&t1);
@@ -763,7 +765,8 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         else if (a == L"--spawn") { std::wstring w = next(); opt.spawnPart.assign(w.begin(), w.end()); }
         else if (a == L"--at") { opt.spawnX = (float)_wtof(next().c_str()); opt.spawnY = (float)_wtof(next().c_str()); }
         else if (a == L"--select") opt.selectBrick = _wtoi(next().c_str());
-        else if (a == L"--mode") opt.mode = _wtoi(next().c_str());   // 0 select, 1 visor, 2 move, 3 rotate
+        else if (a == L"--mode") opt.mode = _wtoi(next().c_str());
+        else if (a == L"--pivot-edit") opt.pivotEdit = true;   // 0 select, 1 visor, 2 move, 3 rotate
         else if (a == L"--cat") opt.libCategory = _wtoi(next().c_str());
         else if (a == L"--focus") opt.focusDim = true;
         else if (a == L"--save") opt.savePath = next();
