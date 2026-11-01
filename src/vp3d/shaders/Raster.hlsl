@@ -289,7 +289,7 @@ float4 Shade(VSOut i, bool ghost, float shadowBias, bool capture) {
     float rough = max(m.roughness, 0.04);
     float specular = m.specular, coatRough = m.coatRoughness;
     if (m.roughTex != NO_TEXTURE) {   // fingerprints (same mask as the path tracer: seed = instance index)
-        float fp = FingerprintMask(m.roughTex, m.roughTexScale, i.opos, i.onrm, D.id - 1) * m.roughTexStrength;
+        float fp = FingerprintMask(m.roughTex, m.roughTexScale, i.opos, i.onrm, D.id - 1) * m.roughTexStrength * 0.5;   // half: no path traced reflections to soften it
         rough = saturate(rough + fp);
         specular *= 1.0 - 0.35 * fp;
         coatRough = saturate(coatRough + fp * 1.2);

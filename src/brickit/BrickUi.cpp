@@ -42,22 +42,32 @@ static const char* catFr(const std::string& c) {
     return c.c_str();
 }
 
+// Row 1: LDraw families (as the web builder); row 2: the categories of the family (Technic: its sub-families).
 void BrickApp::buildNav() {
     m_nav.clear();
+    m_families = {"Basique", "Formes", "Technic"};
     m_nav.push_back({"Récents", 0, ""});
     m_nav.push_back({"Favoris", 1, ""});
-    static const char* order[] = {"Brick", "Plate", "Tile", "Slope", "Wedge", "Arch", "Cylinder", "Cone", "Dish", "Sphere", "Technic"};
-    for (const char* c : order) {
-        bool any = false;
-        for (const Part& p : m_lib.parts) any |= p.base && p.category == c;
-        if (any) m_nav.push_back({catFr(c), 2, c});
-    }
+    static const char* basic[] = {"Brick", "Plate", "Tile", "Baseplate", "Bracket", "Panel"};
+    static const char* shapes[] = {"Slope", "Wedge", "Arch", "Cylinder", "Cone", "Dish", "Sphere"};
+    auto addCats = [&](const char* const* cats, int n, int fam) {
+        for (int k = 0; k < n; ++k) {
+            bool any = false;
+            for (const Part& p : m_lib.parts) any |= p.base && p.category == cats[k];
+            if (any) m_nav.push_back({catFr(cats[k]), 2, cats[k], fam});
+        }
+    };
+    addCats(basic, 6, 0);
+    addCats(shapes, 7, 1);
+    static const char* techBase[] = {"Technic"};
+    addCats(techBase, 1, 2);
+    m_nav.back().label = "Base";
     static const char* subs[] = {"Poutres", "Axes", "Pins", "Connecteurs", "Engrenages", "Briques", "Panneaux", "Direction",
                                  "Pneumatique", "Chenilles", "Moteurs", "Rotation", "Flex", "Bionicle", "Divers"};
     for (const char* s : subs) {
         bool any = false;
         for (const Part& p : m_lib.parts) any |= !p.base && p.sub == s;
-        if (any) m_nav.push_back({std::string("T · ") + s, 3, s});
+        if (any) m_nav.push_back({s, 3, s, 2});
     }
     m_navSel = std::min<int>(2, (int)m_nav.size() - 1);
 }
@@ -176,11 +186,11 @@ void BrickApp::drawStats(float x, float y) {
 void BrickApp::drawColors(float x, float y, float w, float h) {
     const float s = m_ui;
     ImGui::SetNextWindowPos(ImVec2(x, y));
-    ImGui::SetNextWindowSize(ImVec2(w, h));
+    ImGui::SetNextWindowSize(ImVec2(w, h));   // h = 0: the height of the content
     ImGui::SetNextWindowBgAlpha(0.92f);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(6 * s, 6 * s));
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(3 * s, 3 * s));
-    ImGui::Begin("##colors", nullptr, kPanel);
+    ImGui::Begin("##colors", nullptr, kPanel | ImGuiWindowFlags_AlwaysAutoResize);
     if (m_gui.fontSmall) ImGui::PushFont(m_gui.fontSmall);
     ImGui::TextDisabled("COULEURS");
     const float sw = 18 * s;
@@ -246,21 +256,37 @@ void BrickApp::drawLibrary(float x, float y, float w, float h) {
     if (iconToggle(ICON_SIZE, "Taille des miniatures", false)) m_thumbSize = (m_thumbSize + 1) % 3;
     ImGui::TextDisabled("|");
     ImGui::SameLine();
-    // categories: a horizontal strip that scrolls with the wheel
-    ImGui::BeginChild("##cats", ImVec2(0, ImGui::GetFrameHeight() + 2 * s), false, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_HorizontalScrollbar);
-    for (int i = 2; i < (int)m_nav.size(); ++i) {
-        const bool on = i == m_navSel && !m_searchOpen;
+    // row 1: families
+    const int curFam = (m_navSel >= 0 && m_navSel < (int)m_nav.size()) ? m_nav[m_navSel].fam : -1;
+    for (int f = 0; f < (int)m_families.size(); ++f) {
+        const bool on = f == curFam && !m_searchOpen;
         if (on) ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
-        if (ImGui::Button(m_nav[i].label.c_str())) { m_navSel = i; m_searchOpen = false; }
+        if (ImGui::Button(m_families[f].c_str())) {
+            for (int i = 0; i < (int)m_nav.size(); ++i)
+                if (m_nav[i].fam == f) { m_navSel = i; break; }
+            m_searchOpen = false;
+        }
         if (on) ImGui::PopStyleColor();
         ImGui::SameLine();
     }
+    ImGui::NewLine();
+    // row 2: categories (sub-families) of the family, a strip that scrolls with the wheel
+    ImGui::BeginChild("##cats", ImVec2(0, ImGui::GetFrameHeight()), false, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_HorizontalScrollbar);
+    for (int i = 2; i < (int)m_nav.size(); ++i) {
+        if (m_nav[i].fam != curFam) continue;
+        const bool on = i == m_navSel && !m_searchOpen;
+        if (on) ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
+        if (ImGui::SmallButton(m_nav[i].label.c_str())) { m_navSel = i; m_searchOpen = false; }
+        if (on) ImGui::PopStyleColor();
+        ImGui::SameLine();
+    }
+    if (curFam < 0) ImGui::TextDisabled(m_navSel == 0 ? "Pièces utilisées récemment" : "Clic droit sur une miniature pour l'ajouter aux favoris");
     if (ImGui::IsWindowHovered() && ImGui::GetIO().MouseWheel != 0) ImGui::SetScrollX(ImGui::GetScrollX() - ImGui::GetIO().MouseWheel * 60 * s);
     ImGui::EndChild();
 
     // rows 2-3: the cards of the category on two rows, scrolling horizontally (column by column)
     std::vector<int> parts = visibleParts();
-    ImGui::BeginChild("##cards", ImVec2(0, 0), false, ImGuiWindowFlags_HorizontalScrollbar);
+    ImGui::BeginChild("##cards", ImVec2(0, 0), false, ImGuiWindowFlags_HorizontalScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
     const float gap = 4 * s;
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(gap, gap));
     const int cols = (int)(parts.size() + 1) / 2;
@@ -302,11 +328,12 @@ void BrickApp::drawUi() {
     static const float kSizes[3] = {56, 72, 96};
     const float card = kSizes[std::clamp(m_thumbSize, 0, 2)] * s;
     const float m = 8 * s;
-    // library: fixed height (two rows of cards + the category strip), whatever the category holds
-    const float libH = 2 * card + 4 * s + ImGui::GetFrameHeight() + 2 * s + 5 * s * 2 + 4 * s * 2 + ImGui::GetStyle().ScrollbarSize;
+    // library: fixed height, exactly two nav rows and two rows of cards (+ the horizontal scrollbar), whatever the category holds
+    const float spacing = 4 * s;   // ItemSpacing.y of the panel
+    const float libH = 5 * s * 2 + ImGui::GetFrameHeight() * 2 + spacing * 2 + 2 * card + 4 * s + ImGui::GetStyle().ScrollbarSize + 2 * s;
     const float colW = 8 * (18 * s + 3 * s) + 12 * s;
     drawLibrary(m, d.y - libH - m, d.x - colW - 3 * m, libH);
-    drawColors(d.x - colW - m, 48 * s, colW, d.y - 48 * s - m);
+    drawColors(d.x - colW - m, 48 * s, colW, 0);
     drawToolbar(d.x * 0.5f - 200 * s, m, 400 * s);
     drawStats(m, m);
     drawToast();

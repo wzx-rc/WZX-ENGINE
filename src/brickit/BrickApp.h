@@ -156,7 +156,9 @@ private:
     std::wstring m_scenePath;
 
     // UI
-    struct NavItem { std::string label; int kind; std::string key; };   // kind 0 recents, 1 favourites, 2 LDraw category, 3 Technic sub-family
+    // kind 0 recents, 1 favourites, 2 LDraw category, 3 Technic sub-family; fam: family (row 1 of the library)
+    struct NavItem { std::string label; int kind; std::string key; int fam = -1; };
+    std::vector<std::string> m_families;
     std::vector<NavItem> m_nav;
     int m_navSel = 2;
     std::string m_search;

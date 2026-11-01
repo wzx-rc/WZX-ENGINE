@@ -1,4 +1,4 @@
-// BrickIt - part thumbnails: every part rendered once by the engine (raster, same studio lighting and plastic as the
+﻿// BrickIt - part thumbnails: every part rendered once by the engine (raster, same studio lighting and plastic as the
 // viewport), packed in atlases of 21 x 21 cells and cached on disk (cache/thumbs_<px>_<count>.bin next to the exe).
 #include "BrickApp.h"
 #include "vp3d/AssetImport.h"
@@ -22,7 +22,7 @@ void BrickApp::buildThumbs() {
     std::vector<std::vector<uint8_t>> pix(atlases, std::vector<uint8_t>((size_t)atlasPx * atlasPx * 4, 0));
 
     wchar_t name[128];
-    swprintf_s(name, L"\\cache\\thumbs_%d_%d.bin", px, slots);
+    swprintf_s(name, L"\\cache\\thumbs4_%d_%d.bin", px, slots);   // 2: neutral grey studio of the web
     const std::wstring cacheDir = m_exeDir + L"\\cache", cacheFile = m_exeDir + name;
     bool cached = false;
     FILE* f = nullptr;
@@ -47,13 +47,29 @@ void BrickApp::buildThumbs() {
             if (!loadEnvImage(hdr, *img, &err)) makeProceduralSky(*img);
             ts.env.hdri = img;
         }
-        ts.env.hdriIntensity = 1.0f;
+        ts.env.hdriIntensity = 0.75f;   // fill; the key and the rim do the shape
         ts.env.visibleToCamera = false;
         ts.env.top = float3(0.93f, 0.94f, 0.96f);   // light card background
         ts.env.horizon = float3(0.96f, 0.96f, 0.97f);
         ts.env.bottom = float3(0.88f, 0.89f, 0.91f);
+        // warm key light and cool rim light (the studio of the web thumbnails)
+        AreaLight key;
+        key.position = float3(30, 45, 40);
+        key.width = key.height = 25;
+        key.color = float3(1.0f, 0.93f, 0.84f);
+        key.intensity = 7.5f;
+        key.visibleToCamera = false;
+        ts.lights.push_back(key);
+        AreaLight rim;
+        rim.position = float3(-35, 25, -40);
+        rim.width = rim.height = 20;
+        rim.color = float3(0.78f, 0.86f, 1.0f);
+        rim.intensity = 5.0f;
+        rim.visibleToCamera = false;
+        ts.lights.push_back(rim);
         Material m;
-        m.baseColor = float3(srgbToLinear(0.79f), srgbToLinear(0.10f), srgbToLinear(0.10f));   // red plastic
+        m.baseColor = float3(srgbToLinear(0xc4 / 255.0f), srgbToLinear(0xc4 / 255.0f), srgbToLinear(0xc1 / 255.0f));   // neutral grey
+        m.bevelRadius = 0.04f;
         m.roughness = 0.24f;
         m.coat = 0.35f;
         m.coatRoughness = 0.05f;
@@ -70,8 +86,8 @@ void BrickApp::buildThumbs() {
         ts.geometryVersion = 0x40000000u;   // never equal to the viewport scene's
         RenderSettings rs;
         rs.raster = true;
-        rs.exposure = m_rs.exposure;
-        rs.tonemapper = m_rs.tonemapper;
+        rs.exposure = 0.92f;
+        rs.tonemapper = 0;   // ACES
         rs.idPass = false;
         rs.vignette = 0.0f;
         rs.msaaSamples = 4;
@@ -81,9 +97,9 @@ void BrickApp::buildThumbs() {
             const Part& p = m_lib.parts[i];
             ts.objects[objOf[i]].visible = true;
             Camera& c = ts.camera;
-            c.fovY = radians(20.0f);
-            c.yaw = radians(35.0f);
-            c.pitch = radians(28.0f);
+            c.fovY = radians(24.0f);
+            c.yaw = std::atan2(1.0f, 1.3f);                       // view direction (1, 0.8, 1.3)
+            c.pitch = std::atan2(0.8f, std::sqrt(1.0f + 1.69f));
             c.target = (p.bmin + p.bmax) * 0.5f;
             float r = std::max(length(p.bmax - p.bmin) * 0.5f, 0.2f);
             c.distance = r / std::sin(c.fovY * 0.5f) * 1.02f;
