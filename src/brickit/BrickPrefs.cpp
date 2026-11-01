@@ -41,6 +41,7 @@ void BrickApp::savePrefs() {
     auto panel = [&](const char* n, const PanelState& p) { char t[96]; snprintf(t, sizeof(t), "\"%s\": {\"visible\": %s, \"collapsed\": %s}", n, p.visible ? "true" : "false", p.collapsed ? "true" : "false"); return std::string(t); };
     j += "\"panels\": {" + panel("tray", m_pTray) + ", " + panel("opts", m_pOpts) + ", " + panel("colors", m_pColors) + ", " + panel("hud", m_pHud) + ", " + panel("manual", m_pManual) + "},";
     auto names = [&](const std::vector<int>& v) { std::string s = "["; for (size_t i = 0; i < v.size(); ++i) s += (i ? ", " : "") + jstr(m_lib.parts[v[i]].name); return s + "]"; };
+    j += std::string("\"dev\": {\"on\": ") + (m_dev ? "true" : "false") + ", \"showVox\": " + (m_devShowVox ? "true" : "false") + ", \"showEdges\": " + (m_devShowEdges ? "true" : "false") + ", \"useOverrides\": " + (m_devUseOverrides ? "true" : "false") + "},";
     j += "\"recentParts\": " + names(m_recent) + ", \"favParts\": " + names(m_fav) + "}\n";
     writeText(m_exeDir + L"\\brickit_prefs.json", j);
 }
@@ -70,6 +71,13 @@ void BrickApp::loadPrefs() {
     auto list = [&](const char* k, std::vector<int>& v) { v.clear(); for (const app::Json& n : p[k].a) { int i = m_lib.find(n.str()); if (i >= 0) v.push_back(i); } };
     list("recentParts", m_recent);
     list("favParts", m_fav);
+    {   // brickit-dev-prefs of the web
+        const app::Json& dv = p["dev"];
+        if (dv["on"].type == app::Json::Bool) m_dev = dv["on"].b;
+        if (dv["showVox"].type == app::Json::Bool) m_devShowVox = dv["showVox"].b;
+        if (dv["showEdges"].type == app::Json::Bool) m_devShowEdges = dv["showEdges"].b;
+        if (dv["useOverrides"].type == app::Json::Bool) m_devUseOverrides = dv["useOverrides"].b;
+    }
     m_rs.msaaSamples = m_quality ? 4 : 1;
 }
 

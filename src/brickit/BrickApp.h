@@ -11,6 +11,7 @@
 #include "vp3d/Renderer.h"
 #include <windows.h>
 #include <string>
+#include <map>
 #include <vector>
 
 namespace brickit {
@@ -52,6 +53,8 @@ struct Options {
     int mode = -1;
     std::string infoPart;   // --info <part>: open the part sheet (captures)
     bool pivotEdit = false;
+    bool dev = false;
+    std::string devRoundtrip;   // --dev-roundtrip <part>: OBJ export / import self-test
     int libCategory = -1;     // --cat N
     bool focusDim = false;    // --focus
     std::wstring savePath;    // --save file: the scene saved at the capture (file format test)
@@ -184,6 +187,46 @@ private:
     GizmoHandle m_gizmoHover;
     bool m_gizmoDragging = false, m_leftOrbit = false;
     GizmoDrag m_gz;
+
+    // BrickDev.cpp / BrickUi.cpp: DEV mode of the web (connectors by type on every brick, LDraw outline over a
+    // replacement, export for Maya, re-import with review, replacements kept in dev_overrides next to the exe)
+    struct DevOverride { std::string id, label, baseRelease, importedAt, fileName; int triangles = 0, ldrawTriangles = 0; MeshData geometry; };
+    struct DevReview {
+        bool open = false, swapped = false, wasUse = true;
+        int part = -1;
+        MeshData g, prev;
+        std::string fileName, note;
+        float scale = 1;
+        float3 offset, size, ref;
+    };
+    std::map<std::string, DevOverride> m_devOverrides;
+    bool m_devShowVox = true, m_devShowEdges = true, m_devUseOverrides = true;
+    DevReview m_devReview;
+    std::map<int, std::vector<std::pair<float3, float3>>> m_devEdgeCache;
+    std::string devId(int part) const;
+    int devPartById(const std::string& id) const;
+    std::wstring devDir() const;
+    std::string devObjText(int part, const MeshData& g, const float3& origin, bool markers) const;
+    std::string devReadme(int part) const;
+    void devExport(int part);
+    bool devParseObj(const std::string& text, MeshData& g, std::map<std::string, std::string>& header) const;
+    void devFit(int part, MeshData& g, DevReview& r);
+    void devSetGeometry(int part, const MeshData& g);
+    void devApplyAll();
+    void devLoadAll();
+    bool devSave(const DevOverride& o, const std::string& obj);
+    void devDelete(const std::string& id);
+    void devImport(int forcedPart);
+    void devReviewCancel();
+    void devReviewRecenter();
+    void devReviewKeep();
+    void devRevert(int part);
+    void devSetOn(bool on);
+    const std::vector<std::pair<float3, float3>>& devEdges(int part);
+    void drawDevOverlay();
+    void uiDevPanel();
+    void uiDevSheet();
+    void uiDevReview();
 
     // Thumbs.cpp
     void buildThumbs();

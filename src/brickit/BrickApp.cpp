@@ -127,6 +127,9 @@ bool BrickApp::init(HINSTANCE inst, const Options& opt) {
     buildThumbs();
     buildNav();
     if (opt.shotPath.empty()) loadPrefs();   // captures stay reproducible
+    if (opt.dev) m_dev = true;
+    devLoadAll();   // DEV replacements kept next to the exe
+    devApplyAll();
     m_color = colorIndex(14);   // yellow, as the web (state.colorId: 14)
     m_focusDim = opt.focusDim;
     setupStage();
@@ -656,6 +659,22 @@ void BrickApp::frame() {
         ImVec2 d = ImGui::GetIO().DisplaySize;
         if (pi >= 0) spawn(pi, d.x * m_opt.spawnX, d.y * m_opt.spawnY);
     }
+    if (m_frame == 3 && !m_opt.devRoundtrip.empty()) {   // self-test: OBJ export of a part, re-import, fit (offset and scale must be identity)
+        int pi = m_lib.find(m_opt.devRoundtrip);
+        Part* pp = pi >= 0 ? m_lib.get(m_opt.devRoundtrip) : nullptr;
+        FILE* f = nullptr;
+        if (pp && _wfopen_s(&f, (m_exeDir + L"\\dev_roundtrip.txt").c_str(), L"w") == 0 && f) {
+            std::string obj = devObjText(pi, pp->mesh, pp->ldrawOrigin, true);
+            MeshData g;
+            std::map<std::string, std::string> hd;
+            bool ok = devParseObj(obj, g, hd);
+            DevReview r;
+            if (ok) devFit(pi, g, r);
+            fprintf(f, "part=%s ok=%d bytes=%zu tris_in=%zu tris_out=%zu header=%s scale=%g offset=%g,%g,%g swapped=%d note=%s\n", pp->name.c_str(), ok, obj.size(),
+                    pp->mesh.indices.size() / 3, g.indices.size() / 3, hd["brickit-part"].c_str(), r.scale, r.offset.x, r.offset.y, r.offset.z, r.swapped, r.note.c_str());
+            fclose(f);
+        }
+    }
     if (m_frame == 24 && !m_opt.infoPart.empty()) m_infoPart = m_lib.find(m_opt.infoPart);   // scripted test: part sheet
     if (!m_opt.noUi) drawUi();
     cameraInput();
@@ -703,6 +722,7 @@ void BrickApp::frame() {
         drawPivots();
         drawGizmo();   // over the pivot markers (renderOrder 1010 > 1003 in the web)
         drawMechOverlay();
+        drawDevOverlay();
     }
     LARGE_INTEGER t1;
     QueryPerformanceCounter(&t1);
@@ -785,7 +805,9 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         else if (a == L"--select") opt.selectBrick = _wtoi(next().c_str());
         else if (a == L"--mode") opt.mode = _wtoi(next().c_str());
         else if (a == L"--info") { std::wstring w = next(); opt.infoPart.assign(w.begin(), w.end()); }
-        else if (a == L"--pivot-edit") opt.pivotEdit = true;   // 0 select, 1 visor, 2 move, 3 rotate
+        else if (a == L"--pivot-edit") opt.pivotEdit = true;
+        else if (a == L"--dev") opt.dev = true;
+        else if (a == L"--dev-roundtrip") { std::wstring w = next(); opt.devRoundtrip.assign(w.begin(), w.end()); }   // 0 select, 1 visor, 2 move, 3 rotate
         else if (a == L"--cat") opt.libCategory = _wtoi(next().c_str());
         else if (a == L"--focus") opt.focusDim = true;
         else if (a == L"--save") opt.savePath = next();

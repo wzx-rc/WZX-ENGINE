@@ -18,3 +18,4 @@
 | 13 | 01/11/2026 | Gizmo du web : flèches (tenon / plaque), anneaux 90°, sphère de déplacement libre, orbite clic gauche comme le web, option --mode | 13_gizmo_deplacer.png, 13b_gizmo_tourner.png |
 | 14 | 01/11/2026 | Édition du pivot (P) du web : marqueurs par voxel, visée au curseur ; voxels limités à la brique active comme le web | 14_edition_pivot.png |
 | 15 | 01/11/2026 | Fiche pièce du web avec visionneuse 3D tournante (studio des miniatures), glyphes ★ › … dans la police | 15_fiche_visionneuse.png |
+| 16 | 01/11/2026 | Mode DEV du web : panneau, connecteurs par type, contour LDraw, fiche complète, export Maya zip, réimport OBJ avec revue, remplacements stockés | 16_dev_panneau.png, 16b_dev_fiche.png |

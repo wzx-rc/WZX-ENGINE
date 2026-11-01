@@ -29,6 +29,13 @@ struct Part {
     std::string family;       // LDraw family of the base set (Brique, Technic ...)
     std::string ldraw;        // LDraw file name without .dat (info.ldraw)
     float3 ldrawOrigin;       // LDraw origin in the part frame (info.ldrawOrigin, export .ldr)
+    bool hasOrigin = false;
+    // info of the part sheet in DEV mode (title, author, licence, release, history, keywords, sizes, mesh, connectors)
+    std::string title, author, license, release, keywords;
+    int history = 0, triangles = 0, vertices = 0;
+    float sizeCm[3] = {0, 0, 0}, sizeStuds[2] = {0, 0};
+    bool hasSizeCm = false, hasSizeStuds = false;
+    std::vector<std::pair<std::string, int>> connectors;
     bool base = false;        // one of the 50 base parts
     int pack = -1;            // Technic pack holding the geometry (-1: base part)
     int heightPlates = 3;
@@ -41,6 +48,8 @@ struct Part {
     // geometry (empty until its pack is loaded)
     vp3d::MeshData mesh;
     bool loaded = false;
+    vp3d::MeshData ldrawMesh;  // DEV mode: the LDraw mesh while a replacement is shown
+    bool hasLdrawMesh = false, devActive = false;
     float3 bmin, bmax;
 };
 

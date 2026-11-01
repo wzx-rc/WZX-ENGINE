@@ -276,7 +276,7 @@ void BrickApp::uiHeader() {
         case 14: m_popup = m_popup == 1 ? 0 : 1; m_popupAt = ImVec2(a.x, y1 + 4 * s); break;
         case 15: m_popup = m_popup == 2 ? 0 : 2; m_popupAt = ImVec2(a.x, y1 + 4 * s); break;
         case 16: if (m_mechOn) mechExit(); else mechEnter(); break;
-        case 17: m_dev = !m_dev; toast(m_dev ? "Mode DEV : le panneau développeur arrive bientôt dans la version native" : "Mode DEV désactivé"); break;
+        case 17: devSetOn(!m_dev); break;
         case 18: m_popup = m_popup == 3 ? 0 : 3; m_popupAt = ImVec2(d.x - 220 * s, y1 + 4 * s); break;
         case 19: m_popup = 0; m_sheetOpen = true; m_sheetText = m_build.toJson(m_scene.camera); break;
         }
@@ -611,6 +611,12 @@ void BrickApp::uiTray() {
         }
         u.dl->AddRect(a, b, alphaOf(h || m_libPress == part ? C_ACCENT : C_LINE, alpha), 10 * s, 0, 1.5f * s);
         if (std::find(m_fav.begin(), m_fav.end(), part) != m_fav.end()) u.text(ImVec2(b.x - 14 * s, a.y + 2 * s), 11, C_ACCENT, "★");
+        if (m_dev && m_devUseOverrides && m_devOverrides.count(devId(part))) {   // .card.devmod::after: "M" badge
+            ImVec2 ma(b.x - 6 * s - 18 * s, a.y + 6 * s), mb(b.x - 6 * s, a.y + 24 * s);
+            u.dl->AddRectFilled(ma, mb, C_DEV, 5 * s);
+            float mw = u.textW(11, "M", true);
+            u.text(ImVec2((ma.x + mb.x) * 0.5f - mw * 0.5f, ma.y + 2 * s), 11, IM_COL32(0x0d, 0x1a, 0x1f, 255), "M", true);
+        }
         if (h) {
             char tip[200];
             snprintf(tip, sizeof(tip), "%s · %s", m_lib.parts[part].label.c_str(), m_lib.parts[part].name.c_str());
@@ -800,6 +806,7 @@ void BrickApp::uiHud() {
 // family › category, ☆ Favori, Fermer, Ajouter à la scène. Box min(440 px, 92 vw), padding 18, gap 8.
 void BrickApp::uiInfoSheet() {
     if (m_infoPart < 0) return;
+    if (m_dev) { uiDevSheet(); return; }   // full sheet (metadata, connectors, Maya export / import)
     Ui u = ui(m_ui);
     if (m_gui.fontBold) u.bold = m_gui.fontBold;
     const float s = m_ui;
@@ -1050,7 +1057,9 @@ void BrickApp::drawUi() {
     uiMechPanel();
     uiHud();
     uiPopups();
+    uiDevPanel();
     uiInfoSheet();
+    uiDevReview();
     ImGui::End();
     ImGui::PopStyleVar(2);
     uiSceneSheet();
@@ -1059,6 +1068,356 @@ void BrickApp::drawUi() {
     m_overUi = m_libPress >= 0 || ImGui::GetIO().WantCaptureMouse;
     for (const ImVec4& r : m_uiRects)
         if (mp.x >= r.x && mp.y >= r.y && mp.x < r.z && mp.y < r.w) m_overUi = true;
+}
+
+// --------------------------------------------------------------------------- DEV mode (web: devRenderPanel, showInfo
+// in DEV, devInfoActions, devReview)
+
+static const ImU32 C_DEVLINE = IM_COL32(0x2b, 0x4b, 0x55, 255);
+static const ImU32 C_DEVINK = IM_COL32(0x0d, 0x1a, 0x1f, 255);
+static const char* kConnFr[] = {"Tenons", "Anti-tenons", "Pins", "Trous de pin", "Axe", "Trous d'axe"};   // CONN_FR
+static const char* kDevTypeFr[] = {"Tenon", "Anti-tenon", "Pin", "Trou de pin", "Axe", "Trou d'axe"};
+static const ImU32 kDevCol[] = {IM_COL32(0xf7, 0xc5, 0x1e, 255), IM_COL32(0xff, 0x8a, 0x3d, 255), IM_COL32(0x7f, 0xe3, 0xff, 255),
+                                IM_COL32(0x4a, 0xa3, 0xff, 255), IM_COL32(0x5f, 0xd0, 0x68, 255), IM_COL32(0xc7, 0x7d, 0xff, 255)};
+// legend order of the web (stud, antistud, pinhole, pin, axle, axlehole) -> Conn
+static const int kDevLegend[] = {CONN_STUD, CONN_ANTISTUD, CONN_PINHOLE, CONN_PIN, CONN_AXLE, CONN_AXLEHOLE};
+
+// toLocaleString("fr-FR") of an integer: narrow no-break space between thousands
+static std::string frInt(long long v) {
+    std::string d = std::to_string(v < 0 ? -v : v), o;
+    for (size_t i = 0; i < d.size(); ++i) {
+        if (i && (d.size() - i) % 3 == 0) o += "\xE2\x80\xAF";
+        o.push_back(d[i]);
+    }
+    return (v < 0 ? "-" : "") + o;
+}
+// fmt: (Math.round(x * 100) / 100).toLocaleString("fr-FR")
+static std::string frNum(double x) {
+    double r = std::round(x * 100) / 100;
+    char b[48];
+    snprintf(b, sizeof(b), "%.2f", std::fabs(r));
+    std::string s = b;
+    while (s.back() == '0') s.pop_back();
+    if (s.back() == '.') s.pop_back();
+    for (char& c : s) if (c == '.') c = ',';
+    return (r < 0 ? "-" : "") + s;
+}
+static float wrapText(Ui& u, ImVec2 p, float px, ImU32 col, const char* t, float wrap, bool draw = true) {
+    ImFont* f = u.font;
+    if (draw) u.dl->AddText(f, u.fs(px), p, col, t, nullptr, wrap);
+    return f->CalcTextSizeA(u.fs(px), 1e9f, wrap, t).y;
+}
+// .btn of the web (compact: 28 px, 12 px text, padding 10, radius 7); sm: 28 px, 11 px, padding 8
+static bool webButton(Ui& u, ImVec2 a, const char* label, float& w, bool pressed = false, ImU32 onBg = C_ACCENT, ImU32 onInk = C_INK,
+                      bool disabled = false, float h = 28, float px = 12, float pad = 10) {
+    const float s = u.s;
+    w = u.textW(px, label, pressed) + 2 * pad * s;
+    ImVec2 b(a.x + w, a.y + h * s);
+    const bool hv = !disabled && u.hover(a, b);
+    const float al = disabled ? 0.4f : 1.0f;
+    u.dl->AddRectFilled(a, b, alphaOf(pressed ? onBg : (hv ? C_CARD_HI : C_CARD), al), 7 * s);
+    u.text(ImVec2(a.x + pad * s, a.y + (h * s - u.fs(px)) * 0.5f), px, alphaOf(pressed ? onInk : C_TEXT, al), label, pressed);
+    return hv && u.pressed;
+}
+
+void BrickApp::uiDevPanel() {
+    if (!m_dev || m_mechOn) return;
+    Ui u = ui(m_ui);
+    if (m_gui.fontBold) u.bold = m_gui.fontBold;
+    const float s = m_ui;
+    const float W = std::min(340 * s, (m_stage.z - m_stage.x) - 32 * s), pad = 12 * s, gap = 10 * s;
+    const float x0 = m_stage.x + 16 * s, inner = W - 2 * pad;
+    // layout first (heights), then drawing from the bottom (bottom: 12 px)
+    const char* store = "stocké sur cet appareil";
+    std::vector<std::string> ids;
+    for (auto& [id, o] : m_devOverrides) ids.push_back(id);
+    std::sort(ids.begin(), ids.end());
+    const float headH = 18 * s, toolsH = 30 * s, legendH = 2 * 16 * s, itemH = 44 * s;
+    const char* empty = "Aucun remplacement. Appui long sur une pièce de la bibliothèque, puis « Exporter pour Maya ».";
+    const float listH = ids.empty() ? wrapText(u, ImVec2(0, 0), 12, C_DIM, empty, inner, false) * 1.15f : ids.size() * itemH + (ids.size() - 1) * 6 * s;
+    int ok = 0, stale = 0, missing = 0;
+    for (auto& id : ids) {
+        int p = devPartById(id);
+        if (p < 0) ++missing;
+        else if (!m_devOverrides[id].baseRelease.empty() && !m_lib.parts[p].release.empty() && m_devOverrides[id].baseRelease != m_lib.parts[p].release) ++stale;
+        else ++ok;
+    }
+    std::string sum;
+    if (!ids.empty()) {
+        sum = std::to_string(ids.size()) + " remplacement" + (ids.size() > 1 ? "s" : "") + " · " + std::to_string(ok) + " à jour";
+        if (stale) sum += " · " + std::to_string(stale) + " à refaire (LDraw modifié)";
+        if (missing) sum += " · " + std::to_string(missing) + " pièce" + (missing > 1 ? "s" : "") + " absente" + (missing > 1 ? "s" : "");
+    }
+    const float sumH = sum.empty() ? 0 : wrapText(u, ImVec2(0, 0), 12, C_DIM, sum.c_str(), inner, false);
+    const float H = pad + headH + gap + toolsH + gap + legendH + gap + listH + gap + (sum.empty() ? 0 : sumH + gap) + 28 * s + pad;
+    ImVec2 p0(x0, m_stage.w - 12 * s - H), p1(x0 + W, m_stage.w - 12 * s);
+    u.dl->AddRectFilled(ImVec2(p0.x, p0.y + 8 * s), ImVec2(p1.x, p1.y + 8 * s), IM_COL32(0, 0, 0, 40), 12 * s);   // shadow
+    u.dl->AddRectFilled(p0, p1, C_PANEL, 12 * s);
+    u.dl->AddRect(p0, p1, C_DEVLINE, 12 * s);
+    m_uiRects.push_back(ImVec4(p0.x, p0.y, p1.x, p1.y));
+    float y = p0.y + pad, x = p0.x + pad;
+    u.text(ImVec2(x, y), 13, C_DEV, "Mode développeur", true);
+    u.text(ImVec2(p1.x - pad - u.textW(12, store), y + 1 * s), 12, C_FAINT, store);
+    y += headH + gap;
+    // toggles
+    struct Tog { const char* label; bool* v; };
+    Tog togs[] = {{"Connecteurs", &m_devShowVox}, {"Contour LDraw", &m_devShowEdges}, {"Remplacements", &m_devUseOverrides}};
+    float tx = x;
+    for (int i = 0; i < 3; ++i) {
+        float w;
+        if (webButton(u, ImVec2(tx, y), togs[i].label, w, *togs[i].v, C_DEV, C_DEVINK, false, 30)) {
+            *togs[i].v = !*togs[i].v;
+            savePrefs();
+            if (i == 2) devApplyAll();
+        }
+        tx += w + 6 * s;
+    }
+    y += toolsH + gap;
+    // legend (wraps on two lines in 340 px)
+    float lx = x, ly = y;
+    for (int k : kDevLegend) {
+        const float w = 12 * s + u.textW(12, kDevTypeFr[k]);
+        if (lx + w > x + inner) { lx = x; ly += 16 * s; }
+        u.dl->AddCircleFilled(ImVec2(lx + 4 * s, ly + 8 * s), 4 * s, kDevCol[k], 12);
+        u.text(ImVec2(lx + 12 * s, ly), 12, C_DIM, kDevTypeFr[k]);
+        lx += w + 10 * s;
+    }
+    y += legendH + gap;
+    // list
+    if (ids.empty()) wrapText(u, ImVec2(x, y), 12, C_DIM, empty, inner);
+    std::string removeId;
+    for (const std::string& id : ids) {
+        const DevOverride& o = m_devOverrides[id];
+        const int part = devPartById(id);
+        ImVec2 a(x, y), b(x + inner, y + itemH);
+        u.dl->AddRectFilled(a, b, C_CARD, 8 * s);
+        float bw1 = u.textW(11, "Retirer") + 16 * s, bw2 = u.textW(11, "Exporter") + 16 * s;
+        float bx = b.x - 8 * s - bw1;
+        float w;
+        if (webButton(u, ImVec2(bx, y + (itemH - 28 * s) * 0.5f), "Retirer", w, false, C_ACCENT, C_INK, false, 28, 11, 8)) removeId = id;
+        bx -= 6 * s + bw2;
+        if (webButton(u, ImVec2(bx, y + (itemH - 28 * s) * 0.5f), "Exporter", w, false, C_ACCENT, C_INK, part < 0, 28, 11, 8) && part >= 0) devExport(part);
+        const bool isStale = part >= 0 && !o.baseRelease.empty() && !m_lib.parts[part].release.empty() && o.baseRelease != m_lib.parts[part].release;
+        const char* chip = part < 0 ? "absente" : isStale ? "LDraw modifié" : "à jour";
+        const ImU32 cb = part < 0 ? IM_COL32(0x4a, 0x1c, 0x1e, 255) : isStale ? IM_COL32(0x4a, 0x38, 0x12, 255) : IM_COL32(0x1f, 0x3b, 0x2a, 255);
+        const ImU32 cf = part < 0 ? IM_COL32(0xff, 0x9a, 0x9d, 255) : isStale ? IM_COL32(0xff, 0xd2, 0x7a, 255) : IM_COL32(0x7e, 0xe2, 0xa0, 255);
+        const float cw = u.textW(11, chip) + 14 * s;
+        ImVec2 ca(bx - 6 * s - cw, y + itemH * 0.5f - 9 * s), cbb(bx - 6 * s, y + itemH * 0.5f + 9 * s);
+        u.dl->AddRectFilled(ca, cbb, cb, 9 * s);
+        u.text(ImVec2(ca.x + 7 * s, ca.y + 2 * s), 11, cf, chip);
+        if (u.hover(ca, cbb)) ImGui::SetTooltip("%s · base %s", part < 0 ? "Pièce absente de la bibliothèque" : isStale ? ("LDraw mis à jour : " + m_lib.parts[part].release).c_str() : "À jour", o.baseRelease.empty() ? "?" : o.baseRelease.c_str());
+        u.dl->PushClipRect(a, ImVec2(ca.x - 6 * s, b.y), true);
+        u.text(ImVec2(x + 8 * s, y + 6 * s), 12, C_TEXT, id.c_str(), true);
+        std::string sub = o.label + " · " + frInt(o.triangles) + " tri";
+        u.text(ImVec2(x + 8 * s, y + 23 * s), 12, C_DIM, sub.c_str());
+        u.dl->PopClipRect();
+        y += itemH + 6 * s;
+    }
+    if (!ids.empty()) y -= 6 * s;
+    y = (ids.empty() ? y + listH : y) + gap;
+    if (!sum.empty()) { wrapText(u, ImVec2(x, y), 12, C_DIM, sum.c_str(), inner); y += sumH + gap; }
+    float w;
+    if (webButton(u, ImVec2(x, y), "Importer un maillage… (.obj / .fbx)", w)) devImport(-1);
+    if (!removeId.empty()) {
+        std::wstring q = L"Retirer le remplacement de " + std::wstring(removeId.begin(), removeId.end()) + L" et revenir à LDraw ?";
+        if (MessageBoxW(m_hwnd, q.c_str(), L"BrickIt Builder", MB_OKCANCEL | MB_ICONQUESTION) == IDOK) {
+            const int part = devPartById(removeId);
+            if (part >= 0) devRevert(part);
+            else { devDelete(removeId); m_devOverrides.erase(removeId); }
+        }
+    }
+}
+
+// Full part sheet of the DEV mode (web: showInfo + devInfoActions). Box min(640 px), padding 18, gap 12.
+void BrickApp::uiDevSheet() {
+    Ui u = ui(m_ui);
+    if (m_gui.fontBold) u.bold = m_gui.fontBold;
+    const float s = m_ui;
+    ImVec2 d = ImGui::GetIO().DisplaySize;
+    u.dl->AddRectFilled(ImVec2(0, 0), d, IM_COL32(0, 0, 0, 128));
+    m_uiRects.push_back(ImVec4(0, 0, d.x, d.y));
+    const int part = m_infoPart;
+    const Part& p = m_lib.parts[part];
+    const std::string id = devId(part);
+    const float W = std::min(640 * s, d.x - 32 * s), pad = 18 * s, gap = 12 * s, inner = W - 2 * pad;
+    // rows of the dl
+    std::vector<std::pair<std::string, std::string>> rows;
+    auto row = [&](const char* k, const std::string& v) { if (!v.empty()) rows.push_back({k, v}); };
+    row("Famille", p.family);
+    row("Référence LDraw", p.ldraw.empty() ? "" : p.ldraw + ".dat");
+    row("Catégorie LDraw", p.category);
+    if (p.hasSizeStuds) row("Encombrement", frNum(p.sizeStuds[0]) + " × " + frNum(p.sizeStuds[1]) + " tenons · " + std::to_string(p.heightPlates) + " plate" + (p.heightPlates > 1 ? "s" : "") + " de haut");
+    if (p.hasSizeCm) row("Dimensions", frNum(p.sizeCm[0]) + " × " + frNum(p.sizeCm[2]) + " × " + frNum(p.sizeCm[1]) + " cm (L × P × H, tenons compris)");
+    row("Points de connexion", std::to_string(p.voxels.size()) + " voxels");
+    row("Maillage", frInt(p.triangles) + " triangles · " + frInt(p.vertices) + " sommets");
+    row("Auteur LDraw", p.author);
+    row("Licence", p.license);
+    row("Version LDraw", p.release);
+    if (p.history) row("Historique", std::to_string(p.history) + " révision" + (p.history > 1 ? "s" : ""));
+    row("Mots-clés", p.keywords);
+    if (p.hasOrigin) row("Origine LDraw", frNum(p.ldrawOrigin.x) + " · " + frNum(p.ldrawOrigin.y) + " · " + frNum(p.ldrawOrigin.z) + " cm (coin min.)");
+    float dtW = 0;
+    for (auto& r : rows) dtW = std::max(dtW, u.textW(13, r.first.c_str()));
+    const float ddX = dtW + 14 * s, ddW = inner - ddX;
+    float rowsH = 0;
+    std::vector<float> rh;
+    for (auto& r : rows) { float h = wrapText(u, ImVec2(0, 0), 13, C_TEXT, r.second.c_str(), ddW, false); rh.push_back(h); rowsH += h + 6 * s; }
+    const char* credit = "Géométrie : bibliothèque LDraw (ldraw.org). Connexions : LDraw + LDCad shadow library, converties automatiquement.";
+    const float creditH = wrapText(u, ImVec2(0, 0), 11, C_FAINT, credit, inner, false) * 1.1f;
+    auto ov = m_devOverrides.find(id);
+    std::string note;
+    if (ov != m_devOverrides.end()) {
+        const DevOverride& o = ov->second;
+        const bool stale = !o.baseRelease.empty() && !p.release.empty() && o.baseRelease != p.release;
+        note = "Mode DEV · remplacement actif (" + frInt(o.triangles) + " triangles, " + o.fileName + ") · base " + (o.baseRelease.empty() ? "?" : o.baseRelease) + " · " + (stale ? "LDraw mis à jour : " + p.release : std::string("À jour"));
+    }
+    const float noteH = note.empty() ? 0 : wrapText(u, ImVec2(0, 0), 11, C_FAINT, note.c_str(), inner, false) * 1.1f;
+    const float headH = 192 * s;   // image 240 x 192 (aspect 5 / 4)
+    const float H = pad + headH + gap + rowsH - 6 * s + gap + creditH + gap + (note.empty() ? 0 : noteH + gap) + 8 * s + 28 * s + gap + 28 * s + pad;
+    ImVec2 p0((d.x - W) * 0.5f, std::max(8 * s, (d.y - H) * 0.5f)), p1(p0.x + W, p0.y + H);
+    u.dl->AddRectFilled(p0, p1, C_PANEL_SOLID, 14 * s);
+    u.dl->AddRect(p0, p1, C_LINE, 14 * s);
+    float x = p0.x + pad, y = p0.y + pad;
+    // head: image (radial gradient #34363d -> #1d1e22) and title + chips
+    {
+        ImVec2 ia(x, y), ib(x + 240 * s, y + headH);
+        u.dl->AddRectFilled(ia, ib, IM_COL32(0x1d, 0x1e, 0x22, 255), 10 * s);
+        const ImVec2 c((ia.x + ib.x) * 0.5f, ia.y + headH * 0.45f);
+        for (int k = 12; k >= 1; --k) {
+            const float t = k / 12.0f;
+            const int r = (int)(0x34 + (0x1d - 0x34) * t), g = (int)(0x36 + (0x1e - 0x36) * t), b = (int)(0x3d + (0x22 - 0x3d) * t);
+            u.dl->PushClipRect(ia, ib, true);
+            u.dl->AddCircleFilled(c, 150 * s * t, IM_COL32(r, g, b, 255), 48);
+            u.dl->PopClipRect();
+        }
+        ImTextureID tex;
+        ImVec2 uv0, uv1;
+        if (thumbUv(part, tex, uv0, uv1)) u.dl->AddImage(tex, ImVec2(c.x - headH * 0.5f, ia.y), ImVec2(c.x + headH * 0.5f, ib.y), uv0, uv1);
+        const float rx = ib.x + 12 * s, rw = p1.x - pad - rx;
+        float ry = y;
+        ry += u.text(ImVec2(rx, ry), 17, C_TEXT, p.label.c_str(), true).y + 2 * s;   // h2
+        std::string t2;
+        for (char ch : p.title) { if (std::isspace((unsigned char)ch)) { if (t2.empty() || t2.back() != ' ') t2.push_back(' '); } else t2.push_back(ch); }
+        ry += wrapText(u, ImVec2(rx, ry), 12, C_DIM, t2.c_str(), rw) + 10 * s;
+        float cx = rx;
+        for (auto& [k, n] : p.connectors) {
+            int ci = -1;
+            for (int q = 0; q < CONN_COUNT; ++q) if (k == std::string(q == 0 ? "stud" : q == 1 ? "antistud" : q == 2 ? "pin" : q == 3 ? "pinhole" : q == 4 ? "axle" : "axlehole")) ci = q;
+            const std::string num = std::to_string(n), lab = ci >= 0 ? kConnFr[ci] : k;
+            const float w = 16 * s + u.textW(12, num.c_str(), true) + 4 * s + u.textW(12, lab.c_str());
+            if (cx + w > p1.x - pad) { cx = rx; ry += 26 * s; }
+            u.dl->AddRectFilled(ImVec2(cx, ry), ImVec2(cx + w, ry + 22 * s), C_CARD, 11 * s);
+            float tw = u.text(ImVec2(cx + 8 * s, ry + 3 * s), 12, C_ACCENT, num.c_str(), true).x;
+            u.text(ImVec2(cx + 8 * s + tw + 4 * s, ry + 3 * s), 12, C_TEXT, lab.c_str());
+            cx += w + 6 * s;
+        }
+    }
+    y += headH + gap;
+    for (size_t i = 0; i < rows.size(); ++i) {
+        u.text(ImVec2(x, y), 13, C_DIM, rows[i].first.c_str());
+        wrapText(u, ImVec2(x + ddX, y), 13, C_TEXT, rows[i].second.c_str(), ddW);
+        y += rh[i] + 6 * s;
+    }
+    y += gap - 6 * s;
+    wrapText(u, ImVec2(x, y), 11, C_FAINT, credit, inner);
+    y += creditH + gap;
+    if (!note.empty()) { wrapText(u, ImVec2(x, y), 11, C_FAINT, note.c_str(), inner); y += noteH + gap; }
+    // DEV row (dashed top border)
+    for (float dx = x; dx < p1.x - pad; dx += 6 * s) u.dl->AddLine(ImVec2(dx, y), ImVec2(std::min(dx + 3 * s, p1.x - pad), y), C_DEVLINE, 1);
+    y += 8 * s;
+    {
+        const float tw = u.textW(11, "DEV", true) + 12 * s;
+        u.dl->AddRectFilled(ImVec2(x, y + 5 * s), ImVec2(x + tw, y + 23 * s), C_DEV, 6 * s);
+        u.text(ImVec2(x + 6 * s, y + 7 * s), 11, C_DEVINK, "DEV", true);
+        float bx = x + tw + 8 * s, w;
+        if (webButton(u, ImVec2(bx, y), "Exporter pour Maya", w)) devExport(part);
+        bx += w + 8 * s;
+        if (webButton(u, ImVec2(bx, y), "Importer le maillage modifié", w)) { m_infoPart = -1; devImport(part); return; }
+        bx += w + 8 * s;
+        if (ov != m_devOverrides.end() && webButton(u, ImVec2(bx, y), "Revenir à LDraw", w)) {
+            devRevert(part);
+            m_infoPart = -1;
+            toast(id + " : géométrie LDraw rétablie");
+            return;
+        }
+    }
+    y += 28 * s + gap;
+    // actions (right): Fermer, favourites, Ajouter à la scène
+    const bool fav = std::find(m_fav.begin(), m_fav.end(), part) != m_fav.end();
+    const char* fl = fav ? "★ Retirer des favoris" : "☆ Ajouter aux favoris";
+    float wClose = u.textW(12, "Fermer") + 20 * s, wFav = u.textW(12, fl) + 20 * s, wAdd = u.textW(12, "Ajouter à la scène", true) + 20 * s, w;
+    float bx = p1.x - pad - wAdd - 8 * s - wFav - 8 * s - wClose;
+    const bool cClose = webButton(u, ImVec2(bx, y), "Fermer", w);
+    bx += wClose + 8 * s;
+    if (webButton(u, ImVec2(bx, y), fl, w)) {
+        if (fav) m_fav.erase(std::find(m_fav.begin(), m_fav.end(), part));
+        else m_fav.push_back(part);
+        savePrefs();
+    }
+    bx += wFav + 8 * s;
+    const bool cAdd = webButton(u, ImVec2(bx, y), "Ajouter à la scène", w, true);
+    if (cClose || ImGui::IsKeyPressed(ImGuiKey_Escape) || (u.pressed && !u.hover(p0, p1))) m_infoPart = -1;
+    if (cAdd) {
+        m_infoPart = -1;
+        spawn(part, (m_stage.x + m_stage.z) * 0.5f, (m_stage.y + m_stage.w) * 0.5f);
+    }
+}
+
+// Review of a re-imported mesh (web: devReview): live preview in the scene, rows, Annuler / Recaler / Garder.
+void BrickApp::uiDevReview() {
+    if (!m_devReview.open) return;
+    Ui u = ui(m_ui);
+    if (m_gui.fontBold) u.bold = m_gui.fontBold;
+    const float s = m_ui;
+    ImVec2 d = ImGui::GetIO().DisplaySize;
+    u.dl->AddRectFilled(ImVec2(0, 0), d, IM_COL32(0, 0, 0, 128));
+    m_uiRects.push_back(ImVec4(0, 0, d.x, d.y));
+    DevReview& R = m_devReview;
+    const Part& p = m_lib.parts[R.part];
+    const std::string id = devId(R.part);
+    const float W = std::min(640 * s, d.x - 32 * s), pad = 18 * s, gap = 12 * s, inner = W - 2 * pad;
+    const int tri = (int)(R.g.indices.size() / 3), ltri = (int)((p.hasLdrawMesh ? p.ldrawMesh : R.prev).indices.size() / 3);
+    struct Row { std::string k, v; bool warn; };
+    std::vector<Row> rows;
+    rows.push_back({"Pièce", id + " · " + p.label, false});
+    rows.push_back({"Fichier", R.fileName, false});
+    rows.push_back({"Triangles", frInt(tri) + " (LDraw : " + frInt(ltri) + ")", false});
+    rows.push_back({"Dimensions", frNum(R.size.x) + " × " + frNum(R.size.z) + " × " + frNum(R.size.y) + " cm (LDraw : " + frNum(R.ref.x) + " × " + frNum(R.ref.z) + " × " + frNum(R.ref.y) + ")", false});
+    const float offLen = length(R.offset);
+    rows.push_back({"Décalage du centre", offLen < 0.02f ? std::string("aligné (< 0,2 mm)") : frNum(R.offset.x) + " · " + frNum(R.offset.y) + " · " + frNum(R.offset.z) + " cm", offLen >= 0.08f});
+    if (!R.note.empty()) rows.push_back({"Échelle", R.note, true});
+    if (R.swapped) rows.push_back({"Axes", "Proportions différentes de LDraw : Z vers le haut dans Maya, ou pièce tournée ?", true});
+    rows.push_back({"Connecteurs", std::to_string(p.voxels.size()) + " points, toujours calculés depuis LDraw", false});
+    rows.push_back({"Base LDraw", p.release.empty() ? std::string("inconnue") : p.release, false});
+    float dtW = 0;
+    for (auto& r : rows) dtW = std::max(dtW, u.textW(13, r.k.c_str()));
+    const float ddX = dtW + 14 * s, ddW = inner - ddX;
+    std::vector<float> rh;
+    float rowsH = 0;
+    for (auto& r : rows) { float h = wrapText(u, ImVec2(0, 0), 13, C_TEXT, r.v.c_str(), ddW, false); rh.push_back(h); rowsH += h + 6 * s; }
+    const char* intro = "Aperçu en direct dans la scène, avec les connecteurs LDraw et le contour LDraw par-dessus.";
+    const float introH = wrapText(u, ImVec2(0, 0), 13, C_DIM, intro, inner, false) * 1.15f;
+    const float H = pad + 22 * s + gap + introH + gap + rowsH - 6 * s + gap + 28 * s + pad;
+    ImVec2 p0((d.x - W) * 0.5f, (d.y - H) * 0.5f), p1(p0.x + W, p0.y + H);
+    u.dl->AddRectFilled(p0, p1, C_PANEL_SOLID, 14 * s);
+    u.dl->AddRect(p0, p1, C_LINE, 14 * s);
+    float x = p0.x + pad, y = p0.y + pad;
+    u.text(ImVec2(x, y), 17, C_TEXT, ("Réimport de " + id).c_str(), true);
+    y += 22 * s + gap;
+    wrapText(u, ImVec2(x, y), 13, C_DIM, intro, inner);
+    y += introH + gap;
+    for (size_t i = 0; i < rows.size(); ++i) {
+        u.text(ImVec2(x, y), 13, C_DIM, rows[i].k.c_str());
+        wrapText(u, ImVec2(x + ddX, y), 13, rows[i].warn ? IM_COL32(0xff, 0xd2, 0x7a, 255) : C_TEXT, rows[i].v.c_str(), ddW);
+        y += rh[i] + 6 * s;
+    }
+    y += gap - 6 * s;
+    float w;
+    if (webButton(u, ImVec2(x, y), "Annuler", w)) { devReviewCancel(); return; }
+    const float wKeep = u.textW(12, "Garder ce remplacement", true) + 20 * s, wRe = u.textW(12, "Recaler sur le centre LDraw") + 20 * s;
+    const bool keep = webButton(u, ImVec2(p1.x - pad - wKeep, y), "Garder ce remplacement", w, true);
+    if (offLen >= 0.02f && webButton(u, ImVec2(p1.x - pad - wKeep - 8 * s - wRe, y), "Recaler sur le centre LDraw", w)) devReviewRecenter();
+    if (keep) devReviewKeep();
 }
 
 } // namespace brickit

@@ -17,7 +17,7 @@ Cases : `[x]` porté et vérifié · `[~]` partiel (ce qui manque est dit) · `[
 - [x] Voxels (points de la brique sélectionnée / en main seulement, comme le web) ; [ ] filtre par famille
 - [x] Supprimer (grisé sans sélection)
 - [~] Qualité Rapide / HQ (MSAA ; pas de SSAO) + Path tracing (natif en plus) ; [x] Tonemap ACES / AgX / Std
-- [x] Mécanique ; [~] DEV (bouton, panneau à faire) ; [x] Fenêtres ; [x] Scène (ouvre la fiche « Scène partagée »)
+- [x] Mécanique ; [x] DEV (bouton cyan, toasts du web, panneau « Mode développeur » : Connecteurs / Contour LDraw / Remplacements, légende, liste avec pastilles à jour / LDraw modifié / absente, Exporter / Retirer (confirmation), résumé, Importer un maillage… ; connecteurs par type sur toutes les briques, contour LDraw à 30° sous un remplacement, badge « M » sur les cartes) — capture 16 ; [x] Fenêtres ; [x] Scène (ouvre la fiche « Scène partagée »)
 - [x] Infobulles (titres du web)
 
 ### Vue 3D `main.stage`
@@ -51,7 +51,7 @@ Cases : `[x]` porté et vérifié · `[~]` partiel (ce qui manque est dit) · `[
 ### Fiche pièce `#info` (appui long)
 - [x] Fiche simple du web (`showPartSimple`) : visionneuse 3D (studio des miniatures, ACES 0,92, caméra 24° (1, 0,8, 1,3), glisser = lacet ×0,012 / tangage ×0,01 borné ±1,4, rotation en espace caméra), « Glisse pour tourner la pièce », nom, famille › catégorie, ☆ / ★ Favori, Fermer, Ajouter à la scène, Échap / clic dehors — capture 15
 - Natif : pendant la fiche, la vue principale garde sa dernière image (le moteur ne dessine que la visionneuse)
-- [ ] Fiche complète en mode DEV (métadonnées, connecteurs, export / réimport Maya OBJ, overrides)
+- [x] Fiche complète en mode DEV (image, titre LDraw, pastilles de connecteurs, Famille … Origine LDraw, crédit, rangée DEV : Exporter pour Maya, Importer le maillage modifié, Revenir à LDraw, note du remplacement) — capture 16b
 
 ### Panneau Mécanique `#mechPanel`
 - [x] Titre, Quitter (Échap), Pose de montage, Liaisons, Couleurs par corps
@@ -97,7 +97,7 @@ Cases : `[x]` porté et vérifié · `[~]` partiel (ce qui manque est dit) · `[
 
 ## 6. Fichiers et exports
 - [x] `.v3d.json` (format vp3d-scene v1, compatible web)
-- [x] Export `.ldr` (même transformation que le web), [ ] Export Maya (script Python + rig, `maya_export.js` / `maya_template.py`), [ ] mode DEV (export / réimport OBJ, overrides)
+- [x] Export `.ldr` (même transformation que le web), [ ] Export Maya (script Python + rig, `maya_export.js` / `maya_template.py`), [x] mode DEV : export zip (<id>.obj + LISEZMOI.txt, origine LDraw, cm, Y haut, repères ref_connecteurs_*), réimport OBJ (groupes ref_ ignorés, devine l'unité, décalage du centre, axes, revue Annuler / Recaler / Garder), aller-retour vérifié à l'identique (--dev-roundtrip 3001)
 
 ## 7. Mécanique (détails)
 - [x] Connecteurs, corps, pivots, engrènements, arbre, boucles, solveur LM, butées, rapports, phase des dents, couleurs par corps, liaisons
@@ -112,6 +112,11 @@ Cases : `[x]` porté et vérifié · `[~]` partiel (ce qui manque est dit) · `[
 
 ### Corrections mécanique
 - (aucune pour l'instant)
+
+### Stockage / formats (mode DEV)
+- Remplacements gardés dans `dev_overrides\<id>.obj` + `<id>.json` à côté de l'exe (le web : IndexedDB « stocké sur cet appareil » ou base de l'artifact). Préférences DEV dans `brickit_prefs.json` (clé `dev`).
+- FBX : pas de lecteur FBX natif, le réimport demande un OBJ (toast « Lecture impossible : le FBX n'est pas lu par la version native… »).
+- Export : boîte « Enregistrer sous » (le web : téléchargement, sinon la fiche texte de secours).
 
 ### Rendu
 - Polices : Segoe UI + Segoe UI Symbol fusionnées pour les glyphes du web (› … ★ ☆ ✎ ✋ ◀ ▶), absents de la police latine seule.

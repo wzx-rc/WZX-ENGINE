@@ -50,8 +50,24 @@ static void readMeta(const Json& j, Part& p) {
     if (j["hasStuds"].type == Json::Bool) p.hasStuds = j["hasStuds"].b;
     if (info["family"].type == Json::String) p.family = info["family"].s;
     if (info["ldraw"].type == Json::String) p.ldraw = info["ldraw"].s;
-    if (info["ldrawOrigin"].type == Json::Array)
+    if (info["ldrawOrigin"].type == Json::Array) {
         p.ldrawOrigin = float3((float)info["ldrawOrigin"][0].num(), (float)info["ldrawOrigin"][1].num(), (float)info["ldrawOrigin"][2].num());
+        p.hasOrigin = true;
+    }
+    if (info["title"].type == Json::String) p.title = info["title"].s;
+    if (info["author"].type == Json::String) p.author = info["author"].s;
+    if (info["license"].type == Json::String) p.license = info["license"].s;
+    if (info["release"].type == Json::String) p.release = info["release"].s;
+    if (info["keywords"].type == Json::String) p.keywords = info["keywords"].s;
+    if (info["history"].type == Json::Number) p.history = (int)info["history"].n;
+    if (info["triangles"].type == Json::Number) p.triangles = (int)info["triangles"].n;
+    if (info["vertices"].type == Json::Number) p.vertices = (int)info["vertices"].n;
+    if (info["sizeCm"].type == Json::Array) { for (int k = 0; k < 3; ++k) p.sizeCm[k] = (float)info["sizeCm"][k].num(); p.hasSizeCm = true; }
+    if (info["sizeStuds"].type == Json::Array) { for (int k = 0; k < 2; ++k) p.sizeStuds[k] = (float)info["sizeStuds"][k].num(); p.hasSizeStuds = true; }
+    if (info["connectors"].type == Json::Object) {
+        p.connectors.clear();
+        for (auto& [k, v] : info["connectors"].o) p.connectors.push_back({k, (int)v.num()});
+    }
     if (j["grab"].type == Json::Array) { p.grab[0] = (float)j["grab"][0].num(); p.grab[1] = (float)j["grab"][1].num(); }
     if (j["voxels"].type == Json::Array) {
         p.voxels.clear();
