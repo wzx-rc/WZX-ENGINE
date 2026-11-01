@@ -128,6 +128,7 @@ bool BrickApp::init(HINSTANCE inst, const Options& opt) {
     m_focusDim = opt.focusDim;
     setupStage();
     if (!opt.openPath.empty()) openScene(opt.openPath);
+    else if (opt.mechDemo) buildMechDemo();
     else if (opt.demo) buildDemo();
     else if (opt.grid) buildPartGrid();
     else if (opt.bench > 0) buildBench(opt.bench);
@@ -140,6 +141,17 @@ bool BrickApp::init(HINSTANCE inst, const Options& opt) {
     if (opt.libCategory >= 0 && opt.libCategory < (int)m_nav.size()) m_navSel = opt.libCategory;
     if (opt.selectBrick >= 0 && opt.selectBrick < (int)m_bricks.size()) select(opt.selectBrick);
     if (opt.duplicate) duplicateSelected();   // scripted test of Ctrl+D
+    if (opt.mech) {
+        mechEnter();
+        if (opt.motor != 0 && !m_mm.cmds.empty()) {   // scripted test: the first motor turned by --motor degrees, in steps
+            const int steps = 24;
+            for (int s = 1; s <= steps; ++s) {
+                m_mm.cmds[0].value = radians(opt.motor) * s / steps;
+                m_mech.solve(m_mm);
+            }
+            mechApplyPose();
+        }
+    }
 
     ShowWindow(m_hwnd, SW_SHOWDEFAULT);
     UpdateWindow(m_hwnd);
@@ -557,7 +569,9 @@ void BrickApp::frame() {
     }
     if (!m_opt.noUi) drawUi();
     cameraInput();
-    editInput();
+    if (m_mechOn) mechUpdate((float)ImGui::GetIO().DeltaTime);
+    else editInput();
+    if (ImGui::IsKeyPressed(ImGuiKey_M) && !ImGui::GetIO().WantTextInput && !ImGui::GetIO().KeyCtrl) { if (m_mechOn) mechExit(); else mechEnter(); }
 
     ImVec2 ds = ImGui::GetIO().DisplaySize;
     // Path tracing: half resolution while the view moves (and 0.25 s after), full resolution to converge when still.
@@ -644,6 +658,9 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         else if (a == L"--focus") opt.focusDim = true;
         else if (a == L"--save") opt.savePath = next();
         else if (a == L"--dup") opt.duplicate = true;
+        else if (a == L"--mechdemo") opt.mechDemo = true;
+        else if (a == L"--mech") opt.mech = true;
+        else if (a == L"--motor") opt.motor = (float)_wtof(next().c_str());
         else if (a == L"--size") {
             std::wstring s = next();
             swscanf_s(s.c_str(), L"%dx%d", &opt.width, &opt.height);

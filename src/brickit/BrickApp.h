@@ -5,6 +5,7 @@
 //   Thumbs.cpp    part thumbnails rendered by the engine (atlas, cached on disk)
 #pragma once
 #include "Build.h"
+#include "Mech.h"
 #include "Library.h"
 #include "app/ImGuiLayer.h"
 #include "vp3d/Renderer.h"
@@ -51,6 +52,9 @@ struct Options {
     bool focusDim = false;    // --focus
     std::wstring savePath;    // --save file: the scene saved at the capture (file format test)
     bool duplicate = false;   // --dup: Ctrl+D on the selection at start
+    bool mechDemo = false;    // --mechdemo: Technic gear train
+    bool mech = false;        // --mech: start in Mechanical mode
+    float motor = 0;          // --motor deg: value of the first command (Mechanical mode test)
 };
 
 class BrickApp {
@@ -111,6 +115,14 @@ private:
     std::vector<int> visibleParts() const;  // parts of the current category / search
     bool partCard(int part, float size);    // thumbnail card, returns true when clicked
 
+    // Mechanical mode (BrickMech.cpp)
+    void mechEnter();
+    void mechExit();
+    void mechUpdate(float dt);
+    void mechApplyPose();     // bricks drawn at the pose of their body
+    void drawMech(float x, float y);
+    void buildMechDemo();
+
     // Thumbs.cpp
     void buildThumbs();
     bool thumbUv(int part, ImTextureID& tex, ImVec2& uv0, ImVec2& uv1) const;
@@ -169,6 +181,13 @@ private:
     std::string m_toast;
     double m_toastTime = -10.0;
     bool m_overUi = false;             // the mouse is over a panel this frame
+
+    // Mechanical mode
+    Mech m_mech{m_lib};
+    MechModel m_mm;
+    bool m_mechOn = false;
+    std::string m_mechFlash;
+    double m_mechFlashTime = -10;
 
     // thumbnails
     std::vector<ImTextureID> m_thumbAtlas;

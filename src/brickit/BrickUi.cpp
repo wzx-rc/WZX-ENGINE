@@ -155,6 +155,7 @@ void BrickApp::drawToolbar(float x, float y, float w) {
     if (tool(ICON_FOCUS_, "Mode focus : le reste assombri à 50 % (H)", m_focusDim)) { m_focusDim = !m_focusDim; syncObjects(); }
     if (tool(ICON_GRID_, "Grille des tenons au sol (G)", m_build.gridSnap)) m_build.gridSnap = !m_build.gridSnap;
     if (tool(ICON_RT, m_rs.raster ? "Path tracing (P)" : "Temps réel (P)", !m_rs.raster)) { m_rs.raster = !m_rs.raster; m_renderer.resetAccumulation(); }
+    if (tool(u8"\uE90F", "Mode Mécanique (M)", m_mechOn)) { if (m_mechOn) mechExit(); else mechEnter(); }
     sep();
     if (tool(ICON_SAVE_, "Enregistrer .v3d.json (Ctrl+S)")) saveDialog();
     if (tool(ICON_OPEN_, "Ouvrir .v3d.json (Ctrl+O)")) openDialog();
@@ -336,6 +337,7 @@ void BrickApp::drawUi() {
     drawColors(d.x - colW - m, 48 * s, colW, 0);
     drawToolbar(d.x * 0.5f - 200 * s, m, 400 * s);
     drawStats(m, m);
+    if (m_mechOn) drawMech(m, 64 * s);
     drawToast();
     m_overUi = ImGui::IsWindowHovered(ImGuiHoveredFlags_AnyWindow) || ImGui::IsAnyItemActive();
 }
