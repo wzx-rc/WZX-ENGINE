@@ -447,13 +447,50 @@ void BrickApp::editInput() {
     if (!inView) return;
     if (io.KeyAlt) return;   // Alt + left drag orbits
 
+    if (!m_holding && !m_gizmoDragging && !ImGui::IsMouseDown(ImGuiMouseButton_Left)) m_gizmoHover = pickGizmo(mp.x, mp.y);
+    if (m_gizmoDragging) {
+        if (!ImGui::IsMouseDown(ImGuiMouseButton_Left)) { m_gizmoDragging = false; autosave(); }
+        else gizmoDragTo(mp.x, mp.y);
+        return;
+    }
     if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
         if (m_holding) { dropHeld(io.KeyCtrl); return; }
+        if (!m_pivotEdit) {
+            GizmoHandle gh = pickGizmo(mp.x, mp.y);
+            if (gh.kind == 2) {   // centre sphere: free move, the brick goes in hand and drops on release
+                m_pressPoint = gizmoPivot(m_selected);
+                const bool ap = m_autoPivot;
+                m_autoPivot = false;
+                beginMove(m_selected, mp.x, mp.y);
+                m_autoPivot = ap;
+                m_dragStarted = true;
+                return;
+            }
+            if (gh.kind >= 0) { gizmoStart(gh, mp.x, mp.y); return; }
+        }
+        if (m_mode == 2 || m_mode == 3) {   // Move / Rotate: a tap selects (Auto Pivot moves the pivot), dragging orbits
+            float3 pt;
+            int hit = pickBrick(mp.x, mp.y, &pt);
+            if (hit >= 0) {
+                if (m_autoPivot) {
+                    const Part& p = m_lib.parts[m_bricks[hit].part];
+                    float best = 1e30f;
+                    for (size_t v = 0; v < p.voxels.size(); ++v) {
+                        float d = length(m_build.worldVoxel(m_bricks[hit], p.voxels[v]) - pt);
+                        if (d < best) { best = d; m_bricks[hit].grab = (int)v; }
+                    }
+                }
+                select(hit);
+            }
+            m_leftOrbit = true;
+            return;
+        }
         m_pressed = true;
         m_dragStarted = false;
         m_pressPos = mp;
         m_pressBrick = pickBrick(mp.x, mp.y, &m_pressPoint);
         if (m_mode == 0 && m_pressBrick < 0) { m_marquee = true; m_marquee0 = m_marquee1 = mp; m_pressed = false; }
+        if (m_mode == 1 && m_pressBrick < 0) m_leftOrbit = true;   // Visor: dragging the empty space orbits
     }
     if (m_marquee) {   // selection rectangle (mode Sélection): bricks whose box centre falls inside, Shift / Ctrl adds
         m_marquee1 = mp;
@@ -488,7 +525,8 @@ void BrickApp::editInput() {
     }
     if (m_pressed && ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
         m_pressed = false;
-        select(m_pressBrick, io.KeyShift);
+        const bool moved = (std::fabs(mp.x - m_pressPos.x) + std::fabs(mp.y - m_pressPos.y)) > 6;
+        if (!(m_leftOrbit && moved)) select(m_pressBrick, io.KeyShift || io.KeyCtrl);
     }
     // the brick dragged into the hand drops where the button is released
     if (m_holding && m_dragStarted && ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {

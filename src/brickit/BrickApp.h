@@ -49,6 +49,7 @@ struct Options {
     std::string spawnPart;    // --spawn PART
     float spawnX = 0.5f, spawnY = 0.5f;   // --at x y (fractions of the viewport)
     int selectBrick = -1;     // --select N
+    int mode = -1;
     int libCategory = -1;     // --cat N
     bool focusDim = false;    // --focus
     std::wstring savePath;    // --save file: the scene saved at the capture (file format test)
@@ -153,6 +154,30 @@ private:
     int m_ghostObject = -1;            // translucent copy of the brick in hand at its landing spot
     bool m_marquee = false;
     ImVec2 m_marquee0, m_marquee1;
+
+    // BrickGizmo.cpp: move / rotate manipulators of the web (arrows by studs / plates, rings by 90 degrees, centre
+    // sphere = free move in hand)
+    struct GizmoHandle { int kind = -1; int axis = 0; };   // kind 0 move, 1 rotate, 2 free
+    struct GizmoDrag {
+        GizmoHandle h;
+        int brick = -1, steps = 0;
+        float3 startPos, pivot, v0;
+        float4 startRot{0, 0, 0, 1};
+        float t0 = 0;
+        bool hasV0 = false;
+        std::vector<int> others;
+        std::vector<Brick> othersStart;
+    };
+    bool gizmoVisible() const;
+    float3 gizmoPivot(int b) const;
+    float gizmoScale(const float3& piv) const;
+    GizmoHandle pickGizmo(float sx, float sy) const;
+    void gizmoStart(const GizmoHandle& h, float sx, float sy);
+    void gizmoDragTo(float sx, float sy);
+    void drawGizmo();
+    GizmoHandle m_gizmoHover;
+    bool m_gizmoDragging = false, m_leftOrbit = false;
+    GizmoDrag m_gz;
 
     // Thumbs.cpp
     void buildThumbs();

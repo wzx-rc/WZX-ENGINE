@@ -151,6 +151,7 @@ bool BrickApp::init(HINSTANCE inst, const Options& opt) {
         if (n.kind == 3) { m_fam = "Technic"; m_cat = "Technic"; m_sub = n.key; }
         else m_fam = n.key;
     }
+    if (opt.mode >= 0) m_mode = opt.mode;
     if (opt.selectBrick >= 0 && opt.selectBrick < (int)m_bricks.size()) select(opt.selectBrick);
     if (opt.duplicate) duplicateSelected();   // scripted test of Ctrl+D
     if (opt.mech) {
@@ -610,7 +611,9 @@ void BrickApp::cameraInput() {
     if (io.WantCaptureMouse || m_overUi) return;
     Camera& cam = m_scene.camera;
     bool changed = false;
-    const bool orbit = ImGui::IsMouseDown(ImGuiMouseButton_Right) || (io.KeyAlt && ImGui::IsMouseDown(ImGuiMouseButton_Left));
+    if (!ImGui::IsMouseDown(ImGuiMouseButton_Left)) m_leftOrbit = false;
+    // left drag on empty space (and in the Move / Rotate modes) orbits, as the web
+    const bool orbit = ImGui::IsMouseDown(ImGuiMouseButton_Right) || (ImGui::IsMouseDown(ImGuiMouseButton_Left) && (io.KeyAlt || m_leftOrbit));
     const bool pan = ImGui::IsMouseDown(ImGuiMouseButton_Middle) || (io.KeyShift && ImGui::IsMouseDown(ImGuiMouseButton_Right));
     if (pan && (io.MouseDelta.x != 0 || io.MouseDelta.y != 0)) {
         float3 r, u, f;
@@ -679,6 +682,7 @@ void BrickApp::frame() {
     ImGui::GetBackgroundDrawList()->AddImage(m_gui.viewportTexture(), ImVec2(m_stage.x, m_stage.y), ImVec2(m_stage.z, m_stage.w));
     drawVoxels();          // over the 3D view, under the panels
     drawHoldOverlay();
+    drawGizmo();
     drawMechOverlay();
     LARGE_INTEGER t1;
     QueryPerformanceCounter(&t1);
@@ -759,6 +763,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         else if (a == L"--spawn") { std::wstring w = next(); opt.spawnPart.assign(w.begin(), w.end()); }
         else if (a == L"--at") { opt.spawnX = (float)_wtof(next().c_str()); opt.spawnY = (float)_wtof(next().c_str()); }
         else if (a == L"--select") opt.selectBrick = _wtoi(next().c_str());
+        else if (a == L"--mode") opt.mode = _wtoi(next().c_str());   // 0 select, 1 visor, 2 move, 3 rotate
         else if (a == L"--cat") opt.libCategory = _wtoi(next().c_str());
         else if (a == L"--focus") opt.focusDim = true;
         else if (a == L"--save") opt.savePath = next();

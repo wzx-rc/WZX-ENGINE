@@ -11,7 +11,8 @@ Cases : `[x]` porté et vérifié · `[~]` partiel (ce qui manque est dit) · `[
 - [x] Annuler / Rétablir (grisés quand la pile est vide)
 - [x] Modes Sélection / Viseur / Déplacer / Tourner (boutons, état jaune)
 - [x] Mode Sélection : clic = sélection ; [~] rectangle de sélection (`#marquee`, codé, à tester à la souris)
-- [ ] Mode Déplacer : gizmo flèches (crans tenon / plaque) ; [ ] Mode Tourner : anneaux 90°
+- [x] Mode Déplacer : gizmo flèches rouge / jaune / bleu (crans tenon / plaque, sol respecté, multi-sélection), sphère blanche = déplacement libre en main ; [x] Mode Tourner : anneaux 90° autour du pivot (+ rebond 0,92) ; taille 0,07 × distance, blanc au survol — captures 13 / 13b
+- [x] Modes Déplacer / Tourner : un clic sélectionne (Auto Pivot déplace le pivot), glisser fait orbiter ; Viseur : glisser le vide fait orbiter (comme le web)
 - [x] Grille, [x] Auto Pivot, [x] Sécurité 50 %, [x] Focus, [x] Animations
 - [x] Voxels (affichage en points) ; [ ] cycle des voxels (touche V) et filtre
 - [x] Supprimer (grisé sans sélection)
@@ -80,7 +81,7 @@ Cases : `[x]` porté et vérifié · `[~]` partiel (ce qui manque est dit) · `[
 - [x] Glisser depuis la bibliothèque
 - [~] Rectangle de sélection (mode Sélection, Maj/Ctrl ajoute, toast « n briques sélectionnées ») : codé, à tester
 - [x] Orbite / pan / zoom
-- [ ] Gizmo flèches et anneaux
+- [x] Gizmo flèches et anneaux (à essayer à la souris)
 
 ## 4. Animations et timings
 - [x] Brique qui tombe dans la main (écrasement 0,55, ressort w22 z.35), flottement 0,9 + oscillation, ressort w14, bascule selon la vitesse, pose 0,15 s (t²), rebond à la pose (0,86, w30 z.28, 0,6 s), halo du voxel visé (0,18 s, pulsation) — capture 12
