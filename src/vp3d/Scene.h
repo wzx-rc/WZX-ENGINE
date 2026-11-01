@@ -150,6 +150,9 @@ struct Environment {
     float intensity = 1.0f;
     bool visibleToCamera = true;
     float3 ambient{0.06f, 0.06f, 0.065f};  // extra fill used by the raster viewport (no GI there)
+    // hemisphere fill of the raster viewport (three.js HemisphereLight): sky and ground colours (linear), 0 = off
+    float3 hemiSky{0, 0, 0}, hemiGround{0, 0, 0};
+    float hemiIntensity = 0.0f;
     // HDRI (lat-long image): replaces the gradient for lighting, reflections and the background when set.
     EnvImagePtr hdri;
     float hdriIntensity = 1.0f;

@@ -269,7 +269,7 @@ void BrickApp::uiHeader() {
         case 9: m_build.safety = !m_build.safety; toast(m_build.safety ? "Sécurité ON : refus au-delà de 50 % de recouvrement" : "Sécurité OFF"); break;
         case 10: m_focusDim = !m_focusDim; syncObjects(); break;
         case 11: m_animOn = !m_animOn; break;
-        case 12: m_showVox = !m_showVox; toast(m_showVox ? "Voxels : affichés (tenons jaunes, pins cyan, axles magenta)" : "Voxels : masqués"); break;
+        case 12: m_showVox = !m_showVox; syncObjects(); toast(m_showVox ? "Voxels : affichés (tenons jaunes, pins cyan, axles magenta)" : "Voxels : masqués"); break;
         case 13: deleteSelected(); break;
         case 14: m_popup = m_popup == 1 ? 0 : 1; m_popupAt = ImVec2(a.x, y1 + 4 * s); break;
         case 15: m_popup = m_popup == 2 ? 0 : 2; m_popupAt = ImVec2(a.x, y1 + 4 * s); break;

@@ -304,7 +304,8 @@ private:
     std::vector<int> m_dimMaterial;    // palette index -> same material at 50 % (focus mode)
     std::vector<int> m_tintMaterial;   // Mechanical mode: one material per body (Couleurs par corps)
     int m_blockedMaterial = -1;        // brick in hand that cannot be dropped (red ghost)
-    int m_ghostMaterial = -1, m_ghostBlockedMaterial = -1;   // placement preview (ghostMat of the web)
+    int m_ghostMaterial = -1, m_ghostBlockedMaterial = -1;
+    int m_rimLight = -1;               // cool rim light of the web (raster)   // placement preview (ghostMat of the web)
     int m_firstBrickObject = 0;        // scene objects before it: the stage
     ViewRect m_vp;
     int m_frame = 0;

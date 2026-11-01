@@ -411,7 +411,7 @@ void BrickApp::editInput() {
         if (!ctrl && (ImGui::IsKeyPressed(ImGuiKey_R) || ImGui::IsKeyPressed(ImGuiKey_E))) rotateSelected(1);
         if (!ctrl && ImGui::IsKeyPressed(ImGuiKey_Q)) rotateSelected(-1);
         if (!ctrl && ImGui::IsKeyPressed(ImGuiKey_C)) cycleGrab();
-        if (!ctrl && ImGui::IsKeyPressed(ImGuiKey_V)) { m_showVox = !m_showVox; toast(m_showVox ? "Voxels : affichés (tenons jaunes, pins cyan, axles magenta)" : "Voxels : masqués"); }
+        if (!ctrl && ImGui::IsKeyPressed(ImGuiKey_V)) { m_showVox = !m_showVox; syncObjects(); toast(m_showVox ? "Voxels : affichés (tenons jaunes, pins cyan, axles magenta)" : "Voxels : masqués"); }
         if (!ctrl && ImGui::IsKeyPressed(ImGuiKey_P)) m_pivotEdit = !m_pivotEdit;
         if (!ctrl && ImGui::IsKeyPressed(ImGuiKey_A)) m_animOn = !m_animOn;
         if (!ctrl && ImGui::IsKeyPressed(ImGuiKey_F)) { m_focusDim = !m_focusDim; syncObjects(); toast(m_focusDim ? "Mode focus : les autres briques à 50 %" : "Mode focus désactivé"); }

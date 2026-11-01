@@ -14,7 +14,7 @@ Cases : `[x]` porté et vérifié · `[~]` partiel (ce qui manque est dit) · `[
 - [x] Mode Déplacer : gizmo flèches rouge / jaune / bleu (crans tenon / plaque, sol respecté, multi-sélection), sphère blanche = déplacement libre en main ; [x] Mode Tourner : anneaux 90° autour du pivot (+ rebond 0,92) ; taille 0,07 × distance, blanc au survol — captures 13 / 13b
 - [x] Modes Déplacer / Tourner : un clic sélectionne (Auto Pivot déplace le pivot), glisser fait orbiter ; Viseur : glisser le vide fait orbiter (comme le web)
 - [x] Grille, [x] Auto Pivot, [x] Sécurité 50 %, [x] Focus, [x] Animations
-- [x] Voxels (points de la brique sélectionnée / en main seulement, comme le web) ; [ ] filtre par famille
+- [x] Voxels (points de la brique sélectionnée / en main seulement, la brique à 30 % pour voir ses points ; cycle à 2 états du web v26 : masqués / affichés — le filtre par famille n'existe plus dans `VOX_STEPS`)
 - [x] Supprimer (grisé sans sélection)
 - [~] Qualité Rapide / HQ (MSAA ; pas de SSAO) + Path tracing (natif en plus) ; [x] Tonemap ACES / AgX / Std
 - [x] Mécanique ; [x] DEV (bouton cyan, toasts du web, panneau « Mode développeur » : Connecteurs / Contour LDraw / Remplacements, légende, liste avec pastilles à jour / LDraw modifié / absente, Exporter / Retirer (confirmation), résumé, Importer un maillage… ; connecteurs par type sur toutes les briques, contour LDraw à 30° sous un remplacement, badge « M » sur les cartes) — capture 16 ; [x] Fenêtres ; [x] Scène (ouvre la fiche « Scène partagée »)
@@ -23,10 +23,10 @@ Cases : `[x]` porté et vérifié · `[~]` partiel (ce qui manque est dit) · `[
 ### Vue 3D `main.stage`
 - [x] La vue occupe la zone entre l'en-tête et la bibliothèque (même cadrage que le web), couleur courante Yellow 14 au départ
 - [x] Scène du web en temps réel : fond et brouillard 0x111214, sol 0x0e0f11, grille des tenons, axes X rouge / Z bleu, key chaude 3,4 + ombres, environnement 0,55, ACES 1, caméra fov 32 / yaw 38 / pitch 32
-- [ ] Rim froide 1,3 et hémisphère 0,25 (le moteur n'a qu'un soleil en raster)
+- [x] Rim froide 0xc0d4ff 1,3 depuis (26, 22, −30) (lumière de surface lointaine, éclairement 1,3, sans ombre) et hémisphère 0x9aa3b8 / 0x1a1a1c 0,25 (nouveau terme du raster du moteur) — capture 20
 - [x] Toast (haut de la vue, bord jaune, fondu)
 - [x] HUD « Infos (pièces, fps) » (masqué par défaut, via Fenêtres)
-- [ ] Écran « Chargement de la bibliothèque BrickIt… »
+- [x] Écran « Chargement de la bibliothèque BrickIt… » (fond 0x131417, texte 14 px gris, pendant le chargement de la bibliothèque et des miniatures)
 
 ### Menu radial `#opts` (main gauche)
 - [x] Grip, titre (nom de la pièce ou « AUCUNE BRIQUE »), 4 coins + Dupliquer au centre, état inactif à 45 %

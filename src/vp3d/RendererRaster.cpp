@@ -30,6 +30,8 @@ struct RasterConstants {
     float shIrr[9][4];
     float envMapOn; float envRotation; float envMapIntensity; float envMips;
     float envVisible; uint32_t sunLight; float giMode, orthoHalfH;   // giMode: DDGI probes read by Shade (Raster.hlsl); orthoHalfH: orthographic camera
+    float3 hemiSky; float hemiOn;
+    float3 hemiGround; float hemiPad;
 };
 
 struct DrawConstants {
@@ -669,6 +671,10 @@ void Renderer::recordRaster(const Scene& scene, const RenderSettings& rs, const 
     rc.gridScale = scene.gridScale;
     rc.keyLight = key < 0 ? 0xFFFFFFFFu : (uint32_t)key;
     rc.ambient = scene.env.ambient;
+    rc.hemiSky = scene.env.hemiSky * scene.env.hemiIntensity;
+    rc.hemiGround = scene.env.hemiGround * scene.env.hemiIntensity;
+    rc.hemiOn = scene.env.hemiIntensity > 0 ? 1.0f : 0.0f;
+    rc.hemiPad = 0;
     rc.shadowTexel = 1.0f / kShadowSize;
     rc.keyPos = keyCenter;
     rc.lightScale = rs.lightScale;

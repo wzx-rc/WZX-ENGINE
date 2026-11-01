@@ -94,6 +94,8 @@ struct RasterConstants {
     float shIrr[9][4];
     float envMapOn; float envRotation; float envMapIntensity; float envMips;
     float envVisible; uint32_t sunLight; float giMode, pad3;   // giMode: DDGI probes read by Shade (Raster.hlsl)
+    float3 hemiSky{0, 0, 0}; float hemiOn = 0;   // (Raster.hlsl layout)
+    float3 hemiGround{0, 0, 0}; float hemiPad = 0;
 };
 
 struct DrawConstants {

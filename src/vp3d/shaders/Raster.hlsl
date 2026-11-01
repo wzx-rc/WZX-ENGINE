@@ -20,6 +20,8 @@ struct RasterConstants {
     float4 shIrr[9];                     // HDRI irradiance (cosine-convolved SH, without the sun), image space
     float envMapOn; float envRotation; float envMapIntensity; float envMips;
     float envVisible; uint sunLight; float giMode; float orthoHalfH;   // sunLight: index of the path tracer's sun quad (skipped here); giMode: DDGI probes (see Shade); orthoHalfH: orthographic camera (half the view height, 0 = perspective)
+    float3 hemiSky; float hemiOn;        // hemisphere fill (three.js HemisphereLight): irradiance from the sky / the ground, x intensity
+    float3 hemiGround; float hemiPad;
 };
 ConstantBuffer<RasterConstants> R : register(b0);
 
@@ -380,6 +382,7 @@ float4 Shade(VSOut i, bool ghost, float shadowBias, bool capture) {
         ambDiffuse = diffuseCol * sky * cavity;
         ambGlossy = Fa * refl * cavity;
     }
+    if (R.hemiOn > 0) ambDiffuse += diffuseCol / PI * lerp(R.hemiGround, R.hemiSky, 0.5 + 0.5 * N.y);
 #ifdef VP3D_DDGI_PROBES
     if (R.giMode > 0) {
         // Diffuse GI from the probes instead of the ambient (view 1: indirect only, 2: direct only, as GIShade.hlsl).

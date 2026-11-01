@@ -99,6 +99,21 @@ bool BrickApp::init(HINSTANCE inst, const Options& opt) {
     th::loadThemes(m_exeDir + L"\\assets\\themes");
     th::loadSettings(m_exeDir + L"\\brickit_settings.ini");
     th::apply(m_ui);
+    if (opt.shotPath.empty()) {   // .loading of the web while the library and the thumbnails load
+        ShowWindow(m_hwnd, SW_SHOWDEFAULT);
+        for (int f = 0; f < 2; ++f) {
+            m_gui.newFrame();
+            ImDrawList* dl = ImGui::GetBackgroundDrawList();
+            const ImVec2 ds = ImGui::GetIO().DisplaySize;
+            dl->AddRectFilled(ImVec2(0, 0), ds, IM_COL32(0x13, 0x14, 0x17, 255));
+            const char* t = "Chargement de la bibliothèque BrickIt…";
+            const float px = 14 * m_ui * 1.22f;
+            const ImVec2 sz = ImGui::GetFont()->CalcTextSizeA(px, 1e9f, 0, t);
+            dl->AddText(ImGui::GetFont(), px, ImVec2((ds.x - sz.x) * 0.5f, (ds.y - sz.y) * 0.5f), IM_COL32(0x9a, 0x9c, 0xa4, 255), t);
+            m_gui.render(false);
+            m_renderer.present(true);
+        }
+    }
 
     if (!m_lib.load(m_exeDir + L"\\assets\\brickit", &err)) {
         MessageBoxA(m_hwnd, err.c_str(), "BrickIt - library", MB_ICONERROR);
@@ -244,6 +259,21 @@ void BrickApp::setupStage() {
     o.visible = !m_opt.noGround;
     m_scene.addObject(o);
     m_firstBrickObject = (int)m_scene.objects.size();
+    {   // cool rim of the web: DirectionalLight(0xc0d4ff, 1.3) from (26, 22, -30), no shadow; a far area light whose
+        // irradiance at the target is 1.3 (raster only, the path traced studio has its own lights)
+        AreaLight rim;
+        rim.name = "Rim";
+        const float3 tgt(0.4f, 1.2f, 0.4f), dir = normalize(float3(26, 22, -30));
+        const float D = 80.0f, W = 8.0f;
+        rim.position = tgt + dir * D;
+        rim.target = tgt;
+        rim.width = rim.height = W;
+        rim.color = float3(srgbToLinear(0xc0 / 255.0f), srgbToLinear(0xd4 / 255.0f), 1.0f);
+        rim.intensity = 1.3f * D * D / (W * W);
+        rim.visibleToCamera = false;
+        m_scene.lights.push_back(rim);
+        m_rimLight = (int)m_scene.lights.size() - 1;
+    }
 
     // fingerprints: roughness mask shared by the plastic colours (assets/brickit/fingerprints.jpg)
     int fpTex = -1;
@@ -357,6 +387,10 @@ void BrickApp::applyLook() {
         m_scene.sun.direction = normalize(float3(-28, 34, 30));
         m_scene.sun.color = lin(0xfff1e0);
         m_scene.sun.intensity = 3.4f;
+        m_scene.env.hemiSky = lin(0x9aa3b8);   // HemisphereLight(0x9aa3b8, 0x1a1a1c, 0.25)
+        m_scene.env.hemiGround = lin(0x1a1a1c);
+        m_scene.env.hemiIntensity = 0.25f;
+        if (m_rimLight >= 0) m_scene.lights[m_rimLight].enabled = true;
         m_rs.exposure = 1.0f;
         m_rs.tonemapper = 0;
     } else {
@@ -367,6 +401,8 @@ void BrickApp::applyLook() {
         g.baseColor = float3(0.70f, 0.71f, 0.73f);
         g.roughness = 0.5f;
         m_scene.sun.enabled = false;
+        m_scene.env.hemiIntensity = 0;
+        if (m_rimLight >= 0) m_scene.lights[m_rimLight].enabled = false;
         m_rs.exposure = m_opt.exposure;
     }
     ++m_scene.objectsVersion;
@@ -444,6 +480,10 @@ void BrickApp::syncObjects() {
             o.material = m_tintMaterial[body];
         }
         o.ghost = false;
+        if (m_showVox && (int)i == focusBrick() && !m_mechOn) {   // voxels shown: the brick at 30 % so its dots show through
+            o.ghost = true;
+            o.ghostAlpha = 0.3f;
+        }
         if (m_holding && (int)i == m_held.brick && m_held.blocked && !m_animOn) {   // no preview: the brick itself turns red
             o.material = m_blockedMaterial;
             o.ghost = true;
