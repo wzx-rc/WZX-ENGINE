@@ -32,7 +32,7 @@ Cases : `[x]` porté et vérifié · `[~]` partiel (ce qui manque est dit) · `[
 - [x] Grip, titre (nom de la pièce ou « AUCUNE BRIQUE »), 4 coins + Dupliquer au centre, état inactif à 45 %
 - [x] Tourner G/D, Basculer haut/bas, Dupliquer (empilé)
 - [x] Pilules Poser / Annuler pendant la prise en main ; [x] Pivot (✎) et Prendre (✋) : masquées dans le web v26 (`display: none !important`), donc masquées aussi
-- [ ] Panneau déplaçable / ancrable à droite (`optsRight`)
+- [x] Panneau déplaçable (glisser la poignée = fenêtre flottante) et ancrable à gauche / à droite (`optsRight`, mémorisé), zone d'ancrage pointillée — capture 19
 
 ### Couleurs `#colpanel`
 - [x] Grip « Couleurs » repliable, couleur courante, groupes Unies / Transparentes / Métal, reflets trans / métal, contour jaune
@@ -46,7 +46,7 @@ Cases : `[x]` porté et vérifié · `[~]` partiel (ce qui manque est dit) · `[
 - [x] Recherche (nom, référence, catégorie FR / EN), Échap vide la recherche
 - [x] Clic = brique en main ; [x] glisser hors du plateau = glisser-déposer ; [x] appui long 480 ms = fiche pièce
 - [x] Atténuée à 45 % et inactive en mode Mécanique
-- [ ] Détacher / ancrer le plateau (flottant, zone d'ancrage)
+- [x] Détacher / ancrer le plateau (flottant min(780 px, 94 vw), bord accent, zone d'ancrage en bas ; clic sur la poignée = replier) ; onglets et catégories défilent de côté (`.fscroll`, `.cats`) — capture 19
 
 ### Fiche pièce `#info` (appui long)
 - [x] Fiche simple du web (`showPartSimple`) : visionneuse 3D (studio des miniatures, ACES 0,92, caméra 24° (1, 0,8, 1,3), glisser = lacet ×0,012 / tangage ×0,01 borné ±1,4, rotation en espace caméra), « Glisse pour tourner la pièce », nom, famille › catégorie, ☆ / ★ Favori, Fermer, Ajouter à la scène, Échap / clic dehors — capture 15
@@ -95,7 +95,7 @@ Cases : `[x]` porté et vérifié · `[~]` partiel (ce qui manque est dit) · `[
 ## 5. Préférences et sauvegarde (localStorage du web → fichiers à côté de l'exe)
 - [x] `vp3d-builder-scene` : sauvegarde automatique (`brickit_scene.v3d.json`) et reprise au lancement, sinon la scène d'exemple du web
 - [x] `vp3d-recent-parts`, `vp3d-fav-parts`, `vp3d-thumb-size` (`brickit_prefs.json`)
-- [x] Préférences : sécurité, grille, auto pivot, animations, focus, mode, qualité, tonemap, navigation, couleur, panneaux ; [ ] position du radial (à droite)
+- [x] Préférences : sécurité, grille, auto pivot, animations, focus, mode, qualité, tonemap, navigation, couleur, panneaux (visible, replié, flottant, x, y) ; [x] position du radial (`optsRight`)
 - [x] `vp3d-manual-w/h`, `vp3d-manual-pdf-page` (clé `manual` de `brickit_prefs.json`, PDF copié dans `manual_pdf\current.pdf`)
 
 ## 6. Fichiers et exports

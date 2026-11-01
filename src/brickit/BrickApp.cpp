@@ -130,6 +130,8 @@ bool BrickApp::init(HINSTANCE inst, const Options& opt) {
     if (opt.dev) m_dev = true;
     devLoadAll();   // DEV replacements kept next to the exe
     if (opt.manual) m_pManual.visible = true;
+    if (opt.floatTray) { m_pTray.floating = true; m_pTray.x = opt.floatX; m_pTray.y = opt.floatY; }
+    if (opt.optsRight) m_optsRight = true;
     devApplyAll();
     m_color = colorIndex(14);   // yellow, as the web (state.colorId: 14)
     m_focusDim = opt.focusDim;
@@ -818,6 +820,8 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         else if (a == L"--dev") opt.dev = true;
         else if (a == L"--pdf") opt.pdfPath = next();
         else if (a == L"--manual") opt.manual = true;
+        else if (a == L"--float-tray") { opt.floatTray = true; opt.floatX = (float)_wtof(next().c_str()); opt.floatY = (float)_wtof(next().c_str()); }
+        else if (a == L"--opts-right") opt.optsRight = true;
         else if (a == L"--maya") opt.mayaOut = next();
         else if (a == L"--dev-roundtrip") { std::wstring w = next(); opt.devRoundtrip.assign(w.begin(), w.end()); }   // 0 select, 1 visor, 2 move, 3 rotate
         else if (a == L"--cat") opt.libCategory = _wtoi(next().c_str());

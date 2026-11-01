@@ -291,12 +291,13 @@ void BrickApp::uiRadial() {
     const float trayTop = m_uiRects.size() > 1 ? m_uiRects[1].y : d.y;   // the tray is drawn before (index 1)
     const float size = 200 * s, k = size / 220.0f;   // the web svg is 220 x 220 (viewBox -110..110)
     const float titleH = 30 * s;
-    ImVec2 p0(10 * s, trayTop - 14 * s - size - titleH - (m_holding ? 40 * s : 0));
+    ImVec2 p0(m_optsRight ? d.x - 8 * s - size : 10 * s, trayTop - 14 * s - size - titleH - (m_holding ? 40 * s : 0));
+    if (m_pOpts.floating) p0 = ImVec2(std::max(0.0f, std::min(m_pOpts.x, d.x - 80 * s)), std::max(0.0f, std::min(m_pOpts.y, d.y - 34 * s)));
     ImVec2 c(p0.x + size * 0.5f, p0.y + titleH + size * 0.5f);
     m_uiRects.push_back(ImVec4(p0.x, p0.y, p0.x + size, p0.y + titleH + size + (m_holding ? 40 * s : 0)));
     // grip (56 px) + title
     u.grip(ImVec2(c.x - 18 * s, p0.y + 2 * s), 36 * s, nullptr, m_pOpts.collapsed, false);
-    if (u.hover(ImVec2(c.x - 28 * s, p0.y), ImVec2(c.x + 28 * s, p0.y + 14 * s)) && u.pressed) m_pOpts.collapsed = !m_pOpts.collapsed;
+    if (gripPanel(1, m_pOpts, ImVec2(c.x - 28 * s, p0.y), ImVec2(c.x + 28 * s, p0.y + 14 * s), p0)) return;
     std::string title = "AUCUNE BRIQUE";
     int focus = m_holding ? m_held.brick : m_selected;
     if (focus >= 0) title = m_lib.parts[m_bricks[focus].part].label;
@@ -442,25 +443,41 @@ void BrickApp::uiTray() {
     const float padX = 12 * s, padT = 4 * s, padB = 6 * s, gap = 4 * s;
     const float gripH = 14 * s, famH = 30 * s, catH = 26 * s, cardsH = th * 2 + 6 * s + 6 * s;
     const float H = padT + gripH + (m_pTray.collapsed ? 0 : gap + famH + gap + catH + gap + cardsH) + padB;
-    ImVec2 p0(0, d.y - H), p1(d.x, d.y);
+    const bool fl = m_pTray.floating;
+    const float TW = fl ? std::min(780 * s, d.x * 0.94f) : d.x;
+    const float TX = fl ? std::max(0.0f, std::min(m_pTray.x, d.x - 80 * s)) : 0.0f;
+    const float TY = fl ? std::max(0.0f, std::min(m_pTray.y, d.y - 34 * s)) : d.y - H;
+    ImVec2 p0(TX, TY), p1(TX + TW, TY + H);
     const float alpha = m_mechOn ? 0.45f : 1.0f;   // #app.mech-on .tray { opacity: .45 }
-    u.dl->AddRectFilled(p0, p1, C_PANEL);
-    u.dl->AddLine(ImVec2(0, p0.y + 0.5f), ImVec2(d.x, p0.y + 0.5f), C_LINE, 1.0f);
+    if (fl) {   // .tray.floating: accent border .55, radius 12, shadow
+        m_uiRects.push_back(ImVec4(0, d.y, 0, d.y));   // (index 1: the stage reaches the bottom)
+        u.dl->AddRectFilled(ImVec2(p0.x, p0.y + 14 * s), ImVec2(p1.x, p1.y + 14 * s), IM_COL32(0, 0, 0, 70), 12 * s);
+        u.dl->AddRectFilled(p0, p1, C_PANEL, 12 * s);
+        u.dl->AddRect(p0, p1, IM_COL32(247, 197, 30, 140), 12 * s);
+    } else {
+        u.dl->AddRectFilled(p0, p1, C_PANEL);
+        u.dl->AddLine(ImVec2(0, p0.y + 0.5f), ImVec2(d.x, p0.y + 0.5f), C_LINE, 1.0f);
+    }
     m_uiRects.push_back(ImVec4(p0.x, p0.y, p1.x, p1.y));
     float y = p0.y + padT;
-    u.grip(ImVec2(padX, y), d.x - 2 * padX, "BIBLIOTHÈQUE", m_pTray.collapsed);
-    if (u.hover(ImVec2(0, y - 2 * s), ImVec2(d.x, y + gripH)) && u.pressed) m_pTray.collapsed = !m_pTray.collapsed;
+    u.grip(ImVec2(TX + padX, y), TW - 2 * padX, "BIBLIOTHÈQUE", m_pTray.collapsed);
+    if (gripPanel(0, m_pTray, ImVec2(TX, y - 2 * s), ImVec2(TX + TW, y + gripH), p0)) return;
     if (m_pTray.collapsed) return;
     const bool live = !m_mechOn;
     y += gripH + gap;
     // ---- row 1: recent / favourites icons, families with counts, then search and size tools on the right
-    float x = padX;
+    // .fscroll: the tabs scroll sideways (scrollbar hidden) left of the tools (.ftools: search field, magnifier, size)
+    const float toolsW = (m_searchOpen ? 194 * s : 0) + 36 * s + 32 * s;
+    const ImVec2 fa(TX + padX, y), fb(TX + TW - padX - toolsW - 6 * s, y + famH);
+    const float famStart = TX + padX - m_famScroll;
+    float x = famStart;
+    u.dl->PushClipRect(fa, fb, true);
     auto famTab = [&](const char* label, int n, bool selected, svg::Icon icon, bool isIcon, float& xx) {
         char cnt[16];
         snprintf(cnt, sizeof(cnt), "%d", n);
         float w = isIcon ? 32 * s : 12 * s + u.textW(13, label, selected) + (n >= 0 ? 4 * s + u.textW(11, cnt) : 0) + 12 * s;
         ImVec2 a(xx, y), b(xx + w, y + famH);
-        bool h = live && u.hover(a, b);
+        bool h = live && u.hover(a, b) && u.hover(fa, fb);
         if (selected) u.dl->AddRectFilled(a, b, alphaOf(C_CARD_HI, alpha), 15 * s);
         ImU32 col = alphaOf(selected ? C_ACCENT : (h ? C_TEXT : C_DIM), alpha);
         if (isIcon) svg::icon(u.dl, icon, ImVec2((a.x + b.x) * 0.5f, (a.y + b.y) * 0.5f), 16 * s, col);
@@ -487,8 +504,14 @@ void BrickApp::uiTray() {
         }
         if (famTab(f.name, n, m_fam == f.name && !m_searchOpen, svg::I_RECENT, false, x)) { m_fam = f.name; m_cat.clear(); m_sub.clear(); m_searchOpen = false; m_cardsScroll = 0; }
     }
+    u.dl->PopClipRect();
+    {
+        const float content = x - famStart, view = fb.x - fa.x;
+        if (live && u.hover(fa, fb)) m_famScroll -= (ImGui::GetIO().MouseWheel + ImGui::GetIO().MouseWheelH) * 60 * s;
+        m_famScroll = std::clamp(m_famScroll, 0.0f, std::max(0.0f, content - view));
+    }
     // tools on the right: [search field] search, size
-    float tx = d.x - padX - 32 * s;
+    float tx = TX + TW - padX - 32 * s;
     {
         ImVec2 a(tx, y), b(tx + 32 * s, y + famH);
         bool h = live && u.hover(a, b);
@@ -527,14 +550,17 @@ void BrickApp::uiTray() {
         }
     }
     y += famH + gap;
-    // ---- row 2: categories (pills) or a note
-    x = padX;
+    // ---- row 2: categories (pills) or a note; .cats scrolls sideways too
+    const ImVec2 qa(TX + padX, y), qb(TX + TW - padX, y + catH);
+    const float catStart = TX + padX - m_catScroll;
+    x = catStart;
+    u.dl->PushClipRect(qa, qb, true);
     auto catPill = [&](const char* label, int n, bool selected, bool empty) {
         char cnt[16];
         snprintf(cnt, sizeof(cnt), "%d", n);
         float w = 10 * s + u.textW(12, label) + (n > 0 ? 4 * s + u.textW(10.5f, cnt) : 0) + 10 * s;
         ImVec2 a(x, y + 1 * s), b(x + w, y + 25 * s);
-        bool h = live && !empty && u.hover(a, b);
+        bool h = live && !empty && u.hover(a, b) && u.hover(qa, qb);
         float al = (empty ? 0.38f : 1.0f) * alpha;
         ImU32 border = selected ? C_ACCENT : C_LINE;
         if (empty) {   // dashed border
@@ -577,25 +603,31 @@ void BrickApp::uiTray() {
             if (catPill(catFr(c.first), c.second, m_cat == c.first, c.second == 0)) { m_cat = c.first; m_sub.clear(); m_cardsScroll = 0; }
         }
     }
+    u.dl->PopClipRect();
+    {
+        const float content = x - catStart, view = qb.x - qa.x;
+        if (live && u.hover(qa, qb)) m_catScroll -= (ImGui::GetIO().MouseWheel + ImGui::GetIO().MouseWheelH) * 60 * s;
+        m_catScroll = std::clamp(m_catScroll, 0.0f, std::max(0.0f, content - view));
+    }
     y += catH + gap;
     // ---- cards on two rows (column by column), horizontal scroll with the wheel
     std::vector<int> parts = visibleParts();
     const float cgap = 6 * s;
     const int cols = (int)(parts.size() + 1) / 2;
-    const float contentW = cols * (th + cgap), viewW = d.x - 2 * padX;
-    ImVec2 ca(padX, y), cb(d.x - padX, y + cardsH);
+    const float contentW = cols * (th + cgap), viewW = TW - 2 * padX;
+    ImVec2 ca(TX + padX, y), cb(TX + TW - padX, y + cardsH);
     if (live && u.hover(ca, cb) && ImGui::GetIO().MouseWheel != 0) m_cardsScroll -= ImGui::GetIO().MouseWheel * th;
     m_cardsScroll = std::clamp(m_cardsScroll, 0.0f, std::max(0.0f, contentW - viewW));
     u.dl->PushClipRect(ca, cb, true);
     if (parts.empty()) {
         const char* msg = (m_searchOpen && !m_search.empty()) ? "Aucune pièce pour cette recherche" : m_fam == "recent" ? "Les pièces que tu poses apparaîtront ici"
                         : m_fam == "fav" ? "Aucun favori : appui long sur une pièce, puis Ajouter aux favoris" : "Aucune pièce importée dans cette catégorie";
-        u.text(ImVec2(padX + 8 * s, y + th - 8 * s), 12, C_FAINT, msg);
+        u.text(ImVec2(TX + padX + 8 * s, y + th - 8 * s), 12, C_FAINT, msg);
     }
     const double now = ImGui::GetTime();
     for (int k = 0; k < (int)parts.size(); ++k) {
         int c = k / 2, r = k % 2;
-        ImVec2 a(padX + c * (th + cgap) - m_cardsScroll, y + r * (th + cgap)), b(a.x + th, a.y + th);
+        ImVec2 a(TX + padX + c * (th + cgap) - m_cardsScroll, y + r * (th + cgap)), b(a.x + th, a.y + th);
         if (b.x < ca.x || a.x > cb.x) continue;
         const int part = parts[k];
         bool h = live && u.hover(a, b) && u.hover(ca, cb);
@@ -625,7 +657,7 @@ void BrickApp::uiTray() {
     u.dl->PopClipRect();
     // scrollbar (thin)
     if (contentW > viewW) {
-        float bw = viewW * viewW / contentW, bx = padX + (viewW - bw) * (m_cardsScroll / (contentW - viewW));
+        float bw = viewW * viewW / contentW, bx = TX + padX + (viewW - bw) * (m_cardsScroll / (contentW - viewW));
         u.dl->AddRectFilled(ImVec2(bx, cb.y - 3 * s), ImVec2(bx + bw, cb.y - 1 * s), C_LINE, 2 * s);
     }
     // press on a card: long press (480 ms, still) = part sheet; drag out of the tray = brick in hand following the
@@ -924,7 +956,7 @@ void BrickApp::uiPopups() {
                 PanelState* ps[5] = {&m_pTray, &m_pOpts, &m_pColors, &m_pHud, &m_pManual};
                 if (it.id < 4) ps[it.id]->visible = !ps[it.id]->visible;
                 else if (it.id == 4) toast("Manuel : le module arrive bientôt dans la version native");
-                else { m_pTray = m_pOpts = m_pColors = PanelState(); m_pHud = m_pManual = PanelState{false, false}; toast("Disposition réinitialisée"); }
+                else { m_pTray = m_pOpts = m_pColors = PanelState(); m_pHud = m_pManual = PanelState{false, false}; m_optsRight = false; toast("Disposition réinitialisée"); }
             } else {
                 if (it.id == 0) { pushUndo(); m_bricks.clear(); m_selected = -1; m_multi.clear(); rebuildScene(); toast("Nouvelle scène"); }
                 else if (it.id == 1) openDialog();
@@ -1060,6 +1092,7 @@ void BrickApp::drawUi() {
     uiInfoSheet();
     uiDevReview();
     uiManualBig();
+    drawDropzone();
     ImGui::End();
     ImGui::PopStyleVar(2);
     uiSceneSheet();
@@ -1684,6 +1717,75 @@ void BrickApp::uiManualBig() {
     if (roundBtn(ImVec2(a.x - 22 * s + 22 * s, (a.y + b.y) * 0.5f), 22 * s, "‹", 22)) { m_manRight -= 1; return; }
     if (roundBtn(ImVec2(b.x + 22 * s - 22 * s, (a.y + b.y) * 0.5f), 22 * s, "›", 22)) { m_manRight += 1; return; }
     if (close || ImGui::IsKeyPressed(ImGuiKey_Escape) || (u.pressed && !u.hover(a, b) && !close)) m_manBig = false;
+}
+
+
+// --------------------------------------------------------------------------- dockable panels (web: grip pointer events)
+// Returns true while the panel is being dragged out (the caller stops drawing its content this frame).
+bool BrickApp::gripPanel(int id, PanelState& P, ImVec2 ga, ImVec2 gb, ImVec2 panelTopLeft) {
+    ImGuiIO& io = ImGui::GetIO();
+    const ImVec2 m = io.MousePos;
+    const float s = m_ui;
+    if (m_grip.id < 0 && ImGui::IsMouseClicked(ImGuiMouseButton_Left) && m.x >= ga.x && m.y >= ga.y && m.x < gb.x && m.y < gb.y) {
+        m_grip = GripDrag();
+        m_grip.id = id;
+        m_grip.start = m;
+        m_grip.ox = m.x - panelTopLeft.x;
+        m_grip.oy = m.y - panelTopLeft.y;
+    }
+    if (m_grip.id != id) return false;
+    if (ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+        if (!m_grip.moved && std::hypot(m.x - m_grip.start.x, m.y - m_grip.start.y) > 6) {
+            m_grip.moved = true;
+            if (!P.floating) {
+                m_grip.ox = std::min(m.x - panelTopLeft.x, 120 * s);
+                m_grip.oy = 8 * s;
+                P.floating = true;
+                P.collapsed = false;
+            }
+        }
+        if (m_grip.moved) { P.x = m.x - m_grip.ox; P.y = m.y - m_grip.oy; }
+        return false;
+    }
+    // released: a click folds, a drop on the dock zone docks
+    const ImVec2 d = io.DisplaySize;
+    if (!m_grip.moved) P.collapsed = !P.collapsed;
+    else {
+        const char* t = id == 0 ? (m.y > d.y - 80 * s ? "bottom" : nullptr) : (m.x < 90 * s ? "left" : m.x > d.x - 90 * s ? "right" : nullptr);
+        if (t) { P.floating = false; if (id == 1) m_optsRight = std::string(t) == "right"; }
+    }
+    m_grip = GripDrag();
+    savePrefs();
+    return false;
+}
+
+void BrickApp::drawDropzone() {
+    if (m_grip.id < 0 || !m_grip.moved) return;
+    ImDrawList* dl = ImGui::GetForegroundDrawList();
+    const ImVec2 d = ImGui::GetIO().DisplaySize, m = ImGui::GetIO().MousePos;
+    const float s = m_ui;
+    const char* t = m_grip.id == 0 ? (m.y > d.y - 80 * s ? "bottom" : nullptr) : (m.x < 90 * s ? "left" : m.x > d.x - 90 * s ? "right" : nullptr);
+    ImVec2 a, b;
+    if (m_grip.id == 0) { a = ImVec2(8 * s, d.y - 74 * s); b = ImVec2(d.x - 8 * s, d.y - 8 * s); }
+    else {
+        const bool right = t && std::string(t) == "right";
+        a = ImVec2(right ? d.x - 96 * s : 6 * s, 60 * s);
+        b = ImVec2(a.x + 90 * s, d.y - 80 * s);
+    }
+    const float op = t ? 1.0f : 0.45f;
+    dl->AddRectFilled(a, b, IM_COL32(247, 197, 30, (int)(36 * op)), 10 * s);
+    // 2 px dashed accent border
+    auto dash = [&](ImVec2 p, ImVec2 q) {
+        const float len = std::hypot(q.x - p.x, q.y - p.y);
+        for (float u0 = 0; u0 < len; u0 += 10 * s) {
+            const float u1 = std::min(len, u0 + 6 * s);
+            dl->AddLine(ImVec2(p.x + (q.x - p.x) * u0 / len, p.y + (q.y - p.y) * u0 / len), ImVec2(p.x + (q.x - p.x) * u1 / len, p.y + (q.y - p.y) * u1 / len), IM_COL32(247, 197, 30, (int)(255 * op)), 2 * s);
+        }
+    };
+    dash(a, ImVec2(b.x, a.y));
+    dash(ImVec2(b.x, a.y), b);
+    dash(b, ImVec2(a.x, b.y));
+    dash(ImVec2(a.x, b.y), a);
 }
 
 } // namespace brickit

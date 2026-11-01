@@ -38,7 +38,8 @@ void BrickApp::savePrefs() {
              m_focusDim ? "true" : "false", m_mode, m_quality, m_rs.tonemapper, m_lib.palette[m_color].id, m_thumbSize);
     j += b;
     j += "\"nav\": {\"fam\": " + jstr(m_fam) + ", \"cat\": " + jstr(m_cat) + ", \"sub\": " + jstr(m_sub) + "},";
-    auto panel = [&](const char* n, const PanelState& p) { char t[96]; snprintf(t, sizeof(t), "\"%s\": {\"visible\": %s, \"collapsed\": %s}", n, p.visible ? "true" : "false", p.collapsed ? "true" : "false"); return std::string(t); };
+    auto panel = [&](const char* n, const PanelState& p) { char t[192]; snprintf(t, sizeof(t), "\"%s\": {\"visible\": %s, \"collapsed\": %s, \"floating\": %s, \"x\": %d, \"y\": %d}", n, p.visible ? "true" : "false", p.collapsed ? "true" : "false", p.floating ? "true" : "false", (int)p.x, (int)p.y); return std::string(t); };
+    j += std::string("\"optsRight\": ") + (m_optsRight ? "true" : "false") + ",";
     j += "\"panels\": {" + panel("tray", m_pTray) + ", " + panel("opts", m_pOpts) + ", " + panel("colors", m_pColors) + ", " + panel("hud", m_pHud) + ", " + panel("manual", m_pManual) + "},";
     auto names = [&](const std::vector<int>& v) { std::string s = "["; for (size_t i = 0; i < v.size(); ++i) s += (i ? ", " : "") + jstr(m_lib.parts[v[i]].name); return s + "]"; };
     j += std::string("\"dev\": {\"on\": ") + (m_dev ? "true" : "false") + ", \"showVox\": " + (m_devShowVox ? "true" : "false") + ", \"showEdges\": " + (m_devShowEdges ? "true" : "false") + ", \"useOverrides\": " + (m_devUseOverrides ? "true" : "false") + "},";
@@ -57,6 +58,7 @@ void BrickApp::loadPrefs() {
     flag("autoPivot", m_autoPivot);
     flag("animOn", m_animOn);
     flag("focusDim", m_focusDim);
+    flag("optsRight", m_optsRight);
     if (p["mode"].type == app::Json::Number) m_mode = (int)p["mode"].n;
     if (p["quality"].type == app::Json::Number) m_quality = (int)p["quality"].n;
     if (p["tonemap"].type == app::Json::Number) m_rs.tonemapper = (int)p["tonemap"].n;
@@ -67,6 +69,9 @@ void BrickApp::loadPrefs() {
         const app::Json& q = p["panels"][n];
         if (q["visible"].type == app::Json::Bool) ps.visible = q["visible"].b;
         if (q["collapsed"].type == app::Json::Bool) ps.collapsed = q["collapsed"].b;
+        if (q["floating"].type == app::Json::Bool) ps.floating = q["floating"].b;
+        ps.x = (float)q["x"].num(ps.x);
+        ps.y = (float)q["y"].num(ps.y);
     };
     panel("tray", m_pTray); panel("opts", m_pOpts); panel("colors", m_pColors); panel("hud", m_pHud); panel("manual", m_pManual);
     auto list = [&](const char* k, std::vector<int>& v) { v.clear(); for (const app::Json& n : p[k].a) { int i = m_lib.find(n.str()); if (i >= 0) v.push_back(i); } };

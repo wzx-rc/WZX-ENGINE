@@ -60,6 +60,8 @@ struct Options {
     bool dev = false;
     std::wstring pdfPath;       // --pdf <file>: import a PDF into the manual (captures)
     bool manual = false;        // --manual: show the manual window
+    bool floatTray = false, optsRight = false;   // --float-tray x y, --opts-right (captures)
+    float floatX = 0, floatY = 0;
     std::string devRoundtrip;
     std::wstring mayaOut;       // --maya <file.zip>: export the scene to Maya then quit (tests)   // --dev-roundtrip <part>: OBJ export / import self-test
     int libCategory = -1;     // --cat N
@@ -347,7 +349,14 @@ private:
     int m_mode = 1;                    // 0 select, 1 visor, 2 move, 3 rotate
     bool m_autoPivot = false, m_animOn = true, m_showVox = false, m_dev = false;
     int m_quality = 1;                 // 0 Rapide, 1 HQ
-    struct PanelState { bool visible = true, collapsed = false; };
+    struct PanelState { bool visible = true, collapsed = false, floating = false; float x = 0, y = 0; };
+    // grip of the library / brick actions: click folds, click-drag undocks into a floating window, dropped on the
+    // bottom edge (library) or a side edge (actions) it docks again (web: dockable panels)
+    struct GripDrag { int id = -1; ImVec2 start; bool moved = false; float ox = 0, oy = 0; };
+    GripDrag m_grip;
+    bool m_optsRight = false;
+    bool gripPanel(int id, PanelState& P, ImVec2 ga, ImVec2 gb, ImVec2 panelTopLeft);
+    void drawDropzone();
     PanelState m_pTray, m_pOpts, m_pColors, m_pHud{false, false}, m_pManual{false, false};
     int m_popup = 0;                   // 0 none, 1 quality, 2 tonemap, 3 windows, 4 scene
     ImVec2 m_popupAt;
