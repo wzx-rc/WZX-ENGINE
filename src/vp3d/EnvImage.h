@@ -38,6 +38,10 @@ bool saveHdr(const std::wstring& path, const EnvImage& img);
 // Built-in test environment: sky gradient, a warm sun disc and a darker ground, no file needed.
 void makeProceduralSky(EnvImage& out, uint32_t width = 2048);
 
+// Decompresses a zlib stream (deflate with the 2-byte header), e.g. the BrickIt Technic packs.
+// expected: size hint for the output. The Adler-32 checksum is not checked.
+bool inflateZlibStream(const uint8_t* src, size_t n, std::vector<uint8_t>& out, size_t expected = 0);
+
 // File extensions accepted by loadEnvImage (lower case, with the dot).
 bool isEnvImageFile(const std::wstring& path);
 

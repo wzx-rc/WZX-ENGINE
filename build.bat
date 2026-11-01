@@ -71,4 +71,14 @@ cl %CFLAGS% /Isrc\app\atelier /c src\app\*.cpp src\app\atelier\*.cpp /Fo:build\o
 rc /nologo /fo build\obj\app\wzx.res src\app\res\wzx.rc || exit /b 1
 link /nologo /OUT:%OUT%\Viewport3D.exe build\obj\app\*.obj build\obj\app\wzx.res build\obj\game\*.obj build\lib\vp3d.lib build\lib\imgui_te_mt.lib ws2_32.lib d3d12.lib dxgi.lib d3dcompiler.lib windowscodecs.lib user32.lib gdi32.lib ole32.lib shell32.lib shcore.lib comdlg32.lib dwmapi.lib /SUBSYSTEM:WINDOWS || exit /b 1
 
-echo Build OK: %OUT%\Viewport3D.exe
+echo [6/6] BrickIt (native brick builder, same renderer and theme)
+if not exist build\obj\brickit mkdir build\obj\brickit
+del /q build\obj\brickit\*.obj 2>nul
+cl %CFLAGS% /c src\brickit\*.cpp src\app\ImGuiLayer.cpp src\app\Theme.cpp /Fo:build\obj\brickit\ || exit /b 1
+link /nologo /OUT:%OUT%\BrickIt.exe build\obj\brickit\*.obj build\obj\app\wzx.res build\lib\vp3d.lib build\lib\imgui_te_mt.lib d3d12.lib dxgi.lib d3dcompiler.lib windowscodecs.lib user32.lib gdi32.lib ole32.lib shell32.lib shcore.lib comdlg32.lib dwmapi.lib /SUBSYSTEM:WINDOWS || exit /b 1
+rem Technic packs of the web builder (geometry, read as they are)
+if not exist "%OUT%\assets\brickit\technic" mkdir "%OUT%\assets\brickit\technic"
+xcopy /Y /Q /D docs\brickit\web\technic\g*.wasm "%OUT%\assets\brickit\technic\" >nul
+xcopy /Y /Q /D docs\brickit\web\technic\index.json "%OUT%\assets\brickit\technic\" >nul
+
+echo Build OK: %OUT%\Viewport3D.exe %OUT%\BrickIt.exe
