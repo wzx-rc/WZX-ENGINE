@@ -99,7 +99,7 @@ void main(uint3 id : SV_DispatchThreadID) {
         }
         c += glow * (outer * 0.55 + inner * 0.32) * k;   // bright next to the edge, gone after ~3 px; the edge of the object
     } else if (sel != 0 || F.selMoreCount != 0) {
-        // selStyle 0: a thin yellow line on the silhouette (about 1.3 screen pixels), antialiased by the coverage of the
+        // selStyle 0: a thin yellow line on the silhouette (2: thin white line at 45 %, BrickIt) (about 1.3 screen pixels), antialiased by the coverage of the
         // selection (MSAA) when there is one, a faint tint inside
         const float ps = max(F.selPixelScale, 1.0);
         const float3 yellow = float3(1.0, 0.82, 0.1);
@@ -130,8 +130,13 @@ void main(uint3 id : SV_DispatchThreadID) {
                         if (IsSelected((uint)(gTex[SLOT_ALBEDO][q].w + 0.5))) { edge = 1.0; break; }
                     }
         }
-        c = lerp(c, float3(1.0, 0.9, 0.4), 0.08 * cover);
-        c = lerp(c, yellow, 0.95 * edge);
+        if (F.selStyle == 2) {   // BrickIt: a thin white line at 45 % and a light fill
+            c = lerp(c, 1.0.xxx, 0.10 * cover);
+            c = lerp(c, 1.0.xxx, 0.45 * edge);
+        } else {
+            c = lerp(c, float3(1.0, 0.9, 0.4), 0.08 * cover);
+            c = lerp(c, yellow, 0.95 * edge);
+        }
     }
     gTex[SLOT_OUTPUT][p] = float4(c, 1.0);
 }

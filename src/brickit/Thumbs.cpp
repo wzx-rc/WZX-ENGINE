@@ -1,0 +1,126 @@
+// BrickIt - part thumbnails: every part rendered once by the engine (raster, same studio lighting and plastic as the
+// viewport), packed in atlases of 21 x 21 cells and cached on disk (cache/thumbs_<px>_<count>.bin next to the exe).
+#include "BrickApp.h"
+#include "vp3d/AssetImport.h"
+#include "vp3d/shaders/Shared.h"
+#include <cmath>
+#include <cstdio>
+
+namespace brickit {
+
+static const uint32_t kThumbMagic = 0x42544831;   // "BTH1"
+
+void BrickApp::buildThumbs() {
+    const int px = m_thumbPx, cols = m_thumbCols, perAtlas = cols * cols;
+    const int atlasPx = px * cols;
+    const int n = (int)m_lib.parts.size();
+    m_thumbSlot.assign(n, -1);
+    int slots = 0;
+    for (int i = 0; i < n; ++i)
+        if (m_lib.parts[i].loaded) m_thumbSlot[i] = slots++;
+    const int atlases = (slots + perAtlas - 1) / perAtlas;
+    std::vector<std::vector<uint8_t>> pix(atlases, std::vector<uint8_t>((size_t)atlasPx * atlasPx * 4, 0));
+
+    wchar_t name[128];
+    swprintf_s(name, L"\\cache\\thumbs_%d_%d.bin", px, slots);
+    const std::wstring cacheDir = m_exeDir + L"\\cache", cacheFile = m_exeDir + name;
+    bool cached = false;
+    FILE* f = nullptr;
+    if (_wfopen_s(&f, cacheFile.c_str(), L"rb") == 0 && f) {
+        uint32_t magic = 0, count = 0;
+        if (fread(&magic, 4, 1, f) == 1 && fread(&count, 4, 1, f) == 1 && magic == kThumbMagic && (int)count == slots) {
+            cached = true;
+            for (auto& a : pix) cached &= fread(a.data(), 1, a.size(), f) == a.size();
+        }
+        fclose(f);
+    }
+
+    if (!cached) {
+        // one scene with every part (all hidden but the one rendered), uploaded once
+        Scene ts;
+        ts.unitsPerMeter = 100.0f;
+        ts.env = m_scene.env;
+        {
+            auto img = std::make_shared<EnvImage>();
+            std::wstring hdr = m_exeDir + L"\\assets\\hdri\\studio_small_09_2k.hdr";
+            std::string err;
+            if (!loadEnvImage(hdr, *img, &err)) makeProceduralSky(*img);
+            ts.env.hdri = img;
+        }
+        ts.env.hdriIntensity = 1.0f;
+        ts.env.visibleToCamera = false;
+        ts.env.top = float3(0.93f, 0.94f, 0.96f);   // light card background
+        ts.env.horizon = float3(0.96f, 0.96f, 0.97f);
+        ts.env.bottom = float3(0.88f, 0.89f, 0.91f);
+        Material m;
+        m.baseColor = float3(srgbToLinear(0.79f), srgbToLinear(0.10f), srgbToLinear(0.10f));   // red plastic
+        m.roughness = 0.24f;
+        m.coat = 0.35f;
+        m.coatRoughness = 0.05f;
+        const int mat = ts.addMaterial(m);
+        std::vector<int> objOf(n, -1);
+        for (int i = 0; i < n; ++i) {
+            if (m_thumbSlot[i] < 0) continue;
+            Object o;
+            o.mesh = ts.addMesh(m_lib.parts[i].name, m_lib.parts[i].mesh);
+            o.material = mat;
+            o.visible = false;
+            objOf[i] = ts.addObject(o);
+        }
+        ts.geometryVersion = 0x40000000u;   // never equal to the viewport scene's
+        RenderSettings rs;
+        rs.raster = true;
+        rs.exposure = m_rs.exposure;
+        rs.tonemapper = m_rs.tonemapper;
+        rs.idPass = false;
+        rs.vignette = 0.0f;
+        rs.msaaSamples = 4;
+        ViewRect vp{0, 0, px, px};
+        for (int i = 0; i < n; ++i) {
+            if (objOf[i] < 0) continue;
+            const Part& p = m_lib.parts[i];
+            ts.objects[objOf[i]].visible = true;
+            Camera& c = ts.camera;
+            c.fovY = radians(20.0f);
+            c.yaw = radians(35.0f);
+            c.pitch = radians(28.0f);
+            c.target = (p.bmin + p.bmax) * 0.5f;
+            float r = std::max(length(p.bmax - p.bmin) * 0.5f, 0.2f);
+            c.distance = r / std::sin(c.fovY * 0.5f) * 1.02f;
+            m_renderer.render(ts, rs, vp, -1, false);
+            ts.objects[objOf[i]].visible = false;
+            std::vector<uint8_t> img;
+            uint32_t w = 0, h = 0;
+            if (!m_renderer.readViewport(img, w, h) || (int)w != px || (int)h != px) continue;
+            const int s = m_thumbSlot[i], a = s / perAtlas, cell = s % perAtlas;
+            const int ox = (cell % cols) * px, oy = (cell / cols) * px;
+            for (int y = 0; y < px; ++y)
+                memcpy(&pix[a][((size_t)(oy + y) * atlasPx + ox) * 4], &img[(size_t)y * px * 4], (size_t)px * 4);
+        }
+        CreateDirectoryW(cacheDir.c_str(), nullptr);
+        if (_wfopen_s(&f, cacheFile.c_str(), L"wb") == 0 && f) {
+            uint32_t hdr[2] = {kThumbMagic, (uint32_t)slots};
+            fwrite(hdr, 4, 2, f);
+            for (auto& a : pix) fwrite(a.data(), 1, a.size(), f);
+            fclose(f);
+        }
+    }
+    for (auto& a : pix) {
+        for (size_t k = 3; k < a.size(); k += 4) a[k] = 255;
+        m_thumbAtlas.push_back(m_gui.createTexture(a.data(), atlasPx, atlasPx));
+    }
+}
+
+bool BrickApp::thumbUv(int part, ImTextureID& tex, ImVec2& uv0, ImVec2& uv1) const {
+    if (part < 0 || part >= (int)m_thumbSlot.size() || m_thumbSlot[part] < 0) return false;
+    const int perAtlas = m_thumbCols * m_thumbCols, s = m_thumbSlot[part];
+    const int a = s / perAtlas, cell = s % perAtlas;
+    if (a >= (int)m_thumbAtlas.size() || !m_thumbAtlas[a]) return false;
+    tex = m_thumbAtlas[a];
+    const float k = 1.0f / m_thumbCols;
+    uv0 = ImVec2((cell % m_thumbCols) * k, (cell / m_thumbCols) * k);
+    uv1 = ImVec2(uv0.x + k, uv0.y + k);
+    return true;
+}
+
+} // namespace brickit

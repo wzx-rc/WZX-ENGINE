@@ -26,10 +26,12 @@ struct Part {
     std::string label;        // English title
     std::string category;     // LDraw category (Brick, Plate, Technic ...)
     std::string sub;          // Technic sub-family (Poutres, Axes ...), empty for the base set
+    std::string family;       // LDraw family of the base set (Brique, Technic ...)
     bool base = false;        // one of the 50 base parts
     int pack = -1;            // Technic pack holding the geometry (-1: base part)
     int heightPlates = 3;
     float topY = 0.96f;
+    bool hasStuds = false;    // studs on top (above topY): left out of the body box (overlap safety, stacking)
     float grab[2] = {0, 0};   // default grab column (x, z)
     std::vector<float3> voxels;
     std::vector<uint8_t> conn;            // Conn per voxel

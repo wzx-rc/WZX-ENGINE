@@ -97,7 +97,8 @@ bool BrickApp::init(HINSTANCE inst, const Options& opt) {
     }
     th::loadThemes(m_exeDir + L"\\assets\\themes");
     th::loadSettings(m_exeDir + L"\\brickit_settings.ini");
-    th::apply(m_dpi);
+    m_ui = m_opt.uiScale > 0 ? m_opt.uiScale : m_dpi;
+    th::apply(m_ui);
 
     if (!m_lib.load(m_exeDir + L"\\assets\\brickit", &err)) {
         MessageBoxA(m_hwnd, err.c_str(), "BrickIt - library", MB_ICONERROR);
@@ -116,11 +117,18 @@ bool BrickApp::init(HINSTANCE inst, const Options& opt) {
     m_rs.bevelScale = 1.0f;
     m_rs.tonemapper = m_opt.tonemapper;   // AgX Punchy by default
     m_rs.idPass = false;   // selection: coverage outline only
+    m_rs.selectionStyle = 2;   // thin white line at 45 % and a light fill
     if (opt.bounces > 0) m_rs.maxBounces = opt.bounces;
     if (opt.denoise >= 0) m_rs.denoise = opt.denoise != 0;
     if (opt.bevelSpp >= 0) { m_rs.bevel = opt.bevelSpp > 0; m_rs.bevelSamples = std::max(1, opt.bevelSpp); }
+    m_lib.loadAll(&err);   // every Technic pack (about 10 MB): the library shows them all, the thumbnails need them
+    buildThumbs();
+    buildNav();
+    m_color = colorIndex(4);   // red
+    m_focusDim = opt.focusDim;
     setupStage();
-    if (opt.demo) buildDemo();
+    if (!opt.openPath.empty()) openScene(opt.openPath);
+    else if (opt.demo) buildDemo();
     else if (opt.grid) buildPartGrid();
     else if (opt.bench > 0) buildBench(opt.bench);
     rebuildScene();
@@ -129,6 +137,9 @@ bool BrickApp::init(HINSTANCE inst, const Options& opt) {
     if (opt.yaw > -999) m_scene.camera.yaw = radians(opt.yaw);
     if (opt.pitch > -999) m_scene.camera.pitch = radians(opt.pitch);
     m_scene.camera.focusDistance = m_scene.camera.distance;
+    if (opt.libCategory >= 0 && opt.libCategory < (int)m_nav.size()) m_navSel = opt.libCategory;
+    if (opt.selectBrick >= 0 && opt.selectBrick < (int)m_bricks.size()) select(opt.selectBrick);
+    if (opt.duplicate) duplicateSelected();   // scripted test of Ctrl+D
 
     ShowWindow(m_hwnd, SW_SHOWDEFAULT);
     UpdateWindow(m_hwnd);
@@ -243,6 +254,23 @@ void BrickApp::setupStage() {
         }
         m_colorMaterial.push_back(m_scene.addMaterial(m));
     }
+    // focus mode: the same materials at 50 % for the bricks that are not the focus
+    m_dimMaterial.clear();
+    for (int ci : m_colorMaterial) {
+        Material d = m_scene.materials[ci];
+        d.name += " (dim)";
+        d.baseColor = d.baseColor * 0.5f;
+        d.specular *= 0.5f;
+        d.coat *= 0.5f;
+        m_dimMaterial.push_back(m_scene.addMaterial(d));
+    }
+    {
+        Material bl;
+        bl.name = "Blocked";
+        bl.baseColor = float3(0.9f, 0.12f, 0.1f);
+        bl.roughness = 0.5f;
+        m_blockedMaterial = m_scene.addMaterial(bl);
+    }
 
     // studio HDRI (assets/hdri, kept out of git) else the procedural sky
     std::wstring hdr = m_exeDir + L"\\assets\\hdri\\studio_small_09_2k.hdr";
@@ -290,25 +318,39 @@ void BrickApp::rebuildScene() {
         Object o;
         o.mesh = meshOf(b.part);
         if (o.mesh < 0) o.visible = false;
-        o.material = m_colorMaterial.empty() ? 0 : m_colorMaterial[std::clamp(b.color, 0, (int)m_colorMaterial.size() - 1)];
-        o.position = b.pos;
-        o.rot = b.rot;
         o.useRot = true;
         m_scene.addObject(o);
+    }
+    syncObjects();
+}
+
+// Transforms and materials of the brick objects: colour, focus mode (the rest at 50 %), the brick in hand red and
+// translucent when it cannot be dropped.
+void BrickApp::syncObjects() {
+    const bool dim = m_focusDim && (m_selected >= 0 || m_holding);
+    for (size_t i = 0; i < m_bricks.size(); ++i) {
+        Object& o = m_scene.objects[m_firstBrickObject + i];
+        const Brick& b = m_bricks[i];
+        o.position = b.pos;
+        o.rot = b.rot;
+        const int c = std::clamp(b.color, 0, (int)m_colorMaterial.size() - 1);
+        const bool focus = (int)i == m_selected || (m_holding && (int)i == m_held.brick) ||
+                           std::find(m_multi.begin(), m_multi.end(), (int)i) != m_multi.end();
+        o.material = dim && !focus ? m_dimMaterial[c] : m_colorMaterial[c];
+        o.ghost = false;
+        if (m_holding && (int)i == m_held.brick && m_held.blocked) {
+            o.material = m_blockedMaterial;
+            o.ghost = true;
+            o.ghostAlpha = 0.55f;
+        }
     }
     ++m_scene.objectsVersion;
     m_renderer.resetAccumulation();
 }
 
-void BrickApp::syncObjects() {
-    for (size_t i = 0; i < m_bricks.size(); ++i) {
-        Object& o = m_scene.objects[m_firstBrickObject + i];
-        o.position = m_bricks[i].pos;
-        o.rot = m_bricks[i].rot;
-        o.material = m_colorMaterial[std::clamp(m_bricks[i].color, 0, (int)m_colorMaterial.size() - 1)];
-    }
-    ++m_scene.objectsVersion;
-    m_renderer.resetAccumulation();
+void BrickApp::toast(const std::string& text) {
+    m_toast = text;
+    m_toastTime = ImGui::GetCurrentContext() ? ImGui::GetTime() : 0.0;
 }
 
 // Every part of the library on the ground, sorted by category then name, in rows of growing size.
@@ -466,7 +508,7 @@ void BrickApp::frameAll() {
 
 void BrickApp::cameraInput() {
     ImGuiIO& io = ImGui::GetIO();
-    if (io.WantCaptureMouse) return;
+    if (io.WantCaptureMouse || m_overUi) return;
     Camera& cam = m_scene.camera;
     bool changed = false;
     const bool orbit = ImGui::IsMouseDown(ImGuiMouseButton_Right) || (io.KeyAlt && ImGui::IsMouseDown(ImGuiMouseButton_Left));
@@ -486,36 +528,18 @@ void BrickApp::cameraInput() {
         cam.distance = std::max(1.0f, cam.distance * std::pow(0.88f, io.MouseWheel));
         changed = true;
     }
-    if (ImGui::IsKeyPressed(ImGuiKey_F)) { frameAll(); changed = true; }
-    if (ImGui::IsKeyPressed(ImGuiKey_P)) { m_rs.raster = !m_rs.raster; changed = true; }
-    if (ImGui::IsKeyPressed(ImGuiKey_L)) {   // levels of detail on / off (comparison)
-        std::swap(m_scene.lods, m_lodsOff);
-        changed = true;
+    if (!io.WantTextInput) {
+        if (ImGui::IsKeyPressed(ImGuiKey_F)) { frameAll(); changed = true; }
+        if (ImGui::IsKeyPressed(ImGuiKey_P)) { m_rs.raster = !m_rs.raster; changed = true; }
+        if (ImGui::IsKeyPressed(ImGuiKey_L)) {   // levels of detail on / off (comparison)
+            std::swap(m_scene.lods, m_lodsOff);
+            changed = true;
+        }
     }
     if (changed) { cam.focusDistance = cam.distance; m_renderer.resetAccumulation(); m_lastMove = ImGui::GetTime(); }
 }
 
 // --------------------------------------------------------------------------- frame
-
-void BrickApp::drawUi() {
-    const float s = m_dpi;
-    ImGui::SetNextWindowPos(ImVec2(10 * s, 10 * s), ImGuiCond_Always);
-    ImGui::SetNextWindowBgAlpha(0.85f);
-    ImGui::Begin("##stats", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoMove);
-    ImGui::Text("BrickIt natif  ·  %s", m_rs.raster ? "Raster (MSAA)" : "Path tracing");
-    ImGui::Separator();
-    ImGui::Text("Briques      %d", (int)m_bricks.size());
-    size_t tris = 0;
-    for (const Brick& b : m_bricks) tris += m_lib.parts[b.part].mesh.indices.size() / 3;
-    ImGui::Text("Triangles    %.2f M (dessinés %.2f M)", tris / 1e6, m_rs.raster ? m_renderer.rasterTriangles() / 1e6 : tris / 1e6);
-    ImGui::Text("GPU          %.2f ms", m_renderer.gpuFrameMs());
-    ImGui::Text("CPU          %.2f ms", m_cpuMs);
-    ImGui::Text("Image        %.1f ms (%.0f i/s)", m_frameMs, m_frameMs > 0 ? 1000.0 / m_frameMs : 0.0);
-    if (!m_rs.raster) ImGui::Text("Échantillons %u", m_renderer.sampleCount());
-    ImGui::Text("LOD          %s (L)", m_scene.lods.empty() ? "off" : "on");
-    if (!m_status.empty()) ImGui::TextDisabled("%s", m_status.c_str());
-    ImGui::End();
-}
 
 void BrickApp::frame() {
     LARGE_INTEGER t0;
@@ -524,8 +548,14 @@ void BrickApp::frame() {
     m_last = t0;
 
     m_gui.newFrame();
+    if (m_frame == 2 && !m_opt.spawnPart.empty()) {   // scripted test: a part in hand at a point of the view
+        int pi = m_lib.find(m_opt.spawnPart);
+        ImVec2 d = ImGui::GetIO().DisplaySize;
+        if (pi >= 0) spawn(pi, d.x * m_opt.spawnX, d.y * m_opt.spawnY);
+    }
+    if (!m_opt.noUi) drawUi();
     cameraInput();
-    drawUi();
+    editInput();
 
     ImVec2 ds = ImGui::GetIO().DisplaySize;
     // Path tracing: half resolution while the view moves (and 0.25 s after), full resolution to converge when still.
@@ -533,7 +563,12 @@ void BrickApp::frame() {
     const float scale = (!m_rs.raster && moving) ? m_opt.ptMoveScale : 1.0f;
     m_vp = {0, 0, std::max(16, (int)(ds.x * scale)), std::max(16, (int)(ds.y * scale))};
     m_rs.samplesPerFrame = m_rs.raster ? 1 : std::max(1, m_opt.ppf);
-    m_renderer.renderToTexture(m_scene, m_rs, m_vp, -1);
+    std::vector<int> extra;
+    for (int i : m_multi) extra.push_back(m_firstBrickObject + i);
+    m_renderer.setExtraSelection(extra);
+    const int selObj = (m_selected >= 0 && !m_holding) ? m_firstBrickObject + m_selected : -1;
+    m_rs.pixelScale = scale;
+    m_renderer.renderToTexture(m_scene, m_rs, m_vp, selObj);
     ImGui::GetBackgroundDrawList()->AddImage(m_gui.viewportTexture(), ImVec2(0, 0), ds);
     LARGE_INTEGER t1;
     QueryPerformanceCounter(&t1);
@@ -547,6 +582,7 @@ void BrickApp::frame() {
             std::vector<uint8_t> img;
             uint32_t w, h;
             if (m_renderer.readBackBuffer(img, w, h)) savePng(m_opt.shotPath, img, w, h);
+            if (!m_opt.savePath.empty()) saveScene(m_opt.savePath);
             // timings next to the capture (benchmarks): bricks, triangles drawn, GPU and CPU ms
             FILE* f = nullptr;
             if (_wfopen_s(&f, (m_opt.shotPath + L".txt").c_str(), L"w") == 0 && f) {
@@ -596,6 +632,16 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         else if (a == L"--ground") opt.groundSize = (float)_wtof(next().c_str());
         else if (a == L"--denoise") opt.denoise = _wtoi(next().c_str());
         else if (a == L"--ppf") opt.ppf = _wtoi(next().c_str());
+        else if (a == L"--no-ui") opt.noUi = true;
+        else if (a == L"--ui-scale") opt.uiScale = (float)_wtof(next().c_str());
+        else if (a == L"--open") opt.openPath = next();
+        else if (a == L"--spawn") { std::wstring w = next(); opt.spawnPart.assign(w.begin(), w.end()); }
+        else if (a == L"--at") { opt.spawnX = (float)_wtof(next().c_str()); opt.spawnY = (float)_wtof(next().c_str()); }
+        else if (a == L"--select") opt.selectBrick = _wtoi(next().c_str());
+        else if (a == L"--cat") opt.libCategory = _wtoi(next().c_str());
+        else if (a == L"--focus") opt.focusDim = true;
+        else if (a == L"--save") opt.savePath = next();
+        else if (a == L"--dup") opt.duplicate = true;
         else if (a == L"--size") {
             std::wstring s = next();
             swscanf_s(s.c_str(), L"%dx%d", &opt.width, &opt.height);

@@ -47,6 +47,8 @@ static void readMeta(const Json& j, Part& p) {
     else if (info["sub"].type == Json::String) p.sub = info["sub"].s;
     if (j["heightPlates"].type == Json::Number) p.heightPlates = (int)j["heightPlates"].n;
     if (j["topY"].type == Json::Number) p.topY = (float)j["topY"].n;
+    if (j["hasStuds"].type == Json::Bool) p.hasStuds = j["hasStuds"].b;
+    if (info["family"].type == Json::String) p.family = info["family"].s;
     if (j["grab"].type == Json::Array) { p.grab[0] = (float)j["grab"][0].num(); p.grab[1] = (float)j["grab"][1].num(); }
     if (j["voxels"].type == Json::Array) {
         p.voxels.clear();
