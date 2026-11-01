@@ -5,6 +5,7 @@
 //   Thumbs.cpp    part thumbnails rendered by the engine (atlas, cached on disk)
 #pragma once
 #include "Build.h"
+#include "Pdf.h"
 #include "Mech.h"
 #include "Library.h"
 #include "app/ImGuiLayer.h"
@@ -12,9 +13,12 @@
 #include <windows.h>
 #include <string>
 #include <map>
+#include <memory>
 #include <vector>
 
 namespace brickit {
+
+struct Ui;   // drawing helper of BrickUi.cpp
 
 using namespace vp3d;
 
@@ -54,6 +58,8 @@ struct Options {
     std::string infoPart;   // --info <part>: open the part sheet (captures)
     bool pivotEdit = false;
     bool dev = false;
+    std::wstring pdfPath;       // --pdf <file>: import a PDF into the manual (captures)
+    bool manual = false;        // --manual: show the manual window
     std::string devRoundtrip;
     std::wstring mayaOut;       // --maya <file.zip>: export the scene to Maya then quit (tests)   // --dev-roundtrip <part>: OBJ export / import self-test
     int libCategory = -1;     // --cat N
@@ -233,6 +239,36 @@ private:
     struct MayaStats { int bricks = 0, parts = 0, bodies = 0, joints = 0, cmds = 0; std::vector<std::string> fails; double coupling = 0; };
     bool mayaExportScript(std::string& py, MayaStats& st, std::string& err);
     void mayaExportScene(const std::wstring& forcedPath = std::wstring());
+
+    // BrickManual.cpp / BrickUi.cpp: instruction manual of the web (steps of the scene read vertically, large book,
+    // imported PDF read vertically, resizable window)
+    void manualDirty();
+    void renderSteps();
+    ImTextureID stepImage(int n);
+    float manualPage(Ui& u, ImVec2 a, float w, int n, int corner, bool big, bool draw);
+    void pdfView(Ui& u, ImVec2 a, ImVec2 b, float& scroll, bool main);
+    void uiManual();
+    void uiManualBig();
+    void pdfOpen(const std::wstring& path, const std::string& name, bool save);
+    void pdfPump();
+    void pdfDialog();
+    std::map<int, ImTextureID> m_stepTex;
+    std::vector<int> m_stepWanted;
+    std::map<int, int> m_hiMaterial;     // material -> its copy highlighted (current step)
+    int m_manRight = 2;
+    float m_manW = 0, m_manH = 0, m_manScroll = 0, m_bigScroll = 0;
+    bool m_manBig = false, m_pdfBig = false, m_manResizing = false;
+    ImVec2 m_manResize0;
+    float m_manW0 = 0, m_manH0 = 0;
+    std::unique_ptr<PdfReader> m_pdf;
+    bool m_pdfOn = false, m_pdfOpening = false, m_pdfScrollSmooth = false, m_prefsDirty = false;
+    std::string m_pdfName, m_pdfMsg;
+    int m_pdfPage = 1, m_pdfScrollTo = 0, m_bigScrollTo = 0;
+    float m_pdfScroll = 0, m_pdfScrollGoal = -1;
+    double m_pdfLock = 0;
+    std::vector<std::pair<float, float>> m_pdfSizes;
+    struct PdfTex { ImTextureID tex = 0; int w = 0, h = 0; bool asked = false; };
+    std::vector<PdfTex> m_pdfTex;
 
     // Thumbs.cpp
     void buildThumbs();

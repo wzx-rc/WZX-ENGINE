@@ -66,7 +66,10 @@ Cases : `[x]` porté et vérifié · `[~]` partiel (ce qui manque est dit) · `[
 - [x] Texte JSON, Copier, Charger ce texte, Ouvrir un fichier…, Exporter .ldr, Nouvelle scène, Fermer ; [x] Exporter vers Maya
 
 ### Manuel `#manual`, `#mbig`, `#pdfbig`
-- [ ] Livret d'étapes (pages lues verticalement), grand format, import PDF lu verticalement, redimensionnable
+- [x] Livret d'étapes lu verticalement (étape n = n premières briques, la n-ième en surbrillance 0xffc21a × 0,3, papier 0xf4f2ea, caméra 28° (1, 0,75, 1), 960 × 600, pièce à ajouter + « 1× », « p. n »), en-tête Manuel / « Étapes a–b / N » / Scène·PDF / PDF / ‹ › / – / ⤢ — capture 18
+- [x] Grand format `#mbig` (livre vertical 760 px, ✕, ‹ ›) et `#pdfbig` (1000 px, ✕)
+- [x] Import PDF lu verticalement (pages blanches l'une sous l'autre, rendues à l'approche ±600 px, libérées au-delà de 6 pages, « n / N », « PDF p. n / N », ‹ › défilent d'une page, toast « PDF importé : N pages », réouvert au lancement) — capture 18b avec le PDF LEGO 60498 (84 pages)
+- [x] Redimensionnable par le coin bas gauche en largeur (260..900) et en hauteur (160..), mémorisé
 
 ## 2. Clavier (web)
 - [x] Ctrl+Z / Ctrl+Y
@@ -93,7 +96,7 @@ Cases : `[x]` porté et vérifié · `[~]` partiel (ce qui manque est dit) · `[
 - [x] `vp3d-builder-scene` : sauvegarde automatique (`brickit_scene.v3d.json`) et reprise au lancement, sinon la scène d'exemple du web
 - [x] `vp3d-recent-parts`, `vp3d-fav-parts`, `vp3d-thumb-size` (`brickit_prefs.json`)
 - [x] Préférences : sécurité, grille, auto pivot, animations, focus, mode, qualité, tonemap, navigation, couleur, panneaux ; [ ] position du radial (à droite)
-- [ ] `vp3d-manual-w/h`, `vp3d-manual-pdf-page`
+- [x] `vp3d-manual-w/h`, `vp3d-manual-pdf-page` (clé `manual` de `brickit_prefs.json`, PDF copié dans `manual_pdf\current.pdf`)
 
 ## 6. Fichiers et exports
 - [x] `.v3d.json` (format vp3d-scene v1, compatible web)
@@ -119,6 +122,8 @@ Cases : `[x]` porté et vérifié · `[~]` partiel (ce qui manque est dit) · `[
 - Export : boîte « Enregistrer sous » (le web : téléchargement, sinon la fiche texte de secours).
 
 - Export Maya : compression zlib maison (LZ77 + Huffman fixe, `Deflate.cpp`) au lieu de CompressionStream ; tirages du contrôle de couplage à graine fixe (le web : Math.random).
+
+- PDF : rendu par le lecteur PDF de Windows (Windows.Data.Pdf, WinRT) au lieu de pdf.js ; stocké à côté de l'exe au lieu d'IndexedDB.
 
 ### Rendu
 - Polices : Segoe UI + Segoe UI Symbol fusionnées pour les glyphes du web (› … ★ ☆ ✎ ✋ ◀ ▶), absents de la police latine seule.

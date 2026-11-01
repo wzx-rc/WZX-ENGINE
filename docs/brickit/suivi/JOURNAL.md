@@ -20,3 +20,4 @@
 | 15 | 01/11/2026 | Fiche pièce du web avec visionneuse 3D tournante (studio des miniatures), glyphes ★ › … dans la police | 15_fiche_visionneuse.png |
 | 16 | 01/11/2026 | Mode DEV du web : panneau, connecteurs par type, contour LDraw, fiche complète, export Maya zip, réimport OBJ avec revue, remplacements stockés | 16_dev_panneau.png, 16b_dev_fiche.png |
 | 17 | 01/11/2026 | Export de scène vers Maya (port de maya_export.js, même template Python), vérifié dans mayapy 2027 | (test mayapy, pas de capture) |
+| 18 | 01/11/2026 | Manuel du web : étapes lues verticalement, grand format, import PDF lu verticalement (lecteur PDF Windows), redimensionnable | 18_manuel_scene.png, 18b_manuel_pdf.png |

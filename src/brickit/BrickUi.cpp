@@ -134,7 +134,6 @@ std::vector<int> BrickApp::visibleParts() const {
 
 // ------------------------------------------------------------------ drawing helpers
 
-namespace {
 struct Ui {
     ImDrawList* dl;
     float s;
@@ -163,7 +162,6 @@ struct Ui {
         }
     }
 };
-}
 
 static Ui ui(float s) {
     Ui u;
@@ -1057,9 +1055,11 @@ void BrickApp::drawUi() {
     uiMechPanel();
     uiHud();
     uiPopups();
+    uiManual();
     uiDevPanel();
     uiInfoSheet();
     uiDevReview();
+    uiManualBig();
     ImGui::End();
     ImGui::PopStyleVar(2);
     uiSceneSheet();
@@ -1418,6 +1418,272 @@ void BrickApp::uiDevReview() {
     const bool keep = webButton(u, ImVec2(p1.x - pad - wKeep, y), "Garder ce remplacement", w, true);
     if (offLen >= 0.02f && webButton(u, ImVec2(p1.x - pad - wKeep - 8 * s - wRe, y), "Recaler sur le centre LDraw", w)) devReviewRecenter();
     if (keep) devReviewKeep();
+}
+
+// --------------------------------------------------------------------------- instruction manual (web: #manual, #mbig,
+// #pdfbig): steps of the scene read vertically, imported PDF read vertically, resizable from the bottom left corner
+
+static const ImU32 C_PAPER = IM_COL32(0xfb, 0xfa, 0xf6, 255), C_PAPER_INK = IM_COL32(0x22, 0x25, 0x2d, 255), C_PAPER_CANVAS = IM_COL32(0xf4, 0xf2, 0xea, 255);
+
+// One page of the scene manual (.mp): step number, part to add (thumbnail + "1×"), step image (8 / 5), "p. n".
+// big: the #mbig layout (padding 20 24 24, gap 12, number 44 px, thumbnail 48 x 38, 13 px, no page number).
+float BrickApp::manualPage(Ui& u, ImVec2 a, float w, int n, int corner, bool big, bool draw) {
+    const float s = u.s;
+    const float padT = (big ? 20 : 8) * s, padX = (big ? 24 : 10) * s, padB = (big ? 24 : 10) * s, gap = (big ? 12 : 5) * s;
+    const float numPx = big ? 44 : 26;
+    const float inner = w - 2 * padX, ch = inner * 5 / 8;
+    const float H = padT + u.fs(numPx) + gap + ch + padB;
+    if (!draw) return H;
+    const float r = 8 * s;
+    ImDrawFlags fl = corner == 0 ? (ImDrawFlags_RoundCornersTopLeft | ImDrawFlags_RoundCornersBottomLeft) : (ImDrawFlags_RoundCornersTopRight | ImDrawFlags_RoundCornersBottomRight);
+    u.dl->AddRectFilled(a, ImVec2(a.x + w, a.y + H), C_PAPER, big ? 0 : r, big ? 0 : fl);
+    const bool valid = n >= 1 && n <= (int)m_bricks.size();
+    float y = a.y + padT;
+    if (valid) {
+        const std::string sn = std::to_string(n);
+        u.text(ImVec2(a.x + padX, y), numPx, C_PAPER_INK, sn.c_str(), true);
+        // .mneed: thumbnail (34 x 26, #e9e6dc, radius 4) + "1×", at the right
+        const float iw = (big ? 48 : 34) * s, ih = (big ? 38 : 26) * s, tp = big ? 13 : 11;
+        const float tw = u.textW(tp, "1×", true);
+        ImVec2 ib(a.x + w - padX - tw - 5 * s - iw, y + (u.fs(numPx) - ih) * 0.5f);
+        u.dl->AddRectFilled(ib, ImVec2(ib.x + iw, ib.y + ih), IM_COL32(0xe9, 0xe6, 0xdc, 255), 4 * s);
+        ImTextureID tex;
+        ImVec2 uv0, uv1;
+        const int part = m_bricks[n - 1].part;
+        if (thumbUv(part, tex, uv0, uv1)) u.dl->AddImage(tex, ImVec2(ib.x + (iw - ih) * 0.5f, ib.y), ImVec2(ib.x + (iw + ih) * 0.5f, ib.y + ih), uv0, uv1);
+        u.text(ImVec2(ib.x + iw + 5 * s, y + (u.fs(numPx) - u.fs(tp)) * 0.5f), tp, C_PAPER_INK, "1×", true);
+        if (u.hover(ib, ImVec2(ib.x + iw + 5 * s + tw, ib.y + ih))) ImGui::SetTooltip("%s", m_lib.parts[part].label.c_str());
+    }
+    y += u.fs(numPx) + gap;
+    ImVec2 ca(a.x + padX, y), cb(a.x + padX + inner, y + ch);
+    u.dl->AddRectFilled(ca, cb, C_PAPER_CANVAS, 6 * s);
+    if (valid) {
+        ImTextureID t = stepImage(n);
+        if (t) u.dl->AddImageRounded(t, ca, cb, ImVec2(0, 0), ImVec2(1, 1), IM_COL32_WHITE, 6 * s);
+    }
+    u.dl->AddRect(ca, cb, C_PAPER_INK, 6 * s, 0, 1.5f * s);
+    if (!big && n >= 1) {
+        const std::string pn = "p. " + std::to_string(n);
+        u.text(ImVec2(a.x + w - 8 * s - u.textW(9, pn.c_str()), a.y + H - 2 * s - u.fs(9)), 9, IM_COL32(0x7a, 0x7e, 0x88, 255), pn.c_str());
+    }
+    return H;
+}
+
+// Vertical PDF view (.pdfview): white pages one under the other, gap 10, rendered when they come near the view.
+void BrickApp::pdfView(Ui& u, ImVec2 a, ImVec2 b, float& scroll, bool main) {
+    const float s = u.s;
+    const float w = b.x - a.x - 4 * s;
+    if (m_pdfSizes.empty()) {
+        const char* msg = m_pdfMsg.empty() ? "Ouverture du PDF…" : m_pdfMsg.c_str();
+        u.text(ImVec2((a.x + b.x) * 0.5f - u.textW(12, msg) * 0.5f, a.y + 16 * s), 12, C_DIM, msg);
+        return;
+    }
+    std::vector<float> top(m_pdfSizes.size());
+    float y = 0;
+    for (size_t i = 0; i < m_pdfSizes.size(); ++i) {
+        top[i] = y;
+        y += w * m_pdfSizes[i].second / std::max(1.0f, m_pdfSizes[i].first) + 10 * s;
+    }
+    const float content = y - 10 * s + 4 * s, viewH = b.y - a.y;
+    // scroll requests (‹ ›, start)
+    if (main && m_pdfScrollTo > 0) {
+        const int n = std::clamp(m_pdfScrollTo, 1, (int)m_pdfSizes.size());
+        m_pdfScrollGoal = top[n - 1];
+        if (!m_pdfScrollSmooth) scroll = m_pdfScrollGoal;
+        m_pdfScrollTo = 0;
+        m_pdfLock = ImGui::GetTime() + 0.7;
+    }
+    if (!main && m_bigScrollTo > 0) {
+        scroll = top[std::clamp(m_bigScrollTo, 1, (int)m_pdfSizes.size()) - 1];
+        m_bigScrollTo = 0;
+    }
+    const bool over = u.hover(a, b);
+    if (over && ImGui::GetIO().MouseWheel != 0) { scroll -= ImGui::GetIO().MouseWheel * 90 * s; if (main) m_pdfScrollGoal = -1; }
+    if (main && m_pdfScrollGoal >= 0) {
+        scroll += (m_pdfScrollGoal - scroll) * std::min(1.0f, ImGui::GetIO().DeltaTime * 12);   // behavior: "smooth"
+        if (std::fabs(m_pdfScrollGoal - scroll) < 0.5f) { scroll = m_pdfScrollGoal; m_pdfScrollGoal = -1; }
+    }
+    scroll = std::clamp(scroll, 0.0f, std::max(0.0f, content - viewH));
+    u.dl->PushClipRect(a, b, true);
+    const int want = (int)std::round(w);
+    for (size_t i = 0; i < m_pdfSizes.size(); ++i) {
+        const float h = w * m_pdfSizes[i].second / std::max(1.0f, m_pdfSizes[i].first);
+        ImVec2 pa(a.x + 2 * s, a.y + 2 * s + top[i] - scroll), pb(pa.x + w, pa.y + h);
+        const bool inRange = pb.y > a.y - 600 * s && pa.y < b.y + 600 * s;   // rootMargin: 600px
+        PdfTex& t = m_pdfTex[i];
+        if (inRange && (!t.tex || std::abs(t.w - want) > 2) && !t.asked && m_pdf) { m_pdf->request((int)i, want); t.asked = true; }
+        if (!inRange && t.tex && std::abs((int)i + 1 - m_pdfPage) > 6) { m_gui.releaseTexture(t.tex); t = PdfTex(); }
+        if (pb.y < a.y || pa.y > b.y) continue;
+        u.dl->AddRectFilled(ImVec2(pa.x, pa.y + 4 * s), ImVec2(pb.x, pb.y + 4 * s), IM_COL32(0, 0, 0, 60), 4 * s);
+        u.dl->AddRectFilled(pa, pb, IM_COL32_WHITE, 4 * s);
+        if (t.tex) u.dl->AddImageRounded(t.tex, pa, pb, ImVec2(0, 0), ImVec2(1, 1), IM_COL32_WHITE, 4 * s);
+        const std::string lab = std::to_string(i + 1) + " / " + std::to_string(m_pdfSizes.size());
+        const float lw = u.textW(10, lab.c_str()) + 10 * s;
+        ImVec2 la(pb.x - 6 * s - lw, pb.y - 4 * s - u.fs(10) - 2 * s);
+        u.dl->AddRectFilled(la, ImVec2(la.x + lw, pb.y - 4 * s), IM_COL32(255, 255, 255, 204), 6 * s);
+        u.text(ImVec2(la.x + 5 * s, la.y + 1 * s), 10, IM_COL32(0x55, 0x55, 0x55, 255), lab.c_str());
+    }
+    u.dl->PopClipRect();
+    if (main && ImGui::GetTime() >= m_pdfLock) {   // updatePdfPage: the last page whose top is above the view top + 30
+        int n = 1;
+        for (size_t i = 0; i < top.size(); ++i)
+            if (a.y + 2 * s + top[i] - scroll <= a.y + 30 * s) n = (int)i + 1;
+            else break;
+        if (n != m_pdfPage) { m_pdfPage = n; m_prefsDirty = true; }
+    }
+}
+
+void BrickApp::uiManual() {
+    if (!m_pManual.visible || m_mechOn) return;
+    Ui u = ui(m_ui);
+    if (m_gui.fontBold) u.bold = m_gui.fontBold;
+    const float s = m_ui;
+    const float stageW = m_stage.z - m_stage.x;
+    float W = m_manW >= 260 ? m_manW : std::min(stageW * 0.34f, 500 * s);
+    W = std::min(W, std::max(300 * s, stageW - 40 * s));
+    const float padT = 8 * s, padX = 10 * s, padB = 10 * s, gap = 8 * s, headH = 28 * s;
+    const float x1 = m_stage.z - 14 * s, x0 = x1 - W, y0 = m_stage.y + 12 * s;
+    const bool folded = m_pManual.collapsed;
+    const float innerW = W - 2 * padX;
+    const ImVec2 ds = ImGui::GetIO().DisplaySize;
+    // body height: sized (m_manH) or the pages up to min(70vh, 900) / the PDF up to min(72vh, 920)
+    const int total = (int)m_bricks.size();
+    m_manRight = std::clamp(m_manRight, 2, std::max(2, total));
+    const int l = m_manRight - 1, r = m_manRight;
+    float pagesH = manualPage(u, ImVec2(0, 0), innerW, l, 0, false, false) + 8 * s + manualPage(u, ImVec2(0, 0), innerW, r, 1, false, false);
+    float bodyH;
+    if (m_manH >= 160) bodyH = m_manH - padT - headH - gap - padB;
+    else if (m_pdfOn) bodyH = std::min(ds.y * 0.72f, 920 * s);
+    else bodyH = std::min(pagesH, std::min(ds.y * 0.70f, 900 * s));
+    bodyH = std::max(40 * s, std::min(bodyH, m_stage.w - y0 - padT - headH - gap - padB - 8 * s));
+    const float H = padT + headH + (folded ? 0 : gap + bodyH) + padB;
+    ImVec2 p0(x0, y0), p1(x1, y0 + H);
+    u.dl->AddRectFilled(ImVec2(p0.x, p0.y + 16 * s), ImVec2(p1.x, p1.y + 16 * s), IM_COL32(0, 0, 0, 40), 16 * s);   // shadow
+    u.dl->AddRectFilled(p0, p1, C_PANEL, 16 * s);
+    u.dl->AddRect(p0, p1, C_LINE, 16 * s);
+    m_uiRects.push_back(ImVec4(p0.x, p0.y, p1.x, p1.y));
+    // header: dots, Manuel, step / page, buttons
+    float x = p0.x + padX, y = p0.y + padT;
+    for (int rr = 0; rr < 2; ++rr)
+        for (int cc = 0; cc < 5; ++cc) u.dl->AddCircleFilled(ImVec2(x + (3 + cc * 6) * s, y + headH * 0.5f - 2 * s + rr * 4 * s), 1.1f * s, C_FAINT, 6);
+    x += 26 * s + 6 * s;
+    float tw = u.text(ImVec2(x, y + (headH - u.fs(13)) * 0.5f), 13, C_TEXT, "Manuel", true).x;
+    x += tw + 6 * s;
+    char step[96];
+    if (m_pdfOn && !m_pdfSizes.empty()) snprintf(step, sizeof(step), "PDF p. %d / %d", m_pdfPage, (int)m_pdfSizes.size());
+    else if (total) snprintf(step, sizeof(step), "Étapes %d–%d / %d", l, std::min(r, total), total);
+    else snprintf(step, sizeof(step), "Aucune brique");
+    u.text(ImVec2(x, y + (headH - u.fs(11)) * 0.5f), 11, C_DIM, step);
+    struct Btn { const char* label; bool wide; int id; const char* tip; };
+    std::vector<Btn> btns;
+    if (m_pdf && (!m_pdfSizes.empty() || m_pdfOpening)) btns.push_back({m_pdfOn ? "Scène" : "PDF", true, 0, m_pdfOn ? "Revenir au manuel de ta scène" : "Revenir au PDF importé"});
+    btns.push_back({"PDF", true, 1, "Importer un PDF d'instructions"});
+    btns.push_back({"‹", false, 2, "Pages précédentes"});
+    btns.push_back({"›", false, 3, "Pages suivantes"});
+    btns.push_back({"–", false, 4, "Réduire"});
+    btns.push_back({"⤢", false, 5, "Agrandir"});
+    float bx = p1.x - padX;
+    int clicked = -1;
+    for (int i = (int)btns.size() - 1; i >= 0; --i) {
+        const Btn& bt = btns[i];
+        const float bw = bt.wide ? u.textW(11, bt.label, true) + 16 * s : 28 * s;
+        bx -= bw;
+        ImVec2 a(bx, y), b(bx + bw, y + 28 * s);
+        const bool h = u.hover(a, b);
+        u.dl->AddRectFilled(a, b, h ? C_LYEL : C_CARD, 8 * s);
+        const float px = bt.wide ? 11 : 15;
+        const float lw = u.textW(px, bt.label, bt.wide);
+        u.text(ImVec2((a.x + b.x) * 0.5f - lw * 0.5f, a.y + (28 * s - u.fs(px)) * 0.5f), px, h ? IM_COL32(0x1b, 0x15, 0x00, 255) : C_TEXT, bt.label, bt.wide);
+        if (h) ImGui::SetTooltip("%s", bt.tip);
+        if (h && u.pressed) clicked = bt.id;
+        bx -= 4 * s;
+    }
+    if (clicked == 0) { m_pdfOn = !m_pdfOn; if (m_pdfOn) m_pdfScrollTo = m_pdfPage, m_pdfScrollSmooth = false; }
+    if (clicked == 1) pdfDialog();
+    if (clicked == 2 || clicked == 3) {   // manualStep
+        const int d = clicked == 2 ? -1 : 1;
+        if (m_pdfOn && !m_pdfSizes.empty()) { m_pdfScrollTo = std::clamp(m_pdfPage + d, 1, (int)m_pdfSizes.size()); m_pdfScrollSmooth = true; m_pdfPage = m_pdfScrollTo; }
+        else { m_manRight += d; m_manScroll = 0; }
+    }
+    if (clicked == 4) { m_pManual.collapsed = !m_pManual.collapsed; savePrefs(); }
+    if (clicked == 5) { if (m_pdfOn) { m_pdfBig = true; m_bigScrollTo = m_pdfPage; } else { m_manBig = true; m_bigScroll = 0; } }
+    if (folded) return;
+    // body
+    ImVec2 ba(p0.x + padX, p0.y + padT + headH + gap), bb(p1.x - padX, ba.y + bodyH);
+    if (m_pdfOn) pdfView(u, ba, bb, m_pdfScroll, true);
+    else {
+        const bool over = u.hover(ba, bb);
+        if (over && ImGui::GetIO().MouseWheel != 0) m_manScroll -= ImGui::GetIO().MouseWheel * 60 * s;
+        m_manScroll = std::clamp(m_manScroll, 0.0f, std::max(0.0f, pagesH - bodyH));
+        u.dl->PushClipRect(ba, bb, true);
+        float py = ba.y - m_manScroll;
+        py += manualPage(u, ImVec2(ba.x, py), innerW, l, 0, false, true) + 8 * s;
+        manualPage(u, ImVec2(ba.x, py), innerW, r, 1, false, true);
+        u.dl->PopClipRect();
+        if (over) ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);   // cursor: zoom-in
+        if (over && u.released && ImGui::GetMouseDragDelta(ImGuiMouseButton_Left).x == 0 && ImGui::GetMouseDragDelta(ImGuiMouseButton_Left).y == 0 && !m_manResizing) { m_manBig = true; m_bigScroll = 0; }
+    }
+    // resize handle (bottom left, 24 x 24): width follows the drag (anchored at the right), height too (anchored at the top)
+    ImVec2 ra(p0.x + 3 * s, p1.y - 3 * s - 24 * s), rb(ra.x + 24 * s, ra.y + 24 * s);
+    const bool rh = u.hover(ra, rb);
+    if (rh && u.pressed) { m_manResizing = true; m_manResize0 = u.mouse; m_manW0 = W; m_manH0 = H; }
+    if (m_manResizing) {
+        if (ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+            const float maxW = std::max(300 * s, stageW - 40 * s);
+            m_manW = std::clamp(m_manW0 + (m_manResize0.x - u.mouse.x), 260 * s, std::min(900 * s, maxW));
+            m_manH = std::round(std::clamp(m_manH0 + (u.mouse.y - m_manResize0.y), 160 * s, m_stage.w - y0 - 8 * s));
+        } else { m_manResizing = false; savePrefs(); }
+    }
+    u.dl->AddRectFilled(ra, rb, (rh || m_manResizing) ? C_LYEL : IM_COL32(0, 0, 0, 89), 8 * s);
+    if (rh || m_manResizing) ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeNESW);
+    svg::path(u.dl, "M2 14 L8 8 M2 14 L2 9 M2 14 L7 14 M14 2 L8 8", ImVec2(ra.x + 4 * s, ra.y + 4 * s), s, (rh || m_manResizing) ? IM_COL32(0x1b, 0x15, 0x00, 255) : C_DIM, 1.8f * s);
+}
+
+// #mbig (scene pages, vertical book) and #pdfbig (the PDF, large)
+void BrickApp::uiManualBig() {
+    if (!m_manBig && !m_pdfBig) return;
+    Ui u = ui(m_ui);
+    if (m_gui.fontBold) u.bold = m_gui.fontBold;
+    const float s = m_ui;
+    const ImVec2 d = ImGui::GetIO().DisplaySize;
+    m_uiRects.push_back(ImVec4(0, 0, d.x, d.y));
+    auto roundBtn = [&](ImVec2 c, float r, const char* label, float px) {
+        ImVec2 a(c.x - r, c.y - r), b(c.x + r, c.y + r);
+        const bool h = u.hover(a, b);
+        u.dl->AddCircleFilled(c, r, h ? C_CARD_HI : C_PANEL_SOLID, 32);
+        u.dl->AddCircle(c, r, C_LINE, 32, 1.0f);
+        const float lw = u.textW(px, label);
+        u.text(ImVec2(c.x - lw * 0.5f, c.y - u.fs(px) * 0.5f), px, C_TEXT, label);
+        return h && u.pressed;
+    };
+    if (m_pdfBig) {
+        u.dl->AddRectFilled(ImVec2(0, 0), d, IM_COL32(8, 10, 14, 209));
+        const float w = std::min(1000 * s, d.x * 0.94f);
+        ImVec2 a((d.x - w) * 0.5f, 16 * s), b(a.x + w, d.y - 40 * s);
+        pdfView(u, a, b, m_bigScroll, false);
+        if (roundBtn(ImVec2(d.x - 14 * s - 19 * s, 12 * s + 19 * s), 19 * s, "✕", 14) || ImGui::IsKeyPressed(ImGuiKey_Escape)) m_pdfBig = false;
+        return;
+    }
+    u.dl->AddRectFilled(ImVec2(0, 0), d, IM_COL32(8, 10, 14, 140));
+    const float w = std::min(760 * s, d.x * 0.92f);
+    const int total = (int)m_bricks.size();
+    m_manRight = std::clamp(m_manRight, 2, std::max(2, total));
+    const int l = m_manRight - 1, r = m_manRight;
+    const float h1 = manualPage(u, ImVec2(0, 0), w, l, 0, true, false), h2 = manualPage(u, ImVec2(0, 0), w, r, 1, true, false);
+    const float content = h1 + 12 * s + h2, viewH = std::min(content, d.y * 0.92f);
+    ImVec2 a((d.x - w) * 0.5f, (d.y - viewH) * 0.5f), b(a.x + w, a.y + viewH);
+    if (u.hover(a, b) && ImGui::GetIO().MouseWheel != 0) m_bigScroll -= ImGui::GetIO().MouseWheel * 80 * s;
+    m_bigScroll = std::clamp(m_bigScroll, 0.0f, std::max(0.0f, content - viewH));
+    u.dl->AddRectFilled(ImVec2(a.x, a.y + 24 * s), ImVec2(b.x, b.y + 24 * s), IM_COL32(0, 0, 0, 60), 8 * s);   // drop-shadow
+    u.dl->PushClipRect(a, b, true);
+    manualPage(u, ImVec2(a.x, a.y - m_bigScroll), w, l, 0, true, true);
+    manualPage(u, ImVec2(a.x, a.y - m_bigScroll + h1 + 12 * s), w, r, 1, true, true);
+    u.dl->PopClipRect();
+    bool close = false;
+    if (roundBtn(ImVec2(b.x + 10 * s - 17 * s, a.y - 14 * s + 17 * s), 17 * s, "✕", 13)) close = true;
+    if (roundBtn(ImVec2(a.x - 22 * s + 22 * s, (a.y + b.y) * 0.5f), 22 * s, "‹", 22)) { m_manRight -= 1; return; }
+    if (roundBtn(ImVec2(b.x + 22 * s - 22 * s, (a.y + b.y) * 0.5f), 22 * s, "›", 22)) { m_manRight += 1; return; }
+    if (close || ImGui::IsKeyPressed(ImGuiKey_Escape) || (u.pressed && !u.hover(a, b) && !close)) m_manBig = false;
 }
 
 } // namespace brickit

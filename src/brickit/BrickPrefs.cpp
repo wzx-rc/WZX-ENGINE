@@ -42,6 +42,7 @@ void BrickApp::savePrefs() {
     j += "\"panels\": {" + panel("tray", m_pTray) + ", " + panel("opts", m_pOpts) + ", " + panel("colors", m_pColors) + ", " + panel("hud", m_pHud) + ", " + panel("manual", m_pManual) + "},";
     auto names = [&](const std::vector<int>& v) { std::string s = "["; for (size_t i = 0; i < v.size(); ++i) s += (i ? ", " : "") + jstr(m_lib.parts[v[i]].name); return s + "]"; };
     j += std::string("\"dev\": {\"on\": ") + (m_dev ? "true" : "false") + ", \"showVox\": " + (m_devShowVox ? "true" : "false") + ", \"showEdges\": " + (m_devShowEdges ? "true" : "false") + ", \"useOverrides\": " + (m_devUseOverrides ? "true" : "false") + "},";
+    { char mb[160]; snprintf(mb, sizeof(mb), "\"manual\": {\"w\": %d, \"h\": %d, \"pdfPage\": %d, \"pdfName\": ", (int)m_manW, (int)m_manH, m_pdfPage); j += mb; j += jstr(m_pdfName) + "},"; }
     j += "\"recentParts\": " + names(m_recent) + ", \"favParts\": " + names(m_fav) + "}\n";
     writeText(m_exeDir + L"\\brickit_prefs.json", j);
 }
@@ -71,6 +72,13 @@ void BrickApp::loadPrefs() {
     auto list = [&](const char* k, std::vector<int>& v) { v.clear(); for (const app::Json& n : p[k].a) { int i = m_lib.find(n.str()); if (i >= 0) v.push_back(i); } };
     list("recentParts", m_recent);
     list("favParts", m_fav);
+    {   // vp3d-manual-w / vp3d-manual-h / vp3d-manual-pdf-page
+        const app::Json& mn = p["manual"];
+        if (mn["w"].num() >= 260) m_manW = (float)mn["w"].num();
+        if (mn["h"].num() >= 160) m_manH = (float)mn["h"].num();
+        if (mn["pdfPage"].num() >= 1) m_pdfPage = (int)mn["pdfPage"].num();
+        m_pdfName = mn["pdfName"].str();
+    }
     {   // brickit-dev-prefs of the web
         const app::Json& dv = p["dev"];
         if (dv["on"].type == app::Json::Bool) m_dev = dv["on"].b;
@@ -82,6 +90,7 @@ void BrickApp::loadPrefs() {
 }
 
 void BrickApp::autosave() {
+    manualDirty();   // the steps change with the scene
     if (m_opt.shotPath.empty()) writeText(m_exeDir + L"\\brickit_scene.v3d.json", m_build.toJson(m_scene.camera));
 }
 

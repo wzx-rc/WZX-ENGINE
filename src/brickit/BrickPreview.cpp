@@ -8,7 +8,7 @@
 namespace brickit {
 
 // Linear value whose ACES (Hill fit) x exposure then sRGB gives the 8-bit target (the card colour behind the part).
-static float acesInverse(float target8, float exposure) {
+float acesInverse(float target8, float exposure) {
     auto aces = [](float x) {
         float a = x * (x + 0.0245786f) - 0.000090537f, b = x * (0.983729f * x + 0.4329510f) + 0.238081f;
         return std::clamp(a / b, 0.0f, 1.0f);

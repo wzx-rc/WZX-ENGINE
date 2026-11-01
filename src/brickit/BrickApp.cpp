@@ -129,6 +129,7 @@ bool BrickApp::init(HINSTANCE inst, const Options& opt) {
     if (opt.shotPath.empty()) loadPrefs();   // captures stay reproducible
     if (opt.dev) m_dev = true;
     devLoadAll();   // DEV replacements kept next to the exe
+    if (opt.manual) m_pManual.visible = true;
     devApplyAll();
     m_color = colorIndex(14);   // yellow, as the web (state.colorId: 14)
     m_focusDim = opt.focusDim;
@@ -659,6 +660,12 @@ void BrickApp::frame() {
         ImVec2 d = ImGui::GetIO().DisplaySize;
         if (pi >= 0) spawn(pi, d.x * m_opt.spawnX, d.y * m_opt.spawnY);
     }
+    if (m_frame == 2) {   // the PDF of the manual: imported by a test, else the one of the last session
+        if (!m_opt.pdfPath.empty()) { std::wstring p = m_opt.pdfPath; std::wstring n = p.substr(p.find_last_of(L"\\/") + 1); pdfOpen(p, std::string(n.begin(), n.end()), false); }
+        else if (GetFileAttributesW((m_exeDir + L"\\manual_pdf\\current.pdf").c_str()) != INVALID_FILE_ATTRIBUTES && m_opt.shotPath.empty()) pdfOpen(m_exeDir + L"\\manual_pdf\\current.pdf", m_pdfName, false);
+    }
+    pdfPump();
+    if (m_prefsDirty && !ImGui::IsMouseDown(ImGuiMouseButton_Left)) { m_prefsDirty = false; savePrefs(); }
     if (m_frame == 3 && !m_opt.mayaOut.empty()) mayaExportScene(m_opt.mayaOut);   // scripted test: Maya export
     if (m_frame == 3 && !m_opt.devRoundtrip.empty()) {   // self-test: OBJ export of a part, re-import, fit (offset and scale must be identity)
         int pi = m_lib.find(m_opt.devRoundtrip);
@@ -716,6 +723,7 @@ void BrickApp::frame() {
         renderPreview();
         ImGui::GetBackgroundDrawList()->AddImage(m_frozenTex, ImVec2(m_stage.x, m_stage.y), ImVec2(m_stage.z, m_stage.w));
     } else {
+        renderSteps();   // images of the manual asked by the UI this frame
         m_renderer.renderToTexture(m_scene, m_rs, m_vp, selObj);
         ImGui::GetBackgroundDrawList()->AddImage(m_gui.viewportTexture(), ImVec2(m_stage.x, m_stage.y), ImVec2(m_stage.z, m_stage.w));
         drawVoxels();          // over the 3D view, under the panels
@@ -808,6 +816,8 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         else if (a == L"--info") { std::wstring w = next(); opt.infoPart.assign(w.begin(), w.end()); }
         else if (a == L"--pivot-edit") opt.pivotEdit = true;
         else if (a == L"--dev") opt.dev = true;
+        else if (a == L"--pdf") opt.pdfPath = next();
+        else if (a == L"--manual") opt.manual = true;
         else if (a == L"--maya") opt.mayaOut = next();
         else if (a == L"--dev-roundtrip") { std::wstring w = next(); opt.devRoundtrip.assign(w.begin(), w.end()); }   // 0 select, 1 visor, 2 move, 3 rotate
         else if (a == L"--cat") opt.libCategory = _wtoi(next().c_str());
