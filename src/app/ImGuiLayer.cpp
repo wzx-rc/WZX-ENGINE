@@ -85,8 +85,15 @@ bool ImGuiLayer::init(HWND hwnd, vp3d::Renderer& r, float dpiScale) {
     // Fonts: Segoe UI (regular / semibold / small) with Segoe Fluent Icons merged for the icon glyphs.
     float size = 15.0f * dpi;
     auto addFont = [&](const char* file, float px) -> ImFont* {
-        ImFont* f = io.Fonts->AddFontFromFileTTF(file, px);
+        // Latin, general punctuation (› … — ·), arrows, maths, geometric shapes, symbols (★ ☆ ✎ ✋ ◀ ▶): Segoe UI then Segoe UI Symbol
+        static const ImWchar textRange[] = {0x0020, 0x017F, 0x2000, 0x206F, 0x2190, 0x22FF, 0x25A0, 0x27BF, 0};
+        ImFont* f = io.Fonts->AddFontFromFileTTF(file, px, nullptr, textRange);
         if (!f) return nullptr;
+        {
+            ImFontConfig sc;
+            sc.MergeMode = true;
+            io.Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\seguisym.ttf", px, &sc, textRange);
+        }
         static const ImWchar iconRange[] = {0xE700, 0xF8FF, 0};
         ImFontConfig cfg;
         cfg.MergeMode = true;

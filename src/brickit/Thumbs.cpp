@@ -11,6 +11,48 @@ namespace brickit {
 
 static const uint32_t kThumbMagic = 0x42544831;   // "BTH1"
 
+// The studio of the web thumbnails (outils/thumbs.mjs), also used by the 3D viewer of the part sheet: HDRI fill, warm
+// key and cool rim area lights, neutral grey plastic with a bevel. Returns the material.
+int BrickApp::setupStudio(Scene& ts) {
+    ts.unitsPerMeter = 100.0f;
+    ts.env = m_scene.env;
+    {
+        auto img = std::make_shared<EnvImage>();
+        std::wstring hdr = m_exeDir + L"\\assets\\hdri\\studio_small_09_2k.hdr";
+        std::string err;
+        if (!loadEnvImage(hdr, *img, &err)) makeProceduralSky(*img);
+        ts.env.hdri = img;
+    }
+    ts.env.hdriIntensity = 0.75f;   // fill; the key and the rim do the shape
+    ts.env.visibleToCamera = false;
+    ts.objectsVersion = 1;
+    ts.env.top = float3(0.93f, 0.94f, 0.96f);   // light card background
+    ts.env.horizon = float3(0.96f, 0.96f, 0.97f);
+    ts.env.bottom = float3(0.88f, 0.89f, 0.91f);
+    // warm key light and cool rim light (the studio of the web thumbnails)
+    AreaLight key;
+    key.position = float3(30, 45, 40);
+    key.width = key.height = 25;
+    key.color = float3(1.0f, 0.93f, 0.84f);
+    key.intensity = 7.5f;
+    key.visibleToCamera = false;
+    ts.lights.push_back(key);
+    AreaLight rim;
+    rim.position = float3(-35, 25, -40);
+    rim.width = rim.height = 20;
+    rim.color = float3(0.78f, 0.86f, 1.0f);
+    rim.intensity = 5.0f;
+    rim.visibleToCamera = false;
+    ts.lights.push_back(rim);
+    Material m;
+    m.baseColor = float3(srgbToLinear(0xc4 / 255.0f), srgbToLinear(0xc4 / 255.0f), srgbToLinear(0xc1 / 255.0f));   // neutral grey
+    m.bevelRadius = 0.04f;
+    m.roughness = 0.24f;
+    m.coat = 0.35f;
+    m.coatRoughness = 0.05f;
+    return ts.addMaterial(m);
+}
+
 void BrickApp::buildThumbs() {
     const int px = m_thumbPx, cols = m_thumbCols, perAtlas = cols * cols;
     const int atlasPx = px * cols;
@@ -39,43 +81,7 @@ void BrickApp::buildThumbs() {
     if (!cached) {
         // one scene with every part (all hidden but the one rendered), uploaded once
         Scene ts;
-        ts.unitsPerMeter = 100.0f;
-        ts.env = m_scene.env;
-        {
-            auto img = std::make_shared<EnvImage>();
-            std::wstring hdr = m_exeDir + L"\\assets\\hdri\\studio_small_09_2k.hdr";
-            std::string err;
-            if (!loadEnvImage(hdr, *img, &err)) makeProceduralSky(*img);
-            ts.env.hdri = img;
-        }
-        ts.env.hdriIntensity = 0.75f;   // fill; the key and the rim do the shape
-        ts.env.visibleToCamera = false;
-        ts.objectsVersion = 1;
-        ts.env.top = float3(0.93f, 0.94f, 0.96f);   // light card background
-        ts.env.horizon = float3(0.96f, 0.96f, 0.97f);
-        ts.env.bottom = float3(0.88f, 0.89f, 0.91f);
-        // warm key light and cool rim light (the studio of the web thumbnails)
-        AreaLight key;
-        key.position = float3(30, 45, 40);
-        key.width = key.height = 25;
-        key.color = float3(1.0f, 0.93f, 0.84f);
-        key.intensity = 7.5f;
-        key.visibleToCamera = false;
-        ts.lights.push_back(key);
-        AreaLight rim;
-        rim.position = float3(-35, 25, -40);
-        rim.width = rim.height = 20;
-        rim.color = float3(0.78f, 0.86f, 1.0f);
-        rim.intensity = 5.0f;
-        rim.visibleToCamera = false;
-        ts.lights.push_back(rim);
-        Material m;
-        m.baseColor = float3(srgbToLinear(0xc4 / 255.0f), srgbToLinear(0xc4 / 255.0f), srgbToLinear(0xc1 / 255.0f));   // neutral grey
-        m.bevelRadius = 0.04f;
-        m.roughness = 0.24f;
-        m.coat = 0.35f;
-        m.coatRoughness = 0.05f;
-        const int mat = ts.addMaterial(m);
+        const int mat = setupStudio(ts);
         std::vector<int> objOf(n, -1);
         for (int i = 0; i < n; ++i) {
             if (m_thumbSlot[i] < 0) continue;

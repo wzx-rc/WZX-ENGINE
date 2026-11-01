@@ -796,47 +796,79 @@ void BrickApp::uiHud() {
     u.text(ImVec2(a.x + 8 * s, a.y + 20 * s), 11, C_DIM, l2);
 }
 
+// Part sheet of the normal mode (web: showPartSimple): turntable 3D view ("Glisse pour tourner la pièce"), name,
+// family › category, ☆ Favori, Fermer, Ajouter à la scène. Box min(440 px, 92 vw), padding 18, gap 8.
 void BrickApp::uiInfoSheet() {
     if (m_infoPart < 0) return;
     Ui u = ui(m_ui);
     if (m_gui.fontBold) u.bold = m_gui.fontBold;
     const float s = m_ui;
     ImVec2 d = ImGui::GetIO().DisplaySize;
-    u.dl->AddRectFilled(ImVec2(0, 0), d, IM_COL32(0, 0, 0, 128));
-    const float W = 560 * s, H = 300 * s;
+    u.dl->AddRectFilled(ImVec2(0, 0), d, IM_COL32(0, 0, 0, 128));   // .sheet rgba(0, 0, 0, .5)
+    m_uiRects.push_back(ImVec4(0, 0, d.x, d.y));
+    const Part& p = m_lib.parts[m_infoPart];
+    if (m_pvPart != m_infoPart) { m_pvPart = m_infoPart; m_pvYaw = m_pvPitch = 0; }
+    const float W = std::min(440 * s, d.x * 0.92f), pad = 18 * s, gap = 8 * s;
+    const float vw = W - 2 * pad, vh = vw * 4 / 5;   // canvas aspect 5 / 4
+    const float H = pad + vh + gap + 4 * s + 24 * s + gap + 17 * s + gap + 28 * s + pad;
     ImVec2 p0((d.x - W) * 0.5f, (d.y - H) * 0.5f), p1(p0.x + W, p0.y + H);
     u.dl->AddRectFilled(p0, p1, C_PANEL_SOLID, 14 * s);
     u.dl->AddRect(p0, p1, C_LINE, 14 * s);
-    m_uiRects.push_back(ImVec4(0, 0, d.x, d.y));
-    const Part& p = m_lib.parts[m_infoPart];
-    ImVec2 ia(p0.x + 18 * s, p0.y + 18 * s), ib(ia.x + 240 * s, ia.y + 192 * s);
-    u.dl->AddRectFilled(ia, ib, IM_COL32(0x2a, 0x2b, 0x31, 255), 12 * s);
-    ImTextureID tex;
-    ImVec2 uv0, uv1;
-    if (thumbUv(m_infoPart, tex, uv0, uv1)) u.dl->AddImageRounded(tex, ImVec2(ia.x + 24 * s, ia.y), ImVec2(ib.x - 24 * s, ib.y), uv0, uv1, IM_COL32_WHITE, 12 * s);
-    float x = ib.x + 18 * s, y = ia.y;
-    u.text(ImVec2(x, y), 17, C_TEXT, p.label.c_str(), true);
-    y += 28 * s;
-    std::string path = std::string(catFr(partCat(m_infoPart))) + (p.sub.empty() ? "" : " › " + p.sub);
-    u.text(ImVec2(x, y), 13, C_DIM, path.c_str());
-    y += 20 * s;
-    std::string ref = "LDraw " + p.name + ".dat";
-    u.text(ImVec2(x, y), 13, C_FAINT, ref.c_str());
-    y += 34 * s;
+    // viewer
+    ImVec2 va(p0.x + pad, p0.y + pad), vb(va.x + vw, va.y + vh);
+    u.dl->AddRectFilled(va, vb, C_CARD, 12 * s);
+    m_pvRect = ImVec4(va.x, va.y, vb.x, vb.y);
+    if (m_frozenTex) u.dl->AddImageRounded(m_gui.viewportTexture(), va, vb, ImVec2(0, 0), ImVec2(1, 1), IM_COL32_WHITE, 12 * s);
+    u.text(ImVec2(va.x + 10 * s, vb.y - 8 * s - 13 * s), 10.5f, C_FAINT, "Glisse pour tourner la pièce");
+    ImGuiIO& io = ImGui::GetIO();
+    const bool overView = u.hover(va, vb);
+    if (overView) ImGui::SetMouseCursor(m_pvDrag ? ImGuiMouseCursor_ResizeAll : ImGuiMouseCursor_Hand);   // cursor: grab
+    if (overView && u.pressed) m_pvDrag = true;
+    if (!ImGui::IsMouseDown(ImGuiMouseButton_Left)) m_pvDrag = false;
+    if (m_pvDrag) {
+        m_pvYaw += io.MouseDelta.x * 0.012f;
+        m_pvPitch = std::clamp(m_pvPitch + io.MouseDelta.y * 0.01f, -1.4f, 1.4f);
+    }
+    // name, family › category
+    float y = vb.y + gap + 4 * s;
+    u.text(ImVec2(p0.x + pad, y), 18, C_TEXT, p.label.c_str(), true);
+    y += 24 * s + gap;
+    const std::string cat = partCat(m_infoPart);
+    const char* fam = "Autres gammes";
+    for (const Fam& f : families())
+        for (const char* c : f.cats)
+            if (cat == c) fam = f.name;
+    std::string path = std::string(fam) + " › " + catFr(cat);
+    u.text(ImVec2(p0.x + pad, y), 12.5f, C_DIM, path.c_str());
+    y += 17 * s + gap;
+    // row: ☆ Favori · grow · Fermer · Ajouter à la scène (.btn compact: 28 px, 12 px, padding 10, radius 7)
+    auto button = [&](float x, const char* label, bool accent, ImU32 textCol, bool& clicked) {
+        float w = u.textW(12, label) + 20 * s;
+        ImVec2 a(x, y), b(x + w, y + 28 * s);
+        bool h = u.hover(a, b);
+        u.dl->AddRectFilled(a, b, accent ? C_ACCENT : (h ? C_CARD_HI : C_CARD), 7 * s);
+        u.text(ImVec2(a.x + 10 * s, a.y + 7 * s), 12, accent ? C_INK : textCol, label, accent);
+        clicked = h && u.pressed;
+        return w;
+    };
     const bool fav = std::find(m_fav.begin(), m_fav.end(), m_infoPart) != m_fav.end();
-    const char* fl = fav ? "★ Retirer des favoris" : "☆ Ajouter aux favoris";
-    float fw = u.textW(13, fl) + 24 * s;
-    ImVec2 fa(x, y), fb(x + fw, y + 36 * s);
-    bool fh = u.hover(fa, fb);
-    u.dl->AddRectFilled(fa, fb, fav ? C_ACCENT : (fh ? C_CARD_HI : C_CARD), 9 * s);
-    u.text(ImVec2(fa.x + 12 * s, fa.y + 10 * s), 13, fav ? C_INK : C_TEXT, fl, fav);
-    if (fh && u.pressed) { if (fav) m_fav.erase(std::find(m_fav.begin(), m_fav.end(), m_infoPart)); else m_fav.push_back(m_infoPart); }
-    ImVec2 ca(p1.x - 18 * s - 80 * s, p1.y - 18 * s - 36 * s), cb(p1.x - 18 * s, p1.y - 18 * s);
-    bool ch = u.hover(ca, cb);
-    u.dl->AddRectFilled(ca, cb, ch ? C_CARD_HI : C_CARD, 9 * s);
-    float cw = u.textW(13, "Fermer");
-    u.text(ImVec2((ca.x + cb.x) * 0.5f - cw * 0.5f, ca.y + 10 * s), 13, C_TEXT, "Fermer");
-    if ((ch && u.pressed) || ImGui::IsKeyPressed(ImGuiKey_Escape) || (u.pressed && !u.hover(p0, p1))) m_infoPart = -1;
+    bool cFav = false, cClose = false, cAdd = false;
+    button(p0.x + pad, fav ? "★ Favori" : "☆ Favori", false, fav ? C_ACCENT : C_TEXT, cFav);
+    const float addW = u.textW(12, "Ajouter à la scène") + 20 * s, closeW = u.textW(12, "Fermer") + 20 * s;
+    button(p1.x - pad - addW, "Ajouter à la scène", true, C_INK, cAdd);
+    button(p1.x - pad - addW - gap - closeW, "Fermer", false, C_TEXT, cClose);
+    if (cFav) {
+        if (fav) m_fav.erase(std::find(m_fav.begin(), m_fav.end(), m_infoPart));
+        else m_fav.push_back(m_infoPart);
+        savePrefs();
+    }
+    const int part = m_infoPart;
+    if (cClose || ImGui::IsKeyPressed(ImGuiKey_Escape) || (u.pressed && !u.hover(p0, p1))) m_infoPart = -1;
+    if (cAdd) {
+        m_infoPart = -1;
+        ImVec2 c((m_stage.x + m_stage.z) * 0.5f, (m_stage.y + m_stage.w) * 0.5f);
+        spawn(part, c.x, c.y);
+    }
 }
 
 void BrickApp::uiPopups() {

@@ -17,3 +17,4 @@
 | 12 | 01/11/2026 | Bloc B : animations de la brique en main (valeurs du web), aperçu de pose (fantôme, viseur, pointillés, anneau, halo), rectangle de sélection | 12_main_animation_apercu.png, 12b_main_refusee.png |
 | 13 | 01/11/2026 | Gizmo du web : flèches (tenon / plaque), anneaux 90°, sphère de déplacement libre, orbite clic gauche comme le web, option --mode | 13_gizmo_deplacer.png, 13b_gizmo_tourner.png |
 | 14 | 01/11/2026 | Édition du pivot (P) du web : marqueurs par voxel, visée au curseur ; voxels limités à la brique active comme le web | 14_edition_pivot.png |
+| 15 | 01/11/2026 | Fiche pièce du web avec visionneuse 3D tournante (studio des miniatures), glyphes ★ › … dans la police | 15_fiche_visionneuse.png |

@@ -656,6 +656,7 @@ void BrickApp::frame() {
         ImVec2 d = ImGui::GetIO().DisplaySize;
         if (pi >= 0) spawn(pi, d.x * m_opt.spawnX, d.y * m_opt.spawnY);
     }
+    if (m_frame == 24 && !m_opt.infoPart.empty()) m_infoPart = m_lib.find(m_opt.infoPart);   // scripted test: part sheet
     if (!m_opt.noUi) drawUi();
     cameraInput();
     if (m_mechOn) mechUpdate((float)ImGui::GetIO().DeltaTime);
@@ -678,14 +679,31 @@ void BrickApp::frame() {
     m_renderer.setExtraSelection(extra);
     const int selObj = (m_selected >= 0 && !m_holding) ? m_firstBrickObject + m_selected : -1;
     m_rs.pixelScale = scale;
-    m_renderer.renderToTexture(m_scene, m_rs, m_vp, selObj);
+    // part sheet open: the main view keeps its last image, the renderer draws the 3D viewer of the part
+    const bool sheet = m_infoPart >= 0 && !m_dev;
+    if (sheet && !m_frozenTex && m_frame > 0) {
+        std::vector<uint8_t> img;
+        uint32_t w = 0, h = 0;
+        if (m_renderer.readViewport(img, w, h) && w && h) m_frozenTex = m_gui.createTexture(img.data(), w, h);
+    }
+    if (!sheet && m_frozenTex) {
+        m_gui.releaseTexture(m_frozenTex);
+        m_frozenTex = 0;
+        m_renderer.resetAccumulation();
+    }
     ImGui::GetBackgroundDrawList()->AddRectFilled(ImVec2(0, 0), ds, IM_COL32(0x13, 0x14, 0x17, 255));
-    ImGui::GetBackgroundDrawList()->AddImage(m_gui.viewportTexture(), ImVec2(m_stage.x, m_stage.y), ImVec2(m_stage.z, m_stage.w));
-    drawVoxels();          // over the 3D view, under the panels
-    drawHoldOverlay();
-    drawPivots();
-    drawGizmo();   // over the pivot markers (renderOrder 1010 > 1003 in the web)
-    drawMechOverlay();
+    if (m_frozenTex) {
+        renderPreview();
+        ImGui::GetBackgroundDrawList()->AddImage(m_frozenTex, ImVec2(m_stage.x, m_stage.y), ImVec2(m_stage.z, m_stage.w));
+    } else {
+        m_renderer.renderToTexture(m_scene, m_rs, m_vp, selObj);
+        ImGui::GetBackgroundDrawList()->AddImage(m_gui.viewportTexture(), ImVec2(m_stage.x, m_stage.y), ImVec2(m_stage.z, m_stage.w));
+        drawVoxels();          // over the 3D view, under the panels
+        drawHoldOverlay();
+        drawPivots();
+        drawGizmo();   // over the pivot markers (renderOrder 1010 > 1003 in the web)
+        drawMechOverlay();
+    }
     LARGE_INTEGER t1;
     QueryPerformanceCounter(&t1);
     m_cpuMs = m_cpuMs * 0.9 + 0.1 * (t1.QuadPart - t0.QuadPart) * 1000.0 / m_qpf.QuadPart;
@@ -766,6 +784,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         else if (a == L"--at") { opt.spawnX = (float)_wtof(next().c_str()); opt.spawnY = (float)_wtof(next().c_str()); }
         else if (a == L"--select") opt.selectBrick = _wtoi(next().c_str());
         else if (a == L"--mode") opt.mode = _wtoi(next().c_str());
+        else if (a == L"--info") { std::wstring w = next(); opt.infoPart.assign(w.begin(), w.end()); }
         else if (a == L"--pivot-edit") opt.pivotEdit = true;   // 0 select, 1 visor, 2 move, 3 rotate
         else if (a == L"--cat") opt.libCategory = _wtoi(next().c_str());
         else if (a == L"--focus") opt.focusDim = true;

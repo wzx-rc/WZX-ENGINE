@@ -50,6 +50,7 @@ struct Options {
     float spawnX = 0.5f, spawnY = 0.5f;   // --at x y (fractions of the viewport)
     int selectBrick = -1;     // --select N
     int mode = -1;
+    std::string infoPart;   // --info <part>: open the part sheet (captures)
     bool pivotEdit = false;
     int libCategory = -1;     // --cat N
     bool focusDim = false;    // --focus
@@ -186,6 +187,17 @@ private:
 
     // Thumbs.cpp
     void buildThumbs();
+    int setupStudio(Scene& ts);
+    // 3D viewer of the part sheet (web: partViewer): the part alone in the thumbnail studio, turned by dragging. While the
+    // sheet is open the main view is frozen (its last image) and the renderer draws the viewer instead.
+    void renderPreview();
+    Scene m_pv;
+    bool m_pvBuilt = false;
+    int m_pvObj = -1, m_pvPart = -1, m_pvMat = -1;
+    float m_pvYaw = 0, m_pvPitch = 0;
+    bool m_pvDrag = false;
+    ImVec4 m_pvRect{0, 0, 0, 0};
+    ImTextureID m_frozenTex = 0;
     bool thumbUv(int part, ImTextureID& tex, ImVec2& uv0, ImVec2& uv1) const;
 
     HWND m_hwnd = nullptr;

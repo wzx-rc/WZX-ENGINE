@@ -49,7 +49,8 @@ Cases : `[x]` porté et vérifié · `[~]` partiel (ce qui manque est dit) · `[
 - [ ] Détacher / ancrer le plateau (flottant, zone d'ancrage)
 
 ### Fiche pièce `#info` (appui long)
-- [~] Image, nom, chemin de catégorie, référence, Ajouter / Retirer des favoris, Fermer (Échap) ; [ ] visionneuse 3D tournante
+- [x] Fiche simple du web (`showPartSimple`) : visionneuse 3D (studio des miniatures, ACES 0,92, caméra 24° (1, 0,8, 1,3), glisser = lacet ×0,012 / tangage ×0,01 borné ±1,4, rotation en espace caméra), « Glisse pour tourner la pièce », nom, famille › catégorie, ☆ / ★ Favori, Fermer, Ajouter à la scène, Échap / clic dehors — capture 15
+- Natif : pendant la fiche, la vue principale garde sa dernière image (le moteur ne dessine que la visionneuse)
 - [ ] Fiche complète en mode DEV (métadonnées, connecteurs, export / réimport Maya OBJ, overrides)
 
 ### Panneau Mécanique `#mechPanel`
@@ -113,4 +114,5 @@ Cases : `[x]` porté et vérifié · `[~]` partiel (ce qui manque est dit) · `[
 - (aucune pour l'instant)
 
 ### Rendu
+- Polices : Segoe UI + Segoe UI Symbol fusionnées pour les glyphes du web (› … ★ ☆ ✎ ✋ ◀ ▶), absents de la police latine seule.
 - Path tracing natif (studio clair validé sur 03b) en plus du temps réel identique au web.
