@@ -13,5 +13,5 @@ float FingerprintMask(uint tex, float scale, float3 po, float3 no, uint seed) {
     float vy = FP_SAMPLE(tex, p.xz + off.yx).g;
     float vz = FP_SAMPLE(tex, p.xy + off * 1.7).g;
     float v = vx * w.x + vy * w.y + vz * w.z;   // linear (sRGB texture): clean ~0.75, prints ~0.2
-    return saturate((0.72 - v) * 2.2);
+    return saturate((0.78 - v) * 3.5);
 }

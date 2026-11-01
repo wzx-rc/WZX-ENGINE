@@ -35,9 +35,9 @@ struct Options {
     bool sss = true;              // --no-sss
     bool demo = false;            // --demo: showcase of a few bricks (beauty captures)
     bool cleanGround = false;     // --clean: floor without the grid lines
-    float exposure = 1.5f;        // --exposure
-    int tonemapper = 2;           // --tonemap 0 ACES, 1 AgX, 2 AgX Punchy, 3 Standard
-    float fingerprints = 0.35f;   // --fingerprints: strength of the roughness mask (0 = off)
+    float exposure = 1.3f;        // --exposure
+    int tonemapper = 0;           // --tonemap 0 ACES (default, as the web builder), 1 AgX, 2 AgX Punchy, 3 Standard
+    float fingerprints = 0.6f;    // --fingerprints: strength of the roughness mask (0 = off)
     float yaw = -1000, pitch = -1000;   // --yaw / --pitch degrees (camera)
     float zoom = 1.0f;        // --zoom f: camera distance x f after framing everything
     bool noUi = false;        // --no-ui: viewport and stats only (benchmarks, beauty captures)

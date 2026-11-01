@@ -205,7 +205,7 @@ Surf MakeSurf(GpuMaterial m, Hit h) {
         float fp = FingerprintMask(m.roughTex, m.roughTexScale, h.Po, h.No, h.inst) * m.roughTexStrength;
         s.rough = saturate(s.rough + fp);
         s.spec *= 1.0 - 0.35 * fp;
-        s.coatRough = saturate(m.coatRoughness + fp * 0.8);
+        s.coatRough = saturate(m.coatRoughness + fp * 1.2);
     }
     if (m.flags & MAT_FLAG_GRID) {
         float g = F.gridScale;

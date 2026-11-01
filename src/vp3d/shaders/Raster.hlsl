@@ -292,7 +292,7 @@ float4 Shade(VSOut i, bool ghost, float shadowBias, bool capture) {
         float fp = FingerprintMask(m.roughTex, m.roughTexScale, i.opos, i.onrm, D.id - 1) * m.roughTexStrength;
         rough = saturate(rough + fp);
         specular *= 1.0 - 0.35 * fp;
-        coatRough = saturate(coatRough + fp * 0.8);
+        coatRough = saturate(coatRough + fp * 1.2);
     }
     float a = rough * rough;
     float metal = m.metallic;

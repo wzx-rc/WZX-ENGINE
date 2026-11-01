@@ -115,7 +115,7 @@ bool BrickApp::init(HINSTANCE inst, const Options& opt) {
     m_rs.fireflyClamp = 8.0f;
     m_rs.filterGlossy = 0.15f;
     m_rs.bevelScale = 1.0f;
-    m_rs.tonemapper = m_opt.tonemapper;   // AgX Punchy by default
+    m_rs.tonemapper = m_opt.tonemapper;   // ACES by default
     m_rs.idPass = false;   // selection: coverage outline only
     m_rs.selectionStyle = 2;   // thin white line at 45 % and a light fill
     if (opt.bounces > 0) m_rs.maxBounces = opt.bounces;
@@ -226,19 +226,21 @@ void BrickApp::setupStage() {
     for (const Color& c : m_lib.palette) {
         Material m;
         m.name = c.name;
-        m.baseColor = float3(srgbToLinear(c.srgb.x), srgbToLinear(c.srgb.y), srgbToLinear(c.srgb.z));
+        float3 srgb = c.srgb;
+        if (c.id == 4) srgb = float3(201, 26, 9) * (1.0f / 255.0f);   // LDConfig Red is pure 180,0,0: LEGO Bright Red instead
+        m.baseColor = float3(srgbToLinear(srgb.x), srgbToLinear(srgb.y), srgbToLinear(srgb.z));
         m.roughness = 0.24f;
         m.specular = 0.5f;
         m.coat = 0.35f;
         m.coatRoughness = 0.05f;
         m.bevelRadius = 0.035f;
         m.roughnessTex = fpTex;
-        m.roughTexScale = 1.0f / 6.0f;   // the map covers 6 cm: prints at the scale of a finger on the bricks
+        m.roughTexScale = 1.0f / 10.0f;   // the map covers 10 cm: prints at the scale of a finger on the bricks
         m.roughTexStrength = m_opt.fingerprints;
         const float lum = 0.2126f * m.baseColor.x + 0.7152f * m.baseColor.y + 0.0722f * m.baseColor.z;
-        if (lum > 0.25f && m_opt.sss) {   // light colours: a little light goes through the plastic (short radius: no light
-            m.subsurface = 0.05f;                             // leaking into the next brick through the groove)
-            m.sssRadius = (m.baseColor * 0.8f + float3(0.2f)) * 0.03f;
+        if (lum > 0.06f && m_opt.sss) {   // light goes into the ABS: more on the light colours (white, yellow, red),
+            m.subsurface = std::min(0.35f, 0.15f + lum * 0.4f);   // a diffusion distance of about a millimetre, tinted
+            m.sssRadius = (m.baseColor * 0.85f + float3(0.15f)) * 0.14f;
         }
         if (c.group.find("trans") != std::string::npos) {
             m.transmission = 1.0f;
