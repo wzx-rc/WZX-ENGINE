@@ -602,11 +602,22 @@ void BrickApp::frame() {
             if (m_renderer.readBackBuffer(img, w, h)) savePng(m_opt.shotPath, img, w, h);
             if (!m_opt.savePath.empty()) saveScene(m_opt.savePath);
             // timings next to the capture (benchmarks): bricks, triangles drawn, GPU and CPU ms
+            // picking cost: 64 rays over the view (the boxes are already cached by the first one)
+            double pickMs = 0;
+            {
+                ImVec2 ds = ImGui::GetIO().DisplaySize;
+                pickBrick(ds.x * 0.5f, ds.y * 0.5f);
+                LARGE_INTEGER p0, p1;
+                QueryPerformanceCounter(&p0);
+                for (int k = 0; k < 64; ++k) pickBrick(ds.x * ((k % 8) + 0.5f) / 8, ds.y * ((k / 8) + 0.5f) / 8);
+                QueryPerformanceCounter(&p1);
+                pickMs = (p1.QuadPart - p0.QuadPart) * 1000.0 / m_qpf.QuadPart / 64;
+            }
             FILE* f = nullptr;
             if (_wfopen_s(&f, (m_opt.shotPath + L".txt").c_str(), L"w") == 0 && f) {
-                fprintf(f, "bricks=%d mode=%s gpu_ms=%.2f cpu_ms=%.2f frame_ms=%.2f tris_drawn=%.2fM spp=%u\n", (int)m_bricks.size(),
+                fprintf(f, "bricks=%d mode=%s gpu_ms=%.2f cpu_ms=%.2f frame_ms=%.2f tris_drawn=%.2fM spp=%u pick_ms=%.3f\n", (int)m_bricks.size(),
                         m_rs.raster ? "raster" : "pathtrace", m_renderer.gpuFrameMs(), m_cpuMs, m_frameMs,
-                        m_renderer.rasterTriangles() / 1e6, m_renderer.sampleCount());
+                        m_renderer.rasterTriangles() / 1e6, m_renderer.sampleCount(), pickMs);
                 fclose(f);
             }
             m_running = false;

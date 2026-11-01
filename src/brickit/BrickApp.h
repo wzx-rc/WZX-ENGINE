@@ -167,6 +167,8 @@ private:
     ImVec2 m_pressPos, m_rmbPos;
     bool m_rmbMoved = false;
     std::wstring m_scenePath;
+    std::vector<Box> m_pickBoxes;      // world boxes of the bricks (picking), for the scene revision m_pickVersion
+    uint32_t m_pickVersion = 0;
 
     // UI
     // kind 0 recents, 1 favourites, 2 LDraw category, 3 Technic sub-family; fam: family (row 1 of the library)

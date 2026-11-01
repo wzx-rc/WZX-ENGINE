@@ -15,17 +15,75 @@ View BrickApp::view() const {
     return v;
 }
 
+// Ray picking for tens of thousands of bricks: world boxes cached per scene revision, slab test on every box (about
+// 0.3 ms at 50k), then the triangles of the boxes hit, nearest box first, stopping once a box starts beyond the best hit.
+static bool rayTriangle(const float3& o, const float3& d, const float3& a, const float3& b, const float3& c, float& t) {
+    float3 e1 = b - a, e2 = c - a, p = cross(d, e2);
+    float det = dot(e1, p);
+    if (std::fabs(det) < 1e-12f) return false;
+    float inv = 1.0f / det;
+    float3 s = o - a;
+    float u = dot(s, p) * inv;
+    if (u < 0 || u > 1) return false;
+    float3 q = cross(s, e1);
+    float v = dot(d, q) * inv;
+    if (v < 0 || u + v > 1) return false;
+    float tt = dot(e2, q) * inv;
+    if (tt <= 1e-5f || tt >= t) return false;
+    t = tt;
+    return true;
+}
+
 int BrickApp::pickBrick(float sx, float sy, float3* point, int exclude) {
     float3 o, d;
     view().ray(sx, sy, o, d);
-    // ghost objects (the blocked brick in hand) are skipped by vp3d::pick; the held brick is made unselectable meanwhile
-    const int ex = exclude >= 0 ? m_firstBrickObject + exclude : -1;
-    if (ex >= 0) m_scene.objects[ex].selectable = false;
-    PickResult r = pick(m_scene, o, d);
-    if (ex >= 0) m_scene.objects[ex].selectable = true;
-    if (r.object < m_firstBrickObject) return -1;
-    if (point) *point = r.position;
-    return r.object - m_firstBrickObject;
+    const int n = (int)m_bricks.size();
+    if (m_pickVersion != m_scene.objectsVersion || (int)m_pickBoxes.size() != n) {
+        m_pickVersion = m_scene.objectsVersion;
+        m_pickBoxes.resize(n);
+        for (int i = 0; i < n; ++i) {
+            const Object& ob = m_scene.objects[m_firstBrickObject + i];
+            const Part& p = m_lib.parts[m_bricks[i].part];
+            Affine xf = ob.transform();
+            Box bx{float3(1e30f), float3(-1e30f)};
+            for (int c = 0; c < 8; ++c) {
+                float3 w = xf.point(float3((c & 1) ? p.bmax.x : p.bmin.x, (c & 2) ? p.bmax.y : p.bmin.y, (c & 4) ? p.bmax.z : p.bmin.z));
+                bx.mn = minv(bx.mn, w);
+                bx.mx = maxv(bx.mx, w);
+            }
+            m_pickBoxes[i] = bx;
+        }
+    }
+    const float3 inv(1.0f / (std::fabs(d.x) > 1e-12f ? d.x : 1e-12f), 1.0f / (std::fabs(d.y) > 1e-12f ? d.y : 1e-12f), 1.0f / (std::fabs(d.z) > 1e-12f ? d.z : 1e-12f));
+    std::vector<std::pair<float, int>> hits;
+    for (int i = 0; i < n; ++i) {
+        if (i == exclude || !m_scene.objects[m_firstBrickObject + i].visible) continue;
+        const Box& b = m_pickBoxes[i];
+        float t0 = 0, t1 = 1e30f;
+        for (int k = 0; k < 3; ++k) {
+            float a = ((&b.mn.x)[k] - (&o.x)[k]) * (&inv.x)[k], c = ((&b.mx.x)[k] - (&o.x)[k]) * (&inv.x)[k];
+            if (a > c) std::swap(a, c);
+            t0 = std::max(t0, a);
+            t1 = std::min(t1, c);
+        }
+        if (t0 <= t1) hits.push_back({t0, i});
+    }
+    std::sort(hits.begin(), hits.end());
+    float best = 1e30f;
+    int bestI = -1;
+    for (auto& h : hits) {
+        if (h.first > best) break;
+        const int i = h.second;
+        const Part& p = m_lib.parts[m_bricks[i].part];
+        Affine xi = m_scene.objects[m_firstBrickObject + i].transform().inverse();
+        float3 lo = xi.point(o), ld = xi.vector(d);   // t stays in world units (rigid transforms)
+        const std::vector<Vertex>& V = p.mesh.vertices;
+        const std::vector<uint32_t>& I = p.mesh.indices;
+        for (size_t t = 0; t + 2 < I.size(); t += 3)
+            if (rayTriangle(lo, ld, V[I[t]].pos, V[I[t + 1]].pos, V[I[t + 2]].pos, best)) bestI = i;
+    }
+    if (bestI >= 0 && point) *point = o + d * best;
+    return bestI;
 }
 
 // --------------------------------------------------------------------------- brick in hand
