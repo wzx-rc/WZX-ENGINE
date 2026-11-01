@@ -145,6 +145,7 @@ bool BrickApp::init(HINSTANCE inst, const Options& opt) {
     if (opt.dev) m_dev = true;
     devLoadAll();   // DEV replacements kept next to the exe
     if (opt.manual) m_pManual.visible = true;
+    if (!opt.mouseTest.empty()) m_gui.beforeNewFrame = [this] { mouseTestInput(); };
     if (opt.floatTray) { m_pTray.floating = true; m_pTray.x = opt.floatX; m_pTray.y = opt.floatY; }
     if (opt.optsRight) m_optsRight = true;
     devApplyAll();
@@ -708,6 +709,7 @@ void BrickApp::frame() {
     }
     pdfPump();
     if (m_prefsDirty && !ImGui::IsMouseDown(ImGuiMouseButton_Left)) { m_prefsDirty = false; savePrefs(); }
+    mouseTestFrame();
     if (m_frame == 1 && !m_opt.ttBase.empty()) {   // self-test: a turntable base and its top on one axis -> one pivot
         Part* b = m_lib.get(m_opt.ttBase);
         Part* t = m_lib.get(m_opt.ttTop);
@@ -885,6 +887,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         else if (a == L"--manual") opt.manual = true;
         else if (a == L"--float-tray") { opt.floatTray = true; opt.floatX = (float)_wtof(next().c_str()); opt.floatY = (float)_wtof(next().c_str()); }
         else if (a == L"--opts-right") opt.optsRight = true;
+        else if (a == L"--mouse-test") { std::wstring w = next(); opt.mouseTest.assign(w.begin(), w.end()); }
         else if (a == L"--turntable-test") { std::wstring w1 = next(), w2 = next(); opt.ttBase.assign(w1.begin(), w1.end()); opt.ttTop.assign(w2.begin(), w2.end()); }
         else if (a == L"--maya") opt.mayaOut = next();
         else if (a == L"--dev-roundtrip") { std::wstring w = next(); opt.devRoundtrip.assign(w.begin(), w.end()); }   // 0 select, 1 visor, 2 move, 3 rotate

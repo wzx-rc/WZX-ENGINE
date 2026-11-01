@@ -62,7 +62,8 @@ struct Options {
     bool manual = false;        // --manual: show the manual window
     bool floatTray = false, optsRight = false;   // --float-tray x y, --opts-right (captures)
     float floatX = 0, floatY = 0;
-    std::string ttBase, ttTop;  // --turntable-test <base> <top>: mechanics self-test
+    std::string ttBase, ttTop;
+    std::string mouseTest;      // --mouse-test marquee | gizmo | ring | mech  // --turntable-test <base> <top>: mechanics self-test
     std::string devRoundtrip;
     std::wstring mayaOut;       // --maya <file.zip>: export the scene to Maya then quit (tests)   // --dev-roundtrip <part>: OBJ export / import self-test
     int libCategory = -1;     // --cat N
@@ -272,6 +273,18 @@ private:
     std::vector<std::pair<float, float>> m_pdfSizes;
     struct PdfTex { ImTextureID tex = 0; int w = 0, h = 0; bool asked = false; };
     std::vector<PdfTex> m_pdfTex;
+
+    // BrickMouseTest.cpp: scripted mouse tests
+public:
+    struct MouseStep { int frame; float x, y; int btn; };   // btn -1 move, 0 press, 1 release
+private:
+    void mouseTestInput();
+    void mouseTestFrame();
+    std::vector<MouseStep> m_mouseScript;
+    Brick m_mtBefore;
+    std::vector<double> m_mtQ;
+    int m_mtBrick = -1;
+    std::string m_mtDiag;
 
     // Thumbs.cpp
     void buildThumbs();

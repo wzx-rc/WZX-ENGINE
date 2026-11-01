@@ -24,3 +24,4 @@
 | 19 | 01/11/2026 | Panneaux du web déplaçables / ancrables (plateau flottant, actions à gauche ou à droite, zone d'ancrage), défilement latéral des onglets | 19_panneaux_flottants.png |
 | 20 | 01/11/2026 | Lumières du web en temps réel (rim froide, hémisphère : terme ajouté au raster du moteur), écran de chargement, brique à 30 % avec les voxels | 20_rim_hemi.png |
 | 21 | 01/11/2026 | Mécanique : plateaux tournants (5 familles) détectés et pivotants, correction du web notée ; vérins impossibles sans données de glissière | (test --turntable-test) |
+| 22 | 01/11/2026 | Tests souris scriptés (événements ImGui réels) : rectangle 11/11, flèche X 3 tenons, anneau 90°, glisser mécanique 48° | (mouse_test.txt) |

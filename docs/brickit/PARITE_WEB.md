@@ -10,7 +10,7 @@ Cases : `[x]` porté et vérifié · `[~]` partiel (ce qui manque est dit) · `[
 - [x] Logo « 3D » jaune + « BrickIt Builder »
 - [x] Annuler / Rétablir (grisés quand la pile est vide)
 - [x] Modes Sélection / Viseur / Déplacer / Tourner (boutons, état jaune)
-- [x] Mode Sélection : clic = sélection ; [~] rectangle de sélection (`#marquee`, codé, à tester à la souris)
+- [x] Mode Sélection : clic = sélection ; [x] rectangle de sélection (`#marquee`) — test souris scripté : 11 / 11 briques
 - [x] Mode Déplacer : gizmo flèches rouge / jaune / bleu (crans tenon / plaque, sol respecté, multi-sélection), sphère blanche = déplacement libre en main ; [x] Mode Tourner : anneaux 90° autour du pivot (+ rebond 0,92) ; taille 0,07 × distance, blanc au survol — captures 13 / 13b
 - [x] Modes Déplacer / Tourner : un clic sélectionne (Auto Pivot déplace le pivot), glisser fait orbiter ; Viseur : glisser le vide fait orbiter (comme le web)
 - [x] Grille, [x] Auto Pivot, [x] Sécurité 50 %, [x] Focus, [x] Animations
@@ -83,9 +83,9 @@ Cases : `[x]` porté et vérifié · `[~]` partiel (ce qui manque est dit) · `[
 ## 3. Souris / doigt
 - [x] Viseur : toucher une brique la prend en main, relâcher la pose
 - [x] Glisser depuis la bibliothèque
-- [~] Rectangle de sélection (mode Sélection, Maj/Ctrl ajoute, toast « n briques sélectionnées ») : codé, à tester
+- [x] Rectangle de sélection (mode Sélection, Maj/Ctrl ajoute, toast « n briques sélectionnées ») — `--mouse-test marquee`
 - [x] Orbite / pan / zoom
-- [x] Gizmo flèches et anneaux (à essayer à la souris)
+- [x] Gizmo flèches et anneaux — `--mouse-test gizmo` (3 tenons exactement le long de X), `--mouse-test ring` (90°)
 
 ## 4. Animations et timings
 - [x] Brique qui tombe dans la main (écrasement 0,55, ressort w22 z.35), flottement 0,9 + oscillation, ressort w14, bascule selon la vitesse, pose 0,15 s (t²), rebond à la pose (0,86, w30 z.28, 0,6 s), halo du voxel visé (0,18 s, pulsation) — capture 12
@@ -104,7 +104,7 @@ Cases : `[x]` porté et vérifié · `[~]` partiel (ce qui manque est dit) · `[
 
 ## 7. Mécanique (détails)
 - [x] Connecteurs, corps, pivots, engrènements, arbre, boucles, solveur LM, butées, rapports, phase des dents, couleurs par corps, liaisons
-- [~] Glisser une pièce mobile (codé, à tester)
+- [x] Glisser une pièce mobile — `--mouse-test mech` sur la démo (liaisons tournées de 48°)
 - [x] Plateaux tournants : pivot entre une moitié « Bottom / Base » et sa moitié « Top » de la même famille (5 familles : 5 x 5, 28 dents, 60 dents, Type 1, Type 2), vérifié par `--turntable-test` (2 corps, 1 pivot pour chacune) ; sans engrenage il n'a pas de moteur et se manipule au glisser, comme la règle du web
 - [ ] Vérins : inactifs comme dans le web v26 (aucune pièce ne reçoit `cyl`) ; la conversion LDraw → BrickIt ne porte pas les glissières LDCad (axe, course), il faut les ajouter au convertisseur (`ldraw2brickit.mjs`) avant de pouvoir les détecter
 
