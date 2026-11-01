@@ -9,9 +9,10 @@ namespace brickit {
 View BrickApp::view() const {
     View v;
     v.cam = m_scene.camera;
-    ImVec2 d = ImGui::GetIO().DisplaySize;
-    v.w = std::max(1.0f, d.x);
-    v.h = std::max(1.0f, d.y);
+    v.ox = m_stage.x;
+    v.oy = m_stage.y;
+    v.w = std::max(1.0f, m_stage.z - m_stage.x);
+    v.h = std::max(1.0f, m_stage.w - m_stage.y);
     return v;
 }
 
@@ -405,7 +406,16 @@ void BrickApp::editInput() {
         if (ctrl && ImGui::IsKeyPressed(ImGuiKey_D)) duplicateSelected();
         if (ctrl && ImGui::IsKeyPressed(ImGuiKey_S)) saveDialog();
         if (ctrl && ImGui::IsKeyPressed(ImGuiKey_O)) openDialog();
-        if (!ctrl && ImGui::IsKeyPressed(ImGuiKey_R)) rotateSelected(io.KeyShift ? -1 : 1);
+        // keys of the web: R or E = turn +90, Q = -90, C = pivot voxel, V = voxels, P = pivot edit, A = animations,
+        // F = focus mode, Space = take the selected brick in hand
+        if (!ctrl && (ImGui::IsKeyPressed(ImGuiKey_R) || ImGui::IsKeyPressed(ImGuiKey_E))) rotateSelected(1);
+        if (!ctrl && ImGui::IsKeyPressed(ImGuiKey_Q)) rotateSelected(-1);
+        if (!ctrl && ImGui::IsKeyPressed(ImGuiKey_C)) cycleGrab();
+        if (!ctrl && ImGui::IsKeyPressed(ImGuiKey_V)) { m_showVox = !m_showVox; toast(m_showVox ? "Voxels : affichés (tenons jaunes, pins cyan, axles magenta)" : "Voxels : masqués"); }
+        if (!ctrl && ImGui::IsKeyPressed(ImGuiKey_P)) m_pivotEdit = !m_pivotEdit;
+        if (!ctrl && ImGui::IsKeyPressed(ImGuiKey_A)) m_animOn = !m_animOn;
+        if (!ctrl && ImGui::IsKeyPressed(ImGuiKey_F)) { m_focusDim = !m_focusDim; syncObjects(); toast(m_focusDim ? "Mode focus : les autres briques à 50 %" : "Mode focus désactivé"); }
+        if (ImGui::IsKeyPressed(ImGuiKey_Space)) pickUpSelected();
         if (!ctrl && ImGui::IsKeyPressed(ImGuiKey_T) && m_holding) {   // tilt towards the viewer
             float3 r, u, f;
             m_scene.camera.basis(r, u, f);
@@ -422,7 +432,6 @@ void BrickApp::editInput() {
             if (m_holding) cancelHeld();
             else select(-1);
         }
-        if (!ctrl && ImGui::IsKeyPressed(ImGuiKey_H)) { m_focusDim = !m_focusDim; syncObjects(); }
         if (!ctrl && ImGui::IsKeyPressed(ImGuiKey_G)) { m_build.gridSnap = !m_build.gridSnap; toast(m_build.gridSnap ? "Grille : oui" : "Grille : non"); }
     }
 

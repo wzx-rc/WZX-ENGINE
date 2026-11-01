@@ -1,0 +1,163 @@
+// BrickIt - preferences and automatic save, as the web keeps them in localStorage (vp3d-builder-prefs,
+// vp3d-builder-scene, vp3d-recent-parts, vp3d-fav-parts, vp3d-thumb-size): JSON files next to the exe. The sample scene
+// of a first launch, the .ldr export and the « Scène partagée » sheet.
+#include "BrickApp.h"
+#include "app/Json.h"
+#include <cmath>
+#include <cstdio>
+
+namespace brickit {
+
+static bool readText(const std::wstring& path, std::string& out) {
+    FILE* f = nullptr;
+    if (_wfopen_s(&f, path.c_str(), L"rb") != 0 || !f) return false;
+    char buf[65536];
+    size_t n;
+    out.clear();
+    while ((n = fread(buf, 1, sizeof(buf), f)) > 0) out.append(buf, n);
+    fclose(f);
+    return true;
+}
+static void writeText(const std::wstring& path, const std::string& t) {
+    FILE* f = nullptr;
+    if (_wfopen_s(&f, path.c_str(), L"wb") != 0 || !f) return;
+    fwrite(t.data(), 1, t.size(), f);
+    fclose(f);
+}
+static std::string jstr(const std::string& s) {
+    std::string o = "\"";
+    for (char c : s) { if (c == '"' || c == '\\') o.push_back('\\'); o.push_back(c); }
+    return o + "\"";
+}
+
+void BrickApp::savePrefs() {
+    std::string j = "{";
+    char b[256];
+    snprintf(b, sizeof(b), "\"safety50\": %s, \"gridSnap\": %s, \"autoPivot\": %s, \"animOn\": %s, \"focusDim\": %s, \"mode\": %d, \"quality\": %d, \"tonemap\": %d, \"colorId\": %d, \"thumbSize\": %d,",
+             m_build.safety ? "true" : "false", m_build.gridSnap ? "true" : "false", m_autoPivot ? "true" : "false", m_animOn ? "true" : "false",
+             m_focusDim ? "true" : "false", m_mode, m_quality, m_rs.tonemapper, m_lib.palette[m_color].id, m_thumbSize);
+    j += b;
+    j += "\"nav\": {\"fam\": " + jstr(m_fam) + ", \"cat\": " + jstr(m_cat) + ", \"sub\": " + jstr(m_sub) + "},";
+    auto panel = [&](const char* n, const PanelState& p) { char t[96]; snprintf(t, sizeof(t), "\"%s\": {\"visible\": %s, \"collapsed\": %s}", n, p.visible ? "true" : "false", p.collapsed ? "true" : "false"); return std::string(t); };
+    j += "\"panels\": {" + panel("tray", m_pTray) + ", " + panel("opts", m_pOpts) + ", " + panel("colors", m_pColors) + ", " + panel("hud", m_pHud) + ", " + panel("manual", m_pManual) + "},";
+    auto names = [&](const std::vector<int>& v) { std::string s = "["; for (size_t i = 0; i < v.size(); ++i) s += (i ? ", " : "") + jstr(m_lib.parts[v[i]].name); return s + "]"; };
+    j += "\"recentParts\": " + names(m_recent) + ", \"favParts\": " + names(m_fav) + "}\n";
+    writeText(m_exeDir + L"\\brickit_prefs.json", j);
+}
+
+void BrickApp::loadPrefs() {
+    std::string t;
+    app::Json p;
+    if (!readText(m_exeDir + L"\\brickit_prefs.json", t) || !app::Json::parse(t, p)) return;
+    auto flag = [&](const char* k, bool& v) { if (p[k].type == app::Json::Bool) v = p[k].b; };
+    flag("safety50", m_build.safety);
+    flag("gridSnap", m_build.gridSnap);
+    flag("autoPivot", m_autoPivot);
+    flag("animOn", m_animOn);
+    flag("focusDim", m_focusDim);
+    if (p["mode"].type == app::Json::Number) m_mode = (int)p["mode"].n;
+    if (p["quality"].type == app::Json::Number) m_quality = (int)p["quality"].n;
+    if (p["tonemap"].type == app::Json::Number) m_rs.tonemapper = (int)p["tonemap"].n;
+    if (p["thumbSize"].type == app::Json::Number) m_thumbSize = std::clamp((int)p["thumbSize"].n, 0, 2);
+    if (p["colorId"].type == app::Json::Number) m_color = colorIndex((int)p["colorId"].n);
+    if (p["nav"].type == app::Json::Object) { m_fam = p["nav"]["fam"].str(m_fam); m_cat = p["nav"]["cat"].str(); m_sub = p["nav"]["sub"].str(); }
+    auto panel = [&](const char* n, PanelState& ps) {
+        const app::Json& q = p["panels"][n];
+        if (q["visible"].type == app::Json::Bool) ps.visible = q["visible"].b;
+        if (q["collapsed"].type == app::Json::Bool) ps.collapsed = q["collapsed"].b;
+    };
+    panel("tray", m_pTray); panel("opts", m_pOpts); panel("colors", m_pColors); panel("hud", m_pHud); panel("manual", m_pManual);
+    auto list = [&](const char* k, std::vector<int>& v) { v.clear(); for (const app::Json& n : p[k].a) { int i = m_lib.find(n.str()); if (i >= 0) v.push_back(i); } };
+    list("recentParts", m_recent);
+    list("favParts", m_fav);
+    m_rs.msaaSamples = m_quality ? 4 : 1;
+}
+
+void BrickApp::autosave() {
+    if (m_opt.shotPath.empty()) writeText(m_exeDir + L"\\brickit_scene.v3d.json", m_build.toJson(m_scene.camera));
+}
+
+bool BrickApp::restoreAutosave() {
+    std::string t, msg;
+    if (!readText(m_exeDir + L"\\brickit_scene.v3d.json", t)) return false;
+    if (!m_build.fromJson(t, &m_scene.camera, &msg) || m_bricks.empty()) return false;
+    toast(msg);
+    return true;
+}
+
+// The scene of a first launch (sampleScene of the web).
+void BrickApp::sampleScene() {
+    auto put = [&](const char* n, int c, float sx, float py, float sz) {
+        int pi = m_lib.find(n);
+        if (pi < 0 || !m_lib.get(n)) return;
+        Brick b;
+        b.part = pi;
+        b.color = colorIndex(c);
+        b.pos = float3(sx * kPitch, py * kPlate, sz * kPitch);
+        m_bricks.push_back(b);
+    };
+    put("3001", 4, -2, 0, -1); put("3001", 1, -1, 3, -1); put("3003", 14, 3, 0, 1); put("3004", 15, 3, 3, 1);
+    put("3062a", 10, 6, 0, -1); put("3062a", 10, 6, 3, -1); put("15068", 25, 1, 6, -1);
+    put("2357", 15, -5, 0, 2); put("3063b", 322, 0, 0, 3); put("3009", 71, -4, 0, -4); put("2456", 272, -4, 3, -5);
+    Camera& c = m_scene.camera;   // cam of the web: target (0.4, 1.2, 0.4), yaw 38, pitch 32, distance 26
+    c.target = float3(0.4f, 1.2f, 0.4f);
+    c.yaw = radians(38.0f);
+    c.pitch = radians(32.0f);
+    c.distance = 26.0f;
+}
+
+// LDraw export (sceneLdr of the web): LDraw space = BrickIt space with Y and Z flipped, units / 0.04 cm.
+std::string BrickApp::sceneLdr() const {
+    std::string out = "0 BrickIt scene\r\n0 Name: brickit_scene.ldr\r\n0 Author: BrickIt Builder LDraw\r\n0 BFC CERTIFY CCW\r\n\r\n";
+    auto n = [](float v) {
+        float r = std::round(v * 10000.0f) / 10000.0f;
+        if (r == 0) return std::string("0");
+        char b[32];
+        snprintf(b, sizeof(b), "%g", r);
+        return std::string(b);
+    };
+    for (const Brick& b : m_bricks) {
+        const Part& p = m_lib.parts[b.part];
+        float3 w = qRot(b.rot, p.ldrawOrigin) + b.pos;
+        // M = C R C with C = diag(1, -1, -1)
+        float3 X = qRot(b.rot, float3(1, 0, 0)), Y = qRot(b.rot, float3(0, 1, 0)), Z = qRot(b.rot, float3(0, 0, 1));
+        float R[3][3] = {{X.x, Y.x, Z.x}, {X.y, Y.y, Z.y}, {X.z, Y.z, Z.z}};
+        const float C[3] = {1, -1, -1};
+        float M[3][3];
+        for (int i = 0; i < 3; ++i)
+            for (int j = 0; j < 3; ++j) M[i][j] = C[i] * R[i][j] * C[j];
+        out += "1 " + std::to_string(m_lib.palette[b.color].id) + " " + n(w.x / 0.04f) + " " + n(-w.y / 0.04f) + " " + n(-w.z / 0.04f);
+        for (int i = 0; i < 3; ++i)
+            for (int j = 0; j < 3; ++j) out += " " + n(M[i][j]);
+        out += " " + (p.ldraw.empty() ? p.name : p.ldraw) + ".dat\r\n";
+    }
+    return out;
+}
+
+void BrickApp::pickUpSelected() {
+    if (m_selected < 0 || m_holding) return;
+    m_pressPoint = m_build.worldVoxel(m_bricks[m_selected], m_build.grabOf(m_bricks[m_selected]));
+    ImVec2 mp = ImGui::GetIO().MousePos;
+    beginMove(m_selected, mp.x, mp.y);
+}
+
+void BrickApp::cycleGrab() {
+    int b = m_holding ? m_held.brick : m_selected;
+    if (b < 0) return;
+    const Part& p = m_lib.parts[m_bricks[b].part];
+    if (p.voxels.empty()) return;
+    int g = m_bricks[b].grab;
+    g = (g + 1) % (int)p.voxels.size();
+    m_bricks[b].grab = g;
+    if (m_holding) {
+        m_held.grab = p.voxels[g];
+        ImVec2 mp = ImGui::GetIO().MousePos;
+        updateHeld(mp.x, mp.y);
+    }
+    char t[96];
+    snprintf(t, sizeof(t), "Pivot d'accroche : voxel %d / %d", g + 1, (int)p.voxels.size());
+    toast(t);
+    autosave();
+}
+
+} // namespace brickit

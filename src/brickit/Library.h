@@ -27,6 +27,8 @@ struct Part {
     std::string category;     // LDraw category (Brick, Plate, Technic ...)
     std::string sub;          // Technic sub-family (Poutres, Axes ...), empty for the base set
     std::string family;       // LDraw family of the base set (Brique, Technic ...)
+    std::string ldraw;        // LDraw file name without .dat (info.ldraw)
+    float3 ldrawOrigin;       // LDraw origin in the part frame (info.ldrawOrigin, export .ldr)
     bool base = false;        // one of the 50 base parts
     int pack = -1;            // Technic pack holding the geometry (-1: base part)
     int heightPlates = 3;

@@ -3,6 +3,7 @@
 // the SVG icons (Svg.cpp), the French texts. Everything is drawn with ImDrawList in one window behind the ImGui popups;
 // clicks are hit-tested here. m_ui scales the whole interface (4K: 2).
 #include "BrickApp.h"
+#include <commdlg.h>
 #include "Svg.h"
 #include "app/Theme.h"
 #include <algorithm>
@@ -215,7 +216,7 @@ void BrickApp::uiHeader() {
         {4, svg::I_UNDO, nullptr, nullptr, false, true, 0},
         {0, svg::I_VOXELS, nullptr, "Voir les voxels : tenons jaunes, pins cyan, axles magenta (V)", m_showVox, true, 12},
         {0, svg::I_DELETE, nullptr, "Supprimer la sélection", false, sel && !m_holding, 13},
-        {1, svg::I_UNDO, m_quality ? "HQ" : "Rapide", "Qualité", false, true, 14},
+        {1, svg::I_UNDO, !m_rs.raster ? "Path tracing" : m_quality ? "HQ" : "Rapide", "Qualité", false, true, 14},
         {1, svg::I_UNDO, tmNames[std::clamp(m_rs.tonemapper, 0, 3)], "Transformation de vue", false, true, 15},
         {4, svg::I_UNDO, nullptr, nullptr, false, true, 0},
         {2, svg::I_MECH, "Mécanique", "Mode Mécanique : animer pivots, engrenages et axes (cinématique)", m_mechOn, true, 16},
@@ -277,7 +278,7 @@ void BrickApp::uiHeader() {
         case 16: if (m_mechOn) mechExit(); else mechEnter(); break;
         case 17: m_dev = !m_dev; toast(m_dev ? "Mode DEV : le panneau développeur arrive bientôt dans la version native" : "Mode DEV désactivé"); break;
         case 18: m_popup = m_popup == 3 ? 0 : 3; m_popupAt = ImVec2(d.x - 220 * s, y1 + 4 * s); break;
-        case 19: m_popup = m_popup == 4 ? 0 : 4; m_popupAt = ImVec2(d.x - 230 * s, y1 + 4 * s); break;
+        case 19: m_popup = 0; m_sheetOpen = true; m_sheetText = m_build.toJson(m_scene.camera); break;
         }
     }
 }
@@ -661,12 +662,13 @@ void BrickApp::uiMechPanel() {
     m_uiRects.push_back(ImVec4(p0.x, p0.y, p1.x, p1.y));
     float y = p0.y + pad, x = p0.x + pad;
     u.text(ImVec2(x, y), 14, C_TEXT, "Mécanique", true);
-    {   // close: back to building
-        ImVec2 a(p1.x - pad - 30 * s, y - 4 * s), b(p1.x - pad, y + 22 * s);
+    {   // Quitter: back to building
+        float qw = u.textW(12, "Quitter") + 20 * s;
+        ImVec2 a(p1.x - pad - qw, y - 6 * s), b(p1.x - pad, y + 24 * s);
         bool h = u.hover(a, b);
         u.dl->AddRectFilled(a, b, h ? C_CARD_HI : C_CARD, 7 * s);
-        svg::icon(u.dl, svg::I_CLOSE, ImVec2((a.x + b.x) * 0.5f, (a.y + b.y) * 0.5f), 12 * s, C_TEXT);
-        if (h) ImGui::SetTooltip("Revenir au montage");
+        u.text(ImVec2(a.x + 10 * s, a.y + 8 * s), 12, C_TEXT, "Quitter");
+        if (h) ImGui::SetTooltip("Revenir au montage (Échap)");
         if (h && u.pressed) { mechExit(); return; }
     }
     y += 26 * s;
@@ -843,10 +845,10 @@ void BrickApp::uiPopups() {
     const float s = m_ui;
     struct Item { const char* label; bool on; int id; };
     std::vector<Item> items;
-    if (m_popup == 1) items = {{"Rapide", m_quality == 0, 0}, {"HQ", m_quality == 1, 1}};
+    if (m_popup == 1) items = {{"Rapide", m_rs.raster && m_quality == 0, 0}, {"HQ", m_rs.raster && m_quality == 1, 1}, {"Path tracing", !m_rs.raster, 2}};
     else if (m_popup == 2) items = {{"ACES", m_rs.tonemapper == 0, 0}, {"AgX", m_rs.tonemapper == 1, 1}, {"Std", m_rs.tonemapper == 3, 3}};
-    else if (m_popup == 3) items = {{"Bibliothèque", m_pTray.visible, 0}, {"Options de brique", m_pOpts.visible, 1}, {"Couleurs", m_pColors.visible, 2},
-                                    {"Infos (pièces, fps)", m_pHud.visible, 3}, {"Manuel", m_pManual.visible, 4}, {"Réinitialiser les panneaux", false, 5}};
+    else if (m_popup == 3) items = {{"Bibliothèque", m_pTray.visible, 0}, {"Manuel d'instructions", m_pManual.visible, 4}, {"Infos (pièces, fps)", m_pHud.visible, 3},
+                                    {"Couleurs", m_pColors.visible, 2}, {"Actions de la brique", m_pOpts.visible, 1}, {"Réinitialiser la disposition", false, 5}};
     else items = {{"Nouvelle scène", false, 0}, {"Ouvrir… (.v3d.json)", false, 1}, {"Enregistrer… (.v3d.json)", false, 2}};
     const bool checks = m_popup == 3;
     float w = 0;
@@ -876,13 +878,16 @@ void BrickApp::uiPopups() {
         u.text(ImVec2(tx, a.y + 7 * s), 12.5f, (it.on && !checks) ? C_ACCENT : C_TEXT, it.label);
         if (h && u.pressed) {
             clickedItem = true;
-            if (m_popup == 1) { m_quality = it.id; m_rs.msaaSamples = m_quality ? 4 : 1; }
+            if (m_popup == 1) {
+                if (it.id == 2) { if (m_rs.raster) { m_rs.raster = false; applyLook(); } }
+                else { m_quality = it.id; m_rs.msaaSamples = m_quality ? 4 : 1; if (!m_rs.raster) { m_rs.raster = true; applyLook(); } }
+            }
             else if (m_popup == 2) { m_rs.tonemapper = it.id; m_renderer.resetAccumulation(); }
             else if (m_popup == 3) {
                 PanelState* ps[5] = {&m_pTray, &m_pOpts, &m_pColors, &m_pHud, &m_pManual};
                 if (it.id < 4) ps[it.id]->visible = !ps[it.id]->visible;
                 else if (it.id == 4) toast("Manuel : le module arrive bientôt dans la version native");
-                else { m_pTray = m_pOpts = m_pColors = PanelState(); m_pHud = PanelState{false, false}; }
+                else { m_pTray = m_pOpts = m_pColors = PanelState(); m_pHud = m_pManual = PanelState{false, false}; toast("Disposition réinitialisée"); }
             } else {
                 if (it.id == 0) { pushUndo(); m_bricks.clear(); m_selected = -1; m_multi.clear(); rebuildScene(); toast("Nouvelle scène"); }
                 else if (it.id == 1) openDialog();
@@ -893,6 +898,90 @@ void BrickApp::uiPopups() {
     }
     if (u.pressed && !clickedItem && !u.hover(p0, p1) && u.mouse.y > 30 * s) m_popup = 0;
     if (clickedItem && m_popup != 3) m_popup = 0;
+}
+
+// « Scène partagée PC · Mac · iPad » (#sheet): the .v3d.json text, copy, load, open, exports, new scene.
+void BrickApp::uiSceneSheet() {
+    if (!m_sheetOpen) return;
+    const float s = m_ui;
+    ImVec2 d = ImGui::GetIO().DisplaySize;
+    ImGui::GetForegroundDrawList();
+    ImGui::SetNextWindowPos(ImVec2(0, 0));
+    ImGui::SetNextWindowSize(d);
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0, 0, 0, 0.5f));
+    ImGui::Begin("##sheetbg", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoMove);
+    ImGui::End();
+    ImGui::PopStyleColor();
+    const float W = std::min(640 * s, d.x - 32 * s);
+    ImGui::SetNextWindowPos(ImVec2((d.x - W) * 0.5f, d.y * 0.5f - 190 * s));
+    ImGui::SetNextWindowSize(ImVec2(W, 0));
+    ImGui::SetNextWindowFocus();
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(18 * s, 18 * s));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 14 * s);
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8 * s, 12 * s));
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 7 * s);
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(10 * s, 6 * s));
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImGui::ColorConvertU32ToFloat4(C_PANEL_SOLID));
+    ImGui::PushStyleColor(ImGuiCol_Border, ImGui::ColorConvertU32ToFloat4(C_LINE));
+    ImGui::PushStyleColor(ImGuiCol_Button, ImGui::ColorConvertU32ToFloat4(C_CARD));
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImGui::ColorConvertU32ToFloat4(C_CARD_HI));
+    ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0x0f / 255.0f, 0x10 / 255.0f, 0x12 / 255.0f, 1));
+    ImGui::Begin("##sheet", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_AlwaysAutoResize);
+    if (m_gui.fontBold) ImGui::PushFont(m_gui.fontBold);
+    ImGui::TextUnformatted("Scène partagée PC · Mac · iPad");
+    if (m_gui.fontBold) ImGui::PopFont();
+    ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertU32ToFloat4(C_DIM));
+    ImGui::TextWrapped("Même format que l'application bureau (.v3d.json). Copie ce texte dans un fichier pour l'ouvrir sur PC (Ctrl+O) et lancer le rendu path tracing, ou colle ici une scène exportée du PC.");
+    ImGui::PopStyleColor();
+    static std::vector<char> buf;
+    if (buf.size() < m_sheetText.size() + 65536) buf.assign(m_sheetText.size() + 65536, 0);
+    if (ImGui::IsWindowAppearing() || std::strncmp(buf.data(), m_sheetText.c_str(), buf.size()) != 0) {
+        std::memcpy(buf.data(), m_sheetText.c_str(), m_sheetText.size() + 1);
+    }
+    if (ImGui::InputTextMultiline("##scenetext", buf.data(), buf.size(), ImVec2(-1, 180 * s))) m_sheetText = buf.data();
+    if (ImGui::Button("Copier")) { ImGui::SetClipboardText(m_sheetText.c_str()); toast("Scène copiée dans le presse-papiers"); }
+    ImGui::SameLine();
+    if (ImGui::Button("Charger ce texte")) {
+        std::string msg;
+        std::vector<Brick> before = m_bricks;
+        if (m_build.fromJson(m_sheetText, &m_scene.camera, &msg)) { m_undo.push_back(before); m_selected = -1; m_multi.clear(); rebuildScene(); m_sheetOpen = false; }
+        toast(msg);
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Ouvrir un fichier…")) { openDialog(); m_sheetText = m_build.toJson(m_scene.camera); }
+    ImGui::SameLine();
+    float right = 0;
+    const char* rb[4] = {"Exporter .ldr", "Exporter vers Maya", "Nouvelle scène", "Fermer"};
+    for (const char* t : rb) right += ImGui::CalcTextSize(t).x + 20 * s + 8 * s;
+    ImGui::SetCursorPosX(std::max(ImGui::GetCursorPosX(), ImGui::GetWindowContentRegionMax().x - right + 8 * s));
+    if (ImGui::Button("Exporter .ldr")) {
+        m_sheetText = sceneLdr();
+        wchar_t file[MAX_PATH] = L"brickit_scene.ldr";
+        OPENFILENAMEW ofn = {sizeof(ofn)};
+        ofn.hwndOwner = m_hwnd;
+        ofn.lpstrFilter = L"LDraw (*.ldr)\0*.ldr\0";
+        ofn.lpstrFile = file;
+        ofn.nMaxFile = MAX_PATH;
+        ofn.lpstrDefExt = L"ldr";
+        ofn.Flags = OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST;
+        if (GetSaveFileNameW(&ofn)) {
+            FILE* f = nullptr;
+            if (_wfopen_s(&f, file, L"wb") == 0 && f) { fwrite(m_sheetText.data(), 1, m_sheetText.size(), f); fclose(f); }
+        }
+        char t[96];
+        snprintf(t, sizeof(t), "Scène exportée en .ldr (%d pièces)", (int)m_bricks.size());
+        toast(t);
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Exporter vers Maya")) toast("Export Maya : arrive bientôt dans la version native");
+    ImGui::SameLine();
+    if (ImGui::Button("Nouvelle scène")) { pushUndo(); m_bricks.clear(); m_selected = -1; m_multi.clear(); rebuildScene(); m_sheetText = m_build.toJson(m_scene.camera); toast("Nouvelle scène"); }
+    ImGui::SameLine();
+    if (ImGui::Button("Fermer") || ImGui::IsKeyPressed(ImGuiKey_Escape)) m_sheetOpen = false;
+    ImGui::End();
+    ImGui::PopStyleColor(5);
+    ImGui::PopStyleVar(5);
+    m_overUi = true;
 }
 
 void BrickApp::drawToast() {
@@ -932,6 +1021,7 @@ void BrickApp::drawUi() {
     uiInfoSheet();
     ImGui::End();
     ImGui::PopStyleVar(2);
+    uiSceneSheet();
     drawToast();
     const ImVec2 mp = ImGui::GetIO().MousePos;
     m_overUi = m_libPress >= 0 || ImGui::GetIO().WantCaptureMouse;

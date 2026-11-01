@@ -126,17 +126,22 @@ bool BrickApp::init(HINSTANCE inst, const Options& opt) {
     m_lib.loadAll(&err);   // every Technic pack (about 10 MB): the library shows them all, the thumbnails need them
     buildThumbs();
     buildNav();
-    m_color = colorIndex(4);   // red
+    if (opt.shotPath.empty()) loadPrefs();   // captures stay reproducible
+    m_color = colorIndex(14);   // yellow, as the web (state.colorId: 14)
     m_focusDim = opt.focusDim;
     setupStage();
     applyLook();
-    if (!opt.openPath.empty()) openScene(opt.openPath);
+    const bool test = opt.mechDemo || opt.demo || opt.grid || opt.bench > 0;
+    bool keepCamera = false;
+    if (!opt.openPath.empty()) { openScene(opt.openPath); keepCamera = true; }
     else if (opt.mechDemo) buildMechDemo();
     else if (opt.demo) buildDemo();
     else if (opt.grid) buildPartGrid();
     else if (opt.bench > 0) buildBench(opt.bench);
+    else if (restoreAutosave()) keepCamera = true;   // the scene of the last session (vp3d-builder-scene)
+    else { sampleScene(); keepCamera = true; }
     rebuildScene();
-    frameAll();
+    if (test || !keepCamera) frameAll();
     m_scene.camera.distance *= opt.zoom;
     if (opt.yaw > -999) m_scene.camera.yaw = radians(opt.yaw);
     if (opt.pitch > -999) m_scene.camera.pitch = radians(opt.pitch);
@@ -178,6 +183,7 @@ int BrickApp::run() {
         frame();
     }
     m_renderer.waitIdle();
+    if (m_opt.shotPath.empty()) { savePrefs(); autosave(); }
     m_gui.shutdown();
     m_renderer.shutdown();
     return 0;
@@ -413,6 +419,7 @@ void BrickApp::syncObjects() {
     }
     ++m_scene.objectsVersion;
     m_renderer.resetAccumulation();
+    if (!m_holding && !m_mechOn) autosave();
 }
 
 void BrickApp::toast(const std::string& text) {
@@ -596,8 +603,8 @@ void BrickApp::cameraInput() {
         changed = true;
     }
     if (!io.WantTextInput) {
-        if (ImGui::IsKeyPressed(ImGuiKey_F)) { frameAll(); changed = true; }
-        if (ImGui::IsKeyPressed(ImGuiKey_P)) { m_rs.raster = !m_rs.raster; applyLook(); changed = true; }
+        if (ImGui::IsKeyPressed(ImGuiKey_Home)) { frameAll(); changed = true; }   // (native: F is the focus mode, as the web)
+        if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_P)) { m_rs.raster = !m_rs.raster; applyLook(); changed = true; }
         if (ImGui::IsKeyPressed(ImGuiKey_L)) {   // levels of detail on / off (comparison)
             std::swap(m_scene.lods, m_lodsOff);
             changed = true;
@@ -630,7 +637,11 @@ void BrickApp::frame() {
     // Path tracing: half resolution while the view moves (and 0.25 s after), full resolution to converge when still.
     const bool moving = ImGui::GetTime() - m_lastMove < 0.25 && m_opt.shotPath.empty();
     const float scale = (!m_rs.raster && moving) ? m_opt.ptMoveScale : 1.0f;
-    m_vp = {0, 0, std::max(16, (int)(ds.x * scale)), std::max(16, (int)(ds.y * scale))};
+    // the stage: between the top bar and the tray (no UI: the whole window)
+    if (m_opt.noUi || m_uiRects.size() < 2) m_stage = ImVec4(0, 0, ds.x, ds.y);
+    else m_stage = ImVec4(0, m_uiRects[0].w, ds.x, std::max(m_uiRects[0].w + 16, m_uiRects[1].y));
+    const float sw = m_stage.z - m_stage.x, sh = m_stage.w - m_stage.y;
+    m_vp = {0, 0, std::max(16, (int)(sw * scale)), std::max(16, (int)(sh * scale))};
     m_rs.samplesPerFrame = m_rs.raster ? 1 : std::max(1, m_opt.ppf);
     std::vector<int> extra;
     for (int i : m_multi) extra.push_back(m_firstBrickObject + i);
@@ -638,7 +649,8 @@ void BrickApp::frame() {
     const int selObj = (m_selected >= 0 && !m_holding) ? m_firstBrickObject + m_selected : -1;
     m_rs.pixelScale = scale;
     m_renderer.renderToTexture(m_scene, m_rs, m_vp, selObj);
-    ImGui::GetBackgroundDrawList()->AddImage(m_gui.viewportTexture(), ImVec2(0, 0), ds);
+    ImGui::GetBackgroundDrawList()->AddRectFilled(ImVec2(0, 0), ds, IM_COL32(0x13, 0x14, 0x17, 255));
+    ImGui::GetBackgroundDrawList()->AddImage(m_gui.viewportTexture(), ImVec2(m_stage.x, m_stage.y), ImVec2(m_stage.z, m_stage.w));
     drawVoxels();          // over the 3D view, under the panels
     drawMechOverlay();
     LARGE_INTEGER t1;

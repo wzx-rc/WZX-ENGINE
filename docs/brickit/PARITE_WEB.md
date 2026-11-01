@@ -1,93 +1,114 @@
-# Parité BrickIt natif / web v26
+# Parité BrickIt natif / web v26 — traduction 1:1
 
-Référence : `docs/brickit/web/BrickIt_Builder.html`, fonction par fonction. État au 01/11/2026 (branche `brickit-native`).
-Légende : **porté** = fait et vérifié, **partiel** = l'essentiel est là mais il manque des morceaux, **absent** = pas commencé.
+Consigne de Wzx (01/11/2026) : **tout comme le web**, chaque détail du HTML v26 (`docs/brickit/web/BrickIt_Builder.html`)
+réécrit en C++. Seules différences permises : la densité pour la 4K (échelle réglable) et le rendu (path tracing natif en plus).
+Cases : `[x]` porté et vérifié · `[~]` partiel (ce qui manque est dit) · `[ ]` à faire.
 
-## Rendu
+## 1. Interface (structure du DOM)
 
-| Fonction web | État | Détail natif |
-|---|---|---|
-| Rendu temps réel | **porté** | Raster DX12 instancié, LOD, culling ; 50k briques. |
-| Qualité HQ / rapide (`#quality`, SSAO) | **partiel** | Raster MSAA et path tracing (P) ; pas d'AO dans le raster, pas de sélecteur HQ/rapide. |
-| Transformation de vue (`#tonemap` ACES / AgX / Std) | **partiel** | ACES par défaut, AgX, AgX Punchy, Standard en option de ligne de commande `--tonemap` ; pas de menu dans l'UI. |
-| Bevel écran + rainures | **porté** | Bevel du path tracer (0,035 cm) ; pas de bevel en raster. |
-| Traces de doigts, SSS | **porté** | En plus du web (path tracing et raster). |
+### En-tête `header.bar`
+- [x] Logo « 3D » jaune + « BrickIt Builder »
+- [x] Annuler / Rétablir (grisés quand la pile est vide)
+- [x] Modes Sélection / Viseur / Déplacer / Tourner (boutons, état jaune)
+- [~] Mode Sélection : clic = sélection ; [ ] rectangle de sélection (`#marquee`)
+- [ ] Mode Déplacer : gizmo flèches (crans tenon / plaque) ; [ ] Mode Tourner : anneaux 90°
+- [x] Grille, [x] Auto Pivot, [x] Sécurité 50 %, [x] Focus, [~] Animations (bouton seulement, pas encore les animations)
+- [x] Voxels (affichage en points) ; [ ] cycle des voxels (touche V) et filtre
+- [x] Supprimer (grisé sans sélection)
+- [~] Qualité Rapide / HQ (MSAA ; pas de SSAO) + Path tracing (natif en plus) ; [x] Tonemap ACES / AgX / Std
+- [x] Mécanique ; [~] DEV (bouton, panneau à faire) ; [x] Fenêtres ; [x] Scène (ouvre la fiche « Scène partagée »)
+- [x] Infobulles (titres du web)
 
-## Construction
+### Vue 3D `main.stage`
+- [x] La vue occupe la zone entre l'en-tête et la bibliothèque (même cadrage que le web), couleur courante Yellow 14 au départ
+- [x] Scène du web en temps réel : fond et brouillard 0x111214, sol 0x0e0f11, grille des tenons, axes X rouge / Z bleu, key chaude 3,4 + ombres, environnement 0,55, ACES 1, caméra fov 32 / yaw 38 / pitch 32
+- [ ] Rim froide 1,3 et hémisphère 0,25 (le moteur n'a qu'un soleil en raster)
+- [x] Toast (haut de la vue, bord jaune, fondu)
+- [x] HUD « Infos (pièces, fps) » (masqué par défaut, via Fenêtres)
+- [ ] Écran « Chargement de la bibliothèque BrickIt… »
 
-| Fonction web | État | Détail natif |
-|---|---|---|
-| Brique en main, snap typé (`computeTarget`, `SNAP_OK`) | **porté** | Tenon/anti-tenon, pin/trou, axe/trou ; tenons recouverts exclus. |
-| Grille des tenons (`#gridSnap`) | **porté** | Touche G, bouton. |
-| Sécurité 50 % + pivot voisin (`#safety`) | **porté** | Toujours active, sans bouton pour la couper. |
-| Pivot auto (`#autoPivot`) | **partiel** | Le pivot = voxel le plus proche du point saisi quand on déplace une brique posée ; pas d'option on/off, pas de cycle de pivot ni d'édition du pivot (`oPivot`, `cycleGrab`). |
-| Affichage des voxels (`#vxBtn`) | **absent** | |
-| Animations (`#anim` : rebond, écrasement, bascule) | **absent** | Pose instantanée. |
-| Menu radial (`#radial` : tourner G/D, basculer haut/bas, dupliquer) | **absent** | Clavier seulement : R / Maj+R tourner, T / Maj+T basculer, Ctrl+D. Pas de « monter / descendre ». |
-| Gizmo déplacer / tourner (`#modeMove`, `#modeRotate`) | **absent** | |
-| Dupliquer empilé (`stackedCopy`) | **porté** | Ctrl+D, la copie est sélectionnée. |
-| Multi-sélection Maj | **porté** | |
-| Sélection au rectangle (`#marquee`) | **absent** | |
-| Mode focus 50 % (`#focusDim`) | **porté** | Touche H, bouton. |
-| Couleurs (`#swatches`, panneau à droite) | **porté** | |
-| Annuler / rétablir, supprimer | **porté** | |
-| Glisser-déposer depuis la bibliothèque (`startLibDrag`) | **absent** | Un clic sur une miniature met la pièce en main. |
+### Menu radial `#opts` (main gauche)
+- [x] Grip, titre (nom de la pièce ou « AUCUNE BRIQUE »), 4 coins + Dupliquer au centre, état inactif à 45 %
+- [x] Tourner G/D, Basculer haut/bas, Dupliquer (empilé)
+- [x] Pilules Poser / Annuler pendant la prise en main ; [ ] Pivot (✎) et Prendre (✋)
+- [ ] Panneau déplaçable / ancrable à droite (`optsRight`)
 
-## Bibliothèque
+### Couleurs `#colpanel`
+- [x] Grip « Couleurs » repliable, couleur courante, groupes Unies / Transparentes / Métal, reflets trans / métal, contour jaune
+- [x] Masqué en mode Mécanique
 
-| Fonction web | État | Détail natif |
-|---|---|---|
-| Familles / catégories sur 2 rangées, sous-familles Technic | **porté** | Seules les familles qui ont des pièces sont affichées (pas l'arbre LDraw complet vide). |
-| Récents, favoris (clic droit), recherche (loupe), taille des miniatures | **porté** | |
-| Miniatures | **porté** | Rendues par le moteur, gris neutre, studio du web, cache disque. |
-| Fiche pièce à l'appui long (visionneuse 3D tournante, favori) | **absent** | Info-bulle avec le nom et la référence seulement. |
-| Fiche DEV complète (métadonnées) | **absent** | |
+### Bibliothèque `footer.tray`
+- [x] Grip « Bibliothèque » repliable
+- [x] Rangée 1 : Récentes (horloge), Favoris (étoile), Toutes, 9 familles LDraw avec compteurs, loupe, taille
+- [x] Rangée 2 : « Tout » + catégories en pilules (vides en pointillé), sous-familles Technic, notes (Récentes / Favoris / Toutes / Recherche)
+- [x] Cartes sur 2 rangées, 64 / 84 / 112 px, image zoomée ×1,4, cadre, ★ favori, défilement horizontal
+- [x] Recherche (nom, référence, catégorie FR / EN), Échap vide la recherche
+- [x] Clic = brique en main ; [x] glisser hors du plateau = glisser-déposer ; [x] appui long 480 ms = fiche pièce
+- [x] Atténuée à 45 % et inactive en mode Mécanique
+- [ ] Détacher / ancrer le plateau (flottant, zone d'ancrage)
 
-## Fichiers et exports
+### Fiche pièce `#info` (appui long)
+- [~] Image, nom, chemin de catégorie, référence, Ajouter / Retirer des favoris, Fermer (Échap) ; [ ] visionneuse 3D tournante
+- [ ] Fiche complète en mode DEV (métadonnées, connecteurs, export / réimport Maya OBJ, overrides)
 
-| Fonction web | État | Détail natif |
-|---|---|---|
-| Ouvrir / enregistrer `.v3d.json` | **porté** | Compatible web (aller-retour vérifié). |
-| Coller / copier le texte de scène (`#sceneText`, `#copyScene`) | **absent** | |
-| Nouvelle scène (`#newScene`) | **absent** | |
-| Export `.ldr` (`sceneLdr`) | **absent** | |
-| Export Maya de scène (script Python + rig, `mayaExportScript`) | **absent** | |
+### Panneau Mécanique `#mechPanel`
+- [x] Titre, Quitter (Échap), Pose de montage, Liaisons, Couleurs par corps
+- [x] Stats (corps, mobiles, pivots, vérins, engrenages, boucles, DDL, commandes), avertissements
+- [x] Commandes : nom, rapports, valeur en jaune, curseur −720..720°, ◀ touche / touche ▶ (maintien)
+- [x] Message de butée (fond rouge)
 
-## Mode DEV
+### Fenêtres `#winmenu`
+- [x] Bibliothèque, Manuel d'instructions, Infos (pièces, fps), Couleurs, Actions de la brique, Réinitialiser la disposition (toast « Disposition réinitialisée »)
 
-| Fonction web | État |
-|---|---|
-| Bouton DEV, voxels / connecteurs LDraw, export et réimport Maya OBJ des pièces, overrides | **absent** |
+### Fiche « Scène partagée » `#sheet`
+- [x] Texte JSON, Copier, Charger ce texte, Ouvrir un fichier…, Exporter .ldr, Nouvelle scène, Fermer ; [ ] Exporter vers Maya
 
-## Manuel
+### Manuel `#manual`, `#mbig`, `#pdfbig`
+- [ ] Livret d'étapes (pages lues verticalement), grand format, import PDF lu verticalement, redimensionnable
 
-| Fonction web | État |
-|---|---|
-| Module Manuel (étapes, doubles pages, grand format) | **absent** |
-| Import PDF et lecture verticale | **absent** |
+## 2. Clavier (web)
+- [x] Ctrl+Z / Ctrl+Y
+- [x] R ou E = tourner +90°, Q = −90°
+- [x] C = cycle du pivot d'accroche (toast « Pivot d'accroche : voxel n / N »), V = voxels, A = animations, F = focus (toasts du web) ; [~] P = édition du pivot (bascule sans affichage)
+- [x] Échap = annuler la prise / désélectionner ; [x] Suppr / Retour arrière
+- [x] Espace = prendre en main la brique sélectionnée
+- [x] Mécanique : A/Q, Z/S, E/D, R/F… ; Échap quitte
+- Natif en plus (à garder hors des touches du web) : Ctrl+D, Ctrl+S / Ctrl+O, M (Mécanique), path tracing
 
-## Fenêtres et HUD
+## 3. Souris / doigt
+- [x] Viseur : toucher une brique la prend en main, relâcher la pose
+- [x] Glisser depuis la bibliothèque
+- [ ] Rectangle de sélection (mode Sélection, Maj/Ctrl ajoute)
+- [x] Orbite / pan / zoom
+- [ ] Gizmo flèches et anneaux
 
-| Fonction web | État | Détail natif |
-|---|---|---|
-| Menu Fenêtres (`#winBtn`), panneaux flottants / ancrés, HUD | **partiel** | Panneaux fixes (barre d'outils, stats, bibliothèque, couleurs, mécanique) ; pas de menu Fenêtres, pas de panneaux déplaçables. |
+## 4. Animations et timings
+- [ ] Brique qui tombe dans la main (écrasement 0,55, ressort), rebond à la pose (0,86), bascule pendant le déplacement, durée de pose 0,15 s, halo du voxel visé (0,18 s, pulsation)
+- [x] Toast 3,2 s avec fondu
 
-## Mécanique
+## 5. Préférences et sauvegarde (localStorage du web → fichiers à côté de l'exe)
+- [x] `vp3d-builder-scene` : sauvegarde automatique (`brickit_scene.v3d.json`) et reprise au lancement, sinon la scène d'exemple du web
+- [x] `vp3d-recent-parts`, `vp3d-fav-parts`, `vp3d-thumb-size` (`brickit_prefs.json`)
+- [x] Préférences : sécurité, grille, auto pivot, animations, focus, mode, qualité, tonemap, navigation, couleur, panneaux ; [ ] position du radial (à droite)
+- [ ] `vp3d-manual-w/h`, `vp3d-manual-pdf-page`
 
-| Fonction web | État | Détail natif |
-|---|---|---|
-| Détection corps / pivots / engrènements, arbre, boucles, solveur, moteurs | **porté** | |
-| Phase des dents | **porté** | |
-| Glisser une pièce mobile | **partiel** | Codé, pas encore testé à la souris. |
-| Pose de montage (`#mechReset`) | **porté** | « Pose de départ ». |
-| Liaisons affichées (`#mechJoints`) | **porté** | Toujours affichées (pas de bouton). |
-| Couleurs par corps (`#mechTint`) | **absent** | |
-| Diagnostics (engrenages pas en prise, axes non portés, trains bloqués) | **porté** | Pas la liste des pièces sans connecteur. |
-| Vérins (glissières) et plateaux tournants | **absent** | Les métadonnées `cyl` / `pair` du web ne sont pas dans les packs ; à dériver des pièces LDraw. |
+## 6. Fichiers et exports
+- [x] `.v3d.json` (format vp3d-scene v1, compatible web)
+- [x] Export `.ldr` (même transformation que le web), [ ] Export Maya (script Python + rig, `maya_export.js` / `maya_template.py`), [ ] mode DEV (export / réimport OBJ, overrides)
 
-## Absents, liste courte
+## 7. Mécanique (détails)
+- [x] Connecteurs, corps, pivots, engrènements, arbre, boucles, solveur LM, butées, rapports, phase des dents, couleurs par corps, liaisons
+- [~] Glisser une pièce mobile (codé, à tester)
+- [ ] Vérins (glissières) et plateaux tournants (métadonnées `cyl` / `pair` à dériver)
 
-Menu radial · gizmo déplacer/tourner · sélection au rectangle · animations · affichage des voxels et édition du pivot ·
-glisser-déposer depuis la bibliothèque · fiche pièce (visionneuse 3D) et fiche DEV · mode DEV (connecteurs, export/import Maya OBJ,
-overrides) · export Maya de scène · export .ldr · copier/coller de scène, nouvelle scène · module Manuel et PDF ·
-menu Fenêtres et panneaux déplaçables · sélecteurs qualité/tonemap dans l'UI · couleurs par corps, vérins et plateaux tournants.
+## Écarts voulus
+
+### Corrections (bugs du web non reproduits)
+- Taille des miniatures : le web démarre à 64 px parce que `+localStorage.getItem("vp3d-thumb-size")` vaut 0 quand la clé est absente
+  (l'intention est 84 px). Le natif reprend 64 px pour l'identique visuel ; à corriger dans le web si 84 était voulu.
+
+### Corrections mécanique
+- (aucune pour l'instant)
+
+### Rendu
+- Path tracing natif (studio clair validé sur 03b) en plus du temps réel identique au web.

@@ -58,12 +58,12 @@ bool View::project(const float3& p, float& sx, float& sy) const {
     float2 ndc;
     float depth;
     if (!cam.project(p, w / h, ndc, &depth) || depth <= 1e-4f) return false;
-    sx = (ndc.x * 0.5f + 0.5f) * w;
-    sy = (0.5f - ndc.y * 0.5f) * h;
+    sx = ox + (ndc.x * 0.5f + 0.5f) * w;
+    sy = oy + (0.5f - ndc.y * 0.5f) * h;
     return true;
 }
 
-void View::ray(float sx, float sy, float3& o, float3& d) const { cam.ray(2.0f * sx / w - 1.0f, 1.0f - 2.0f * sy / h, w / h, o, d, 1e4f); }
+void View::ray(float sx, float sy, float3& o, float3& d) const { cam.ray(2.0f * (sx - ox) / w - 1.0f, 1.0f - 2.0f * (sy - oy) / h, w / h, o, d, 1e4f); }
 
 // --------------------------------------------------------------------------- geometry
 

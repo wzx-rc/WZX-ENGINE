@@ -131,6 +131,17 @@ private:
     void drawMechOverlay();
     void buildMechDemo();
 
+    // BrickPrefs.cpp: what the web keeps in localStorage, in files next to the exe; scene of the first launch; .ldr
+    void loadPrefs();
+    void savePrefs();
+    void autosave();                 // vp3d-builder-scene: the scene after every change
+    bool restoreAutosave();
+    void sampleScene();
+    std::string sceneLdr() const;
+    void uiSceneSheet();
+    void pickUpSelected();           // Space: the selected brick comes into the hand
+    void cycleGrab();                // C: next pivot voxel of the selection / brick in hand
+
     // Thumbs.cpp
     void buildThumbs();
     bool thumbUv(int part, ImTextureID& tex, ImVec2& uv0, ImVec2& uv1) const;
@@ -206,8 +217,13 @@ private:
     bool m_libLong = false;
     int m_infoPart = -1;               // part sheet (long press on a card)
     float m_cardsScroll = 0, m_famScroll = 0, m_catScroll = 0;
+    ImVec4 m_stage{0, 0, 1, 1};        // the 3D view: between the top bar and the tray (as the web's main.stage)
     std::vector<ImVec4> m_uiRects;     // panels of this frame (x0, y0, x1, y1): the mouse over one = UI
     bool m_mechJoints = true, m_mechTint = false;
+    bool m_sheetOpen = false;          // « Scène partagée » sheet
+    std::string m_sheetText;
+    bool m_pivotEdit = false;          // P
+    int m_voxStep = 0;                 // V: voxels hidden / shown
 
     // Mechanical mode
     Mech m_mech{m_lib};

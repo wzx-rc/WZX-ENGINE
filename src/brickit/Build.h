@@ -47,6 +47,7 @@ private:
 struct View {
     vp3d::Camera cam;
     float w = 1, h = 1;
+    float ox = 0, oy = 0;   // top-left corner of the view in window pixels (the stage between the top bar and the tray)
     bool project(const float3& p, float& sx, float& sy) const;     // false behind the camera
     void ray(float sx, float sy, float3& o, float3& d) const;
 };
