@@ -1,4 +1,5 @@
 #include "BrickApp.h"
+#include "MeshLod.h"
 #include "app/Theme.h"
 #include "backends/imgui_impl_win32.h"
 #include "vp3d/shaders/Shared.h"
@@ -105,11 +106,17 @@ bool BrickApp::init(HINSTANCE inst, const Options& opt) {
     m_rs.denoise = true;
     m_rs.exposure = 1.0f;
     m_rs.tonemapper = 1;   // AgX
+    m_rs.idPass = false;   // selection: coverage outline only
+    if (opt.bounces > 0) m_rs.maxBounces = opt.bounces;
+    if (opt.denoise >= 0) m_rs.denoise = opt.denoise != 0;
+    if (opt.bevelSpp >= 0) { m_rs.bevel = opt.bevelSpp > 0; m_rs.bevelSamples = std::max(1, opt.bevelSpp); }
     setupStage();
     if (opt.grid) buildPartGrid();
     else if (opt.bench > 0) buildBench(opt.bench);
     rebuildScene();
     frameAll();
+    m_scene.camera.distance *= opt.zoom;
+    m_scene.camera.focusDistance = m_scene.camera.distance;
 
     ShowWindow(m_hwnd, SW_SHOWDEFAULT);
     UpdateWindow(m_hwnd);
@@ -175,9 +182,10 @@ void BrickApp::setupStage() {
     Object o;
     o.name = "Ground";
     o.part = "GROUND";
-    o.mesh = m_scene.addMesh("ground", makePlane(2000.0f));
+    o.mesh = m_scene.addMesh("ground", makePlane(m_opt.groundSize));
     o.material = m_scene.addMaterial(g);
     o.selectable = false;
+    o.visible = !m_opt.noGround;
     m_scene.addObject(o);
     m_firstBrickObject = (int)m_scene.objects.size();
 
@@ -208,7 +216,7 @@ void BrickApp::setupStage() {
     std::wstring hdr = m_exeDir + L"\\assets\\hdri\\studio_small_09_2k.hdr";
     auto img = std::make_shared<EnvImage>();
     std::string err;
-    if (fileExists(hdr) && loadEnvImage(hdr, *img, &err)) m_status = "HDRI studio_small_09_2k";
+    if (!m_opt.noHdri && fileExists(hdr) && loadEnvImage(hdr, *img, &err)) m_status = "HDRI studio_small_09_2k";
     else { makeProceduralSky(*img); m_status = "HDRI: procedural sky (studio_small_09_2k.hdr not found)"; }
     m_scene.env.hdri = img;
     m_scene.env.hdriIntensity = 1.6f;
@@ -229,8 +237,18 @@ int BrickApp::meshOf(int part) {
     if (m_partMesh[part] >= 0) return m_partMesh[part];
     Part* p = m_lib.get(m_lib.parts[part].name);
     if (!p) return -1;
-    m_partMesh[part] = m_scene.addMesh(p->name, p->mesh);
-    return m_partMesh[part];
+    const int mesh = m_scene.addMesh(p->name, p->mesh);
+    m_partMesh[part] = mesh;
+    // raster levels of detail: clustered (studs melted) then the box
+    const float3 ext = p->bmax - p->bmin;
+    const float cell = std::max(0.12f, std::max(ext.x, std::max(ext.y, ext.z)) / 40.0f);
+    MeshData l1 = simplifyCluster(p->mesh, cell);
+    Scene::MeshLod lod;
+    if (l1.indices.size() * 2 < p->mesh.indices.size()) lod.lod1 = m_scene.addMesh(p->name + "_lod1", std::move(l1));
+    lod.lod2 = m_scene.addMesh(p->name + "_lod2", boxLod(p->bmin, p->bmax));
+    if ((int)m_scene.lods.size() <= mesh) m_scene.lods.resize(mesh + 1);
+    m_scene.lods[mesh] = lod;
+    return mesh;
 }
 
 void BrickApp::rebuildScene() {
@@ -246,6 +264,7 @@ void BrickApp::rebuildScene() {
         o.useRot = true;
         m_scene.addObject(o);
     }
+    ++m_scene.objectsVersion;
     m_renderer.resetAccumulation();
 }
 
@@ -256,6 +275,7 @@ void BrickApp::syncObjects() {
         o.rot = m_bricks[i].rot;
         o.material = m_colorMaterial[std::clamp(m_bricks[i].color, 0, (int)m_colorMaterial.size() - 1)];
     }
+    ++m_scene.objectsVersion;
     m_renderer.resetAccumulation();
 }
 
@@ -312,7 +332,8 @@ void BrickApp::buildBench(int count) {
     for (int n = 0; n < count; ++n) {
         Brick b;
         b.part = pool[rng() % pool.size()];
-        b.color = (int)(rng() % m_lib.palette.size());
+        do b.color = (int)(rng() % m_lib.palette.size());
+        while (m_opt.opaque && m_lib.palette[b.color].group != "standard");
         int cell = n % (side * side), layer = n / (side * side);
         b.pos = float3((cell % side) * 3.2f, layer * 0.96f, (cell / side) * 3.2f);
         float a = (rng() % 4) * kPi * 0.5f;
@@ -363,7 +384,11 @@ void BrickApp::cameraInput() {
     }
     if (ImGui::IsKeyPressed(ImGuiKey_F)) { frameAll(); changed = true; }
     if (ImGui::IsKeyPressed(ImGuiKey_P)) { m_rs.raster = !m_rs.raster; changed = true; }
-    if (changed) { cam.focusDistance = cam.distance; m_renderer.resetAccumulation(); }
+    if (ImGui::IsKeyPressed(ImGuiKey_L)) {   // levels of detail on / off (comparison)
+        std::swap(m_scene.lods, m_lodsOff);
+        changed = true;
+    }
+    if (changed) { cam.focusDistance = cam.distance; m_renderer.resetAccumulation(); m_lastMove = ImGui::GetTime(); }
 }
 
 // --------------------------------------------------------------------------- frame
@@ -378,11 +403,12 @@ void BrickApp::drawUi() {
     ImGui::Text("Briques      %d", (int)m_bricks.size());
     size_t tris = 0;
     for (const Brick& b : m_bricks) tris += m_lib.parts[b.part].mesh.indices.size() / 3;
-    ImGui::Text("Triangles    %.2f M", tris / 1e6);
+    ImGui::Text("Triangles    %.2f M (dessinés %.2f M)", tris / 1e6, m_rs.raster ? m_renderer.rasterTriangles() / 1e6 : tris / 1e6);
     ImGui::Text("GPU          %.2f ms", m_renderer.gpuFrameMs());
     ImGui::Text("CPU          %.2f ms", m_cpuMs);
     ImGui::Text("Image        %.1f ms (%.0f i/s)", m_frameMs, m_frameMs > 0 ? 1000.0 / m_frameMs : 0.0);
     if (!m_rs.raster) ImGui::Text("Échantillons %u", m_renderer.sampleCount());
+    ImGui::Text("LOD          %s (L)", m_scene.lods.empty() ? "off" : "on");
     if (!m_status.empty()) ImGui::TextDisabled("%s", m_status.c_str());
     ImGui::End();
 }
@@ -398,8 +424,11 @@ void BrickApp::frame() {
     drawUi();
 
     ImVec2 ds = ImGui::GetIO().DisplaySize;
-    m_vp = {0, 0, std::max(16, (int)ds.x), std::max(16, (int)ds.y)};
-    m_rs.samplesPerFrame = m_rs.raster ? 1 : 2;
+    // Path tracing: half resolution while the view moves (and 0.25 s after), full resolution to converge when still.
+    const bool moving = ImGui::GetTime() - m_lastMove < 0.25 && m_opt.shotPath.empty();
+    const float scale = (!m_rs.raster && moving) ? m_opt.ptMoveScale : 1.0f;
+    m_vp = {0, 0, std::max(16, (int)(ds.x * scale)), std::max(16, (int)(ds.y * scale))};
+    m_rs.samplesPerFrame = m_rs.raster ? 1 : std::max(1, m_opt.ppf);
     m_renderer.renderToTexture(m_scene, m_rs, m_vp, -1);
     ImGui::GetBackgroundDrawList()->AddImage(m_gui.viewportTexture(), ImVec2(0, 0), ds);
     LARGE_INTEGER t1;
@@ -414,6 +443,14 @@ void BrickApp::frame() {
             std::vector<uint8_t> img;
             uint32_t w, h;
             if (m_renderer.readBackBuffer(img, w, h)) savePng(m_opt.shotPath, img, w, h);
+            // timings next to the capture (benchmarks): bricks, triangles drawn, GPU and CPU ms
+            FILE* f = nullptr;
+            if (_wfopen_s(&f, (m_opt.shotPath + L".txt").c_str(), L"w") == 0 && f) {
+                fprintf(f, "bricks=%d mode=%s gpu_ms=%.2f cpu_ms=%.2f frame_ms=%.2f tris_drawn=%.2fM spp=%u\n", (int)m_bricks.size(),
+                        m_rs.raster ? "raster" : "pathtrace", m_renderer.gpuFrameMs(), m_cpuMs, m_frameMs,
+                        m_renderer.rasterTriangles() / 1e6, m_renderer.sampleCount());
+                fclose(f);
+            }
             m_running = false;
         }
     }
@@ -437,6 +474,15 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         else if (a == L"--grid") opt.grid = true;
         else if (a == L"--bench") opt.bench = _wtoi(next().c_str());
         else if (a == L"--pt") opt.pathTrace = true;
+        else if (a == L"--zoom") opt.zoom = (float)_wtof(next().c_str());
+        else if (a == L"--bounces") opt.bounces = _wtoi(next().c_str());
+        else if (a == L"--bevel-spp") opt.bevelSpp = _wtoi(next().c_str());
+        else if (a == L"--opaque") opt.opaque = true;
+        else if (a == L"--no-hdri") opt.noHdri = true;
+        else if (a == L"--no-ground") opt.noGround = true;
+        else if (a == L"--ground") opt.groundSize = (float)_wtof(next().c_str());
+        else if (a == L"--denoise") opt.denoise = _wtoi(next().c_str());
+        else if (a == L"--ppf") opt.ppf = _wtoi(next().c_str());
         else if (a == L"--size") {
             std::wstring s = next();
             swscanf_s(s.c_str(), L"%dx%d", &opt.width, &opt.height);

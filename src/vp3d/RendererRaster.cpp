@@ -131,7 +131,7 @@ bool Renderer::createRasterPipelines(std::string* error) {
     probeRange.NumDescriptors = 3;
     probeRange.BaseShaderRegister = 4;
 
-    D3D12_ROOT_PARAMETER p[10] = {};
+    D3D12_ROOT_PARAMETER p[11] = {};
     p[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
     p[0].Descriptor.ShaderRegister = 0;
     p[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
@@ -182,7 +182,9 @@ bool Renderer::createRasterPipelines(std::string* error) {
     ts.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
 
     D3D12_ROOT_SIGNATURE_DESC rsd = {};
-    rsd.NumParameters = 10;
+    p[10].ParameterType = D3D12_ROOT_PARAMETER_TYPE_SRV;   // t7 instanced draw constants (gDraws), vertex + pixel
+    p[10].Descriptor.ShaderRegister = 7;
+    rsd.NumParameters = 11;
     rsd.pParameters = p;
     rsd.NumStaticSamplers = 2;
     rsd.pStaticSamplers = samplers;
@@ -537,6 +539,22 @@ void Renderer::createRasterTargets(uint32_t w, uint32_t h) {
     m_device->CreateShaderResourceView(m_selCov.Get(), &sv, sh);
 }
 
+uint32_t Renderer::allocDraws(uint32_t count) {
+    const uint64_t need = (m_drawBufUsed + count) * sizeof(DrawConstants);
+    if (!m_drawBuf.res || need > m_drawBuf.size) {
+        uint64_t size = std::max<uint64_t>((uint64_t)count * sizeof(DrawConstants) * 2, 1u << 20);
+        if (m_drawBuf.res) {
+            size = std::max(size, m_drawBuf.size * 2);
+            m_drawGrave.push_back(m_drawBuf);   // still read by the commands recorded this frame
+        }
+        m_drawBuf = createBuffer(size, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ);
+        m_drawBufUsed = 0;
+    }
+    uint32_t first = (uint32_t)m_drawBufUsed;
+    m_drawBufUsed += count;
+    return first;
+}
+
 // Coverage of the selection: the selected objects drawn into the mask with the samples (and depth) of the viewport,
 // then resolved (the average of the samples) into m_selCov for the tonemapper. Its outline is then as smooth as the
 // edges of the image (Tonemap.hlsl).
@@ -704,16 +722,85 @@ void Renderer::recordRaster(const Scene& scene, const RenderSettings& rs, const 
     m_cmd->IASetIndexBuffer(&ibv);
     m_cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
+    // Instancing: the constants of every draw go to m_drawBuf once, sorted by mesh (counting sort), and each pass draws
+    // runs of consecutive draws of the same mesh with one DrawIndexedInstanced.
+    m_cmd->SetGraphicsRootShaderResourceView(10, 0);
+    m_rasterTris = 0;
+    const uint32_t nDraws = (uint32_t)m_draws.size();
+    std::vector<uint32_t> order(nDraws), slotOf(nDraws);
+    // Level of detail (Scene::lods, by the size of the object on screen) and frustum culling of the camera passes.
+    std::vector<int> drawMesh(nDraws);
+    std::vector<uint8_t> inView(nDraws, 1);
+    {
+        const float pixK = (float)vp.h / (2.0f * t);   // screen pixels per unit at distance 1 (perspective)
+        const float ta = t * a, kx = std::sqrt(1.0f + ta * ta), ky = std::sqrt(1.0f + t * t);
+        const bool persp = !cam.ortho;
+        const bool lodOn = !scene.lods.empty() && !probeCapture;
+        for (uint32_t k = 0; k < nDraws; ++k) {
+            const Draw& d = m_draws[k];
+            int mesh = d.mesh;
+            if (persp && !(d.flags & 2u)) {
+                const MeshGpu& g = m_meshes[d.mesh];
+                float3 c = d.xf.point(g.center);
+                float sc = std::sqrt(std::max(d.xf.m[0][0] * d.xf.m[0][0] + d.xf.m[1][0] * d.xf.m[1][0] + d.xf.m[2][0] * d.xf.m[2][0],
+                                              d.xf.m[0][1] * d.xf.m[0][1] + d.xf.m[1][1] * d.xf.m[1][1] + d.xf.m[2][1] * d.xf.m[2][1]));
+                float R = g.radius * sc;
+                float3 v = c - eye;
+                float z = dot(v, f);
+                if (z < -R || std::fabs(dot(v, r)) > z * ta + R * kx || std::fabs(dot(v, u)) > z * t + R * ky) inView[k] = 0;
+                if (lodOn && d.mesh < (int)scene.lods.size()) {
+                    const Scene::MeshLod& l = scene.lods[d.mesh];
+                    float px = 2.0f * R * pixK / std::max(z, 1e-3f);
+                    if (px < scene.lodPixels2 && l.lod2 >= 0) mesh = l.lod2;
+                    else if (px < scene.lodPixels1 && l.lod1 >= 0) mesh = l.lod1;
+                }
+            }
+            drawMesh[k] = mesh < (int)m_meshes.size() ? mesh : d.mesh;
+        }
+    }
+    {
+        std::vector<uint32_t> start(m_meshes.size() + 1, 0);
+        for (uint32_t k = 0; k < nDraws; ++k) ++start[drawMesh[k] + 1];
+        for (size_t k = 1; k < start.size(); ++k) start[k] += start[k - 1];
+        for (uint32_t k = 0; k < nDraws; ++k) order[start[drawMesh[k]]++] = k;
+    }
+    const uint32_t drawBase = nDraws ? allocDraws(nDraws * (rs.wireframe ? 2u : 1u)) : 0;
+    if (nDraws) {
+        DrawConstants* dst = (DrawConstants*)m_drawBuf.mapped + drawBase;
+        for (uint32_t k = 0; k < nDraws; ++k) {
+            const Draw& d = m_draws[order[k]];
+            DrawConstants& dc = dst[k];
+            memcpy(dc.rows, d.xf.m, sizeof(dc.rows));
+            dc.materialId = d.material;
+            dc.id = d.id;
+            dc.alpha = d.alpha;
+            dc.flags = d.flags;
+            slotOf[order[k]] = drawBase + k;
+        }
+        m_cmd->SetGraphicsRootShaderResourceView(10, m_drawBuf.va());
+    }
     auto drawOne = [&](const Draw& d) {
         const MeshGpu& g = m_meshes[d.mesh];
-        DrawConstants dc = {};
-        memcpy(dc.rows, d.xf.m, sizeof(dc.rows));
-        dc.materialId = d.material;
-        dc.id = d.id;
-        dc.alpha = d.alpha;
-        dc.flags = d.flags;
-        m_cmd->SetGraphicsRoot32BitConstants(1, 16, &dc, 0);
+        uint32_t slot = slotOf[&d - m_draws.data()];
+        m_cmd->SetGraphicsRoot32BitConstants(1, 1, &slot, 0);
         m_cmd->DrawIndexedInstanced(g.indexCount, 1, g.indexOffset, (INT)g.vertexOffset, 0);
+    };
+    // every draw passing the filter (and in the view when cull is set), batched by mesh (level of detail)
+    auto drawAll = [&](const std::function<bool(const Draw&)>& pass, bool cull = true) {
+        uint32_t k = 0;
+        auto ok = [&](uint32_t j) { return (!cull || inView[order[j]]) && pass(m_draws[order[j]]); };
+        while (k < nDraws) {
+            if (!ok(k)) { ++k; continue; }
+            const int mesh = drawMesh[order[k]];
+            uint32_t e = k + 1;
+            while (e < nDraws && drawMesh[order[e]] == mesh && ok(e)) ++e;
+            const MeshGpu& g = m_meshes[mesh];
+            uint32_t slot = drawBase + k;
+            m_cmd->SetGraphicsRoot32BitConstants(1, 1, &slot, 0);
+            m_cmd->DrawIndexedInstanced(g.indexCount, e - k, g.indexOffset, (INT)g.vertexOffset, 0);
+            if (cull) m_rasterTris += (uint64_t)(g.indexCount / 3) * (e - k);
+            k = e;
+        }
     };
     auto isTransparent = [&](const Draw& d) {
         return d.material < scene.materials.size() && scene.materials[d.material].transmission > 0.5f;
@@ -733,8 +820,7 @@ void Renderer::recordRaster(const Scene& scene, const RenderSettings& rs, const 
     m_cmd->RSSetScissorRects(1, &ssc);
     m_cmd->SetPipelineState(m_psoShadow.Get());
     if (key >= 0 || sun || envSun)
-        for (const Draw& d : m_draws)
-            if (!(d.flags & 7u) && !isTransparent(d)) drawOne(d);
+        drawAll([&](const Draw& d) { return !(d.flags & 7u) && !isTransparent(d); }, false);
     transition(m_shadowMap.Get(), D3D12_RESOURCE_STATE_DEPTH_WRITE, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
     }
 
@@ -781,8 +867,7 @@ void Renderer::recordRaster(const Scene& scene, const RenderSettings& rs, const 
                 m_cmd->SetPipelineState(m_psoProbeBg.Get());   // environment first, geometry over it
                 m_cmd->DrawInstanced(3, 1, 0, 0);
                 m_cmd->SetPipelineState(m_psoProbe.Get());
-                for (const Draw& d : m_draws)
-                    if (!(d.flags & 7u) && !isTransparent(d)) drawOne(d);
+                drawAll([&](const Draw& d) { return !(d.flags & 7u) && !isTransparent(d); }, false);
             }
         }
         for (ID3D12Resource* r : capTargets) transition(r, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
@@ -834,39 +919,36 @@ void Renderer::recordRaster(const Scene& scene, const RenderSettings& rs, const 
     };
     if (overlay) {   // depth of the opaque objects, then the grid
         m_cmd->SetPipelineState(m_psoDepth.Get());
-        for (const Draw& d : m_draws)
-            if (!(d.flags & 5u) && !isTransparent(d)) drawOne(d);
+        drawAll([&](const Draw& d) { return !(d.flags & 5u) && !isTransparent(d); });
         drawGrid();
     } else if (rs.wireframe == 1) {
         m_cmd->SetPipelineState(m_psoMain.Get());
-        for (const Draw& d : m_draws)
-            if (!(d.flags & 5u) && isGround(d)) drawOne(d);
+        drawAll([&](const Draw& d) { return !(d.flags & 5u) && isGround(d); });
         drawGrid();
     } else {
     m_cmd->SetPipelineState(m_psoMain.Get());
-    for (const Draw& d : m_draws)
-        if (!(d.flags & 5u) && !isTransparent(d)) drawOne(d);
+    drawAll([&](const Draw& d) { return !(d.flags & 5u) && !isTransparent(d); });
     drawGrid();
     m_cmd->SetPipelineState(m_psoTrans.Get());
-    for (const Draw& d : m_draws)
-        if (!(d.flags & 5u) && isTransparent(d)) drawOne(d);
+    drawAll([&](const Draw& d) { return !(d.flags & 5u) && isTransparent(d); });
     m_cmd->SetPipelineState(m_psoGhost.Get());
-    for (const Draw& d : m_draws)
-        if (d.flags & 1u) drawOne(d);
+    drawAll([&](const Draw& d) { return d.flags & 1u; });
     }
     if (rs.wireframe) {   // light lines alone, dark lines over the shaded view
         m_cmd->SetPipelineState(m_psoWire.Get());
         m_cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_LINELIST);
+        const uint32_t wireBase = drawBase + nDraws;
         for (const Draw& d : m_draws) {
             if ((d.flags & 5u) || isGround(d)) continue;
             const MeshGpu& g = m_meshes[d.mesh];
-            DrawConstants dc = {};
+            const uint32_t slot = wireBase + (uint32_t)(&d - m_draws.data());
+            DrawConstants& dc = ((DrawConstants*)m_drawBuf.mapped)[slot];
             memcpy(dc.rows, d.xf.m, sizeof(dc.rows));
             dc.materialId = d.material;
             dc.id = d.id;
             dc.alpha = rs.wireframe == 1 ? 0.75f : 0.62f;   // line grey level
             dc.flags = d.flags | (rs.wireframe == 2 ? 8u : 0u);   // over the shaded view: faint light lines (PSWire)
-            m_cmd->SetGraphicsRoot32BitConstants(1, 16, &dc, 0);
+            m_cmd->SetGraphicsRoot32BitConstants(1, 1, &slot, 0);
             m_cmd->DrawIndexedInstanced(g.lineCount, 1, g.lineOffset, (INT)g.vertexOffset, 0);
         }
         m_cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
@@ -893,8 +975,7 @@ void Renderer::recordRaster(const Scene& scene, const RenderSettings& rs, const 
     m_cmd->ClearDepthStencilView(idDsv, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
     m_cmd->SetPipelineState(m_psoId.Get());
     m_cmd->SetGraphicsRootConstantBufferView(0, rcb.va() + 512);   // ids without the anti-aliasing jitter
-    for (const Draw& d : m_draws)
-        if (!(d.flags & 7u)) drawOne(d);
+    if (rs.idPass) drawAll([&](const Draw& d) { return !(d.flags & 7u); });
     transition(idTex, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
 }
 

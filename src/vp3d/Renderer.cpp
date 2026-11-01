@@ -410,6 +410,7 @@ void Renderer::uavBarrier(ID3D12Resource* r) {
 
 void Renderer::setScene(const Scene& scene) {
     waitIdle();
+    m_buildVersion = m_tlasVersion = 0;   // the instances point at the old BLAS
     m_historyValid = false;
     m_meshes.clear();
     m_sceneGeometryVersion = scene.geometryVersion;
@@ -846,6 +847,18 @@ void Renderer::uploadEnvironment(const EnvImagePtr& img) {
 }
 
 void Renderer::buildTLAS(const Scene& scene, bool buildAS) {
+    // unchanged scene (Scene::objectsVersion): the instances, materials and lights of the last build stay, the TLAS is
+    // built once
+    const bool cached = scene.objectsVersion && scene.objectsVersion == m_buildVersion && m_instanceDescs.res;
+    if (!cached) buildInstances(scene);
+    m_buildVersion = scene.objectsVersion;
+    if (!buildAS) return;
+    if (cached && scene.objectsVersion == m_tlasVersion && m_tlas.res) return;
+    m_tlasVersion = scene.objectsVersion;
+    buildAccel();
+}
+
+void Renderer::buildInstances(const Scene& scene) {
     m_draws.clear();
     std::vector<D3D12_RAYTRACING_INSTANCE_DESC> descs;
     std::vector<gpu::GpuInstance> insts;
@@ -1013,15 +1026,18 @@ void Renderer::buildTLAS(const Scene& scene, bool buildAS) {
         m_sceneCenter = (mn + mx) * 0.5f;
         m_sceneRadius = std::max(length(mx - mn) * 0.5f, 1.0f);
     }
-    if (!buildAS) return;
+    m_tlasCount = (uint32_t)descs.size();
+}
+
+void Renderer::buildAccel() {
 
     D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS in = {};
     in.Type = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL;
     in.Flags = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PREFER_FAST_TRACE;
     in.DescsLayout = D3D12_ELEMENTS_LAYOUT_ARRAY;
-    in.NumDescs = (UINT)descs.size();
+    in.NumDescs = m_tlasCount;
     in.InstanceDescs = m_instanceDescs.va();
-    uint32_t needed = std::max<uint32_t>((uint32_t)descs.size(), 1);
+    uint32_t needed = std::max<uint32_t>(m_tlasCount, 1);
     if (!m_tlas.res || needed > m_tlasCapacity) {
         m_tlasCapacity = std::max(needed * 2, 64u);
         D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS cap = in;
@@ -1351,6 +1367,22 @@ uint32_t renderSignature(const RenderSettings& rs) {
 
 // Hash of everything that changes the lighting of a frame except the camera and the object transforms, which
 // the reprojection handles. A change here drops the history.
+uint32_t Renderer::sceneSig(const Scene& s) {
+    if (!s.objectsVersion) return sceneSignature(s);
+    if (s.objectsVersion != m_sigVersion) {
+        m_sigVersion = s.objectsVersion;
+        m_cachedSceneSig = sceneSignature(s);
+        m_cachedTransformSig = transformSignature(s);
+    }
+    return m_cachedSceneSig;
+}
+
+uint32_t Renderer::transformSig(const Scene& s) {
+    if (!s.objectsVersion) return transformSignature(s);
+    sceneSig(s);
+    return m_cachedTransformSig;
+}
+
 uint32_t Renderer::sceneSignature(const Scene& s) const {
     uint32_t h = 2166136261u;
     auto mix = [&](const void* p, size_t n) {
@@ -1455,7 +1487,7 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
     // A move (object or sun) does not wipe the history: it fades to new samples over rs.resetDelay seconds, so the
     // trail of the old place disappears in that time and the noise of the new place is short. Off: nothing happens.
     if (rs.historyFixes && rs.resetOnMove) {
-        const uint32_t tsig = transformSignature(scene);
+        const uint32_t tsig = transformSig(scene);
         if (tsig != m_transformSignature) {
             if (m_transformSignature != 0 && m_historyValid) {
                 m_fadeTotal = std::max(2, (int)std::lround(rs.resetDelay * 60.0f));
@@ -1464,7 +1496,7 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
             m_transformSignature = tsig;
         }
     }
-    const uint32_t sig = sceneSignature(scene) ^ (renderSignature(rs) * 16777619u);
+    const uint32_t sig = sceneSig(scene) ^ (renderSignature(rs) * 16777619u);
     if (sig != m_sceneSignature) {
         m_sceneSignature = sig;
         m_historyValid = false;
@@ -1581,7 +1613,7 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
             const Camera& c = scene.camera;
             const float k[] = {c.target.x, c.target.y, c.target.z, c.yaw, c.pitch, c.distance, c.fovY, (float)vp.w, (float)vp.h,
                                (float)rs.wireframe, rs.editorGrid, c.ortho ? c.orthoHeight : 0.0f};
-            const uint32_t n[2] = {transformSignature(scene), scene.geometryVersion};
+            const uint32_t n[2] = {transformSig(scene), scene.geometryVersion};
             auto mix = [&](const void* p, size_t len) {
                 const unsigned char* b = static_cast<const unsigned char*>(p);
                 for (size_t i = 0; i < len; ++i) { sig ^= b[i]; sig *= 1099511628211ull; }
@@ -1808,6 +1840,8 @@ void Renderer::renderToTexture(const Scene& scene, const RenderSettings& rs, con
 void Renderer::present(bool vsync) {
     m_swapChain->Present(vsync ? 1 : 0, 0);
     waitIdle();
+    m_drawBufUsed = 0;
+    m_drawGrave.clear();
     void* p = nullptr;
     D3D12_RANGE r = {0, 32};
     if (SUCCEEDED(m_queryReadback.res->Map(0, &r, &p))) {

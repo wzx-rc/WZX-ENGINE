@@ -19,6 +19,15 @@ struct Options {
     bool grid = false;        // --grid: every part of the library side by side
     int bench = 0;            // --bench N: N random bricks
     bool pathTrace = false;   // --pt: progressive path tracing
+    int bounces = 0;          // --bounces N (path tracing)
+    int bevelSpp = -1;        // --bevel-spp N (0 = bevel off)
+    bool opaque = false;      // --opaque: benchmark bricks in standard colours only
+    int denoise = -1;         // --denoise 0|1
+    int ppf = 1;              // --ppf N: path tracing samples per frame
+    bool noHdri = false, noGround = false;   // --no-hdri, --no-ground (render cost tests)
+    float groundSize = 2000.0f;   // --ground size (cm)
+    float ptMoveScale = 0.5f;     // path tracing resolution while the view moves
+    float zoom = 1.0f;        // --zoom f: camera distance x f after framing everything
 };
 
 // One brick of the model.
@@ -68,6 +77,8 @@ private:
     double m_cpuMs = 0, m_frameMs = 0;
     LARGE_INTEGER m_qpf{}, m_last{};
     std::string m_status;
+    double m_lastMove = -10.0;   // time of the last camera or scene change (dynamic resolution)
+    std::vector<Scene::MeshLod> m_lodsOff;   // the levels of detail while they are turned off (L)
 };
 
 } // namespace brickit

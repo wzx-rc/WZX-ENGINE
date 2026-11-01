@@ -88,6 +88,9 @@ struct RenderSettings {
     bool bakedProbes = false;
     // Raster modes (Lit, Metal iOS): 0 shaded, 1 wireframe only, 2 wireframe over the shaded view (override).
     int wireframe = 0;
+    // Raster: object id pass (normal + id per pixel, used by the editor's id outline). Off: the target is only cleared
+    // (the selection coverage still gives the outline), one geometry pass less.
+    bool idPass = true;
 };
 
 struct ViewRect { int x = 0, y = 0, w = 1, h = 1; };
@@ -135,6 +138,7 @@ public:
     void resetAccumulation() { m_sampleIndex = 0; }
     uint32_t sampleCount() const { return m_sampleIndex; }
     float gpuFrameMs() const { return m_gpuMs; }
+    uint64_t rasterTriangles() const { return m_rasterTris; }   // triangles of the camera passes of the last raster frame (after LOD and culling)
     float giUpdateMs() const { return m_giUpdateMs; }     // DDGI probe ray tracing
     float giBlendMs() const { return m_giBlendMs; }       // DDGI probe blending
     uint32_t giProbeCount() const { return m_giCounts[0] * m_giCounts[1] * m_giCounts[2]; }
@@ -219,11 +223,19 @@ private:
     void copyHistory();
     uint32_t sceneSignature(const Scene& scene) const;
     uint32_t transformSignature(const Scene& scene) const;
+    // Signatures cached while Scene::objectsVersion is unchanged (nonzero).
+    uint32_t sceneSig(const Scene& scene);
+    uint32_t transformSig(const Scene& scene);
+    uint32_t m_sigVersion = 0, m_cachedSceneSig = 0, m_cachedTransformSig = 0;
+    uint32_t m_buildVersion = 0, m_tlasVersion = 0;   // objectsVersion of the per-object data / of the TLAS
     uint32_t m_transformSignature = 0;
     int m_fadeFrames = 0, m_fadeTotal = 1;   // history fading after an object moved
     Buffer createBuffer(uint64_t size, D3D12_HEAP_TYPE heap, D3D12_RESOURCE_FLAGS flags, D3D12_RESOURCE_STATES state);
     void ensureUpload(Buffer& b, uint64_t size);
     void buildTLAS(const Scene& scene, bool buildAS);
+    void buildInstances(const Scene& scene);   // draws, instances, materials, lights, scene bounds
+    void buildAccel();                         // TLAS over the instances of the last buildInstances
+    uint32_t m_tlasCount = 0;
     void beginCommands();
     void executeAndWait();
     void transition(ID3D12Resource* r, D3D12_RESOURCE_STATES a, D3D12_RESOURCE_STATES b);
@@ -381,6 +393,14 @@ private:
     uint32_t m_rtvSize = 0, m_dsvSize = 0;
     ComPtr<ID3D12Resource> m_msaaColor, m_msaaDepth, m_idDepth, m_shadowMap;
     Buffer m_rasterCB;
+    // Instanced raster draws: the per-object constants (64 bytes each) of every raster pass of the frame, appended to an
+    // upload buffer read by the vertex and pixel shaders (t7). Reset by present() (the GPU is idle then); a buffer that
+    // gets too small mid-frame is kept alive in m_drawGrave until then.
+    Buffer m_drawBuf;
+    uint64_t m_drawBufUsed = 0;
+    std::vector<Buffer> m_drawGrave;
+    uint32_t allocDraws(uint32_t count);
+    uint64_t m_rasterTris = 0;   // first slot of count consecutive DrawConstants in m_drawBuf
 };
 
 } // namespace vp3d

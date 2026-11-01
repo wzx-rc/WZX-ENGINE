@@ -37,7 +37,19 @@ struct DrawConstants {
     float alpha;
     uint flags;
 };
+#ifdef VP3D_ATTRIB_SEMANTICS
 ConstantBuffer<DrawConstants> D : register(b1);
+#define DRAW_VS(iid)
+#define DRAW_PS(v)
+#else
+// Instanced draws (DirectX 12 viewport): the per-object constants of the frame sit in a buffer (t7), sorted by mesh;
+// a draw covers a run of instances starting at gDrawBase. D is set at the top of each entry point.
+cbuffer DrawBase : register(b1) { uint gDrawBase; };
+StructuredBuffer<DrawConstants> gDraws : register(t7);
+static DrawConstants D;
+#define DRAW_VS(iid) D = gDraws[gDrawBase + (iid)]
+#define DRAW_PS(v) D = gDraws[(v).inst]
+#endif
 
 StructuredBuffer<GpuMaterial> gMats : register(t0);
 Texture2D<float> gShadow : register(t1);
@@ -85,6 +97,7 @@ struct VSIn {
     float3 pos : SEM_POSITION;
     float3 nrm : SEM_NORMAL;
     float2 uv : SEM_TEXCOORD;
+    uint iid : SV_InstanceID;
 };
 
 struct VSOut {
@@ -92,6 +105,9 @@ struct VSOut {
     float3 wpos : WORLDPOS;
     float3 nrm : NORMAL;
     float2 uv : TEXCOORD;
+#ifndef VP3D_ATTRIB_SEMANTICS
+    nointerpolation uint inst : INSTIDX;   // index in gDraws
+#endif
 };
 
 float3 ToWorld(float3 p) {
@@ -100,7 +116,11 @@ float3 ToWorld(float3 p) {
 }
 
 VSOut VSMain(VSIn i) {
+    DRAW_VS(i.iid);
     VSOut o;
+#ifndef VP3D_ATTRIB_SEMANTICS
+    o.inst = gDrawBase + i.iid;
+#endif
     o.wpos = ToWorld(i.pos);
     float3 n = float3(dot(D.row0.xyz, i.nrm), dot(D.row1.xyz, i.nrm), dot(D.row2.xyz, i.nrm));
     o.nrm = normalize(n);
@@ -119,6 +139,7 @@ VSOut VSWire(VSIn i) {
 }
 
 float4 VSShadow(VSIn i) : SV_Position {
+    DRAW_VS(i.iid);
     return mul(R.lightViewProj, float4(ToWorld(i.pos), 1));
 }
 
@@ -372,6 +393,7 @@ float4 Shade(VSOut i, bool ghost, float shadowBias, bool capture) {
 }
 
 float4 PSMain(VSOut i) : SV_Target {
+    DRAW_PS(i);
 #ifdef VP3D_DDGI_PROBES
     // Debug (G.flags bit 1): the probes drawn as small spheres shaded with their irradiance (red = disabled), as GIShade.
     if (R.giMode > 0 && (G.flags & 1u)) {
@@ -397,15 +419,22 @@ float4 PSMain(VSOut i) : SV_Target {
 #endif
     return Shade(i, false, 0.0015, false);
 }
-float4 PSGhost(VSOut i) : SV_Target { return Shade(i, true, 0.0015, false); }
+float4 PSGhost(VSOut i) : SV_Target {
+    DRAW_PS(i);
+    return Shade(i, true, 0.0015, false);
+}
 // id in w; the world normal in rgb lets the selection glow find the creases of the selected object (Tonemap.hlsl)
-float4 PSId(VSOut i) : SV_Target { return float4(normalize(i.nrm) * 0.5 + 0.5, (float)D.id); }
+float4 PSId(VSOut i) : SV_Target {
+    DRAW_PS(i);
+    return float4(normalize(i.nrm) * 0.5 + 0.5, (float)D.id);
+}
 // selection mask (coverage of the selected objects, see Renderer::recordSelectionMask)
 float4 PSSelect(VSOut i) : SV_Target { return 1.0; }
 // Editor wireframe display: flat lines, grey level in D.alpha (blended, no depth write).
 // Flag 8 (Wireframe Override): faint light lines with a facing ratio gradient, clear where the surface faces the
 // camera and fading towards the silhouettes (where the lines crowd).
 float4 PSWire(VSOut i) : SV_Target {
+    DRAW_PS(i);
     if (D.flags & 8u) {
         float facing = abs(dot(normalize(i.nrm), ToViewer(i.wpos)));
         return float4(D.alpha.xxx, 0.02 + 0.24 * facing * facing);
@@ -418,7 +447,11 @@ float4 PSWire(VSOut i) : SV_Target {
 // The face is lit like the main pass; alpha = distance to the probe (negative for back faces, as the ray tracer).
 
 VSOut VSProbe(VSIn i) {
+    DRAW_VS(i.iid);
     VSOut o;
+#ifndef VP3D_ATTRIB_SEMANTICS
+    o.inst = gDrawBase + i.iid;
+#endif
     o.wpos = ToWorld(i.pos);
     float3 n = float3(dot(D.row0.xyz, i.nrm), dot(D.row1.xyz, i.nrm), dot(D.row2.xyz, i.nrm));
     o.nrm = normalize(n);
@@ -446,6 +479,7 @@ ProbeOut PSProbeBackground(BgOut i) {
 }
 
 ProbeOut PSProbe(VSOut i, bool front : SV_IsFrontFace) {
+    DRAW_PS(i);
     ProbeOut o;
     float d = length(i.wpos - PF.origin);
     if (!front) {   // back face: the probe sees the inside of an object

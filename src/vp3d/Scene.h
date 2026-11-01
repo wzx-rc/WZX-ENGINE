@@ -196,6 +196,16 @@ struct Scene {
     float gridScale = 1.0f;      // grid spacing for MAT_FLAG_GRID
     float unitsPerMeter = 1.0f;  // used for DOF and bevel defaults
     uint32_t geometryVersion = 1; // bump when meshes change
+    // Revision of everything per object (transforms, materials, visibility), the materials, the lights and the
+    // environment, kept by the application: 0 (default) = the renderer rebuilds and hashes its per-object data every
+    // frame; nonzero = it reuses them while the value is unchanged (scenes of tens of thousands of objects). An
+    // application that sets it must bump it after every such change.
+    uint32_t objectsVersion = 0;
+    // Raster levels of detail: lods[mesh] = the simpler meshes drawn when the object covers fewer than lodPixels1 /
+    // lodPixels2 pixels (diameter of its bounding sphere on screen). -1 = none. The path tracer always uses the full mesh.
+    struct MeshLod { int lod1 = -1, lod2 = -1; };
+    std::vector<MeshLod> lods;
+    float lodPixels1 = 90.0f, lodPixels2 = 14.0f;
 
     int addMesh(const std::string& n, MeshData m) {
         meshes.push_back(std::move(m));
