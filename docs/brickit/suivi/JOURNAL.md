@@ -19,3 +19,4 @@
 | 14 | 01/11/2026 | Édition du pivot (P) du web : marqueurs par voxel, visée au curseur ; voxels limités à la brique active comme le web | 14_edition_pivot.png |
 | 15 | 01/11/2026 | Fiche pièce du web avec visionneuse 3D tournante (studio des miniatures), glyphes ★ › … dans la police | 15_fiche_visionneuse.png |
 | 16 | 01/11/2026 | Mode DEV du web : panneau, connecteurs par type, contour LDraw, fiche complète, export Maya zip, réimport OBJ avec revue, remplacements stockés | 16_dev_panneau.png, 16b_dev_fiche.png |
+| 17 | 01/11/2026 | Export de scène vers Maya (port de maya_export.js, même template Python), vérifié dans mayapy 2027 | (test mayapy, pas de capture) |

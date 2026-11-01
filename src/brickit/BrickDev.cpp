@@ -4,6 +4,7 @@
 // the replacements kept next to the exe (the web keeps them in IndexedDB: "stocké sur cet appareil").
 #include "BrickApp.h"
 #include "app/Json.h"
+#include "Deflate.h"
 #include <algorithm>
 #include <cmath>
 #include <commdlg.h>
@@ -134,7 +135,7 @@ static uint32_t crc32(const std::string& d) {
     for (unsigned char u : d) c = T[(c ^ u) & 255] ^ (c >> 8);
     return c ^ 0xffffffffu;
 }
-static std::string zipStored(const std::vector<std::pair<std::string, std::string>>& files) {
+std::string zipStored(const std::vector<std::pair<std::string, std::string>>& files) {
     std::string out, cen;
     auto u16 = [](std::string& s, uint32_t v) { s.push_back((char)(v & 255)); s.push_back((char)((v >> 8) & 255)); };
     auto u32 = [&](std::string& s, uint32_t v) { u16(s, v & 0xffff); u16(s, v >> 16); };

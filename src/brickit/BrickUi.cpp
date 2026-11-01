@@ -1012,7 +1012,7 @@ void BrickApp::uiSceneSheet() {
         toast(t);
     }
     ImGui::SameLine();
-    if (ImGui::Button("Exporter vers Maya")) toast("Export Maya : arrive bientôt dans la version native");
+    if (ImGui::Button("Exporter vers Maya")) mayaExportScene();
     ImGui::SameLine();
     if (ImGui::Button("Nouvelle scène")) { pushUndo(); m_bricks.clear(); m_selected = -1; m_multi.clear(); rebuildScene(); m_sheetText = m_build.toJson(m_scene.camera); toast("Nouvelle scène"); }
     ImGui::SameLine();

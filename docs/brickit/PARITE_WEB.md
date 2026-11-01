@@ -63,7 +63,7 @@ Cases : `[x]` porté et vérifié · `[~]` partiel (ce qui manque est dit) · `[
 - [x] Bibliothèque, Manuel d'instructions, Infos (pièces, fps), Couleurs, Actions de la brique, Réinitialiser la disposition (toast « Disposition réinitialisée »)
 
 ### Fiche « Scène partagée » `#sheet`
-- [x] Texte JSON, Copier, Charger ce texte, Ouvrir un fichier…, Exporter .ldr, Nouvelle scène, Fermer ; [ ] Exporter vers Maya
+- [x] Texte JSON, Copier, Charger ce texte, Ouvrir un fichier…, Exporter .ldr, Nouvelle scène, Fermer ; [x] Exporter vers Maya
 
 ### Manuel `#manual`, `#mbig`, `#pdfbig`
 - [ ] Livret d'étapes (pages lues verticalement), grand format, import PDF lu verticalement, redimensionnable
@@ -97,7 +97,7 @@ Cases : `[x]` porté et vérifié · `[~]` partiel (ce qui manque est dit) · `[
 
 ## 6. Fichiers et exports
 - [x] `.v3d.json` (format vp3d-scene v1, compatible web)
-- [x] Export `.ldr` (même transformation que le web), [ ] Export Maya (script Python + rig, `maya_export.js` / `maya_template.py`), [x] mode DEV : export zip (<id>.obj + LISEZMOI.txt, origine LDraw, cm, Y haut, repères ref_connecteurs_*), réimport OBJ (groupes ref_ ignorés, devine l'unité, décalage du centre, axes, revue Annuler / Recaler / Garder), aller-retour vérifié à l'identique (--dev-roundtrip 3001)
+- [x] Export `.ldr` (même transformation que le web), [x] Export Maya (port de `maya_export.js`, même `maya_template.py` que le web : maillages fusionnés, matrices, shaders, rig corps / liaisons, set driven keys échantillonnées au solveur, contrôle du couplage, zip .py + LISEZMOI.txt) — vérifié dans mayapy 2027 : 14 briques, 5 corps, 4 liaisons, moteur1 = 90° fait tourner J0..J3 (rapport 1:3 compris), [x] mode DEV : export zip (<id>.obj + LISEZMOI.txt, origine LDraw, cm, Y haut, repères ref_connecteurs_*), réimport OBJ (groupes ref_ ignorés, devine l'unité, décalage du centre, axes, revue Annuler / Recaler / Garder), aller-retour vérifié à l'identique (--dev-roundtrip 3001)
 
 ## 7. Mécanique (détails)
 - [x] Connecteurs, corps, pivots, engrènements, arbre, boucles, solveur LM, butées, rapports, phase des dents, couleurs par corps, liaisons
@@ -117,6 +117,8 @@ Cases : `[x]` porté et vérifié · `[~]` partiel (ce qui manque est dit) · `[
 - Remplacements gardés dans `dev_overrides\<id>.obj` + `<id>.json` à côté de l'exe (le web : IndexedDB « stocké sur cet appareil » ou base de l'artifact). Préférences DEV dans `brickit_prefs.json` (clé `dev`).
 - FBX : pas de lecteur FBX natif, le réimport demande un OBJ (toast « Lecture impossible : le FBX n'est pas lu par la version native… »).
 - Export : boîte « Enregistrer sous » (le web : téléchargement, sinon la fiche texte de secours).
+
+- Export Maya : compression zlib maison (LZ77 + Huffman fixe, `Deflate.cpp`) au lieu de CompressionStream ; tirages du contrôle de couplage à graine fixe (le web : Math.random).
 
 ### Rendu
 - Polices : Segoe UI + Segoe UI Symbol fusionnées pour les glyphes du web (› … ★ ☆ ✎ ✋ ◀ ▶), absents de la police latine seule.

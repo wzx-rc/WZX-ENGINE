@@ -659,6 +659,7 @@ void BrickApp::frame() {
         ImVec2 d = ImGui::GetIO().DisplaySize;
         if (pi >= 0) spawn(pi, d.x * m_opt.spawnX, d.y * m_opt.spawnY);
     }
+    if (m_frame == 3 && !m_opt.mayaOut.empty()) mayaExportScene(m_opt.mayaOut);   // scripted test: Maya export
     if (m_frame == 3 && !m_opt.devRoundtrip.empty()) {   // self-test: OBJ export of a part, re-import, fit (offset and scale must be identity)
         int pi = m_lib.find(m_opt.devRoundtrip);
         Part* pp = pi >= 0 ? m_lib.get(m_opt.devRoundtrip) : nullptr;
@@ -807,6 +808,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         else if (a == L"--info") { std::wstring w = next(); opt.infoPart.assign(w.begin(), w.end()); }
         else if (a == L"--pivot-edit") opt.pivotEdit = true;
         else if (a == L"--dev") opt.dev = true;
+        else if (a == L"--maya") opt.mayaOut = next();
         else if (a == L"--dev-roundtrip") { std::wstring w = next(); opt.devRoundtrip.assign(w.begin(), w.end()); }   // 0 select, 1 visor, 2 move, 3 rotate
         else if (a == L"--cat") opt.libCategory = _wtoi(next().c_str());
         else if (a == L"--focus") opt.focusDim = true;

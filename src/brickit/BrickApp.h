@@ -54,7 +54,8 @@ struct Options {
     std::string infoPart;   // --info <part>: open the part sheet (captures)
     bool pivotEdit = false;
     bool dev = false;
-    std::string devRoundtrip;   // --dev-roundtrip <part>: OBJ export / import self-test
+    std::string devRoundtrip;
+    std::wstring mayaOut;       // --maya <file.zip>: export the scene to Maya then quit (tests)   // --dev-roundtrip <part>: OBJ export / import self-test
     int libCategory = -1;     // --cat N
     bool focusDim = false;    // --focus
     std::wstring savePath;    // --save file: the scene saved at the capture (file format test)
@@ -227,6 +228,11 @@ private:
     void uiDevPanel();
     void uiDevSheet();
     void uiDevReview();
+
+    // BrickMaya.cpp: scene export to Maya (web: maya_export.js + maya_template.py)
+    struct MayaStats { int bricks = 0, parts = 0, bodies = 0, joints = 0, cmds = 0; std::vector<std::string> fails; double coupling = 0; };
+    bool mayaExportScript(std::string& py, MayaStats& st, std::string& err);
+    void mayaExportScene(const std::wstring& forcedPath = std::wstring());
 
     // Thumbs.cpp
     void buildThumbs();
