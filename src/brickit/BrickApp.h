@@ -43,7 +43,6 @@ struct Options {
     bool cleanGround = false;     // --clean: floor without the grid lines
     float exposure = 1.3f;        // --exposure
     int tonemapper = 0;           // --tonemap 0 ACES (default, as the web builder), 1 AgX, 2 AgX Punchy, 3 Standard
-    float fingerprints = 0.6f;    // --fingerprints: strength of the roughness mask (0 = off)
     float yaw = -1000, pitch = -1000;   // --yaw / --pitch degrees (camera)
     int stride = 0;           // --stride 1|4: path tracing pixels per frame (0 = 4 interactive, 1 for captures)
     float zoom = 1.0f;        // --zoom f: camera distance x f after framing everything
@@ -332,8 +331,6 @@ private:
     bool m_startMaximized = false;
     bool m_cornell = false;
     int m_adaptiveSpp = 1;             // path tracing samples per frame (adaptive, see frame)            // --cornell: the WZX Engine Cornell box instead of bricks
-    std::vector<std::pair<int, float>> m_fpMats;   // materials with fingerprints and their strength
-    bool m_fingerprints = true;        // fingerprints in the path tracing (settings)
     // native settings (gear button): UI scale over the screen scale, ambient occlusion of the HQ mode, automatic save
     float m_uiScaleUser = 1.0f;
     bool m_ssaoOn = true, m_autosaveOn = true;

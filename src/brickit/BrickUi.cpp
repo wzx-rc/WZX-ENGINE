@@ -221,7 +221,7 @@ void BrickApp::uiHeader() {
         {3, svg::I_UNDO, "DEV", "Mode développeur : connecteurs LDraw, export / réimport Maya des pièces", m_dev, true, 17},
         {0, svg::I_WINDOWS, nullptr, "Fenêtres : afficher / masquer les panneaux", m_popup == 3, true, 18},
         {0, svg::I_FILE, nullptr, "Scène : ouvrir / enregistrer (.v3d.json)", m_popup == 4, true, 19},
-        {0, svg::I_SETTINGS, nullptr, "Réglages : échelle de l'interface, miniatures, qualité, traces de doigts…", m_popup == 5, true, 20},
+        {0, svg::I_SETTINGS, nullptr, "Réglages : échelle de l'interface, miniatures, qualité, transformation de vue…", m_popup == 5, true, 20},
     };
     auto width = [&](const B& b) {
         switch (b.kind) {
@@ -1844,7 +1844,7 @@ bool BrickApp::swipeRow(int id, ImVec2 a, ImVec2 b, float& scroll, float& vel, f
 
 // --------------------------------------------------------------------------- settings (native addition, gear button)
 // UI scale (text and panels, 4K), thumbnail size, real time quality / path tracing, ambient occlusion of the HQ mode,
-// tone mapping, fingerprints of the path tracing, voxels, animations, automatic save. Saved in brickit_prefs.json.
+// tone mapping, voxels, animations, automatic save. Saved in brickit_prefs.json.
 void BrickApp::uiSettings() {
     Ui u = ui(m_ui);
     if (m_gui.fontBold) u.bold = m_gui.fontBold;
@@ -1863,7 +1863,6 @@ void BrickApp::uiSettings() {
         {"Rendu", {{"Rapide", m_rs.raster && m_quality == 0}, {"HQ", m_rs.raster && m_quality == 1}, {"Path tracing", !m_rs.raster}}, 2},
         {"Occlusion ambiante (HQ)", {{"Oui", m_ssaoOn}, {"Non", !m_ssaoOn}}, 3},
         {"Transformation de vue", {{"ACES", m_rs.tonemapper == 0}, {"AgX", m_rs.tonemapper == 1}, {"Std", m_rs.tonemapper == 3}}, 4},
-        {"Traces de doigts (path tracing)", {{"Oui", m_fingerprints}, {"Non", !m_fingerprints}}, 5},
         {"Voxels", {{"Affichés", m_showVox}, {"Masqués", !m_showVox}}, 6},
         {"Animations", {{"Oui", m_animOn}, {"Non", !m_animOn}}, 7},
         {"Sauvegarde automatique", {{"Oui", m_autosaveOn}, {"Non", !m_autosaveOn}}, 8},
@@ -1905,7 +1904,6 @@ void BrickApp::uiSettings() {
             break;
         case 3: m_ssaoOn = clickOpt == 0; break;
         case 4: m_rs.tonemapper = clickOpt == 2 ? 3 : clickOpt; break;
-        case 5: m_fingerprints = clickOpt == 0; applyLook(); break;
         case 6: m_showVox = clickOpt == 0; syncObjects(); break;
         case 7: m_animOn = clickOpt == 0; break;
         case 8: m_autosaveOn = clickOpt == 0; break;

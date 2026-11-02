@@ -185,7 +185,6 @@ bool BrickApp::init(HINSTANCE inst, const Options& opt) {
         m_firstBrickObject = (int)m_scene.objects.size();
         m_ghostObject = -1;
         m_rimLight = -1;
-        m_fpMats.clear();
         m_partMesh.assign(m_partMesh.size(), -1);
         m_rs.exposure = 1.0f;
         m_rs.vignette = 0.10f;
@@ -328,19 +327,11 @@ void BrickApp::setupStage() {
         m_rimLight = (int)m_scene.lights.size() - 1;
     }
 
-    // fingerprints: roughness mask shared by the plastic colours (assets/brickit/fingerprints.jpg)
-    int fpTex = -1;
-    {
-        Texture t;
-        std::string terr;
-        if (loadImage(m_exeDir + L"\\assets\\brickit\\fingerprints.jpg", t, &terr, 2048)) fpTex = m_scene.addTexture(std::move(t));
-    }
     // one material per palette colour: ABS plastic (light clear coat, discreet subsurface on the light colours),
     // transparent = tinted glass, metal colours = metal; bevel on every edge (rounded edges and the groove between
     // two bricks that touch, path tracing)
     m_colorMaterial.clear();
     m_tintMaterial.clear();
-    m_fpMats.clear();
     for (const Color& c : m_lib.palette) {
         Material m;
         m.name = c.name;
@@ -351,10 +342,7 @@ void BrickApp::setupStage() {
         m.specular = 0.5f;
         m.coat = 0.35f;
         m.coatRoughness = 0.05f;
-        m.bevelRadius = 0.035f;
-        m.roughnessTex = fpTex;
-        m.roughTexScale = 1.0f / 10.0f;   // the map covers 10 cm: prints at the scale of a finger on the bricks
-        m.roughTexStrength = m_opt.fingerprints;
+        m.bevelRadius = 0.035f;   // no fingerprint mask (Wzx: none anywhere)
         const float lum = 0.2126f * m.baseColor.x + 0.7152f * m.baseColor.y + 0.0722f * m.baseColor.z;
         if (lum > 0.06f && m_opt.sss) {   // light goes into the ABS: more on the light colours (white, yellow, red),
             m.subsurface = std::min(0.35f, 0.15f + lum * 0.4f);   // a diffusion distance of about a millimetre, tinted
@@ -365,7 +353,6 @@ void BrickApp::setupStage() {
             m.roughness = 0.03f;
             m.coat = 0.0f;
             m.subsurface = 0.0f;
-            m.roughTexStrength *= 0.5f;
         } else if (c.group.find("metal") != std::string::npos || c.group.find("chrome") != std::string::npos) {
             m.metallic = 1.0f;
             m.roughness = 0.2f;
@@ -373,7 +360,6 @@ void BrickApp::setupStage() {
             m.subsurface = 0.0f;
         }
         m_colorMaterial.push_back(m_scene.addMaterial(m));
-        m_fpMats.push_back({m_colorMaterial.back(), m.roughTexStrength});
     }
     // focus mode: the same materials at 50 % for the bricks that are not the focus
     m_dimMaterial.clear();
@@ -384,7 +370,6 @@ void BrickApp::setupStage() {
         d.specular *= 0.5f;
         d.coat *= 0.5f;
         m_dimMaterial.push_back(m_scene.addMaterial(d));
-        m_fpMats.push_back({m_dimMaterial.back(), d.roughTexStrength});
     }
     {
         Material gm;   // ghostMat of the web: 0xffe08a, emissive 0x6b5a1a
@@ -462,8 +447,6 @@ void BrickApp::applyLook() {
         if (m_rimLight >= 0) m_scene.lights[m_rimLight].enabled = false;
         m_rs.exposure = m_opt.exposure;
     }
-    // fingerprints: path tracing only (Wzx: none in the real time view), switchable in the settings
-    for (auto& [mi, base] : m_fpMats) m_scene.materials[mi].roughTexStrength = (!m_rs.raster && m_fingerprints) ? base : 0.0f;
     ++m_scene.objectsVersion;
     m_renderer.resetAccumulation();
 }
@@ -944,7 +927,6 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         else if (a == L"--tonemap") opt.tonemapper = _wtoi(next().c_str());
         else if (a == L"--clean") opt.cleanGround = true;
         else if (a == L"--exposure") opt.exposure = (float)_wtof(next().c_str());
-        else if (a == L"--fingerprints") opt.fingerprints = (float)_wtof(next().c_str());
         else if (a == L"--yaw") opt.yaw = (float)_wtof(next().c_str());
         else if (a == L"--pitch") opt.pitch = (float)_wtof(next().c_str());
         else if (a == L"--no-hdri") opt.noHdri = true;

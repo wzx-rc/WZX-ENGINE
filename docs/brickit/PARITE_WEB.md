@@ -163,5 +163,6 @@ Cases : `[x]` porté et vérifié · `[~]` partiel (ce qui manque est dit) · `[
 - Les captures et tests n'écrivent plus les préférences de l'utilisateur.
 
 ### Rendu
+- Traces de doigts : retirées partout à la demande de Wzx (02/11/2026) — aucune texture de traces chargée, aucun masque de rugosité sur les matériaux de BrickIt (temps réel, HQ, path tracing, miniatures, aperçu de fiche), réglage retiré. Le masque reste disponible dans le moteur vp3d (Viewport3D).
 - Polices : Segoe UI + Segoe UI Symbol fusionnées pour les glyphes du web (› … ★ ☆ ✎ ✋ ◀ ▶), absents de la police latine seule.
 - Path tracing natif (studio clair validé sur 03b) en plus du temps réel identique au web.
