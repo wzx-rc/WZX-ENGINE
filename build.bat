@@ -39,8 +39,10 @@ for %%E in (PSMain PSGhost PSId PSWire PSBackground PSProbe PSProbeBackground) d
 )
 if exist assets xcopy /E /I /Y /Q assets "%OUT%\assets" >nul
 
-set "CFLAGS=/nologo /std:c++17 /EHsc /W3 /utf-8 /DUNICODE /D_UNICODE /DNOMINMAX /DWIN32_LEAN_AND_MEAN /DIMGUI_DEFINE_MATH_OPERATORS %CFG% /Isrc /Ithird_party\imgui"
+set "CFLAGS=/nologo /std:c++17 /EHsc /W3 /utf-8 /DUNICODE /D_UNICODE /DNOMINMAX /DWIN32_LEAN_AND_MEAN /DIMGUI_DEFINE_MATH_OPERATORS /DIMGUI_ENABLE_TEST_ENGINE %CFG% /Isrc /Ithird_party\imgui"
 
+rem IMGUI_ENABLE_TEST_ENGINE: item hooks used by the UI Director (src\app\UiDirector.cpp); it changes ImGui structs,
+rem so the ImGui library is built with it too (imgui_mt_te.lib, rebuilt once after this change).
 rem stale objects of deleted sources would be linked by the wildcards below
 del /q build\obj\vp3d\*.obj build\obj\app\*.obj 2>nul
 
@@ -50,9 +52,9 @@ lib /nologo /OUT:build\lib\vp3d.lib build\obj\vp3d\*.obj || exit /b 1
 
 echo [3/5] Dear ImGui (third_party\imgui, built once)
 if not exist build\obj\imgui mkdir build\obj\imgui
-if not exist build\lib\imgui_mt.lib (
+if not exist build\lib\imgui_mt_te.lib (
     cl %CFLAGS% /c third_party\imgui\imgui*.cpp third_party\imgui\backends\imgui_impl_win32.cpp third_party\imgui\backends\imgui_impl_dx12.cpp /Fo:build\obj\imgui\ || exit /b 1
-    lib /nologo /OUT:build\lib\imgui_mt.lib build\obj\imgui\*.obj || exit /b 1
+    lib /nologo /OUT:build\lib\imgui_mt_te.lib build\obj\imgui\*.obj || exit /b 1
 )
 
 echo [4/5] Game layer (node graph, Play, builds)
@@ -63,6 +65,6 @@ cl %CFLAGS% /c src\game\*.cpp /Fo:build\obj\game\ || exit /b 1
 echo [5/5] WZX Engine editor
 cl %CFLAGS% /Isrc\app\atelier /c src\app\*.cpp src\app\atelier\*.cpp /Fo:build\obj\app\ || exit /b 1
 rc /nologo /fo build\obj\app\wzx.res src\app\res\wzx.rc || exit /b 1
-link /nologo /OUT:%OUT%\Viewport3D.exe build\obj\app\*.obj build\obj\app\wzx.res build\obj\game\*.obj build\lib\vp3d.lib build\lib\imgui_mt.lib ws2_32.lib d3d12.lib dxgi.lib d3dcompiler.lib windowscodecs.lib user32.lib gdi32.lib ole32.lib shell32.lib shcore.lib comdlg32.lib dwmapi.lib /SUBSYSTEM:WINDOWS || exit /b 1
+link /nologo /OUT:%OUT%\Viewport3D.exe build\obj\app\*.obj build\obj\app\wzx.res build\obj\game\*.obj build\lib\vp3d.lib build\lib\imgui_mt_te.lib ws2_32.lib d3d12.lib dxgi.lib d3dcompiler.lib windowscodecs.lib user32.lib gdi32.lib ole32.lib shell32.lib shcore.lib comdlg32.lib dwmapi.lib /SUBSYSTEM:WINDOWS || exit /b 1
 
 echo Build OK: %OUT%\Viewport3D.exe

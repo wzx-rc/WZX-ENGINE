@@ -56,6 +56,22 @@ ACES (fit de Hill, RRT+ODT), AgX, AgX Punchy, Standard. Espace de travail : lin�
 - Ctrl+Z / Ctrl+Y / Ctrl+D / Suppr · F : recadrer · T : rotation auto · F12 : capture PNG · F1 / F2 : scènes
 - P : path tracing / viewport · L : GI sondes temps réel (DDGI)
 
+## Mode édition de l'interface (F9) : UI Director
+
+**F9** passe l'éditeur en mode édition de son interface (bandeau orange en haut, F9 à nouveau pour quitter). Tout élément Dear ImGui est repérable sans annotation, grâce aux hooks « test engine » d'ImGui (`IMGUI_ENABLE_TEST_ENGINE`, défini dans `build.bat`).
+
+- Survol : cadre orange et libellé de l'élément · Clic : sélection · Échap : désélectionner
+- Glisser : déplacer · Maj+glisser : redimensionner · Flèches : 1 px (Maj : 10 px) · Ctrl+Z : annuler. Le texte du bouton se renomme dans l'inspecteur.
+  Seuls les éléments dont le code passe par `uidir::place()` sont déplaçables (boutons, onglets et zones cliquables Atelier : `Hit`, `Button`, `PrimaryButton`, `TabButton`, `DropButton` de `AtelierUI.cpp`). Les autres et les panneaux restent désignables.
+- **Désigner** : épingle numérotée sur l'élément, avec une consigne pour Claude.
+
+Fichiers écrits à la racine du projet, à versionner :
+- `ui/layout.json` : décalages, tailles et textes par ID ImGui (pixels de référence 1600 × 900). C'est la source du layout modifié. Il est rechargé à chaud quand un autre outil le modifie, par exemple Claude.
+- `ui/designations.json` et `ui/DESIGNATIONS.md` : les éléments désignés. Le `.md` est rédigé pour Claude, avec le libellé à chercher dans `src/`, la fenêtre, l'ID et la consigne.
+
+API de commandes (`POST /cmd`) : `ui.edit`, `ui.items` (éléments de la dernière image), `ui.layout.get`, `ui.layout.set`, `ui.designations`, `ui.designate`. Claude peut ainsi lire l'interface, la déplacer et lire les désignations pendant que l'éditeur tourne.
+Code : `src/app/UiDirector.h/.cpp`.
+
 ## Structure
 
 - `src/vp3d/` : **module réutilisable** (lib statique `build/lib/vp3d.lib`)
@@ -68,6 +84,7 @@ ACES (fit de Hill, RRT+ODT), AgX, AgX Punchy, Standard. Espace de travail : lin�
   - `App` : fenêtre, boucle, édition (annuler, sélection, ajout…) · `ImGuiLayer` : backends Win32 + DX12, polices, textures · `Theme` : couleurs et réglages
   - `AtelierUI` : espace Scene et barre du haut · `atelier/` : Material Studio, Attribute Editor, palette partagée (`atelier_style.h`)
   - `game/` : éditeur nodal du jeu (onglet Graph : `NodeEditor`, bibliothèque `NodeLib`, exécution `Runtime`, graphe `Graph`) et bases RTS : grille `Grid`, caméra `RtsCamera`, maisons `Placement` (placées et animées dans `src/app/AppRts.cpp`, mode village dans la vue Scene, ou pendant Play ; le village est sauvegardé dans la scène, clé `village`). Les nœuds RTS (placer, supprimer, tourner une maison, « House Clicked ») exécutent la logique des maisons ; les boutons du HUD en Play sont déclarés par des nœuds « HUD Button ». Le nœud C++ « Caméra RTS » ne fait que la caméra RTS et le cadran solaire : il reste inactif tant qu'un lien ne l'active pas. Le nœud « Set Sun » règle le soleil et l'allume pendant le Play
+  - `UiDirector` : mode édition de l'interface (F9), layout `ui/layout.json`, désignations pour Claude
   - `Editor` : fenêtres Settings, Controls, About et vignettes du Content Browser
   - `Viewport` : image 3D (texture du renderer), caméra, sélection, gizmo, glisser-déposer
   - `Content` : palette, matériaux, primitives, scènes · `SceneIO` : fichiers de scène

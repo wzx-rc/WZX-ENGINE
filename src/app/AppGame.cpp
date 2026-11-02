@@ -1,6 +1,7 @@
 // Game layer: Play mode, node graph editor hookup, builds, player mode and the local command API.
 #include "App.h"
 #include "GameHost.h"
+#include "UiDirector.h"
 #include "atelier/atelier_style.h"
 #include "atelier/ui_icons.h"
 #include <set>
@@ -164,6 +165,7 @@ void GameHost::init() {
     fs::path root = exe.parent_path().parent_path();
     if (!fs::exists(root / "src")) root = exe;
     m_projectDir = root.wstring();
+    uidir::init(m_projectDir);   // ui/layout.json, ui/designations.json
     m_gameDir = (root / "game").wstring();
     fs::create_directories(m_gameDir, ec);
     m_graphPath = (fs::path(m_gameDir) / "main.graph.json").wstring();   // the graph of the Village scene (RTS)
@@ -1214,7 +1216,10 @@ static const char* kHelp =
     "\"graph.disconnect\": \"{id, pin, output}\", \"graph.setInput\": \"{id, pin, value}\", "
     "\"graph.save\": \"{}\", \"graph.load\": \"{}\", \"graph.show\": \"{open: true|false, output?: 0|1|2}\", \"graph.compile\": \"{} -> diagnostics\", \"graph.arrange\": \"{} -> nodes deplaces\", "
     "\"build\": \"{profile?, run?} -> dossier\", \"build.profiles\": \"{}\", "
-    "\"graph.execute\": \"{} -> Execute du Graph (essai a blanc, chemin anime)\", \"screenshot\": \"{window?: true = fenetre entiere} -> fichier PNG\", \"log\": \"{} -> journal du graphe\"}}";
+    "\"graph.execute\": \"{} -> Execute du Graph (essai a blanc, chemin anime)\", \"screenshot\": \"{window?: true = fenetre entiere} -> fichier PNG\", \"log\": \"{} -> journal du graphe\", "
+    "\"ui.edit\": \"{on?: true|false} -> mode edition de l'interface (F9)\", \"ui.items\": \"{filter?} -> elements ImGui de la derniere image (id, label, fenetre, rect, deplacable)\", "
+    "\"ui.layout.get\": \"{} -> ui/layout.json\", \"ui.layout.set\": \"{id, dx?, dy?, dw?, dh?, text?, reset?} (pixels de reference)\", "
+    "\"ui.designations\": \"{clear?} -> elements designes (ui/DESIGNATIONS.md)\", \"ui.designate\": \"{id, note}\"}}";
 
 void GameHost::handleRequests() {
     for (int guard = 0; guard < 16; ++guard) {
@@ -1261,6 +1266,10 @@ std::string GameHost::command(const Json& j, int& status) {
     };
 
     if (cmd == "help") return kHelp;
+    if (cmd.rfind("ui.", 0) == 0) {   // UI Director: ui.items, ui.layout.get / set, ui.designations, ui.designate, ui.edit
+        std::string r = uidir::command(j, status);
+        if (!r.empty()) return r;
+    }
     if (cmd == "state")
         return ok(", \"playing\": " + std::string(m_playing ? "true" : "false") + ", \"graphOpen\": " + (showGraph() ? "true" : "false") +
                   ", \"selected\": " + std::to_string(a.m_selected) + ", \"objects\": " + std::to_string(s.objects.size()) +

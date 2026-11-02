@@ -9,6 +9,7 @@
 #include "atelier/ambre_fx.h"
 #include "imgui_internal.h"   // TempInputIsActive (Corail sliders)
 #include "atelier/material_ui.h"
+#include "UiDirector.h"
 #include <cctype>
 
 namespace app {
@@ -79,7 +80,13 @@ void TextBold(float x, float y, const std::string& text, ImU32 color, float size
 }
 float g_labelRight = 0;   // Ambre: right end of the line drawn after a section label
 void Tip(const char* t) { if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort)) ImGui::SetTooltip("%s", t); }
+// UI Director (F9): the layout override of item `id` (ui/layout.json), and its renamed label when `label` is given
+R Place(const char* id, R r, const char** label = nullptr) {
+    ImRect q = uidir::place(ImGui::GetID(id), ImRect(r.min(), r.max()), s, label);
+    return {q.Min.x, q.Min.y, q.GetWidth(), q.GetHeight()};
+}
 bool Hit(const char* id, R r, bool enabled = true) {
+    r = Place(id, r);
     ImGui::SetCursorScreenPos(r.min());
     ImGui::BeginDisabled(!enabled);
     bool q = ImGui::InvisibleButton(id, ImVec2(std::max(1.0f, r.w), std::max(1.0f, r.h)));
@@ -88,6 +95,7 @@ bool Hit(const char* id, R r, bool enabled = true) {
 }
 // former Atelier graph Button: raised box with border, icon at 8, label at 28; iconOnly centres the icon
 bool Button(const char* id, R r, const char* label, Icon icon, bool active = false, bool iconOnly = false, bool enabled = true) {
+    r = Place(id, r, &label);
     bool q = Hit(id, r, enabled);
     bool hover = enabled && ImGui::IsItemHovered();
     const float ix = r.x + (iconOnly ? (r.w / s - 13) / 2 : 8) * s, iy = r.y + (r.h - 13 * s) / 2;
@@ -118,6 +126,7 @@ bool Button(const char* id, R r, const char* label, Icon icon, bool active = fal
 // main action of a view (Build): solid amber button with dark text in the Ambre theme, a normal button otherwise
 bool PrimaryButton(const char* id, R r, const char* label, Icon icon, bool enabled = true) {
     if (!P().skin || !enabled) return Button(id, r, label, icon, false, false, enabled);
+    r = Place(id, r, &label);
     bool q = Hit(id, r, enabled);
     bool hover = ImGui::IsItemHovered(), held = ImGui::IsItemActive();
     ImU32 c = afx::Button(dl, r.min(), r.max(), afx::Face::Primary, s, 4);
@@ -129,6 +138,7 @@ bool PrimaryButton(const char* id, R r, const char* label, Icon icon, bool enabl
 // tab of a tab row: underlined amber tab in the Ambre theme (tab-assembly.svg), a button otherwise
 bool TabButton(const char* id, R r, const char* label, Icon icon, bool active) {
     if (!P().skin) return Button(id, r, label, icon, active);
+    r = Place(id, r, &label);
     bool q = Hit(id, r);
     bool hover = ImGui::IsItemHovered();
     ImU32 c = active ? P().accent : (hover ? P().text : P().muted);
@@ -166,6 +176,7 @@ void SelectedFrame(R r) {
 }
 // button with a value and a drop arrow (combos)
 bool DropButton(const char* id, R r, const char* label, Icon icon, bool enabled = true) {
+    r = Place(id, r, &label);
     bool q = Button(id, r, label, icon, false, false, enabled);
     Glyph(Icon::ChevronDown, r.x + r.w - 15 * s, r.y + (r.h - 9 * s) / 2, 9, P().muted);
     return q;
@@ -196,6 +207,7 @@ bool Search(const char* id, R r, char* value, size_t length, const char* hint) {
 }
 // panel frame with the former Atelier graph title row: icon, title, small tag on the right
 void Panel(R r, Icon icon, const char* title, const char* tag, ImU32 iconColor) {
+    uidir::declare(ImGui::GetID(title), ImRect(r.min(), r.max()), title);   // pickable / designatable in the F9 edit mode
     if (P().skin == 2) {   // Corail card: bold title, the tag in a small pill ("Ruins Kit" of the reference)
         afx::Panel(dl, r.min(), r.max(), s, 0);
         TextBold(r.x + 16 * s, r.y + 11 * s, title, P().text, 13.5f);

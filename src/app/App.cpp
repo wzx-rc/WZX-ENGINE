@@ -1,5 +1,6 @@
 #include "App.h"
 #include "GameHost.h"
+#include "UiDirector.h"
 #include "backends/imgui_impl_win32.h"
 #include "vp3d/shaders/Shared.h"
 #include "atelier/material_ui.h"
@@ -453,10 +454,12 @@ void App::frame() {
     }
 
     m_gui.newFrame();
+    const bool editorUi = !m_game || !m_game->playerMode();
+    if (editorUi) uidir::beginFrame();   // UI Director: records the items of this frame (F9 edit mode)
     m_interacting = false;
     // game layer first: it owns the keys and the graph overlay (drawn after the editor, below)
     bool gameKeys = m_game && m_game->beginFrame();
-    if (!gameKeys && m_workspace == 0) handleShortcuts();   // Graph / Material Studio have their own shortcuts
+    if (!gameKeys && m_workspace == 0 && !uidir::active()) handleShortcuts();   // Graph / Material Studio have their own shortcuts
     if (!m_game || !m_game->playerMode()) {
         drawEditor();
         drawSaveChangesPopup();
@@ -504,6 +507,7 @@ void App::frame() {
     if (m_game && m_game->playerMode() && m_viewportRendered)
         ImGui::GetBackgroundDrawList()->AddImage(m_gui.viewportTexture(), ImVec2(0, 0), ImGui::GetIO().DisplaySize);
     if (m_game) m_game->draw();   // graph editor / toolbar / toasts, over the viewport
+    if (editorUi) uidir::endFrame();   // UI Director overlay (F9), over everything
     m_gui.render(m_viewportRendered);
     if (m_game) m_game->afterDraw();   // API screenshots: frame complete
 
