@@ -15,6 +15,10 @@ résultats dans `mech_tests.txt`, copie dans `docs/brickit/tests/mech_tests_resu
   trou, 0,8 cm plus loin que le trou voisin : l'ancienne règle (voisins à moins de 0,5 cm) les laissait isolés, avec
   l'axe Z par défaut au lieu de Y. Ensuite, comme avant, les points alignés (voisins à moins de 0,5 cm sur un seul axe)
   forment une ligne : un connecteur le long de la ligne, les trous découpés par 0,8 cm.
+  **Correction** : sur une poutre Technic (titre `Technic Beam` ou `Liftarm`, sans tenon), le convertisseur donne
+  certains trous comme des anti-tenons posés sur une face, au centre du trou (poutres coudées 32526 / 32140 / 32271 :
+  aucun trou lu ; trou d'extrémité de la poutre 11 32525). Chaque anti-tenon sur une face de moins de 1,7 cm devient
+  aussi un trou rond à travers la pièce (sans doublon), puis les trous sont rangés le long de la pièce.
 - **Mâles** (pins, axes) : lignes de voxels de pin / d'axe. **Correction** : une ligne « mâle » qui traverse au moins
   deux trous de la même pièce en travers (le milieu des trous d'une poutre, typé pin) est retirée.
 - **Engrenages** : titre `Gear N Tooth` (toutes les occurrences : un différentiel a 16 et 24), autour du trou le plus
@@ -78,11 +82,21 @@ de plus (`q − hi` au-delà, `lo − q` en deçà, 0 sinon) : au bout de la cou
   2π, p = π × 0,1 cm (pas des dents), s = position du pignon le long de la rangée, σ = signe(vP·u). Un tour de pignon fait
   avancer la crémaillère de 2π r (test 12 : 0,8 cm par radian pour un 16).
 - **Vérins** : amortisseur `Shock Absorber … Cylinder` + `Piston Rod`, actionneur `Linear Actuator … Axle Actuator` +
-  `Piston` : axe = plus grand côté de chaque moitié, les deux coaxiales (0,15 cm), la tige engagée dans le corps.
+  `Piston` : axe = plus grand côté de chaque moitié, **passant par le trou de pin d'extrémité** (trou en travers de
+  l'axe le plus éloigné du centre ; correction : le centre de la boîte est décalé par une patte, 0,45 cm sur 2909, et un
+  vérin monté par ses trous n'était jamais vu coaxial avec sa tige), les deux coaxiales (0,15 cm), la tige engagée dans
+  le corps. Sens de l'axe : du corps vers la tige, une commande positive **allonge** le vérin.
   Glissière entre leurs deux corps ; **course estimée sur le maillage** (le convertisseur LDraw ne donne pas les
   glissières LDCad) : un tiers de la plus courte des deux moitiés de chaque côté, de 0,4 à 2,4 cm. Une commande
-  « Vérin n » par vérin (cm, curseur sur la course) ; une glissière qui fermerait une boucle est signalée (« Vérin dans
-  une boucle : non piloté »).
+  « Vérin n » par vérin (cm, curseur sur la course).
+- **Vérin qui ferme une boucle** (cas principal : pelleteuse, tractopelle — vérin entre le châssis et un bras qui
+  pivote, ses deux bouts montés par des pins) : les glissières passent **en premier** dans l'arbre couvrant, donc le
+  vérin est toujours une liaison de l'arbre (une variable pilotée) et c'est un **pivot** (un pin d'extrémité) qui ferme
+  la boucle. La commande impose la longueur ; le bras suit par la contrainte de fermeture de boucle (6 résidus, LM). La
+  course est une ligne de résidu : en bout de course la pose est refusée (butée), la commande s'arrête là. Aucun
+  avertissement. Plusieurs vérins = plusieurs commandes indépendantes (flèche + balancier) ; un vérin + biellette
+  (quadrilatère) = deux boucles pour un seul DDL. Près d'un point mort (vérin aligné avec le bras), la boucle se bloque :
+  c'est la limite mécanique réelle, la pose est refusée comme une butée.
 
 ## 5. Commandes et rapports
 
@@ -104,17 +118,28 @@ refusée (butée) si un résidu de boucle ou d'engrènement dépasse 0,004.
 ## 7. Limites connues
 
 - Course des vérins : estimée (pas de données de glissière dans la conversion LDraw).
+- Actionneur linéaire 92695 : la conversion ne donne aucun trou au corps (seulement un axe) ; il ne se monte pas par
+  ses bouts dans une boucle (l'amortisseur 2909 + 2910, oui).
+- Modèle tout Technic (sans tenon) : le sol est le corps le plus bas ; une pièce qui pend sous le châssis devient le sol
+  (même règle que le web).
 - Couronnes intérieures : pas de pièce Technic de ce type dans la bibliothèque ; le signe σ = −1 les couvrirait.
 - Engrenages « Large Tooth » (module différent) : non détectés.
 - Les satellites internes d'un différentiel ne sont pas testés (le boîtier l'est).
 
-## 8. Tests (`--mechtests`) — 18 / 18
+## 8. Tests (`--mechtests`) — 25 / 25
 
 1 deux engrenages sur une poutre (8 / 24) · 2 deux supports séparés (16 / 24) · 3 supports empilés (8 / 16 en
 diagonale) · 4 côte à côte, deux briques non reliées · 5 train planétaire (soleil fixe, satellite sur un bras) · 6 train
 de 4 engrenages de 16 · 7 rapports 8 / 40 / 24 · 8 coniques à 90° · 9 différentiel 6573 entraîné par un 8 · 10 plateau
 tournant 28 entraîné par un conique 12 · 11 vis sans fin et 24 · 12 crémaillère et pignon (16, un quart de tour : 0,8 cm / rad) · 13 axe
 traversant trois supports · 14 montage 1 tourné de 90° puis 180° · 15 deux poutres reliées par deux pins (un seul
-corps) · 16 scène de Wzx `docs/brickit/tests/meca_16_24.json` · 17 vérin amortisseur 2909 + 2910 · 18 actionneur linéaire 92695 + 92696. Chaque test vérifie le nombre de corps, de commandes, puis
+corps) · 16 scène de Wzx `docs/brickit/tests/meca_16_24.json` · 17 vérin amortisseur 2909 + 2910 · 18 actionneur linéaire 92695 + 92696 · **19** bras levé par un vérin
+(boucle châssis – vérin – bras) · **19b** butées (bout de course atteint, 0,3 cm au-delà refusé, pose conservée) · **20**
+flèche + balancier, deux vérins : vérin 1 piloté (la flèche bouge, le balancier garde son angle sur elle) · **20b**
+vérin 2 piloté (le balancier bouge, la flèche non) · **21** godet sur quadrilatère (biellette + bielle, deux boucles)
+piloté par un vérin · **22** construction sur la grille comme dans l'éditeur (rotations de 90° : châssis en L 32526 +
+poutre 32525, bras horizontal, vérin vertical ; scène `docs/brickit/tests/meca_pelleteuse.json`) · **22b** sens : un
+vérin allongé de 0,8 cm lève le bout du bras (4,8 → 8,8 cm). Les tests 19 à 21 placent le bras pour que le vérin soit
+à sa longueur naturelle et choisissent les trous qui donnent l'angle de transmission le plus proche de 90°. Chaque test vérifie le nombre de corps, de commandes, puis
 un tour complet de la commande en 36 pas : chaque engrenage tourne de son rapport attendu (2 %) et les engrènements
 restent en prise (écart de phase < 0,05 rad).

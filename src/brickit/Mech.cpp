@@ -168,6 +168,31 @@ const MechMeta& Mech::meta(int part) {
             }
         }
     }
+    // Technic beams: the converter types some holes (bent liftarms 32526 / 32140 / 32271..., the end hole of the beam
+    // 11) as anti-studs on a face, at the hole centre: each one is also a round pin hole across the part
+    if (m.top.empty() && (p.label.find("Technic Beam") != std::string::npos || p.label.find("Liftarm") != std::string::npos) && p.loaded) {
+        bool added = false;
+        for (const float3& v : m.bottom) {
+            int kk = -1;
+            for (int j = 0; j < 3; ++j) {
+                const float lo = (&p.bmin.x)[j], hi = (&p.bmax.x)[j];
+                if (hi - lo <= 1.7f && (std::fabs((&v.x)[j] - lo) < 0.06f || std::fabs((&v.x)[j] - hi) < 0.06f)) { kk = j; break; }
+            }
+            if (kk < 0) continue;
+            float3 c = v, dir(0);
+            (&c.x)[kk] = ((&p.bmin.x)[kk] + (&p.bmax.x)[kk]) * 0.5f;
+            (&dir.x)[kk] = 1;
+            bool dup = false;
+            for (const MechConn& h : m.holes) dup |= length(h.p - c) < 0.1f;
+            if (dup) continue;
+            m.holes.push_back({c, dir, ((&p.bmax.x)[kk] - (&p.bmin.x)[kk]) * 0.5f, false});
+            added = true;
+        }
+        if (added)   // in order along the part, as the holes found from their pin voxels
+            std::stable_sort(m.holes.begin(), m.holes.end(), [](const MechConn& a, const MechConn& b) {
+                return a.p.z < b.p.z - 0.05f || (std::fabs(a.p.z - b.p.z) <= 0.05f && (a.p.x < b.p.x - 0.05f || (std::fabs(a.p.x - b.p.x) <= 0.05f && a.p.y < b.p.y - 0.05f)));
+            });
+    }
     // a "male" line that runs across the part's own holes (beams: the middles of the holes typed as pins) is no male
     m.males.erase(std::remove_if(m.males.begin(), m.males.end(), [&](const MechConn& ml) {
         int crossed = 0;
@@ -257,6 +282,16 @@ const MechMeta& Mech::meta(int part) {
             m.cylAxis = float3(0);
             (&m.cylAxis.x)[ax] = 1;
             m.cylLen = (&ext.x)[ax];
+            // the axis goes through the end pin hole (across the axis), not the box centre: a side tab shifts the box
+            // (2909: 0.45 cm), and an actuator pinned by its ends was never seen coaxial with its rod
+            int best = -1;
+            float bv = 0;
+            for (size_t i = 0; i < m.holes.size(); ++i) {
+                if (std::fabs(dot(m.holes[i].axis, m.cylAxis)) > 0.1f) continue;
+                const float v = std::fabs(dot(m.holes[i].p - m.cylC, m.cylAxis));
+                if (best < 0 || v > bv) { best = (int)i; bv = v; }
+            }
+            if (best >= 0) m.cylC = m.holes[best].p + m.cylAxis * dot(m.cylC - m.holes[best].p, m.cylAxis);
         }
     }
     // toothed turntables ("Turntable 28 Tooth Top"): a gear on the turntable axis, driven at 90 degrees
@@ -489,7 +524,9 @@ bool Mech::build(const std::vector<Brick>& bricks, MechModel& M) {
                 if (std::fabs(t) > reach - 0.2f) continue;   // the rod must go into the body
                 // travel (no slide data in LDraw): a third of the shorter half each way, at most 2.4 cm, rod kept in
                 const float stroke = std::min(2.4f, std::max(0.4f, std::min(cb.cylLen, cr.cylLen) / 3));
-                MechJoint j{M.brickBody[i], M.brickBody[k], cB, uB, cB + uB};
+                // axis from the body towards the rod: a positive command lengthens the actuator
+                const float3 uo = t < 0 ? uB * -1.0f : uB;
+                MechJoint j{M.brickBody[i], M.brickBody[k], cB, uo, cB + uo};
                 j.type = 1;
                 j.lo = -stroke;
                 j.hi = stroke;

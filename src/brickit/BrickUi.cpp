@@ -1,4 +1,4 @@
-// BrickIt - the interface of the web builder v26 (docs/brickit/web/BrickIt_Builder.html), element by element: the CSS
+﻿// BrickIt - the interface of the web builder v26 (docs/brickit/web/BrickIt_Builder.html), element by element: the CSS
 // colours (--bg, --panel, --card, --line, --accent ...), the compact sizes (top bar 24 px buttons, tray, 84 px cards),
 // the SVG icons (Svg.cpp), the French texts. Everything is drawn with ImDrawList in one window behind the ImGui popups;
 // clicks are hit-tested here. m_ui scales the whole interface (4K: 2).
@@ -734,9 +734,11 @@ void BrickApp::uiMechPanel() {
     if (smallBtn("Couleurs par corps", m_mechTint, bx, y)) { m_mechTint = !m_mechTint; syncObjects(); mechApplyPose(); }
     y += 38 * s;
     // stats
-    int nRev = (int)(m_mm.tree.size() + m_mm.closures.size());
+    int nRev = 0, nSlide = 0;
+    for (const MechTreeJ& t : m_mm.tree) (t.j.type == 1 ? nSlide : nRev)++;
+    for (const MechJoint& j : m_mm.closures) (j.type == 1 ? nSlide : nRev)++;
     char line[200];
-    snprintf(line, sizeof(line), "%d corps (%d mobiles) · %d pivots · 0 vérins", m_mm.bodyCount, m_mm.bodyCount - (int)m_mm.roots.size(), nRev);
+    snprintf(line, sizeof(line), "%d corps (%d mobiles) · %d pivots · %d vérins", m_mm.bodyCount, m_mm.bodyCount - (int)m_mm.roots.size(), nRev, nSlide);
     u.text(ImVec2(x, y), 11.5f, C_DIM, line);
     snprintf(line, sizeof(line), "%d engrenages · %d boucles · %d DDL pour %d commandes", (int)m_mm.meshes.size(), (int)m_mm.closures.size(), m_mm.dof, (int)m_mm.cmds.size());
     u.text(ImVec2(x, y + 20 * s), 11.5f, C_DIM, line);

@@ -32,3 +32,4 @@
 | 27 | 02/11/2026 | Mécanique : engrènement accepté entre deux supports fixes (cas 16/24 de Wzx), diagnostic mech_diag.txt | 27_meca_16_24.png |
 | 28 | 02/11/2026 | Mécanique refondue : engrènements comme contraintes du solveur, poutres corrigées, tenons tolérants, 15 tests verts (--mechtests) | 28_meca_contraintes.png |
 | 29 | 02/11/2026 | Glissières : crémaillère + pignon, vérins (amortisseur, actionneur linéaire), course en butée, export Maya en translate ; 18 tests verts | (mech_tests_resultats.txt) |
+| 30 | 02/11/2026 | Vérin en boucle fermée (pelleteuse) : vérin piloté, bras suivi par la boucle, butées ; flèche + balancier, godet sur quadrilatère, bras sur la grille ; axe des vérins par leur trou, sens +, poutres coudées lues ; 25 tests verts | 30_pelleteuse_repos.png, 31_pelleteuse_verin_sorti.png |

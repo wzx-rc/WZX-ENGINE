@@ -1,4 +1,4 @@
-// BrickIt - automatic tests of the mechanics (--mechtests): mounts built by aligning the connectors of real LDraw parts
+﻿// BrickIt - automatic tests of the mechanics (--mechtests): mounts built by aligning the connectors of real LDraw parts
 // (holes, axles, gear centres), then for each: bodies, commands, and a full turn of the command (36 solver steps) that
 // must move every gear by its expected ratio, the meshes held (solver residuals under tolerance). Results in
 // mech_tests.txt next to the exe.
@@ -79,6 +79,84 @@ struct Mount {
         return add(part, q, P - qRot(q, m.gears[g].c));
     }
     float gearR(const char* name, int g = 0) { const MechMeta& m = mech->meta(partOf(name)); return g < (int)m.gears.size() ? (m.gears[g].kind == 2 ? m.gears[g].radius : m.gears[g].teeth * 0.05f) : 0; }
+    // a beam lying in a layer (z), its hole `h` on P, its row of holes along `dir` (any direction of the XY plane)
+    int beamAt(const char* name, int h, const float3& P, const float3& dir) {
+        const int part = partOf(name);
+        const MechMeta& m = mech->meta(part);
+        if (part < 0 || m.holes.size() < 2) return -1;
+        const float3 row = normalize(m.holes.back().p - m.holes.front().p), X(1, 0, 0), Z(0, 0, 1);
+        const float4 base = rotFor(m.holes[0].axis, Z, &row, &X);
+        const float4 q = qNormalize(qMul(qAxisAngle(Z, std::atan2(dir.y, dir.x)), base));
+        return add(part, q, P - qRot(q, m.holes[h].p));
+    }
+    // a pin along Z centred on P (it joins the layers it crosses)
+    int pinAt(const float3& P) { return axle("3673", P, float3(0, 0, 1)); }
+    // end pin hole of an actuator half (across its axis), farthest along the axis on the side `sgn` (0: either side)
+    static int endHoleOf(const MechMeta& m, float sgn) {
+        int best = -1;
+        float bv = 0;
+        for (size_t i = 0; i < m.holes.size(); ++i) {
+            if (std::fabs(dot(m.holes[i].axis, m.cylAxis)) > 0.1f) continue;
+            float v = dot(m.holes[i].p - m.cylC, m.cylAxis);
+            v = sgn == 0 ? std::fabs(v) : v * sgn;
+            if (best < 0 || v > bv) { best = (int)i; bv = v; }
+        }
+        return best;
+    }
+    // the rod comes out on the side opposite the body end hole (sign along the body axis)
+    static float rodSide(const MechMeta& bm) {
+        const int hb = endHoleOf(bm, 0);
+        return hb >= 0 && dot(bm.holes[hb].p - bm.cylC, bm.cylAxis) > 0 ? -1.0f : 1.0f;
+    }
+    // natural length (end hole to end hole) with the rod half inside the body
+    float actLen(const char* body, const char* rodName) {
+        const MechMeta& bm = mech->meta(partOf(body));
+        const MechMeta& rm = mech->meta(partOf(rodName));
+        const float sd = rodSide(bm);
+        const int hb = endHoleOf(bm, -sd), hr = endHoleOf(rm, sd);
+        if (hb < 0 || hr < 0) return 0;
+        return std::fabs(sd * bm.cylLen * 0.5f + dot(rm.holes[hr].p - rm.cylC, rm.cylAxis) - dot(bm.holes[hb].p - bm.cylC, bm.cylAxis));
+    }
+    // an actuator from E1 (body end hole) to E2 (rod end hole), its pin holes along Z; returns {body, rod}
+    std::pair<int, int> actuator(const char* body, const char* rodName, const float3& E1, const float3& E2) {
+        const int bp = partOf(body), rp = partOf(rodName);
+        const MechMeta& bm = mech->meta(bp);
+        const MechMeta& rm = mech->meta(rp);
+        const float sd = rodSide(bm);
+        const int hb = endHoleOf(bm, -sd), hr = endHoleOf(rm, sd);
+        if (hb < 0 || hr < 0) return {-1, -1};
+        const float3 X(1, 0, 0), Z(0, 0, 1), d = normalize(E2 - E1);
+        const float ang = std::atan2(d.y, d.x);
+        const float3 ab = bm.cylAxis * sd, ar = rm.cylAxis * sd;
+        const float4 qb = qNormalize(qMul(qAxisAngle(Z, ang), rotFor(ab, X, &bm.holes[hb].axis, &Z)));
+        const float4 qr = qNormalize(qMul(qAxisAngle(Z, ang), rotFor(ar, X, &rm.holes[hr].axis, &Z)));
+        return {add(bp, qb, E1 - qRot(qb, bm.holes[hb].p)), add(rp, qr, E2 - qRot(qr, rm.holes[hr].p))};
+    }
+    // direction d (XY) so that |O + d r - E| = L, the solution on the side of `side`; false if none
+    static bool reachDir(const float3& O, float r, const float3& E, float L, const float3& side, float3& d) {
+        const float dx = E.x - O.x, dy = E.y - O.y, D = std::sqrt(dx * dx + dy * dy);
+        if (D < 1e-4f || D > r + L - 0.05f || D < std::fabs(r - L) + 0.05f) return false;
+        const float base = std::atan2(dy, dx), c = (r * r + D * D - L * L) / (2 * r * D), w = std::acos(std::max(-1.0f, std::min(1.0f, c)));
+        const float3 d1(std::cos(base + w), std::sin(base + w), 0), d2(std::cos(base - w), std::sin(base - w), 0);
+        d = dot(d1, side) >= dot(d2, side) ? d1 : d2;
+        return true;
+    }
+    // the best (hole a of the fixed part, hole b of the beam pivoting on O by its hole 0): the actuator at its natural
+    // length L meets the beam at nearly 90 degrees (far from the dead points where the loop locks)
+    static bool bestReach(const std::function<float3(int)>& fixedHole, int a0, int a1, const float3& O, int b0, int b1, float L, const float3& side, int& ia, int& ib, float3& d) {
+        float best = 2;
+        for (int a = a0; a <= a1; ++a)
+            for (int bb = b0; bb <= b1; ++bb) {
+                const float3 E = fixedHole(a);
+                float3 dd;
+                const float r = 0.8f * bb;
+                if (!reachDir(O, r, E, L, side, dd)) continue;
+                const float D2 = (E.x - O.x) * (E.x - O.x) + (E.y - O.y) * (E.y - O.y);
+                const float c = std::fabs((L * L + r * r - D2) / (2 * L * r));
+                if (c < best) { best = c; ia = a; ib = bb; d = dd; }
+            }
+        return best < 2;
+    }
     void rotateAll(const float4& R) {
         for (Brick& k : b) { k.pos = qRot(R, k.pos); k.rot = snapQuat(qMul(R, k.rot)); }
     }
@@ -93,6 +171,7 @@ void BrickApp::runMechTests() {
     if (_wfopen_s(&f, (m_exeDir + L"\\mech_tests.txt").c_str(), L"w") != 0 || !f) return;
     const float3 X(1, 0, 0), Y(0, 1, 0), Z(0, 0, 1);
     int passed = 0, total = 0;
+    int drive = 0;   // the command turned by run
     auto run = [&](const char* name, Mount& mt, int expBodies, int expCmds, const std::vector<Expect>& ex, const char* note = nullptr, float target = 2.0f * 3.14159265f) {
         ++total;
         MechModel M;
@@ -102,13 +181,14 @@ void BrickApp::runMechTests() {
         if (built && expBodies >= 0 && M.bodyCount != expBodies) why += "corps " + std::to_string(M.bodyCount) + " au lieu de " + std::to_string(expBodies) + "; ";
         if (built && expCmds >= 0 && (int)M.cmds.size() != expCmds) why += "commandes " + std::to_string(M.cmds.size()) + " au lieu de " + std::to_string(expCmds) + "; ";
         std::string got;
-        if (built && !M.cmds.empty() && !ex.empty()) {
+        if (built && (int)M.cmds.size() > drive && !ex.empty()) {
             // a full turn of the first command, in 36 steps (the solver follows the same branch of the loops)
             const int steps = 36;
             bool ok = true;
             int failStep = -1;
             for (int s = 1; s <= steps && ok; ++s) {
-                M.cmds[0].value = (M.cmds[0].type == 1 ? std::min(target, M.cmds[0].hi * 0.8f) : target) * s / steps;
+                MechCmd& dc = M.cmds[drive];
+                dc.value = (dc.type == 1 ? std::min(target, dc.hi * 0.8f) : target) * s / steps;
                 ok = m_mech.solve(M);
                 if (!ok) failStep = s;
             }
@@ -125,7 +205,7 @@ void BrickApp::runMechTests() {
                 snprintf(b, sizeof(b), "le solveur bloque au pas %d / %d (phase %.3f rad, %zu boucles); ", failStep, steps, mx, M.closures.size());
                 why += b;
             }
-            const double turn = M.q[M.cmds[0].qi];
+            const double turn = M.q[M.cmds[drive].qi];
             for (const Expect& e : ex) {
                 const int body = M.brickBody[e.brick];
                 int qi = -1;
@@ -134,7 +214,8 @@ void BrickApp::runMechTests() {
                 char b[96];
                 snprintf(b, sizeof(b), "%s%.4f", got.empty() ? "" : ", ", r);
                 got += b;
-                if (std::fabs((e.absOnly ? std::fabs(r) : r) - e.ratio) > 0.02 * std::max(1.0, std::fabs(e.ratio)) + 1e-3) {
+                if (std::isnan(e.ratio)) { if (std::fabs(r) < 0.01) { snprintf(b, sizeof(b), "ne bouge pas (%.4f); ", r); why += b; } }
+                else if (std::fabs((e.absOnly ? std::fabs(r) : r) - e.ratio) > 0.02 * std::max(1.0, std::fabs(e.ratio)) + 1e-3) {
                     snprintf(b, sizeof(b), "rapport %.4f au lieu de %.4f; ", r, e.ratio);
                     why += b;
                 }
@@ -156,16 +237,27 @@ void BrickApp::runMechTests() {
         fprintf(f, "[%s] %s : %d corps, %zu commandes, %zu engrènements%s%s%s%s\n", pass ? "OK" : "ÉCHEC", name, M.bodyCount, M.cmds.size(), M.meshes.size(),
                 got.empty() ? "" : ", rapports ", got.c_str(), pass ? "" : " -> ", why.c_str());
         for (const std::string& w : M.warnings) fprintf(f, "      avertissement : %s\n", w.c_str());
+        if (!pass) {   // the kinematic tree, to see what is linked to what
+            std::string tr;
+            char b[96];
+            for (const MechTreeJ& t : M.tree) { snprintf(b, sizeof(b), " %d->%d%s q=%.3f", t.parent, t.child, t.j.type == 1 ? "(gl)" : "", M.q[t.qi]); tr += b; }
+            fprintf(f, "      arbre :%s ; %zu boucles ; corps des pièces :", tr.c_str(), M.closures.size());
+            for (size_t i = 0; i < mt.b.size(); ++i) fprintf(f, " %s=%d", m_lib.parts[mt.b[i].part].name.c_str(), M.brickBody[i]);
+            fprintf(f, "\n");
+        }
         if (note) fprintf(f, "      %s\n", note);
         fflush(f);
     };
     auto mk = [&]() { Mount m; m.app = this; m.lib = &m_lib; m.mech = &m_mech; return m; };
-    for (const char* pn : {"32524", "3673", "73230", "6541"}) {   // connectors of the parts used (diagnostic)
+    for (const char* pn : {"32524", "32525", "3673", "73230", "6541", "2909", "2910", "92695", "92696", "32526", "32140", "32056", "32348", "6629", "32271"}) {   // connectors of the parts used (diagnostic)
         const int pi = m_lib.find(pn);
         if (pi < 0) continue;
         m_lib.get(pn);
         const MechMeta& mm = m_mech.meta(pi);
         fprintf(f, "# %s : %zu trous, %zu mâles, %zu tenons, %zu anti-tenons\n", pn, mm.holes.size(), mm.males.size(), mm.top.size(), mm.bottom.size());
+        if (mm.cylRole) fprintf(f, "#   vérin rôle %d type %s centre (%.2f %.2f %.2f) axe (%.2f %.2f %.2f) longueur %.2f\n", mm.cylRole, mm.cylKind.c_str(), mm.cylC.x, mm.cylC.y, mm.cylC.z, mm.cylAxis.x, mm.cylAxis.y, mm.cylAxis.z, mm.cylLen);
+        for (const float3& v : mm.bottom) fprintf(f, "#   anti-tenon (%.2f %.2f %.2f)\n", v.x, v.y, v.z);
+        fprintf(f, "#   boîte (%.2f %.2f %.2f) .. (%.2f %.2f %.2f) %s\n", m_lib.parts[pi].bmin.x, m_lib.parts[pi].bmin.y, m_lib.parts[pi].bmin.z, m_lib.parts[pi].bmax.x, m_lib.parts[pi].bmax.y, m_lib.parts[pi].bmax.z, m_lib.parts[pi].label.c_str());
         for (const MechConn& h : mm.holes) fprintf(f, "#   trou (%.2f %.2f %.2f) axe (%.0f %.0f %.0f) demi %.2f %s\n", h.p.x, h.p.y, h.p.z, h.axis.x, h.axis.y, h.axis.z, h.half, h.cross ? "croix" : "rond");
         for (const MechConn& h : mm.males) fprintf(f, "#   mâle (%.2f %.2f %.2f) axe (%.0f %.0f %.0f) demi %.2f %s\n", h.p.x, h.p.y, h.p.z, h.axis.x, h.axis.y, h.axis.z, h.half, h.cross ? "axe" : "pin");
     }
@@ -348,6 +440,156 @@ void BrickApp::runMechTests() {
     };
     actuator("17. vérin : amortisseur 2909 + tige 2910", "2909", "2910");
     actuator("18. vérin : actionneur linéaire 92695 + piston 92696", "92695", "92696");
+    // 19-21. actuators closing a loop (excavator): the actuator length is the command, the arm follows the loop.
+    // Layers: z of the hole centres 0.4 / 1.2 / 2.0, pins between two layers at 0.8 / 1.6 (a pin centred on a layer
+    // joins the parts of that layer). The arm angles are set so each actuator starts at its natural length.
+    const double MOVE = std::nan("");
+    const float L0 = 0.4f, L1 = 1.2f, L2 = 2.0f;
+    {
+        // 19. an arm lifted by an actuator: upright chassis beam (32525, 10 holes), the arm pivoting on its last hole,
+        // actuator from a lower chassis hole to an arm hole (chosen near 90 degrees). Then the stops: past the end of
+        // its travel the actuator is refused.
+        Mount m = mk();
+        const int ch = m.beamAt("32525", 0, float3(0, 0, L0), float3(0, 1, 0));
+        const float3 O = m.holeW(ch, 9);
+        const float La = m.actLen("2909", "2910");
+        int e = 0, k = 4;
+        float3 d(1, 0, 0);
+        Mount::bestReach([&](int a) { return m.holeW(ch, a); }, 0, 7, O, 1, 9, La, float3(1, 0, 0), e, k, d);
+        const float3 E1 = m.holeW(ch, e);
+        const int arm = m.beamAt("32525", 0, float3(O.x, O.y, L1), d);
+        const float3 E2 = m.holeW(arm, k);
+        m.pinAt(float3(O.x, O.y, 0.8f));
+        auto cyl = m.actuator("2909", "2910", float3(E1.x, E1.y, L1), E2);
+        m.pinAt(float3(E1.x, E1.y, 0.8f));
+        m.pinAt(E2);
+        run("19. bras levé par un vérin (boucle)", m, 4, 1, {{cyl.second, MOVE}, {arm, MOVE}}, "(le bras suit la longueur du vérin ; la boucle reste fermée)", 10.0f);
+        // stops: the command at its ends is followed, 0.3 cm past them it is refused (the pose stays)
+        MechModel M;
+        if (m_mech.build(m.b, M) && !M.cmds.empty()) {
+            ++total;
+            MechCmd& c = M.cmds[0];
+            bool okEnds = true;
+            for (int s2 = 1; s2 <= 24 && okEnds; ++s2) { c.value = c.hi * s2 / 24.0f; okEnds = m_mech.solve(M); }
+            const double qHi = M.q[c.qi];
+            c.value = c.hi + 0.3f;
+            const bool past = m_mech.solve(M);
+            const double qAfter = M.q[c.qi];
+            const bool pass = okEnds && !past && std::fabs(qAfter - qHi) < 1e-3 && M.warnings.empty();
+            passed += pass;
+            fprintf(f, "[%s] 19b. butées du vérin : course %.2f..%.2f cm, bout de course %s, au-delà %s (vérin %.3f cm)%s\n", pass ? "OK" : "ÉCHEC", c.lo, c.hi,
+                    okEnds ? "atteint" : "NON atteint", past ? "ACCEPTÉ" : "refusé", qAfter, M.warnings.empty() ? "" : " (avertissements)");
+        }
+    }
+    {
+        // 20. boom and stick with two actuators (two shock absorbers 2909 + 2910): boom on the chassis (actuator 1
+        // chassis -> boom), stick (layer 2) on the last hole of the boom (actuator 2 from the boom, layer 2, to the stick).
+        // Actuator 1 driven: the boom moves, the stick keeps its angle on the boom; then actuator 2 driven: the stick
+        // moves, the boom stays.
+        Mount m = mk();
+        const int ch = m.beamAt("32525", 0, float3(0, 0, L0), float3(0, 1, 0));
+        const float3 O = m.holeW(ch, 9);
+        const float La = m.actLen("2909", "2910");
+        int e = 0, k = 4;
+        float3 d(1, 0, 0);
+        Mount::bestReach([&](int a) { return m.holeW(ch, a); }, 0, 7, O, 1, 8, La, float3(1, 0, 0), e, k, d);
+        const float3 E1 = m.holeW(ch, e);
+        const int boom = m.beamAt("32525", 0, float3(O.x, O.y, L1), d);
+        m.pinAt(float3(O.x, O.y, 0.8f));
+        const float3 Bk = m.holeW(boom, k);
+        auto c1 = m.actuator("2909", "2910", float3(E1.x, E1.y, L1), Bk);
+        m.pinAt(float3(E1.x, E1.y, 0.8f));
+        m.pinAt(Bk);
+        const float3 P = m.holeW(boom, 9);
+        int h = 4, sh = 4;
+        float3 ds(0, 1, 0);
+        Mount::bestReach([&](int a) { return m.holeW(boom, a); }, 1, 7, P, 1, 9, La, float3(0, 1, 0), h, sh, ds);   // the stick raised: in pure Technic (no studs) the ground is the lowest body
+        const int stick = m.beamAt("32525", 0, float3(P.x, P.y, L2), ds);
+        m.pinAt(float3(P.x, P.y, 1.6f));
+        const float3 Bh = m.holeW(boom, h), Ss = m.holeW(stick, sh);
+        auto c2 = m.actuator("2909", "2910", float3(Bh.x, Bh.y, L2), Ss);
+        m.pinAt(float3(Bh.x, Bh.y, 1.6f));
+        m.pinAt(Ss);
+        (void)c1; (void)c2;
+        run("20. flèche + balancier, vérin 1 (flèche) piloté", m, 7, 2, {{boom, MOVE}, {stick, 0.0}}, "(le balancier garde son angle sur la flèche : le vérin 2 garde sa longueur)", 10.0f);
+        drive = 1;
+        run("20b. flèche + balancier, vérin 2 (balancier) piloté", m, 7, 2, {{stick, MOVE}, {boom, 0.0}}, "(la flèche ne bouge pas)", 10.0f);
+        drive = 0;
+    }
+    {
+        // 21. bucket on a four-bar linkage driven by an actuator: upright stick (chassis), bucket beam on its hole 0,
+        // link on its hole 3, both at the same angle, coupler (layer 2) from the bucket end to the link end (a
+        // parallelogram), actuator from a stick hole to the link end
+        Mount m = mk();
+        const int st = m.beamAt("32525", 0, float3(0, 0, L0), float3(0, 1, 0));
+        const float3 A = m.holeW(st, 0), Bp = m.holeW(st, 3);
+        const float La = m.actLen("2909", "2910");
+        int c = 5;
+        float3 d(1, 0, 0);
+        int three = 3;
+        Mount::bestReach([&](int a) { return m.holeW(st, a); }, 5, 10, Bp, 3, 3, La, float3(1, -1, 0), c, three, d);
+        const float3 C = m.holeW(st, c);
+        const int bucket = m.beamAt("32524", 0, float3(A.x, A.y, L1), d);
+        const int link = m.beamAt("32524", 0, float3(Bp.x, Bp.y, L1), d);
+        m.pinAt(float3(A.x, A.y, 0.8f));
+        m.pinAt(float3(Bp.x, Bp.y, 0.8f));
+        const float3 bE = m.holeW(bucket, 3), lE = m.holeW(link, 3);
+        m.beamAt("32524", 0, float3(bE.x, bE.y, L2), float3(0, 1, 0));   // coupler, 3 holes = 2.4 cm = B - A
+        m.pinAt(float3(bE.x, bE.y, 1.6f));
+        auto cyl = m.actuator("2909", "2910", float3(C.x, C.y, L1), lE);
+        m.pinAt(float3(C.x, C.y, 0.8f));
+        m.pinAt(float3(lE.x, lE.y, 1.6f));   // link, rod (layer 1) and coupler (layer 2)
+        run("21. godet sur quadrilatère piloté par vérin + biellette", m, 6, 1, {{cyl.second, MOVE}, {bucket, MOVE}, {link, MOVE}}, "(le godet et la biellette suivent ; deux boucles fermées)", 10.0f);
+    }
+    {
+        // 22. built on the grid, as in the editor (rotations of 90 degrees only): an L chassis (bent liftarm 32526 + an
+        // upright beam 32525 held by two pins), a horizontal arm on the upright hole 6, a vertical actuator from the short leg of the L to the arm, at
+        // 90 degrees to the arm. Saved as meca_pelleteuse.json next to the exe (BrickIt scene).
+        Mount m = mk();
+        const int lp = m.partOf("32526");
+        const MechMeta& lm = m_mech.meta(lp);
+        const float4 ql = Mount::rotFor(lm.holes[0].axis, Z, &Z, &Y);   // holes along Z, the long leg up (Y), the short leg towards -X
+        const int ell = m.add(lp, ql, float3(0, 0, L0) - qRot(ql, lm.holes[0].p));
+        const int up = m.beamAt("32525", 0, float3(0, 0, L1), float3(0, 1, 0));
+        m.pinAt(float3(0, 0, 0.8f));
+        m.pinAt(float3(0, 0.8f, 0.8f));   // two pins: the L and the upright are one part
+        const float3 O = m.holeW(up, 6), Bk = m.holeW(ell, 2);
+        const int arm = m.beamAt("32525", 0, float3(O.x, O.y, L0), float3(-1, 0, 0));
+        m.pinAt(float3(O.x, O.y, 0.8f));
+        const float3 Ak = m.holeW(arm, 2);
+        auto cyl = m.actuator("2909", "2910", float3(Bk.x, Bk.y, L1), float3(Ak.x, Ak.y, L1));
+        m.pinAt(float3(Bk.x, Bk.y, 0.8f));
+        m.pinAt(float3(Ak.x, Ak.y, 0.8f));
+        run("22. bras horizontal + vérin vertical (sur la grille, comme dans l'éditeur)", m, 4, 1, {{cyl.second, MOVE}, {arm, MOVE}}, "(le vérin à 90° du bras, levier 1,6 cm ; scène enregistrée : docs/brickit/tests/meca_pelleteuse.json)", 10.0f);
+        // sign: lengthening the actuator (positive command) raises the end of the arm
+        {
+            MechModel M;
+            ++total;
+            bool pass = false;
+            float y0 = 0, y1 = 0;
+            if (m_mech.build(m.b, M) && !M.cmds.empty()) {
+                const float3 tip = m.holeW(arm, 10);
+                y0 = M.mats[M.brickBody[arm]].point(tip).y;
+                for (int s2 = 1; s2 <= 12; ++s2) { M.cmds[0].value = 0.8f * s2 / 12; m_mech.solve(M); }
+                y1 = M.mats[M.brickBody[arm]].point(tip).y;
+                pass = y1 > y0 + 0.2f;
+            }
+            passed += pass;
+            fprintf(f, "[%s] 22b. sens : vérin + 0,8 cm, bout du bras %.2f -> %.2f cm (doit monter)\n", pass ? "OK" : "ÉCHEC", y0, y1);
+        }
+        // the scene, to open it in BrickIt
+        const std::vector<Brick> keep = m_build.bricks;
+        m_build.bricks = m.b;
+        auto col2 = [&](const char* a2, const char* b2) { for (size_t c = 0; c < m_lib.palette.size(); ++c) if (m_lib.palette[c].name == a2 || m_lib.palette[c].name == b2) return (int)c; return 0; };
+        for (size_t i = 0; i < m_build.bricks.size(); ++i) {
+            const std::string& pn = m_lib.parts[m_build.bricks[i].part].name;
+            m_build.bricks[i].color = pn == "3673" ? col2("Light Bluish Grey", "Light Bluish Gray") : pn == "2909" ? col2("Black", "Black") : pn == "2910" ? col2("Light Bluish Grey", "Light Bluish Gray") : (int)i == arm ? col2("Yellow", "Yellow") : col2("Dark Bluish Grey", "Dark Bluish Gray");
+        }
+        const std::string text = m_build.toJson(m_scene.camera);
+        m_build.bricks = keep;
+        FILE* sf = nullptr;
+        if (_wfopen_s(&sf, (m_exeDir + L"\\meca_pelleteuse.json").c_str(), L"wb") == 0 && sf) { fwrite(text.data(), 1, text.size(), sf); fclose(sf); }
+    }
     // 13. one axle through three supports, a 24 on it driven by an 8
     {
         Mount m = mk();

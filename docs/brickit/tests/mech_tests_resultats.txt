@@ -1,4 +1,5 @@
 # 32524 : 7 trous, 0 mâles, 0 tenons, 0 anti-tenons
+#   boîte (0.00 0.00 0.00) .. (0.72 0.80 5.52) Technic Beam 7
 #   trou (0.36 0.40 0.36) axe (0 1 0) demi 0.40 rond
 #   trou (0.36 0.40 1.16) axe (0 1 0) demi 0.40 rond
 #   trou (0.36 0.40 1.96) axe (0 1 0) demi 0.40 rond
@@ -6,12 +7,136 @@
 #   trou (0.36 0.40 3.56) axe (0 1 0) demi 0.40 rond
 #   trou (0.36 0.40 4.36) axe (0 1 0) demi 0.40 rond
 #   trou (0.36 0.40 5.16) axe (0 1 0) demi 0.40 rond
+# 32525 : 11 trous, 0 mâles, 0 tenons, 1 anti-tenons
+#   anti-tenon (0.36 0.00 0.36)
+#   boîte (0.00 0.00 0.00) .. (0.72 0.80 8.72) Technic Beam 11
+#   trou (0.36 0.40 0.36) axe (0 1 0) demi 0.40 rond
+#   trou (0.36 0.40 1.16) axe (0 1 0) demi 0.40 rond
+#   trou (0.36 0.40 1.96) axe (0 1 0) demi 0.40 rond
+#   trou (0.36 0.40 2.76) axe (0 1 0) demi 0.40 rond
+#   trou (0.36 0.40 3.56) axe (0 1 0) demi 0.40 rond
+#   trou (0.36 0.40 4.36) axe (0 1 0) demi 0.40 rond
+#   trou (0.36 0.40 5.16) axe (0 1 0) demi 0.40 rond
+#   trou (0.36 0.40 5.96) axe (0 1 0) demi 0.40 rond
+#   trou (0.36 0.40 6.76) axe (0 1 0) demi 0.40 rond
+#   trou (0.36 0.40 7.56) axe (0 1 0) demi 0.40 rond
+#   trou (0.36 0.40 8.36) axe (0 1 0) demi 0.40 rond
 # 3673 : 0 trous, 1 mâles, 0 tenons, 0 anti-tenons
+#   boîte (0.00 0.00 0.00) .. (1.60 0.64 0.64) Technic Pin
 #   mâle (0.80 0.32 0.32) axe (1 0 0) demi 0.80 pin
 # 73230 : 1 trous, 0 mâles, 1 tenons, 1 anti-tenons
+#   anti-tenon (0.40 0.00 0.40)
+#   boîte (0.00 0.00 0.00) .. (0.80 1.12 0.80) Technic Brick 1 x 1 with Axlehole
 #   trou (0.40 0.56 0.40) axe (0 0 1) demi 0.40 croix
 # 6541 : 1 trous, 0 mâles, 1 tenons, 1 anti-tenons
+#   anti-tenon (0.40 0.00 0.40)
+#   boîte (0.00 0.00 0.00) .. (0.80 1.12 0.80) Technic Brick 1 x 1 with Hole
 #   trou (0.40 0.56 0.40) axe (0 0 1) demi 0.40 rond
+# 2909 : 4 trous, 0 mâles, 0 tenons, 0 anti-tenons
+#   vérin rôle 1 type shock centre (0.40 1.80 0.48) axe (0.00 1.00 0.00) longueur 3.60
+#   boîte (0.00 0.00 0.00) .. (1.70 3.60 0.97) Technic Shock Absorber 9L Cylinder
+#   trou (1.20 1.21 0.48) axe (0 1 0) demi 0.41 rond
+#   trou (1.20 2.02 0.48) axe (0 1 0) demi 0.41 rond
+#   trou (1.20 3.20 0.48) axe (0 1 0) demi 0.40 croix
+#   trou (0.40 3.20 0.48) axe (0 0 1) demi 0.40 croix
+# 2910 : 1 trous, 1 mâles, 0 tenons, 0 anti-tenons
+#   vérin rôle 2 type shock centre (0.50 2.34 0.50) axe (0.00 1.00 0.00) longueur 4.68
+#   boîte (0.00 0.00 0.00) .. (1.00 4.68 1.00) Technic Shock Absorber 9L Piston Rod
+#   trou (0.50 0.40 0.50) axe (0 0 1) demi 0.40 rond
+#   mâle (0.50 3.16 0.50) axe (0 1 0) demi 1.24 pin
+# 92695 : 0 trous, 1 mâles, 0 tenons, 0 anti-tenons
+#   vérin rôle 1 type linear centre (0.32 0.32 2.02) axe (0.00 0.00 1.00) longueur 4.04
+#   boîte (0.00 0.00 0.00) .. (0.64 0.64 4.04) Technic Linear Actuator 4 x 1 x 1 Axle Actuator
+#   mâle (0.32 0.32 2.02) axe (0 0 1) demi 2.02 axe
+# 92696 : 1 trous, 1 mâles, 0 tenons, 0 anti-tenons
+#   vérin rôle 2 type linear centre (0.40 0.36 1.88) axe (0.00 0.00 1.00) longueur 3.76
+#   boîte (0.00 0.00 0.00) .. (0.80 0.72 3.76) Technic Linear Actuator 4 x 1 x 1 Piston
+#   trou (0.40 0.36 0.36) axe (1 0 0) demi 0.40 rond
+#   mâle (0.40 0.36 2.28) axe (0 0 1) demi 1.20 pin
+# 32526 : 7 trous, 0 mâles, 0 tenons, 7 anti-tenons
+#   anti-tenon (0.36 0.00 1.16)
+#   anti-tenon (0.36 0.00 0.36)
+#   anti-tenon (1.16 0.00 0.36)
+#   anti-tenon (0.36 0.00 3.56)
+#   anti-tenon (0.36 0.00 2.76)
+#   anti-tenon (0.36 0.00 1.96)
+#   anti-tenon (1.96 0.00 0.36)
+#   boîte (0.00 0.00 0.00) .. (2.32 0.80 3.92) Technic Beam 3 x 5 Bent 90
+#   trou (0.36 0.40 0.36) axe (0 1 0) demi 0.40 rond
+#   trou (1.16 0.40 0.36) axe (0 1 0) demi 0.40 rond
+#   trou (1.96 0.40 0.36) axe (0 1 0) demi 0.40 rond
+#   trou (0.36 0.40 1.16) axe (0 1 0) demi 0.40 rond
+#   trou (0.36 0.40 1.96) axe (0 1 0) demi 0.40 rond
+#   trou (0.36 0.40 2.76) axe (0 1 0) demi 0.40 rond
+#   trou (0.36 0.40 3.56) axe (0 1 0) demi 0.40 rond
+# 32140 : 5 trous, 0 mâles, 0 tenons, 4 anti-tenons
+#   anti-tenon (0.36 0.00 1.96)
+#   anti-tenon (0.36 0.00 0.36)
+#   anti-tenon (1.16 0.00 0.36)
+#   anti-tenon (0.36 0.00 1.16)
+#   boîte (0.00 0.00 0.00) .. (1.52 0.80 3.12) Technic Beam 2 x 4 Liftarm Bent 90
+#   trou (0.36 0.40 0.36) axe (0 1 0) demi 0.40 rond
+#   trou (1.16 0.40 0.36) axe (0 1 0) demi 0.40 rond
+#   trou (0.36 0.40 1.16) axe (0 1 0) demi 0.40 rond
+#   trou (0.36 0.40 1.96) axe (0 1 0) demi 0.40 rond
+#   trou (0.36 0.40 2.76) axe (0 1 0) demi 0.40 croix
+# 32056 : 5 trous, 0 mâles, 0 tenons, 0 anti-tenons
+#   boîte (0.00 0.00 0.00) .. (2.32 0.40 2.32) Technic Beam 3 x 3 x 0.5 Liftarm Bent 90
+#   trou (0.36 0.20 1.16) axe (0 1 0) demi 0.20 rond
+#   trou (1.16 0.20 1.96) axe (0 1 0) demi 0.20 rond
+#   trou (0.36 0.20 1.96) axe (0 1 0) demi 0.20 croix
+#   trou (0.36 0.20 0.36) axe (0 1 0) demi 0.20 croix
+#   trou (1.96 0.20 1.96) axe (0 1 0) demi 0.20 croix
+# 32348 : 7 trous, 0 mâles, 0 tenons, 5 anti-tenons
+#   anti-tenon (0.36 0.00 1.80)
+#   anti-tenon (0.36 0.00 3.40)
+#   anti-tenon (0.36 0.00 2.60)
+#   anti-tenon (1.00 0.00 1.32)
+#   anti-tenon (1.64 0.00 0.84)
+#   boîte (0.00 0.00 0.00) .. (2.64 0.80 4.56) Technic Beam 4 x 4 Liftarm Bent 53.13
+#   trou (2.28 0.40 0.36) axe (0 1 0) demi 0.40 croix
+#   trou (1.64 0.40 0.84) axe (0 1 0) demi 0.40 rond
+#   trou (1.00 0.40 1.32) axe (0 1 0) demi 0.40 rond
+#   trou (0.36 0.40 1.80) axe (0 1 0) demi 0.40 rond
+#   trou (0.36 0.40 2.60) axe (0 1 0) demi 0.40 rond
+#   trou (0.36 0.40 3.40) axe (0 1 0) demi 0.40 rond
+#   trou (0.36 0.40 4.20) axe (0 1 0) demi 0.40 croix
+# 6629 : 9 trous, 0 mâles, 0 tenons, 7 anti-tenons
+#   anti-tenon (0.36 0.00 1.80)
+#   anti-tenon (0.36 0.00 5.00)
+#   anti-tenon (0.36 0.00 4.20)
+#   anti-tenon (0.36 0.00 3.40)
+#   anti-tenon (0.36 0.00 2.60)
+#   anti-tenon (1.00 0.00 1.32)
+#   anti-tenon (1.64 0.00 0.84)
+#   boîte (0.00 0.00 0.00) .. (2.64 0.80 6.16) Technic Beam 4 x 6 Liftarm Bent 53.13
+#   trou (2.28 0.40 0.36) axe (0 1 0) demi 0.40 croix
+#   trou (1.64 0.40 0.84) axe (0 1 0) demi 0.40 rond
+#   trou (1.00 0.40 1.32) axe (0 1 0) demi 0.40 rond
+#   trou (0.36 0.40 1.80) axe (0 1 0) demi 0.40 rond
+#   trou (0.36 0.40 2.60) axe (0 1 0) demi 0.40 rond
+#   trou (0.36 0.40 3.40) axe (0 1 0) demi 0.40 rond
+#   trou (0.36 0.40 4.20) axe (0 1 0) demi 0.40 rond
+#   trou (0.36 0.40 5.00) axe (0 1 0) demi 0.40 rond
+#   trou (0.36 0.40 5.80) axe (0 1 0) demi 0.40 croix
+# 32271 : 9 trous, 0 mâles, 0 tenons, 7 anti-tenons
+#   anti-tenon (0.36 0.00 1.32)
+#   anti-tenon (0.36 0.00 5.32)
+#   anti-tenon (0.36 0.00 4.52)
+#   anti-tenon (0.36 0.00 3.72)
+#   anti-tenon (0.36 0.00 2.92)
+#   anti-tenon (0.36 0.00 2.12)
+#   anti-tenon (1.00 0.00 0.84)
+#   boîte (0.00 0.00 0.00) .. (2.00 0.80 6.48) Technic Beam 3 x 7 Liftarm Bent 53.13
+#   trou (1.64 0.40 0.36) axe (0 1 0) demi 0.40 croix
+#   trou (1.00 0.40 0.84) axe (0 1 0) demi 0.40 rond
+#   trou (0.36 0.40 1.32) axe (0 1 0) demi 0.40 rond
+#   trou (0.36 0.40 2.12) axe (0 1 0) demi 0.40 rond
+#   trou (0.36 0.40 2.92) axe (0 1 0) demi 0.40 rond
+#   trou (0.36 0.40 3.72) axe (0 1 0) demi 0.40 rond
+#   trou (0.36 0.40 4.52) axe (0 1 0) demi 0.40 rond
+#   trou (0.36 0.40 5.32) axe (0 1 0) demi 0.40 rond
+#   trou (0.36 0.40 6.12) axe (0 1 0) demi 0.40 croix
 [OK] 1. deux engrenages sur une poutre (8 / 24) : 3 corps, 1 commandes, 1 engrènements, rapports 1.0000, -0.3333
 [OK] 2. deux supports séparés (16 / 24) : 4 corps, 1 commandes, 1 engrènements, rapports 1.0000, -0.6667
 [OK] 3. supports empilés (8 / 16 en diagonale) : 3 corps, 1 commandes, 1 engrènements, rapports 1.0000, -0.5000
@@ -33,9 +158,21 @@
       (commande en cm, course estimée sur le maillage)
 [OK] 18. vérin : actionneur linéaire 92695 + piston 92696 : 2 corps, 1 commandes, 0 engrènements, rapports 1.0000
       (commande en cm, course estimée sur le maillage)
+[OK] 19. bras levé par un vérin (boucle) : 4 corps, 1 commandes, 0 engrènements, rapports 1.0000, 0.3901
+      (le bras suit la longueur du vérin ; la boucle reste fermée)
+[OK] 19b. butées du vérin : course -1.20..1.20 cm, bout de course atteint, au-delà refusé (vérin 1.200 cm)
+[OK] 20. flèche + balancier, vérin 1 (flèche) piloté : 7 corps, 2 commandes, 0 engrènements, rapports 0.3901, 0.0000
+      (le balancier garde son angle sur la flèche : le vérin 2 garde sa longueur)
+[OK] 20b. flèche + balancier, vérin 2 (balancier) piloté : 7 corps, 2 commandes, 0 engrènements, rapports -0.3901, 0.0000
+      (la flèche ne bouge pas)
+[OK] 21. godet sur quadrilatère piloté par vérin + biellette : 6 corps, 1 commandes, 0 engrènements, rapports 1.0000, -0.4300, -0.4300
+      (le godet et la biellette suivent ; deux boucles fermées)
+[OK] 22. bras horizontal + vérin vertical (sur la grille, comme dans l'éditeur) : 4 corps, 1 commandes, 0 engrènements, rapports 1.0000, -0.6066
+      (le vérin à 90° du bras, levier 1,6 cm ; scène enregistrée : docs/brickit/tests/meca_pelleteuse.json)
+[OK] 22b. sens : vérin + 0,8 cm, bout du bras 4.80 -> 8.78 cm (doit monter)
 [OK] 13. axe traversant trois supports : 6 corps, 1 commandes, 1 engrènements, rapports 1.0000, -0.3333
 [OK] 14. montage 1 tourné de 90° puis 180° : 3 corps, 1 commandes, 1 engrènements, rapports 1.0000, -0.3333
 [OK] 15. deux poutres reliées par deux pins (un seul corps) : 1 corps, 0 commandes, 0 engrènements
 [OK] 16. scène de Wzx (16 / 24 sur deux piles) : 25 corps, 1 commandes, 1 engrènements, rapports 1.0000, -0.6667
 
-18 / 18 réussis
+25 / 25 réussis

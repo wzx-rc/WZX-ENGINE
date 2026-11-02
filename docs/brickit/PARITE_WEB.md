@@ -107,6 +107,7 @@ Cases : `[x]` porté et vérifié · `[~]` partiel (ce qui manque est dit) · `[
 - [x] Glisser une pièce mobile — `--mouse-test mech` sur la démo (liaisons tournées de 48°)
 - [x] Plateaux tournants : pivot entre une moitié « Bottom / Base » et sa moitié « Top » de la même famille (5 familles : 5 x 5, 28 dents, 60 dents, Type 1, Type 2), vérifié par `--turntable-test` (2 corps, 1 pivot pour chacune) ; sans engrenage il n'a pas de moteur et se manipule au glisser, comme la règle du web
 - [x] Vérins et crémaillère : liaison glissière dans le solveur (course = butée) ; vérins 2909 + 2910 et 92695 + 92696 (axe et course tirés du maillage, la conversion LDraw ne porte pas les glissières), crémaillère `Gear Rack` + pignon (guidée par le support du pignon) — tests 12, 17, 18 (`MECANIQUE.md` § 4 bis)
+- [x] Vérin qui ferme une boucle (pelleteuse / tractopelle) : vérin piloté (longueur imposée), bras suivi par la fermeture de boucle, butées, sans avertissement ; flèche + balancier à deux vérins, godet sur quadrilatère — tests 19 à 22b, captures 30 et 31
 
 ## Écarts voulus
 
@@ -135,6 +136,13 @@ Cases : `[x]` porté et vérifié · `[~]` partiel (ce qui manque est dit) · `[
   de la pièce). Le test du web (centres à 1 mm près le long de l'axe) échoue toujours pour deux moitiés de hauteurs
   différentes : le natif demande que leurs étendues le long de l'axe se touchent ou se recouvrent (0,1 cm de jeu), et ne
   soude pas les deux moitiés par leurs tenons (le dessus tourne sur la base).
+
+- **Vérins (02/11/2026)** : axe du vérin passé par son trou de pin d'extrémité (le centre de la boîte de 2909 est décalé de
+  0,45 cm par une patte : un vérin monté par ses bouts n'était jamais détecté) ; sens de la glissière du corps vers la
+  tige (une commande positive allonge le vérin) ; le vérin dans une boucle n'est plus abandonné avec « Vérin dans une
+  boucle : non piloté » (les glissières entrent en premier dans l'arbre, un pin ferme la boucle). Poutres coudées
+  (32526, 32140, 32271…) et trou d'extrémité de la poutre 11 : trous lus depuis leurs anti-tenons (aucun trou avant).
+  Panneau : le nombre de vérins était toujours « 0 vérins ».
 
 ### Stockage / formats (mode DEV)
 - Remplacements gardés dans `dev_overrides\<id>.obj` + `<id>.json` à côté de l'exe (le web : IndexedDB « stocké sur cet appareil » ou base de l'artifact). Préférences DEV dans `brickit_prefs.json` (clé `dev`).
