@@ -497,8 +497,10 @@ void Renderer::recordRaster(const Scene& scene, const RenderSettings& rs, const 
     rc.rtRefl = reflOn ? 1.0f : 0.0f;
     memcpy(m_rasterCB.mapped, &rc, sizeof(rc));
     // ray traced sun shadow and reflections: computed now (compute passes), read by the main pass (t8, t9)
-    const bool sunMask = rc.rtShadow > 0 && !probeCapture;
-    if (sunMask || reflOn) recordScreenTrace(rc.sunDir, rs, sunMask, reflOn);
+    // the mask is the sun's, or without a sun the key area light's (a lamp in a room: the Cornell box)
+    const int areaKey = (rc.sunOn > 0 || key < 0) ? -1 : key;
+    const bool sunMask = rc.rtShadow > 0 && !probeCapture && (rc.sunOn > 0 || areaKey >= 0);
+    if (sunMask || reflOn) recordScreenTrace(rc.sunDir, rs, sunMask, reflOn, areaKey);
 
     m_cmd->SetGraphicsRootSignature(m_rasterRoot.Get());
     m_cmd->SetGraphicsRootConstantBufferView(0, m_rasterCB.va());

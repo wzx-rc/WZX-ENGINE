@@ -66,15 +66,41 @@ void main(uint3 id : SV_DispatchThreadID) {
     if (dot(ng, dir) > 0) ng = -ng;   // the side seen by the camera
     if (dot(ns, ng) < 0) ns = -ns;
 
-    float3 L = OctDec(S.sunOct);
     float vis = 0;
+    if (S.tanRadius < 0) {   // area light (S.samples >> 8): rays to points spread over its rectangle (R2, turned per pixel)
+        GpuLight l = gLights[S.samples >> 8];
+        float3 o = P + ng * (1e-4 * (1.0 + max(abs(P.x), max(abs(P.y), abs(P.z)))));
+        float2 jit = frac(52.9829189 * frac(float2(dot(float2(id.xy) + 0.5, float2(0.06711056, 0.00583715)),
+                                                   dot(float2(id.yx) + 0.5, float2(0.06711056, 0.00583715)))));
+        uint n = max(S.samples & 255u, 1u), seen = 0;
+        float3 Ln = normalize(cross(l.edgeU, l.edgeV));
+        for (uint k = 0; k < n; ++k) {
+            float2 uv = frac(float2(0.7548777, 0.5698403) * (k + 0.5) + jit);
+            float3 Lp = l.corner + l.edgeU * uv.x + l.edgeV * uv.y;
+            float3 d = Lp - o;
+            float dist = length(d);
+            d /= dist;
+            if (dot(ns, d) <= 0 || abs(dot(Ln, d)) <= 0) continue;   // this part of the lamp is below the surface
+            ++seen;
+            RayQuery<RAY_FLAG_FORCE_OPAQUE | RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH> sq;
+            RayDesc sr;
+            sr.Origin = o; sr.Direction = d; sr.TMin = 0.0; sr.TMax = dist * 0.999;
+            sq.TraceRayInline(gScene, RAY_FLAG_NONE, MASK_OPAQUE, sr);
+            sq.Proceed();
+            if (sq.CommittedStatus() != COMMITTED_TRIANGLE_HIT) vis += 1.0;
+        }
+        vis = seen > 0 ? vis / seen : 1.0;   // the raster's NoL already darkens what faces away
+        gShadowRaw[id.xy] = float4(vis, t, OctEnc(ns));
+        return;
+    }
+    float3 L = OctDec(S.sunOct);
     if (dot(ns, L) > 0) {
         float3 tx = normalize(abs(L.y) < 0.99 ? cross(L, float3(0, 1, 0)) : cross(L, float3(1, 0, 0)));
         float3 ty = cross(L, tx);
         float3 o = P + ng * (1e-4 * (1.0 + max(abs(P.x), max(abs(P.y), abs(P.z)))));
         // one rotation per pixel (interleaved gradient noise) of a Vogel spiral: the filter averages the neighbours
         float rot = 6.2831853 * frac(52.9829189 * frac(dot(float2(id.xy) + 0.5, float2(0.06711056, 0.00583715))));
-        uint n = max(S.samples, 1u);
+        uint n = max(S.samples & 255u, 1u);
         for (uint k = 0; k < n; ++k) {
             float rr = sqrt((k + 0.5) / n), th = k * 2.3999632 + rot;
             float3 d = normalize(L + (tx * cos(th) + ty * sin(th)) * (rr * S.tanRadius));

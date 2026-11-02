@@ -307,7 +307,15 @@ float4 Shade(VSOut i, bool ghost, float shadowBias, bool capture) {
         if (NoL <= 0 || cosL <= 0) continue;
         float size = sqrt(l.area);
         float3 E = l.radiance * R.lightScale * l.area * cosL / max(d2, l.area * 0.5);
-        float shadow = (li == R.keyLight) ? Shadow(i.wpos, N, shadowBias) : 1.0;
+        float shadow = 1.0;
+        if (li == R.keyLight) {
+#if defined(VP3D_RT_SHADOWS) && !defined(VP3D_ATTRIB_SEMANTICS)
+            // no sun: the ray traced mask is the key area light's (SunShadowTrace, rays over the lamp's rectangle)
+            if (R.rtShadow > 0 && R.sunOn <= 0 && !capture) shadow = gSunShadow.Load(int3(i.pos.xy, 0));
+            else
+#endif
+            shadow = Shadow(i.wpos, N, shadowBias);
+        }
         float3 H = normalize(V + L);
         float NoH = saturate(dot(N, H));
         float aL = saturate(a + size / (3.0 * sqrt(d2)));   // widen the lobe for the light's size

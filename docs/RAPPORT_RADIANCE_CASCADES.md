@@ -291,3 +291,13 @@ Test : `Viewport3D.exe --scene cornell --split 1 [--split-px 12] [--ddgi-view 1]
   - scintillement caméra fixe : 0,28 sans accumulation, 0,05 avec ;
   - fantôme du bloc : 0,75, contre 3,3 en DDGI.
 - **Coût** : une vue proche du LookDev monte à environ 10 ms de Split RC, contre 4,6 ms de plus loin, parce que plus de rayons touchent les sphères (ombrage des impacts).
+
+### Ombres de la lampe de la Cornell (02/11/2026)
+
+En raster avec GI, seul le soleil avait une ombre ray tracée. Sans soleil, la lumière principale est la lampe rectangulaire, qui n'avait que la shadow map, et sur la Cornell aucune ombre n'apparaissait.
+
+Désormais, quand il n'y a pas de soleil, `SunShadowTrace` trace l'ombre de la lampe principale :
+- 16 rayons par pixel vers des points répartis sur son rectangle (suite R2 tournée par pixel) ;
+- puis le même filtre bilatéral que pour le soleil.
+
+La passe raster lit ce masque pour la lampe principale. Capture 45 : ombres douces des blocs et des billes. Le mode Lit n'est pas touché.

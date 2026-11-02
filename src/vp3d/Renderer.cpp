@@ -1757,7 +1757,7 @@ void Renderer::recordSplitRC(const RenderSettings& rs, UINT gx, UINT gy) {
 // bilateral filters. Leaves the filtered sun mask (t8) and reflections (t9) in PIXEL_SHADER_RESOURCE when asked for;
 // recordRaster puts them back. Needs this frame's acceleration structure, frame and probe constants; binds the
 // compute root signature.
-void Renderer::recordScreenTrace(const float3& sunDir, const RenderSettings& rs, bool shadow, bool refl) {
+void Renderer::recordScreenTrace(const float3& sunDir, const RenderSettings& rs, bool shadow, bool refl, int areaLight) {
     float3 L = normalize(sunDir);
     float s = std::abs(L.x) + std::abs(L.y) + std::abs(L.z);
     float ox = L.x / s, oy = L.y / s;
@@ -1774,6 +1774,11 @@ void Renderer::recordScreenTrace(const float3& sunDir, const RenderSettings& rs,
     memcpy(&c[1], &oy, 4);
     memcpy(&c[2], &tanR, 4);
     c[3] = samples;
+    if (shadow && areaLight >= 0) {   // area light: twice the rays (a wide source), its index above the sample count
+        const float area = -1.0f;
+        memcpy(&c[2], &area, 4);
+        c[3] = std::min(samples * 2, 32u) | ((uint32_t)areaLight << 8);
+    }
     m_cmd->SetComputeRootSignature(m_rootSig.Get());
     m_cmd->SetComputeRootConstantBufferView(0, m_constants.va());
     m_cmd->SetComputeRoot32BitConstants(1, 4, c, 0);

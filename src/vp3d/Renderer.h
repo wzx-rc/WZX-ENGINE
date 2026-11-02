@@ -353,7 +353,8 @@ private:
     ComPtr<ID3D12Resource> m_sunShadowRaw, m_sunShadow;   // ray traced sun visibility: raw (+ depth, normal), filtered
     ComPtr<ID3D12Resource> m_reflRaw, m_refl;             // ray traced reflections: raw (rgb, roughness), filtered
     // SunShadowTrace (+ ReflectTrace) then the filters; shadow / reflections: what the raster pass reads this frame
-    void recordScreenTrace(const float3& sunDir, const RenderSettings& rs, bool shadow, bool refl);
+    // areaLight >= 0: the shadow mask is the one of that area light (its GPU light index) instead of the sun
+    void recordScreenTrace(const float3& sunDir, const RenderSettings& rs, bool shadow, bool refl, int areaLight = -1);
     bool m_screenGIOn = false;                   // the last frame filled it (raster reads it)
     bool m_asThisFrame = false;                  // the TLAS was built this frame (ray traced shadows of the raster pass)
     RCStats m_rcStats;
