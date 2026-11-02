@@ -30,8 +30,15 @@ static std::string jstr(const std::string& s) {
     return o + "\"";
 }
 
+// Test, demo and capture runs (and the mechanics diagnostic) never write the preferences or the autosaved scene of the
+// user: a --mechtests run had replaced brickit_scene.v3d.json by a test scene.
+bool BrickApp::userSession() const {
+    return m_opt.shotPath.empty() && !m_opt.mechTests && !m_opt.demo && !m_opt.grid && m_opt.bench <= 0 && !m_opt.mechDemo &&
+           !m_opt.mech && !m_opt.cornell && m_opt.mouseTest.empty();
+}
+
 void BrickApp::savePrefs() {
-    if (!m_opt.shotPath.empty()) return;   // tests and captures never touch the preferences of the user
+    if (!userSession()) return;   // tests and captures never touch the preferences of the user
     std::string j = "{";
     char b[256];
     snprintf(b, sizeof(b), "\"safety50\": %s, \"gridSnap\": %s, \"autoPivot\": %s, \"animOn\": %s, \"focusDim\": %s, \"mode\": %d, \"quality\": %d, \"tonemap\": %d, \"colorId\": %d, \"thumbSize\": %d,",
@@ -109,7 +116,7 @@ void BrickApp::loadPrefs() {
 void BrickApp::autosave() {
     if (m_cornell) return;
     manualDirty();   // the steps change with the scene
-    if (m_opt.shotPath.empty() && m_autosaveOn) writeText(m_exeDir + L"\\brickit_scene.v3d.json", m_build.toJson(m_scene.camera));
+    if (userSession() && m_autosaveOn) writeText(m_exeDir + L"\\brickit_scene.v3d.json", m_build.toJson(m_scene.camera));
 }
 
 bool BrickApp::restoreAutosave() {

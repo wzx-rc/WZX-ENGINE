@@ -392,6 +392,7 @@ private:
     // traced, no history: sparse world probes around the visible surfaces), with the path tracing look
     bool m_rcMode = false;
     void setRC(bool on);
+    bool userSession() const;   // not a test / demo / capture run: the preferences and the autosave may be written
     bool pathTraced() const { return !m_rs.raster && !m_rcMode; }
     struct PanelState { bool visible = true, collapsed = false, floating = false; float x = 0, y = 0; };
     // grip of the library / brick actions: click folds, click-drag undocks into a floating window, dropped on the

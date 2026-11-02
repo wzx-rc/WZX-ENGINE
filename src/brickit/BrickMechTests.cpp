@@ -1,4 +1,4 @@
-﻿// BrickIt - automatic tests of the mechanics (--mechtests): mounts built by aligning the connectors of real LDraw parts
+// BrickIt - automatic tests of the mechanics (--mechtests): mounts built by aligning the connectors of real LDraw parts
 // (holes, axles, gear centres), then for each: bodies, commands, and a full turn of the command (36 solver steps) that
 // must move every gear by its expected ratio, the meshes held (solver residuals under tolerance). Results in
 // mech_tests.txt next to the exe.
@@ -6,6 +6,8 @@
 #include <cmath>
 #include <cstdio>
 #include <functional>
+#include <array>
+#include <map>
 
 namespace brickit {
 
@@ -646,6 +648,91 @@ void BrickApp::runMechTests() {
         m.axle("3706", P + X * (rA + 1.6f), X);
         const int a = m.gear("32269", P + Z * rB, Z), c = m.gear("32270", P + X * rA, X);
         run("28. cas 2 : 3700 à 90°, doubles coniques 20 / 12 (axes qui se croisent)", m, 4, 1, {{c, 1.0, true}, {a, 12.0 / 20, true}});
+    }
+    // 29. every grid placement of two bevel gears at 90 degrees (axes in one plane or a plate apart): the detection
+    // against the real contact of the teeth (LDraw meshes: closest vertices of the two gears). Gear centres on the
+    // 0.4 cm grid from the crossing point, both sides, the single bevel flipped or not.
+    {
+        struct G { const char* name; };
+        const char* names[] = {"32270", "32269", "32198", "4019"};
+        int cases = 0, both = 0, falseNeg = 0, falsePos = 0;
+        std::map<std::string, std::array<int, 3>> perPair;   // in mesh and seen, missed, extra
+        std::string ex;
+        auto verts = [&](int part) -> const std::vector<float3>& {
+            static std::map<int, std::vector<float3>> cache;
+            auto it = cache.find(part);
+            if (it != cache.end()) return it->second;
+            std::vector<float3>& v = cache[part];
+            const Part* pp = m_lib.get(m_lib.parts[part].name);
+            if (pp) for (const auto& vx : pp->mesh.vertices) v.push_back(vx.pos);
+            return v;
+        };
+        for (int ga = 0; ga < 4; ++ga)
+            for (int gb = ga; gb < 4; ++gb)
+                for (int ia = 1; ia <= 4; ++ia)
+                    for (int ib = 1; ib <= 4; ++ib)
+                        for (int sideA = -1; sideA <= 1; sideA += 2)
+                            for (int dyk = 0; dyk <= 2; dyk += 2)
+                                for (int flip = 0; flip < 4; ++flip) {
+                                    Mount m = mk();
+                                    const float a = 0.4f * ia, b = 0.4f * ib, dy = dyk * 0.16f;
+                                    const float3 cA(a * sideA, 1.0f, 0), cB(0, 1.0f + dy, b);
+                                    const float3 uA = X * ((flip & 1) ? -1.0f : 1.0f), uB = Z * ((flip & 2) ? -1.0f : 1.0f);
+                                    const int A = m.gear(names[ga], cA, uA), B = m.gear(names[gb], cB, uB);
+                                    if (A < 0 || B < 0) continue;
+                                    MechModel M;
+                                    if (!m_mech.build(m.b, M)) continue;
+                                    const bool det = !M.meshes.empty();
+                                    // contact: closest vertices of the two gears (teeth) under 0.06 cm, and no deep overlap
+                                    // (a vertex of one gear inside the other's hub radius)
+                                    const std::vector<float3>& va = verts(m.b[A].part);
+                                    const std::vector<float3>& vb = verts(m.b[B].part);
+                                    float best = 1e9f;
+                                    for (size_t k = 0; k < va.size(); k += 2) {
+                                        const float3 pa = qRot(m.b[A].rot, va[k]) + m.b[A].pos;
+                                        for (size_t l = 0; l < vb.size(); l += 2) {
+                                            const float3 pb = qRot(m.b[B].rot, vb[l]) + m.b[B].pos;
+                                            best = std::min(best, length(pa - pb));
+                                        }
+                                    }
+                                    const MechMeta& ma = m_mech.meta(m.b[A].part);
+                                    const MechMeta& mb = m_mech.meta(m.b[B].part);
+                                    // the gear bodies must not go through each other: centre distances to the crossing
+                                    // at least the hub of the other
+                                    // no deep overlap: no vertex of one gear inside the solid core of the other (inside
+                                    // its root circle, pitch radius - 0.12 cm, and its thickness)
+                                    auto inside = [&](int G, const MechMeta& gm, int O, const std::vector<float3>& vo) {
+                                        const MechGear& g = gm.gears[0];
+                                        const float3 c = qRot(m.b[G].rot, g.c) + m.b[G].pos, u = qRot(m.b[G].rot, g.axis);
+                                        const Part& pp = m_lib.parts[m.b[G].part];
+                                        const float3 ext = pp.bmax - pp.bmin;
+                                        const float halfT = std::min(ext.x, std::min(ext.y, ext.z)) * 0.5f - 0.05f, rr = g.teeth * 0.05f - 0.12f;
+                                        int n = 0;
+                                        for (size_t k = 0; k < vo.size(); ++k) {
+                                            const float3 q = qRot(m.b[O].rot, vo[k]) + m.b[O].pos - c;
+                                            const float ax = dot(q, u);
+                                            if (std::fabs(ax) < halfT && length(q - u * ax) < rr) ++n;
+                                        }
+                                        return n;
+                                    };
+                                    const int deep = inside(A, ma, B, vb) + inside(B, mb, A, va);
+                                    const bool touch = best < 0.06f && deep == 0;
+                                    ++cases;
+                                    std::array<int, 3>& pc = perPair[std::string(names[ga]) + " / " + names[gb] + (dy > 0 ? " (décalé)" : "")];
+                                    if (det && touch) { ++both; ++pc[0]; }
+                                    else if (touch && !det) {
+                                        ++falseNeg; ++pc[1];
+                                        if (falseNeg <= 25) { char bf[200]; snprintf(bf, sizeof(bf), "      raté : %s / %s, centres à %.1f / %.1f cm du croisement, décalage %.2f, côté %d, sens %d (contact %.3f)\n", names[ga], names[gb], b, a, dy, sideA, flip, best); ex += bf; }
+                                    } else if (det && !touch) {
+                                        ++falsePos; ++pc[2];
+                                        if (falsePos <= 10) { char bf[200]; snprintf(bf, sizeof(bf), "      en trop : %s / %s, centres à %.1f / %.1f cm, décalage %.2f, côté %d, sens %d (écart %.3f)\n", names[ga], names[gb], b, a, dy, sideA, flip, best); ex += bf; }
+                                    }
+                                }
+        const bool pass = falseNeg == 0;   // (diagnostic, not counted: the vertex criterion is wrong for bevel teeth)
+        fprintf(f, "[%s] (diagnostic) 29. engrenages à 90° sur la grille : %d placements, %d en prise et détectés, %d en contact non détectés, %d détectés sans contact\n%s",
+                pass ? "OK" : "ÉCHEC", cases, both, falseNeg, falsePos, ex.c_str());
+        for (auto& kv : perPair) fprintf(f, "      %s : %d en prise vus, %d ratés, %d en trop\n", kv.first.c_str(), kv.second[0], kv.second[1], kv.second[2]);
+        fflush(f);
     }
     // 13. one axle through three supports, a 24 on it driven by an 8
     {

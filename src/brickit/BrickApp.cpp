@@ -261,7 +261,7 @@ int BrickApp::run() {
         frame();
     }
     m_renderer.waitIdle();
-    if (m_opt.shotPath.empty()) { savePrefs(); autosave(); }
+    if (userSession()) { savePrefs(); autosave(); }
     m_gui.shutdown();
     m_renderer.shutdown();
     return 0;

@@ -203,6 +203,62 @@
 [OK] 26. cas 2 : 12 / 20 sur une plaque 1 x 4 (un seul corps fixe) : 3 corps, 1 commandes, 1 engrènements, rapports 1.0000, -0.6000
 [OK] 27. cas 2 : 12 / 20, montage tourné de 90° autour de la verticale : 4 corps, 1 commandes, 1 engrènements, rapports 1.0000, -0.6000
 [OK] 28. cas 2 : 3700 à 90°, doubles coniques 20 / 12 (axes qui se croisent) : 4 corps, 1 commandes, 1 engrènements, rapports 1.0000, -0.6000
+[ÉCHEC] (diagnostic) 29. engrenages à 90° sur la grille : 2560 placements, 43 en prise et détectés, 44 en contact non détectés, 437 détectés sans contact
+      en trop : 32270 / 32270, centres à 0.4 / 0.4 cm, décalage 0.00, côté -1, sens 0 (écart 0.000)
+      en trop : 32270 / 32270, centres à 0.4 / 0.4 cm, décalage 0.00, côté -1, sens 1 (écart 0.000)
+      en trop : 32270 / 32270, centres à 0.4 / 0.4 cm, décalage 0.00, côté -1, sens 2 (écart 0.000)
+      en trop : 32270 / 32270, centres à 0.4 / 0.4 cm, décalage 0.00, côté -1, sens 3 (écart 0.000)
+      en trop : 32270 / 32270, centres à 0.4 / 0.4 cm, décalage 0.32, côté -1, sens 0 (écart 0.036)
+      en trop : 32270 / 32270, centres à 0.4 / 0.4 cm, décalage 0.32, côté -1, sens 1 (écart 0.046)
+      en trop : 32270 / 32270, centres à 0.4 / 0.4 cm, décalage 0.32, côté -1, sens 2 (écart 0.036)
+      en trop : 32270 / 32270, centres à 0.4 / 0.4 cm, décalage 0.32, côté -1, sens 3 (écart 0.036)
+      en trop : 32270 / 32270, centres à 0.4 / 0.4 cm, décalage 0.00, côté 1, sens 0 (écart 0.000)
+      en trop : 32270 / 32270, centres à 0.4 / 0.4 cm, décalage 0.00, côté 1, sens 1 (écart 0.000)
+      raté : 32270 / 4019, centres à 0.8 / 1.2 cm du croisement, décalage 0.00, côté -1, sens 0 (contact 0.052)
+      raté : 32270 / 4019, centres à 0.8 / 1.2 cm du croisement, décalage 0.00, côté -1, sens 2 (contact 0.052)
+      raté : 32270 / 4019, centres à 0.8 / 1.2 cm du croisement, décalage 0.00, côté 1, sens 1 (contact 0.052)
+      raté : 32270 / 4019, centres à 0.8 / 1.2 cm du croisement, décalage 0.00, côté 1, sens 3 (contact 0.052)
+      raté : 32269 / 4019, centres à 1.2 / 1.2 cm du croisement, décalage 0.00, côté -1, sens 0 (contact 0.052)
+      raté : 32269 / 4019, centres à 1.2 / 1.2 cm du croisement, décalage 0.00, côté -1, sens 1 (contact 0.052)
+      raté : 32269 / 4019, centres à 1.2 / 1.2 cm du croisement, décalage 0.00, côté -1, sens 2 (contact 0.052)
+      raté : 32269 / 4019, centres à 1.2 / 1.2 cm du croisement, décalage 0.00, côté -1, sens 3 (contact 0.052)
+      raté : 32269 / 4019, centres à 1.2 / 1.2 cm du croisement, décalage 0.32, côté -1, sens 0 (contact 0.046)
+      raté : 32269 / 4019, centres à 1.2 / 1.2 cm du croisement, décalage 0.32, côté -1, sens 1 (contact 0.046)
+      raté : 32269 / 4019, centres à 1.2 / 1.2 cm du croisement, décalage 0.32, côté -1, sens 2 (contact 0.046)
+      raté : 32269 / 4019, centres à 1.2 / 1.2 cm du croisement, décalage 0.32, côté -1, sens 3 (contact 0.046)
+      raté : 32269 / 4019, centres à 1.2 / 1.2 cm du croisement, décalage 0.00, côté 1, sens 0 (contact 0.052)
+      raté : 32269 / 4019, centres à 1.2 / 1.2 cm du croisement, décalage 0.00, côté 1, sens 1 (contact 0.052)
+      raté : 32269 / 4019, centres à 1.2 / 1.2 cm du croisement, décalage 0.00, côté 1, sens 2 (contact 0.052)
+      raté : 32269 / 4019, centres à 1.2 / 1.2 cm du croisement, décalage 0.00, côté 1, sens 3 (contact 0.052)
+      raté : 32269 / 4019, centres à 1.2 / 1.2 cm du croisement, décalage 0.32, côté 1, sens 0 (contact 0.046)
+      raté : 32269 / 4019, centres à 1.2 / 1.2 cm du croisement, décalage 0.32, côté 1, sens 1 (contact 0.046)
+      raté : 32269 / 4019, centres à 1.2 / 1.2 cm du croisement, décalage 0.32, côté 1, sens 2 (contact 0.046)
+      raté : 32269 / 4019, centres à 1.2 / 1.2 cm du croisement, décalage 0.32, côté 1, sens 3 (contact 0.046)
+      raté : 32198 / 32198, centres à 1.2 / 0.4 cm du croisement, décalage 0.00, côté -1, sens 0 (contact 0.048)
+      raté : 32198 / 32198, centres à 1.2 / 0.4 cm du croisement, décalage 0.00, côté -1, sens 1 (contact 0.041)
+      raté : 32198 / 32198, centres à 1.2 / 0.4 cm du croisement, décalage 0.00, côté -1, sens 3 (contact 0.028)
+      raté : 32198 / 32198, centres à 1.2 / 0.4 cm du croisement, décalage 0.32, côté -1, sens 0 (contact 0.039)
+      raté : 32198 / 32198, centres à 1.2 / 0.4 cm du croisement, décalage 0.32, côté -1, sens 1 (contact 0.027)
+      32198 / 32198 : 6 en prise vus, 12 ratés, 26 en trop
+      32198 / 32198 (décalé) : 17 en prise vus, 12 ratés, 15 en trop
+      32198 / 4019 : 0 en prise vus, 0 ratés, 16 en trop
+      32198 / 4019 (décalé) : 0 en prise vus, 0 ratés, 16 en trop
+      32269 / 32198 : 8 en prise vus, 0 ratés, 24 en trop
+      32269 / 32198 (décalé) : 4 en prise vus, 0 ratés, 28 en trop
+      32269 / 32269 : 0 en prise vus, 0 ratés, 32 en trop
+      32269 / 32269 (décalé) : 0 en prise vus, 0 ratés, 32 en trop
+      32269 / 4019 : 0 en prise vus, 8 ratés, 16 en trop
+      32269 / 4019 (décalé) : 0 en prise vus, 8 ratés, 16 en trop
+      32270 / 32198 : 6 en prise vus, 0 ratés, 26 en trop
+      32270 / 32198 (décalé) : 2 en prise vus, 0 ratés, 30 en trop
+      32270 / 32269 : 0 en prise vus, 0 ratés, 32 en trop
+      32270 / 32269 (décalé) : 0 en prise vus, 0 ratés, 32 en trop
+      32270 / 32270 : 0 en prise vus, 0 ratés, 32 en trop
+      32270 / 32270 (décalé) : 0 en prise vus, 0 ratés, 32 en trop
+      32270 / 4019 : 0 en prise vus, 4 ratés, 16 en trop
+      32270 / 4019 (décalé) : 0 en prise vus, 0 ratés, 16 en trop
+      4019 / 4019 : 0 en prise vus, 0 ratés, 0 en trop
+      4019 / 4019 (décalé) : 0 en prise vus, 0 ratés, 0 en trop
 [OK] 13. axe traversant trois supports : 6 corps, 1 commandes, 1 engrènements, rapports 1.0000, -0.3333
 [OK] 14. montage 1 tourné de 90° puis 180° : 3 corps, 1 commandes, 1 engrènements, rapports 1.0000, -0.3333
 [OK] 15. deux poutres reliées par deux pins (un seul corps) : 1 corps, 0 commandes, 0 engrènements

@@ -52,7 +52,8 @@ Détection (rayon primitif r = dents × 0,05 cm) :
 
 - **Axes parallèles** : centres dans le même plan (écart axial < 0,3 cm), entraxe = rA + rB à 0,105 cm près.
 - **Axes à 90° qui se coupent** (au moins un conique / couronne) : points les plus proches des deux axes à moins de
-  0,3 cm, distance de chaque centre au point de croisement P = rayon de l'autre (à 0,35 cm près).
+  0,36 cm (**correction** : 0,3 refusait deux engrenages décalés d'une plaque, 0,32 cm, cas courant quand une des deux
+  briques est posée sur une plaque ; les dents des coniques font 0,4 à 0,8 cm de large et restent en prise), distance de chaque centre au point de croisement P = rayon de l'autre (à 0,35 cm près).
 - **Vis sans fin** : axes à 90°, distance entre les axes = r_roue + r_vis (0,2 cm), la vis dans le plan de la roue
   (0,35 cm).
 
@@ -146,7 +147,11 @@ briques ; scène `docs/brickit/tests/meca_cas2.json`, capture 35) : doubles coni
 et les deux briques à 90° (doubles coniques 20 / 12, axes qui se croisent). Tous verts sans changement du code : titres
 « Double Bevel » / « Bevel » lus (type 1), entraxe = (N1 + N2) × 0,05 cm (1,6 cm pour 12 + 20 ou 16 + 16 : deux briques
 1 × 2 qui se touchent). À savoir : 12 + 12 (1,2 cm) ou 20 + 20 (2,0 cm) ne tombent pas sur deux briques côte à côte
-(1,6 cm) ; les dents ne se touchent pas, chaque axe reçoit alors sa commande « Axe » (pas d'engrènement). Les tests 19 à 21 placent le bras pour que le vérin soit
+(1,6 cm) ; les dents ne se touchent pas, chaque axe reçoit alors sa commande « Axe » (pas d'engrènement).
+Diagnostic 29 (non compté) : tous les placements sur la grille de deux coniques à 90° (centres tous les 0,4 cm depuis
+le croisement, deux côtés, sens, décalage d'une plaque) ; les doubles coniques 12 / 12, 12 / 20, 20 / 20 sont
+détectées dans toutes les positions plausibles. Le critère de contact par les sommets LDraw n'est pas valable pour les
+dents coniques (elles entrent légitimement sous le cercle de pied de l'autre) : il sert seulement à repérer les cas. Les tests 19 à 21 placent le bras pour que le vérin soit
 à sa longueur naturelle et choisissent les trous qui donnent l'angle de transmission le plus proche de 90°. Chaque test vérifie le nombre de corps, de commandes, puis
 un tour complet de la commande en 36 pas : chaque engrenage tourne de son rapport attendu (2 %) et les engrènements
 restent en prise (écart de phase < 0,05 rad).

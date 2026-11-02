@@ -138,6 +138,10 @@ Cases : `[x]` porté et vérifié · `[~]` partiel (ce qui manque est dit) · `[
   différentes : le natif demande que leurs étendues le long de l'axe se touchent ou se recouvrent (0,1 cm de jeu), et ne
   soude pas les deux moitiés par leurs tenons (le dessus tourne sur la base).
 
+- **Engrenages coniques à 90° décalés d'une plaque** : tolérance entre les deux axes portée de 0,3 à 0,36 cm (une
+  plaque = 0,32 cm). **Sauvegarde automatique** (natif) : les lancements de test (`--mechtests`, `--demo`, `--bench`,
+  `--grid`, `--mech`, `--cornell`, `--mouse-test`) n'écrivent plus `brickit_scene.v3d.json` ni les préférences (un
+  `--mechtests` avait remplacé la scène autosauvée de Wzx par une scène de test).
 - **Vérins (02/11/2026)** : axe du vérin passé par son trou de pin d'extrémité (le centre de la boîte de 2909 est décalé de
   0,45 cm par une patte : un vérin monté par ses bouts n'était jamais détecté) ; sens de la glissière du corps vers la
   tige (une commande positive allonge le vérin) ; le vérin dans une boucle n'est plus abandonné avec « Vérin dans une

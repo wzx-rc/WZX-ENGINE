@@ -475,7 +475,7 @@ bool Mech::build(const std::vector<Brick>& bricks, MechModel& M) {
                     if (G.kind == 2) continue;
                     const float want = G.teeth * 0.05f + W.radius;
                     if (std::fabs(gap - want) < 0.2f && std::fabs(dot(W.c - G.c, G.u)) < 0.35f) M.meshes.push_back({(int)x, (int)y});
-                } else if ((A.kind == 1 || B.kind == 1) && gap < 0.3f) {
+                } else if ((A.kind == 1 || B.kind == 1) && gap < 0.36f) {   // (a plate apart, 0.32 cm, still engages: teeth 0.4 to 0.8 cm wide)
                     const float3 P = (PA + PB) * 0.5f;
                     if (std::fabs(length(A.c - P) - B.teeth * 0.05f) < 0.35f && std::fabs(length(B.c - P) - A.teeth * 0.05f) < 0.35f) M.meshes.push_back({(int)x, (int)y});
                 }
