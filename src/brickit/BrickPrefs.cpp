@@ -31,6 +31,7 @@ static std::string jstr(const std::string& s) {
 }
 
 void BrickApp::savePrefs() {
+    if (!m_opt.shotPath.empty()) return;   // tests and captures never touch the preferences of the user
     std::string j = "{";
     char b[256];
     snprintf(b, sizeof(b), "\"safety50\": %s, \"gridSnap\": %s, \"autoPivot\": %s, \"animOn\": %s, \"focusDim\": %s, \"mode\": %d, \"quality\": %d, \"tonemap\": %d, \"colorId\": %d, \"thumbSize\": %d,",
@@ -44,6 +45,7 @@ void BrickApp::savePrefs() {
     auto names = [&](const std::vector<int>& v) { std::string s = "["; for (size_t i = 0; i < v.size(); ++i) s += (i ? ", " : "") + jstr(m_lib.parts[v[i]].name); return s + "]"; };
     j += std::string("\"dev\": {\"on\": ") + (m_dev ? "true" : "false") + ", \"showVox\": " + (m_devShowVox ? "true" : "false") + ", \"showEdges\": " + (m_devShowEdges ? "true" : "false") + ", \"useOverrides\": " + (m_devUseOverrides ? "true" : "false") + "},";
     { char mb[160]; snprintf(mb, sizeof(mb), "\"manual\": {\"w\": %d, \"h\": %d, \"pdfPage\": %d, \"pdfName\": ", (int)m_manW, (int)m_manH, m_pdfPage); j += mb; j += jstr(m_pdfName) + "},"; }
+    { char sb[200]; snprintf(sb, sizeof(sb), "\"settings\": {\"uiScale\": %.2f, \"ssao\": %s, \"fingerprints\": %s, \"autosave\": %s, \"showVox\": %s},", m_uiScaleUser, m_ssaoOn ? "true" : "false", m_fingerprints ? "true" : "false", m_autosaveOn ? "true" : "false", m_showVox ? "true" : "false"); j += sb; }
     j += "\"recentParts\": " + names(m_recent) + ", \"favParts\": " + names(m_fav) + "}\n";
     writeText(m_exeDir + L"\\brickit_prefs.json", j);
 }
@@ -77,6 +79,14 @@ void BrickApp::loadPrefs() {
     auto list = [&](const char* k, std::vector<int>& v) { v.clear(); for (const app::Json& n : p[k].a) { int i = m_lib.find(n.str()); if (i >= 0) v.push_back(i); } };
     list("recentParts", m_recent);
     list("favParts", m_fav);
+    {   // native settings (gear button)
+        const app::Json& st = p["settings"];
+        if (st["uiScale"].num() >= 0.5) m_uiScaleUser = (float)st["uiScale"].num();
+        if (st["ssao"].type == app::Json::Bool) m_ssaoOn = st["ssao"].b;
+        if (st["fingerprints"].type == app::Json::Bool) m_fingerprints = st["fingerprints"].b;
+        if (st["autosave"].type == app::Json::Bool) m_autosaveOn = st["autosave"].b;
+        if (st["showVox"].type == app::Json::Bool) m_showVox = st["showVox"].b;
+    }
     {   // vp3d-manual-w / vp3d-manual-h / vp3d-manual-pdf-page
         const app::Json& mn = p["manual"];
         if (mn["w"].num() >= 260) m_manW = (float)mn["w"].num();
@@ -96,7 +106,7 @@ void BrickApp::loadPrefs() {
 
 void BrickApp::autosave() {
     manualDirty();   // the steps change with the scene
-    if (m_opt.shotPath.empty()) writeText(m_exeDir + L"\\brickit_scene.v3d.json", m_build.toJson(m_scene.camera));
+    if (m_opt.shotPath.empty() && m_autosaveOn) writeText(m_exeDir + L"\\brickit_scene.v3d.json", m_build.toJson(m_scene.camera));
 }
 
 bool BrickApp::restoreAutosave() {

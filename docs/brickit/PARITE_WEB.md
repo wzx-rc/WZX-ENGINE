@@ -135,6 +135,10 @@ Cases : `[x]` porté et vérifié · `[~]` partiel (ce qui manque est dit) · `[
 - Miniatures : ce sont maintenant les images mêmes du web (WebP 240 × 192 du HTML et des `technic/t_*.json`, extraites par `tools/brickit/extract_web_thumbs.py` dans `assets/brickit/thumbs_web.pack`, 780 / 780), cellules de 128 px ; le rendu moteur ne sert plus qu'aux pièces sans image — capture 23.
 - Fenêtre : jamais plus grande que l'écran (1600 × 900 à 200 % = 3200 × 1800 px dépassait un écran de 3072 px et cachait l'en-tête, les couleurs et la bibliothèque) ; ouverte maximisée dans ce cas.
 
+- Réglages (bouton engrenage de l'en-tête, ajout natif) : échelle de l'interface 75–200 % (4K), taille des miniatures, rendu Rapide / HQ / Path tracing, occlusion ambiante du HQ, transformation de vue, traces de doigts du path tracing, voxels, animations, sauvegarde automatique ; enregistrés dans `brickit_prefs.json` (clé `settings`) — capture 24. Pas de réglage de langue (l'application n'existe qu'en français, comme le web).
+- Bibliothèque : clic + glisser de côté fait défiler les cartes, les familles et les catégories avec inertie ; glisser vers le haut prend la brique (direction dominante des 6 premiers pixels) ; un glisser n'active pas l'onglet sous le doigt. Tests souris : `--mouse-test swipe` (0 → 500 px au relâché, 787 px avec l'inertie, aucune brique), `--mouse-test swipeup` (brique en main).
+- Les captures et tests n'écrivent plus les préférences de l'utilisateur.
+
 ### Rendu
 - Polices : Segoe UI + Segoe UI Symbol fusionnées pour les glyphes du web (› … ★ ☆ ✎ ✋ ◀ ▶), absents de la police latine seule.
 - Path tracing natif (studio clair validé sur 03b) en plus du temps réel identique au web.

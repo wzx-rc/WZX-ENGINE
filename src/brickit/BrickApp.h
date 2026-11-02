@@ -64,7 +64,8 @@ struct Options {
     float floatX = 0, floatY = 0;
     std::string ttBase, ttTop;
     std::string mouseTest;
-    int quality = -1;           // --quality 0 | 1      // --mouse-test marquee | gizmo | ring | mech  // --turntable-test <base> <top>: mechanics self-test
+    int quality = -1;
+    bool settings = false;      // --settings: the settings panel open (captures)           // --quality 0 | 1      // --mouse-test marquee | gizmo | ring | mech  // --turntable-test <base> <top>: mechanics self-test
     std::string devRoundtrip;
     std::wstring mayaOut;       // --maya <file.zip>: export the scene to Maya then quit (tests)   // --dev-roundtrip <part>: OBJ export / import self-test
     int libCategory = -1;     // --cat N
@@ -286,6 +287,7 @@ private:
     std::vector<double> m_mtQ;
     int m_mtBrick = -1;
     std::string m_mtDiag;
+    float m_mtScroll0 = 0, m_mtScrollRel = 0;
 
     // Thumbs.cpp
     void buildThumbs();
@@ -324,7 +326,18 @@ private:
     int m_rimLight = -1;
     bool m_startMaximized = false;
     std::vector<std::pair<int, float>> m_fpMats;   // materials with fingerprints and their strength
-    bool m_fingerprints = true;        // fingerprints in the path tracing (settings)   // the default size does not fit the screen               // cool rim light of the web (raster)   // placement preview (ghostMat of the web)
+    bool m_fingerprints = true;        // fingerprints in the path tracing (settings)
+    // native settings (gear button): UI scale over the screen scale, ambient occlusion of the HQ mode, automatic save
+    float m_uiScaleUser = 1.0f;
+    bool m_ssaoOn = true, m_autosaveOn = true;
+    void uiSettings();
+    // drag scrolling of the library rows (cards, families, categories): direction of the first pixels, inertia
+    struct Swipe { int id = -1; ImVec2 start, last; int dir = 0; double t = 0; };
+    Swipe m_swipe;
+    int m_swipeDragged = -1;           // row whose drag just ended (its release is not a click)
+    float m_cardsVel = 0, m_famVel = 0, m_catVel = 0;
+    bool swipeRow(int id, ImVec2 a, ImVec2 b, float& scroll, float& vel, float maxScroll, bool live);
+    bool swipeTaken(int id) const { return m_swipe.id == id && m_swipe.dir == 1; }   // the default size does not fit the screen               // cool rim light of the web (raster)   // placement preview (ghostMat of the web)
     int m_firstBrickObject = 0;        // scene objects before it: the stage
     ViewRect m_vp;
     int m_frame = 0;

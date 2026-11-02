@@ -60,6 +60,13 @@ void BrickApp::mouseTestFrame() {
                 }
                 m_mouseScript.push_back({26, bx, by, 1});
             }
+        } else if (t == "swipe" || t == "swipeup") {
+            // the middle of the cards: sideways 400 px (slide, inertia, no brick) or straight up out of the tray (brick)
+            const ImVec4 tr = m_uiRects.size() > 1 ? m_uiRects[1] : ImVec4(0, sh, sw, sh);
+            const float cy = tr.w - 60 * m_ui, cx = sw * 0.5f;
+            m_mtScroll0 = m_cardsScroll;
+            if (t == "swipe") dragScript(m_mouseScript, 12, ImVec2(cx, cy), ImVec2(cx - 400 * m_ui, cy + 10 * m_ui));
+            else dragScript(m_mouseScript, 12, ImVec2(cx, cy), ImVec2(cx + 10 * m_ui, m_stage.y + sh * 0.45f));
         } else if (t == "mech") {
             mechEnter();
             m_mtQ = m_mm.q;
@@ -78,16 +85,19 @@ void BrickApp::mouseTestFrame() {
             }
         }
     }
+    if (m_frame == 26) m_mtScrollRel = m_cardsScroll;   // the release frame
     if (m_frame == 16) {   // state in the middle of the drag (diagnostic)
         m_mtDiag = "dragging=" + std::to_string(m_gizmoDragging) + " kind=" + std::to_string(m_gz.h.kind) + " axis=" + std::to_string(m_gz.h.axis) +
                    " steps=" + std::to_string(m_gz.steps) + " hasV0=" + std::to_string(m_gz.hasV0) + " mechDragging=" + std::to_string(m_mechDragging) +
                    " mouse=" + std::to_string((int)ImGui::GetIO().MousePos.x) + "," + std::to_string((int)ImGui::GetIO().MousePos.y) + " down=" + std::to_string(ImGui::IsMouseDown(0)) +
-                   " overUi=" + std::to_string(m_overUi);
+                   " overUi=" + std::to_string(m_overUi) + " swipe=" + std::to_string(m_swipe.id) + "/" + std::to_string(m_swipe.dir) + " libPress=" + std::to_string(m_libPress) + " tray=" + std::to_string((int)(m_uiRects.size() > 1 ? m_uiRects[1].y : -1)) + "-" + std::to_string((int)(m_uiRects.size() > 1 ? m_uiRects[1].w : -1)) + " cardsMax?scroll=" + std::to_string(m_cardsScroll);
     }
     if (m_frame == 34) {
         FILE* f = nullptr;
         if (_wfopen_s(&f, (m_exeDir + L"\\mouse_test.txt").c_str(), L"w") != 0 || !f) return;
         if (t == "marquee") fprintf(f, "marquee: selected=%zu of %zu bricks (expected all)\n", selection().size(), m_bricks.size());
+        else if (t == "swipe") fprintf(f, "swipe: cards scroll %.0f -> %.0f at release, %.0f now (inertia: further), velocity %.0f, brick in hand=%d (expected 0)\n", m_mtScroll0, m_mtScrollRel, m_cardsScroll, m_cardsVel, m_holding);
+        else if (t == "swipeup") fprintf(f, "swipe up: brick in hand=%d (expected 1), cards scroll %.0f -> %.0f (expected unchanged)\n", m_holding, m_mtScroll0, m_cardsScroll);
         else if (t == "gizmo") {
             const float3 d = m_bricks[3].pos - m_mtBefore.pos;
             fprintf(f, "gizmo move X: delta=(%.3f, %.3f, %.3f) cm, studs=%.2f (expected a whole number > 0 along X only)\n", d.x, d.y, d.z, d.x / kPitch);

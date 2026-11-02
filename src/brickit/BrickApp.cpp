@@ -151,9 +151,11 @@ bool BrickApp::init(HINSTANCE inst, const Options& opt) {
     buildThumbs();
     buildNav();
     if (opt.shotPath.empty()) loadPrefs();   // captures stay reproducible
+    if (m_uiScaleUser != 1.0f) { m_ui *= m_uiScaleUser; th::apply(m_ui); }   // settings: UI scale over the screen scale
     if (opt.dev) m_dev = true;
     devLoadAll();   // DEV replacements kept next to the exe
     if (opt.manual) m_pManual.visible = true;
+    if (opt.settings) { m_popup = 5; m_popupAt = ImVec2(1e6f, 34 * m_ui); }
     if (opt.quality >= 0) { m_quality = opt.quality; m_rs.msaaSamples = m_quality ? 4 : 1; }
     if (!opt.mouseTest.empty()) m_gui.beforeNewFrame = [this] { mouseTestInput(); };
     if (opt.floatTray) { m_pTray.floating = true; m_pTray.x = opt.floatX; m_pTray.y = opt.floatY; }
@@ -783,7 +785,7 @@ void BrickApp::frame() {
     const float sw = m_stage.z - m_stage.x, sh = m_stage.w - m_stage.y;
     m_vp = {0, 0, std::max(16, (int)(sw * scale)), std::max(16, (int)(sh * scale))};
     m_rs.samplesPerFrame = m_rs.raster ? 1 : std::max(1, m_opt.ppf);
-    m_rs.ssao = m_rs.raster && m_quality == 1;   // HQ of the web: SSAOPass (kernel radius 0.6)
+    m_rs.ssao = m_rs.raster && m_quality == 1 && m_ssaoOn;   // HQ of the web: SSAOPass (kernel radius 0.6)
     m_rs.ssaoRadius = 0.6f;
     std::vector<int> extra;
     for (int i : m_multi) extra.push_back(m_firstBrickObject + i);
@@ -904,6 +906,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         else if (a == L"--manual") opt.manual = true;
         else if (a == L"--float-tray") { opt.floatTray = true; opt.floatX = (float)_wtof(next().c_str()); opt.floatY = (float)_wtof(next().c_str()); }
         else if (a == L"--opts-right") opt.optsRight = true;
+        else if (a == L"--settings") opt.settings = true;
         else if (a == L"--quality") opt.quality = _wtoi(next().c_str());   // 0 Rapide, 1 HQ
         else if (a == L"--mouse-test") { std::wstring w = next(); opt.mouseTest.assign(w.begin(), w.end()); }
         else if (a == L"--turntable-test") { std::wstring w1 = next(), w2 = next(); opt.ttBase.assign(w1.begin(), w1.end()); opt.ttTop.assign(w2.begin(), w2.end()); }

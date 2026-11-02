@@ -221,6 +221,7 @@ void BrickApp::uiHeader() {
         {3, svg::I_UNDO, "DEV", "Mode développeur : connecteurs LDraw, export / réimport Maya des pièces", m_dev, true, 17},
         {0, svg::I_WINDOWS, nullptr, "Fenêtres : afficher / masquer les panneaux", m_popup == 3, true, 18},
         {0, svg::I_FILE, nullptr, "Scène : ouvrir / enregistrer (.v3d.json)", m_popup == 4, true, 19},
+        {0, svg::I_SETTINGS, nullptr, "Réglages : échelle de l'interface, miniatures, qualité, traces de doigts…", m_popup == 5, true, 20},
     };
     auto width = [&](const B& b) {
         switch (b.kind) {
@@ -277,6 +278,7 @@ void BrickApp::uiHeader() {
         case 17: devSetOn(!m_dev); break;
         case 18: m_popup = m_popup == 3 ? 0 : 3; m_popupAt = ImVec2(d.x - 220 * s, y1 + 4 * s); break;
         case 19: m_popup = 0; m_sheetOpen = true; m_sheetText = m_build.toJson(m_scene.camera); break;
+        case 20: m_popup = m_popup == 5 ? 0 : 5; m_popupAt = ImVec2(d.x - 330 * s, y1 + 4 * s); break;
         }
     }
 }
@@ -486,7 +488,7 @@ void BrickApp::uiTray() {
             if (n >= 0) u.text(ImVec2(a.x + 12 * s + ts.x + 4 * s, a.y + 9 * s), 11, alphaOf(col, 0.55f), cnt);
         }
         xx += w + 4 * s;
-        return h && u.pressed;
+        return h && u.released && !swipeTaken(1) && m_swipeDragged != 1;
     };
     if (famTab("", -1, m_fam == "recent" && !m_searchOpen, svg::I_RECENT, true, x)) { m_fam = "recent"; m_cat.clear(); m_sub.clear(); m_searchOpen = false; m_cardsScroll = 0; }
     if (u.hover(ImVec2(x - 36 * s, y), ImVec2(x - 4 * s, y + famH))) ImGui::SetTooltip("Récentes");
@@ -508,7 +510,7 @@ void BrickApp::uiTray() {
     {
         const float content = x - famStart, view = fb.x - fa.x;
         if (live && u.hover(fa, fb)) m_famScroll -= (ImGui::GetIO().MouseWheel + ImGui::GetIO().MouseWheelH) * 60 * s;
-        m_famScroll = std::clamp(m_famScroll, 0.0f, std::max(0.0f, content - view));
+        swipeRow(1, fa, fb, m_famScroll, m_famVel, std::max(0.0f, content - view), live);
     }
     // tools on the right: [search field] search, size
     float tx = TX + TW - padX - 32 * s;
@@ -573,7 +575,7 @@ void BrickApp::uiTray() {
         ImVec2 ts = u.text(ImVec2(a.x + 10 * s, a.y + 4.5f * s), 12, col, label);
         if (n > 0) u.text(ImVec2(a.x + 10 * s + ts.x + 4 * s, a.y + 6 * s), 10.5f, alphaOf(col, 0.55f), cnt);
         x += w + 4 * s;
-        return h && u.pressed;
+        return h && u.released && !swipeTaken(2) && m_swipeDragged != 2;
     };
     const Fam* fam = nullptr;
     for (const Fam& f : families()) if (m_fam == f.name) fam = &f;
@@ -607,7 +609,7 @@ void BrickApp::uiTray() {
     {
         const float content = x - catStart, view = qb.x - qa.x;
         if (live && u.hover(qa, qb)) m_catScroll -= (ImGui::GetIO().MouseWheel + ImGui::GetIO().MouseWheelH) * 60 * s;
-        m_catScroll = std::clamp(m_catScroll, 0.0f, std::max(0.0f, content - view));
+        swipeRow(2, qa, qb, m_catScroll, m_catVel, std::max(0.0f, content - view), live);
     }
     y += catH + gap;
     // ---- cards on two rows (column by column), horizontal scroll with the wheel
@@ -617,7 +619,8 @@ void BrickApp::uiTray() {
     const float contentW = cols * (th + cgap), viewW = TW - 2 * padX;
     ImVec2 ca(TX + padX, y), cb(TX + TW - padX, y + cardsH);
     if (live && u.hover(ca, cb) && ImGui::GetIO().MouseWheel != 0) m_cardsScroll -= ImGui::GetIO().MouseWheel * th;
-    m_cardsScroll = std::clamp(m_cardsScroll, 0.0f, std::max(0.0f, contentW - viewW));
+    // click + drag sideways = slide the cards (inertia); upwards = the brick goes in hand (below)
+    swipeRow(0, ca, cb, m_cardsScroll, m_cardsVel, std::max(0.0f, contentW - viewW), live);
     u.dl->PushClipRect(ca, cb, true);
     if (parts.empty()) {
         const char* msg = (m_searchOpen && !m_search.empty()) ? "Aucune pièce pour cette recherche" : m_fam == "recent" ? "Les pièces que tu poses apparaîtront ici"
@@ -662,6 +665,7 @@ void BrickApp::uiTray() {
     }
     // press on a card: long press (480 ms, still) = part sheet; drag out of the tray = brick in hand following the
     // cursor (drop on release); click = brick in hand in the middle of the view
+    if (m_libPress >= 0 && (swipeTaken(0) || m_swipeDragged == 0)) m_libPress = -1;   // a side drag: no brick
     if (m_libPress >= 0) {
         ImVec2 dm(u.mouse.x - m_libPressPos.x, u.mouse.y - m_libPressPos.y);
         const bool moved = dm.x * dm.x + dm.y * dm.y > 64 * s * s;
@@ -910,6 +914,7 @@ void BrickApp::uiInfoSheet() {
 
 void BrickApp::uiPopups() {
     if (!m_popup) return;
+    if (m_popup == 5) { uiSettings(); return; }
     Ui u = ui(m_ui);
     const float s = m_ui;
     struct Item { const char* label; bool on; int id; };
@@ -955,7 +960,7 @@ void BrickApp::uiPopups() {
             else if (m_popup == 3) {
                 PanelState* ps[5] = {&m_pTray, &m_pOpts, &m_pColors, &m_pHud, &m_pManual};
                 if (it.id < 4) ps[it.id]->visible = !ps[it.id]->visible;
-                else if (it.id == 4) toast("Manuel : le module arrive bientôt dans la version native");
+                else if (it.id == 4) { m_pManual.visible = !m_pManual.visible; if (m_pManual.visible) m_pManual.collapsed = false; }
                 else { m_pTray = m_pOpts = m_pColors = PanelState(); m_pHud = m_pManual = PanelState{false, false}; m_optsRight = false; toast("Disposition réinitialisée"); }
             } else {
                 if (it.id == 0) { pushUndo(); m_bricks.clear(); m_selected = -1; m_multi.clear(); rebuildScene(); toast("Nouvelle scène"); }
@@ -1786,6 +1791,125 @@ void BrickApp::drawDropzone() {
     dash(ImVec2(b.x, a.y), b);
     dash(b, ImVec2(a.x, b.y));
     dash(ImVec2(a.x, b.y), a);
+}
+
+
+// --------------------------------------------------------------------------- drag scrolling of the library rows
+// A press in the row starts a gesture; after 6 px the dominant direction decides: sideways = the row slides with the
+// cursor and keeps its speed on release (decelerating, like the touch scrolling of the web), up / down = left to the
+// card (brick in hand when it leaves the tray). Returns true while the row is being dragged.
+bool BrickApp::swipeRow(int id, ImVec2 a, ImVec2 b, float& scroll, float& vel, float maxScroll, bool live) {
+    ImGuiIO& io = ImGui::GetIO();
+    const ImVec2 m = io.MousePos;
+    const float s = m_ui, dt = std::max(1e-3f, io.DeltaTime);
+    if (m_swipeDragged == id && !ImGui::IsMouseDown(ImGuiMouseButton_Left) && !ImGui::IsMouseReleased(ImGuiMouseButton_Left)) m_swipeDragged = -1;
+    if (live && m_swipe.id < 0 && ImGui::IsMouseClicked(ImGuiMouseButton_Left) && m.x >= a.x && m.y >= a.y && m.x < b.x && m.y < b.y) {
+        m_swipe = Swipe();
+        m_swipe.id = id;
+        m_swipe.start = m_swipe.last = m;
+        vel = 0;
+    }
+    bool dragging = false;
+    if (m_swipe.id == id) {
+        if (ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+            const float dx = m.x - m_swipe.start.x, dy = m.y - m_swipe.start.y;
+            if (m_swipe.dir == 0 && dx * dx + dy * dy > 36 * s * s) m_swipe.dir = std::fabs(dx) > std::fabs(dy) ? 1 : 2;
+            if (m_swipe.dir == 1) {
+                const float step = m.x - m_swipe.last.x;
+                scroll -= step;
+                vel = vel * 0.6f + (-step / dt) * 0.4f;   // smoothed speed (px / s)
+                dragging = true;
+                ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
+            }
+            m_swipe.last = m;
+        } else {
+            if (m_swipe.dir != 1) vel = 0;
+            else m_swipeDragged = id;   // (the release of this gesture is not a click)
+            m_swipe = Swipe();
+        }
+    } else if (vel != 0) {   // inertia
+        scroll += vel * dt;
+        vel *= std::exp(-dt * 4.0f);
+        if (std::fabs(vel) < 20 * s) vel = 0;
+    }
+    if (scroll < 0) { scroll = 0; vel = 0; }
+    if (scroll > maxScroll) { scroll = maxScroll; vel = 0; }
+    return dragging;
+}
+
+// --------------------------------------------------------------------------- settings (native addition, gear button)
+// UI scale (text and panels, 4K), thumbnail size, real time quality / path tracing, ambient occlusion of the HQ mode,
+// tone mapping, fingerprints of the path tracing, voxels, animations, automatic save. Saved in brickit_prefs.json.
+void BrickApp::uiSettings() {
+    Ui u = ui(m_ui);
+    if (m_gui.fontBold) u.bold = m_gui.fontBold;
+    const float s = m_ui;
+    const ImVec2 d = ImGui::GetIO().DisplaySize;
+    const float W = 320 * s, pad = 14 * s, rowH = 30 * s, gap = 10 * s;
+    struct Opt { const char* label; bool on; };
+    struct Row { const char* title; std::vector<Opt> opts; int id; };
+    char scaleLab[5][8];
+    static const float kScales[5] = {0.75f, 1.0f, 1.25f, 1.5f, 2.0f};
+    std::vector<Opt> scales;
+    for (int i = 0; i < 5; ++i) { snprintf(scaleLab[i], sizeof(scaleLab[i]), "%d %%", (int)std::lround(kScales[i] * 100)); scales.push_back({scaleLab[i], std::fabs(m_uiScaleUser - kScales[i]) < 0.01f}); }
+    std::vector<Row> rows = {
+        {"Échelle de l'interface", scales, 0},
+        {"Taille des miniatures", {{"Petites", m_thumbSize == 0}, {"Moyennes", m_thumbSize == 1}, {"Grandes", m_thumbSize == 2}}, 1},
+        {"Rendu", {{"Rapide", m_rs.raster && m_quality == 0}, {"HQ", m_rs.raster && m_quality == 1}, {"Path tracing", !m_rs.raster}}, 2},
+        {"Occlusion ambiante (HQ)", {{"Oui", m_ssaoOn}, {"Non", !m_ssaoOn}}, 3},
+        {"Transformation de vue", {{"ACES", m_rs.tonemapper == 0}, {"AgX", m_rs.tonemapper == 1}, {"Std", m_rs.tonemapper == 3}}, 4},
+        {"Traces de doigts (path tracing)", {{"Oui", m_fingerprints}, {"Non", !m_fingerprints}}, 5},
+        {"Voxels", {{"Affichés", m_showVox}, {"Masqués", !m_showVox}}, 6},
+        {"Animations", {{"Oui", m_animOn}, {"Non", !m_animOn}}, 7},
+        {"Sauvegarde automatique", {{"Oui", m_autosaveOn}, {"Non", !m_autosaveOn}}, 8},
+    };
+    const float H = pad + 20 * s + gap + rows.size() * (16 * s + rowH + gap) - gap + pad;
+    ImVec2 p0(std::min(m_popupAt.x, d.x - W - 10 * s), m_popupAt.y), p1(p0.x + W, std::min(p0.y + H, d.y - 8 * s));
+    u.dl->AddRectFilled(ImVec2(p0.x, p0.y + 10 * s), ImVec2(p1.x, p1.y + 10 * s), IM_COL32(0, 0, 0, 60), 12 * s);
+    u.dl->AddRectFilled(p0, p1, C_PANEL_SOLID, 12 * s);
+    u.dl->AddRect(p0, p1, C_LINE, 12 * s);
+    m_uiRects.push_back(ImVec4(p0.x, p0.y, p1.x, p1.y));
+    float y = p0.y + pad;
+    u.text(ImVec2(p0.x + pad, y), 14, C_TEXT, "Réglages", true);
+    y += 20 * s + gap;
+    int clickRow = -1, clickOpt = -1;
+    for (const Row& r : rows) {
+        u.text(ImVec2(p0.x + pad, y), 11, C_DIM, r.title);
+        y += 16 * s;
+        // segmented buttons (.btn, the active one in accent)
+        float x = p0.x + pad;
+        const float bw = (W - 2 * pad - (r.opts.size() - 1) * 4 * s) / r.opts.size();
+        for (size_t i = 0; i < r.opts.size(); ++i) {
+            ImVec2 a(x, y), b(x + bw, y + rowH);
+            const bool h = u.hover(a, b);
+            u.dl->AddRectFilled(a, b, r.opts[i].on ? C_ACCENT : (h ? C_CARD_HI : C_CARD), 7 * s);
+            const float tw = u.textW(12, r.opts[i].label, r.opts[i].on);
+            u.text(ImVec2((a.x + b.x) * 0.5f - tw * 0.5f, a.y + (rowH - u.fs(12)) * 0.5f), 12, r.opts[i].on ? C_INK : C_TEXT, r.opts[i].label, r.opts[i].on);
+            if (h && u.pressed) { clickRow = r.id; clickOpt = (int)i; }
+            x += bw + 4 * s;
+        }
+        y += rowH + gap;
+    }
+    if (clickRow >= 0) {
+        switch (clickRow) {
+        case 0: m_uiScaleUser = kScales[clickOpt]; m_ui = (m_opt.uiScale > 0 ? m_opt.uiScale : m_dpi) * m_uiScaleUser; app::th::apply(m_ui); break;
+        case 1: m_thumbSize = clickOpt; break;
+        case 2:
+            if (clickOpt == 2) { if (m_rs.raster) { m_rs.raster = false; applyLook(); } }
+            else { m_quality = clickOpt; m_rs.msaaSamples = m_quality ? 4 : 1; if (!m_rs.raster) { m_rs.raster = true; applyLook(); } }
+            break;
+        case 3: m_ssaoOn = clickOpt == 0; break;
+        case 4: m_rs.tonemapper = clickOpt == 2 ? 3 : clickOpt; break;
+        case 5: m_fingerprints = clickOpt == 0; applyLook(); break;
+        case 6: m_showVox = clickOpt == 0; syncObjects(); break;
+        case 7: m_animOn = clickOpt == 0; break;
+        case 8: m_autosaveOn = clickOpt == 0; break;
+        }
+        m_renderer.resetAccumulation();
+        savePrefs();
+    }
+    if (u.pressed && clickRow < 0 && !u.hover(p0, p1) && u.mouse.y > 30 * s) m_popup = 0;
+    if (ImGui::IsKeyPressed(ImGuiKey_Escape)) m_popup = 0;
 }
 
 } // namespace brickit
