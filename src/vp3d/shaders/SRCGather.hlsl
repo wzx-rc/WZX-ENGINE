@@ -45,6 +45,53 @@ float4 LodIrradiance(float3 P, float3 N, uint lod) {
     return wsum > 1e-6 ? float4(sum / wsum, saturate(wsum / max(tsum, 1e-6) * 2.0)) : 0;
 }
 
+float3 Heat(float x) {   // black, blue, cyan, green, yellow, red, white
+    x = saturate(x) * 6.0;
+    const float3 c[7] = {float3(0, 0, 0), float3(0, 0, 1), float3(0, 1, 1), float3(0, 1, 0), float3(1, 1, 0),
+                         float3(1, 0, 0), float3(1, 1, 1)};
+    uint i = min((uint)x, 5u);
+    return lerp(c[i], c[i + 1], x - i);
+}
+
+float3 KeyColor(uint key) {
+    uint h = Hash(key * 2654435761u + 7u);
+    return float3(h & 255u, (h >> 8) & 255u, (h >> 16) & 255u) / 255.0 * 0.75 + 0.25;
+}
+
+// Inspection views (S.debug): written as the colour itself, the raster pass shows it as it is (view 3).
+float3 Inspect(uint2 px, uint w, float3 P, float3 N, float lodF, uint lod0) {
+    uint mode = S.debug;
+    if (mode == SRC_DEBUG_CELLS) {
+        uint ci = min(S.debugCascade, S.cascadeCount - 1);
+        int3 k = CellOf(P, ci, lod0);
+        uint p = FindCell(ci, k, lod0);
+        float3 col = p == SRC_NONE ? float3(1, 0, 1) : KeyColor(CellKey(k, ci, lod0));
+        // cell borders: dark lines where the position is near a face of the cell
+        float3 f = frac(P / SpacingAt(ci, lod0));
+        float edge = min(min(min(f.x, 1 - f.x), min(f.y, 1 - f.y)), min(f.z, 1 - f.z));
+        return col * (edge < 0.04 ? 0.25 : 1.0);
+    }
+    if (mode == SRC_DEBUG_PROBES) {
+        uint p = FindCell(0, CellOf(P, 0, lod0), lod0);
+        return p == SRC_NONE ? float3(1, 0, 1) : ProbeIrradiance(p, N).rgb;
+    }
+    if (mode == SRC_DEBUG_HIT) {
+        uint c = SLoad(w + 7);
+        if (c == 0xFFu) return 0;
+        return Heat((c + 1.0) / max(S.cascadeCount, 1u) * (5.0 / 6.0));
+    }
+    if (mode == SRC_DEBUG_RAYS) {
+        uint p = SLoad(w + 5);
+        return p == SRC_NONE ? float3(1, 0, 1) : Heat(SLoad(ProbeWord(0, p, 4)) / 256.0);
+    }
+    if (mode == SRC_DEBUG_LOD) return KeyColor(lod0 + 1) * (0.6 + 0.4 * frac(lodF));
+    if (mode == SRC_DEBUG_HISTORY) {
+        uint p = FindCell(0, CellOf(P, 0, lod0), lod0);
+        return p == SRC_NONE ? float3(1, 0, 1) : Heat(SLoad(S.hist + p) / float(max(S.histMax, 1u)));
+    }
+    return 0;
+}
+
 [numthreads(8, 8, 1)]
 void main(uint3 id : SV_DispatchThreadID) {
     if (id.x >= F.resolution.x || id.y >= F.resolution.y) return;
@@ -59,6 +106,10 @@ void main(uint3 id : SV_DispatchThreadID) {
     uint lod0, lod1;
     float w1;
     PixelLods(lodF, lod0, lod1, w1);
+    if (S.debug) {
+        gScreenGI[id.xy] = float4(Inspect(id.xy, w, P, N, lodF, lod0), 1);
+        return;
+    }
     float4 e = LodIrradiance(P, N, lod0);
     if (w1 > 0) {
         float4 e1 = LodIrradiance(P, N, lod1);

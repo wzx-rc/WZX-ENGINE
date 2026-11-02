@@ -261,3 +261,22 @@ Le reste du coût de Split RC vient de la grille RC monde (cache des rebonds, en
 - Les sondes de la cascade 0 sont limitées à pixels / 24 (au-delà, la cellule est ignorée).
 
 Test : `Viewport3D.exe --scene cornell --split 1 [--split-px 12] [--ddgi-view 1] --anim-object 6 --anim-move 0,0,12 --anim-period 240 --shot-viewport f.png --spp 480`. `--anim-light 1` fait bouger la lumière, `--anim-at F` fige la pose de l'image F (référence), et `f.png.txt` reçoit les temps GPU.
+
+### Accumulation quand rien ne bouge, 6 cascades, vues d'inspection (02/11/2026)
+
+- **Accumulation** (« Accumulate while still », 16 images par défaut, 0 = coupé) :
+  - l'irradiance de chaque sonde de cascade 0 est moyennée avec celle de la même cellule monde à l'image précédente (table de la cascade 0, irradiance et nombre d'images copiés dans un second tampon, u22). Le jitter des rayons tourne alors à chaque image ;
+  - la caméra peut bouger sans perdre l'historique, puisqu'il est dans l'espace monde (capture 41 : presque tout est blanc, c'est-à-dire plein historique, pendant que la caméra oscille) ;
+  - l'historique est effacé autour d'un objet qui bouge (sa boîte avant et après, agrandie de la moitié de sa taille ; au-delà de 8 objets, tout est effacé), et partout quand une lumière, un matériau, l'environnement ou un réglage change.
+- **Mesures** (Cornell, 1 335 × 726) :
+  - scintillement, caméra fixe : écart type moyen par pixel 0,31 sans accumulation, **0,05** avec ;
+  - fantômes (écart à la pose figée) : bloc qui bouge 0,92 sans, **0,28** avec ; lumière qui bouge 2,47 sans, 2,41 avec. L'accumulation ne crée donc pas de fantômes ;
+  - coût : environ 0,5 à 0,8 ms de plus.
+- **Cascades** : 2 à 6. Les cascades 4 et 5 ont 8 192 et 32 768 directions.
+- **Inspection** (onglet Render, section Inspection, ou `--split-debug N`) :
+  1. cellules des sondes d'une cascade au choix (capture 39) ;
+  2. irradiance de la sonde la plus proche, sans mélange ;
+  3. cascade où le rayon a trouvé sa lumière (capture 40) ;
+  4. rayons par sonde ;
+  5. LOD ;
+  6. images accumulées.

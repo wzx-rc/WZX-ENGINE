@@ -9,6 +9,7 @@
 ConstantBuffer<SplitRCConstants> S : register(b4);
 RWByteAddressBuffer gS : register(u16);          // all the data, word offsets in S
 RWTexture2D<float4> gScreenGI : register(u17);   // per pixel: irradiance / pi (rgb), confidence (a)
+RWByteAddressBuffer gPrev : register(u22);       // previous frame: cascade-0 slots, irradiance, history (see S.prev*)
 
 #define SRC_NONE 0xFFFFFFFFu
 
@@ -23,11 +24,13 @@ int3 CellOf(float3 P, uint ci, uint lod) { return int3(floor(P / SpacingAt(ci, l
 
 // Key of a cell: valid bit, LOD (4 bits), cell relative to the camera's cell (9 bits per axis). SRC_NONE when the
 // cell is too far from the camera to be keyed (the LODs keep the visible cells within +-256 of it).
-uint CellKey(int3 k, uint ci, uint lod) {
-    int3 r = k - CellOf(F.camPos, ci, lod) + 256;
+uint CellKeyFrom(float3 cam, int3 k, uint ci, uint lod) {
+    int3 r = k - CellOf(cam, ci, lod) + 256;
     if (any(r < 0) || any(r > 511) || lod > 15) return SRC_NONE;
     return 0x80000000u | (lod << 27) | uint(r.x) | (uint(r.y) << 9) | (uint(r.z) << 18);
 }
+
+uint CellKey(int3 k, uint ci, uint lod) { return CellKeyFrom(F.camPos, k, ci, lod); }
 
 void KeyCell(uint key, uint ci, out int3 k, out uint lod) {
     lod = (key >> 27) & 15u;

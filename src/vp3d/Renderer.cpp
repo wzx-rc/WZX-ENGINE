@@ -230,7 +230,7 @@ bool Renderer::createPipelines(std::string* error) {
     sunRange.NumDescriptors = 4;
     sunRange.BaseShaderRegister = 18;
 
-    D3D12_ROOT_PARAMETER p[22] = {};
+    D3D12_ROOT_PARAMETER p[23] = {};
     p[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
     p[0].Descriptor.ShaderRegister = 0;
     p[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
@@ -276,6 +276,8 @@ bool Renderer::createPipelines(std::string* error) {
     p[21].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;   // u18, u19 sun shadow
     p[21].DescriptorTable.NumDescriptorRanges = 1;
     p[21].DescriptorTable.pDescriptorRanges = &sunRange;
+    p[22].ParameterType = D3D12_ROOT_PARAMETER_TYPE_UAV;   // u22 Split RC history (previous frame)
+    p[22].Descriptor.ShaderRegister = 22;
 
     D3D12_STATIC_SAMPLER_DESC ss = {};   // gLinearWrap (s0) of the path tracer
     ss.Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
@@ -284,7 +286,7 @@ bool Renderer::createPipelines(std::string* error) {
     ss.ShaderRegister = 0;
 
     D3D12_ROOT_SIGNATURE_DESC rsd = {};
-    rsd.NumParameters = 22;
+    rsd.NumParameters = 23;
     rsd.pParameters = p;
     rsd.NumStaticSamplers = 1;
     rsd.pStaticSamplers = &ss;
@@ -1362,6 +1364,7 @@ void Renderer::recordDDGI(const RenderSettings& rs, UINT gx, UINT gy, bool shade
     // Screen-space or split cascades: only for the raster view (shade = false), which reads their screen GI texture.
     const bool screen = rs.giMethod == 1 && (rs.rcScreen || rs.rcSplit) && !rs.ddgiRaster && !shade;
     if (screen) c.flags |= 8u;
+    if (screen && rs.rcSplit && rs.rcSplitDebug > 0) c.view = 3;   // Split RC inspection: the raster pass shows it as is
     memcpy(m_giConstants.mapped, &c, sizeof(c));
 
     D3D12_GPU_DESCRIPTOR_HANDLE giTable = m_heap->GetGPUDescriptorHandleForHeapStart();
@@ -1587,6 +1590,7 @@ void Renderer::recordSplitRC(const RenderSettings& rs, UINT gx, UINT gy) {
         // each cascade has about 4x fewer probes on a surface and 4x more directions: the same entries (2x margin)
         maxProbes[i] = i == 0 ? maxProbes0 : std::max(64u, maxProbes0 >> (2 * i - 1));
         maxProbes[i] = std::min(maxProbes[i], maxProbes0);
+        maxProbes[i] = std::min(maxProbes[i], 65535u * 64u / ((8u << i) * (4u << i)));   // one dispatch per cascade
         uint32_t cap = 1024;
         while (cap < maxProbes[i] * 2) cap <<= 1;
         caps[i] = cap;
@@ -1616,16 +1620,55 @@ void Renderer::recordSplitRC(const RenderSettings& rs, UINT gx, UINT gy) {
     }
     sc.irr = words;
     words += maxProbes0 * SRC_IRR_N * SRC_IRR_N * 4;
+    sc.hist = words;   // right after the irradiance: both copied to the history in one go
+    words += maxProbes0;
     sc.pixels = words;
     words += pixels * 8;
     sc.cascadeCount = count;
     sc.counters = 0;
     sc.lodDist = s0 * ratio;
     sc.lodOverlap = 0.152f;   // the LODs overlap over the last 10 % of the distance (log2(0.9)), blended there
-    if (rs.rcSplitAnimate) {   // R2 jitter of the whole ray set, per frame
+    sc.debug = (uint32_t)std::max(0, rs.rcSplitDebug);
+    sc.debugCascade = (uint32_t)std::max(0, rs.rcSplitDebugCascade);
+    sc.frame = m_giFrame;
+    // History: the frames average only if the rays change, so the accumulation turns the jitter on.
+    const bool histOn = rs.rcSplitHistory > 1;
+    if (rs.rcSplitAnimate || histOn) {   // R2 jitter of the whole ray set and new light samples, per frame
         const uint32_t n = m_giFrame;
         sc.jitterX = (float)((n * 3242174889u) * (1.0 / 4294967296.0));
         sc.jitterY = (float)((n * 2447445413u) * (1.0 / 4294967296.0));
+        sc.flags |= SRC_FLAG_ANIMATE;
+    }
+    if (histOn) {
+        sc.histMax = (uint32_t)rs.rcSplitHistory;
+        // a light, a material, the environment or a setting changed (m_sceneSignature), or the draws changed: all of
+        // it is dropped; an object that moved drops it around its old and new place
+        bool all = !m_srcPrevValid || m_sceneSignature != m_srcPrevSig || m_draws.size() != m_srcPrevXf.size();
+        uint32_t moved = 0;
+        for (size_t i = 0; i < m_draws.size() && !all; ++i) {
+            const Affine& a = m_draws[i].xf;
+            const Affine& b = m_srcPrevXf[i];
+            if (memcmp(&a, &b, sizeof(Affine)) == 0) continue;
+            if (moved == SRC_MAX_MOVED) { all = true; break; }
+            const MeshGpu& m = m_meshes[m_draws[i].mesh];
+            float3 lo(1e30f), hi(-1e30f);
+            for (int c = 0; c < 16; ++c) {   // corners of the mesh box under the old and the new transform
+                float3 p((c & 1) ? m.bmax.x : m.bmin.x, (c & 2) ? m.bmax.y : m.bmin.y, (c & 4) ? m.bmax.z : m.bmin.z);
+                p = (c & 8) ? b.point(p) : a.point(p);
+                lo = float3(std::min(lo.x, p.x), std::min(lo.y, p.y), std::min(lo.z, p.z));
+                hi = float3(std::max(hi.x, p.x), std::max(hi.y, p.y), std::max(hi.z, p.z));
+            }
+            const float grow = 0.5f * length(hi - lo);   // its shadow and its bounce reach about its size around it
+            sc.movedMin[moved] = {lo.x - grow, lo.y - grow, lo.z - grow, 0};
+            sc.movedMax[moved] = {hi.x + grow, hi.y + grow, hi.z + grow, 0};
+            ++moved;
+        }
+        sc.movedCount = moved;
+        sc.prevValid = all ? 0u : 1u;
+        sc.prevCamPos = m_srcPrevCam;
+        sc.prevCap = m_srcPrevCap;
+        sc.prevIrr = 2 * m_srcPrevCap;
+        sc.prevHist = sc.prevIrr + m_srcPrevProbes * SRC_IRR_N * SRC_IRR_N * 4;
     }
     memcpy(m_srcConstants.mapped, &sc, sizeof(sc));
     m_rcStats.splitRays = pixels;
@@ -1643,6 +1686,16 @@ void Renderer::recordSplitRC(const RenderSettings& rs, UINT gx, UINT gy) {
     m_cmd->SetComputeRootConstantBufferView(18, m_srcConstants.va());
     m_cmd->SetComputeRootUnorderedAccessView(19, m_srcBuffer.va());
     m_cmd->SetComputeRootDescriptorTable(20, screenTable);
+    const uint64_t prevBytes = ((uint64_t)caps[0] * 2 + (uint64_t)maxProbes0 * (SRC_IRR_N * SRC_IRR_N * 4 + 1)) * 4;
+    if (histOn && (!m_srcPrev.res || m_srcPrev.size < prevBytes)) {
+        waitIdle();
+        m_srcPrev = createBuffer(prevBytes, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS,
+                                 D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+        m_srcPrevValid = false;
+        sc.prevValid = 0;
+        memcpy(m_srcConstants.mapped, &sc, sizeof(sc));
+    }
+    m_cmd->SetComputeRootUnorderedAccessView(22, m_srcPrev.res ? m_srcPrev.va() : m_srcBuffer.va());
     ID3D12Resource* buf = m_srcBuffer.res.Get();
     auto pass = [&](ID3D12PipelineState* pso, uint32_t ci, uint32_t mode, UINT x, UINT y = 1) {
         const uint32_t c[4] = {ci, mode, 0, 0};
@@ -1667,6 +1720,26 @@ void Renderer::recordSplitRC(const RenderSettings& rs, UINT gx, UINT gy) {
     pass(m_psoSRCIrradiance.Get(), 0, 0, groups((uint64_t)maxProbes0 * SRC_IRR_N * SRC_IRR_N));
     pass(m_psoSRCGather.Get(), 0, 0, gx, gy);
     uavBarrier();
+    if (histOn) {   // this frame's cascade-0 slots, irradiance and history lengths become the next frame's history
+        ID3D12Resource* prev = m_srcPrev.res.Get();
+        transition(buf, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_COPY_SOURCE);
+        transition(prev, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_COPY_DEST);
+        m_cmd->CopyBufferRegion(prev, 0, buf, (uint64_t)sc.c[0].keys * 4, (uint64_t)caps[0] * 4);
+        m_cmd->CopyBufferRegion(prev, (uint64_t)caps[0] * 4, buf, (uint64_t)sc.c[0].vals * 4, (uint64_t)caps[0] * 4);
+        m_cmd->CopyBufferRegion(prev, (uint64_t)caps[0] * 8, buf, (uint64_t)sc.irr * 4,
+                                (uint64_t)maxProbes0 * (SRC_IRR_N * SRC_IRR_N * 4 + 1) * 4);
+        transition(buf, D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+        transition(prev, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+        m_srcPrevCap = caps[0];
+        m_srcPrevProbes = maxProbes0;
+        m_srcPrevCam = fc->camPos;
+        m_srcPrevSig = m_sceneSignature;
+        m_srcPrevXf.resize(m_draws.size());
+        for (size_t i = 0; i < m_draws.size(); ++i) m_srcPrevXf[i] = m_draws[i].xf;
+        m_srcPrevValid = true;
+    } else {
+        m_srcPrevValid = false;
+    }
     m_cmd->EndQuery(m_queryHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 5);
     m_splitTimed = true;
     m_screenGIOn = true;
@@ -1797,6 +1870,7 @@ uint32_t renderSignature(const RenderSettings& rs) {
     mix(&rs.rcSplitInterval, sizeof(float));
     mix(&rs.rcSplitCascades, sizeof(int));
     mix(&rs.rcSplitAnimate, sizeof(bool));
+    mix(&rs.rcSplitHistory, sizeof(int));
     mix(&rs.rtSunShadows, sizeof(bool));
     mix(&rs.sunAngle, sizeof(float));
     mix(&rs.rtShadowSamples, sizeof(int));

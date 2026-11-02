@@ -19,7 +19,7 @@ void Deposit(uint ci, float3 P, uint lod, float3 d, float3 rad, uint transparent
     SAdd(e + 3, 0x10000u | transparent);
 }
 
-void Split(float3 P, uint lod, float3 d, float tHit, float3 rad) {
+uint Split(float3 P, uint lod, float3 d, float tHit, float3 rad) {   // returns the cascade of the radiance
     float scale = float(1u << lod);
     for (uint ci = 0; ci < S.cascadeCount; ++ci) {
         bool top = ci + 1 == S.cascadeCount;
@@ -27,9 +27,10 @@ void Split(float3 P, uint lod, float3 d, float tHit, float3 rad) {
             Deposit(ci, P, lod, d, 0, 1u);
         } else {
             Deposit(ci, P, lod, d, rad, 0u);
-            return;
+            return tHit < 1e29 ? ci : 0xFFu;
         }
     }
+    return 0xFFu;
 }
 
 [numthreads(8, 8, 1)]
@@ -50,7 +51,7 @@ void main(uint3 id : SV_DispatchThreadID) {
     Hit h;
     float tHit = 1e30;
     float3 rad;
-    uint rng = Hash(id.x * 9781u + id.y * 6271u + 13u);
+    uint rng = Hash(id.x * 9781u + id.y * 6271u + 13u + ((S.flags & SRC_FLAG_ANIMATE) ? S.frame * 7919u : 0u));
     if (TraceClosest(P, d, 1e30, MASK_OPAQUE, h)) {
         tHit = h.t;
         rad = h.front ? ShadeHit(h, d, rng) : 0;
@@ -65,6 +66,6 @@ void main(uint3 id : SV_DispatchThreadID) {
     uint lod0, lod1;
     float w1;
     PixelLods(lodF, lod0, lod1, w1);
-    Split(P, lod0, d, tHit, rad);
+    SStore(w + 7, Split(P, lod0, d, tHit, rad));   // the inspection view of the hit cascade
     if (w1 > 0) Split(P, lod1, d, tHit, rad);
 }

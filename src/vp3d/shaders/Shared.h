@@ -167,7 +167,8 @@ struct RCSConstants {
 // tEnd(i) = t0 * 4^i (the top one to infinity); every LOD doubles s0 and t0. Ray splitting: one ray per pixel, from
 // the visible surface, deposited into every cascade its hit distance tells about (transparent below the hit cascade,
 // the hit radiance in it). Everything lives in one raw buffer (word offsets below) and is rebuilt every frame.
-#define SRC_CASCADES 4
+#define SRC_CASCADES 6
+#define SRC_MAX_MOVED 8          // boxes of moved objects per frame (more: all the history is dropped)
 #define SRC_IRR_N 6              // per cascade-0 probe: 6x6 octahedral irradiance texels (rgb / pi, valid weight)
 #define SRC_SCALE 2048.0         // fixed point of the deposited radiance (atomic integer sums)
 
@@ -186,8 +187,24 @@ struct SplitRCConstants {
                                                                // irradiance texels of the cascade-0 probes (4 words each)
     float lodDist; float lodOverlap; float jitterX; float jitterY;   // distance where LOD 1 starts, overlap of the LODs
                                                                      // (fraction of an octave), jitter of the ray set
-    uint clearWords; uint flags; uint pad0; uint pad1;   // words cleared at the start (counters and slot keys)
+    uint clearWords; uint flags; uint debug; uint debugCascade;   // words cleared at the start (counters and slot keys),
+                                                                  // SRC_FLAG_*, inspection view (SRC_DEBUG_*) and its cascade
+    // Accumulation while nothing moves: the cascade-0 irradiance of the previous frame (u22: slot keys, slot probe,
+    // irradiance texels, history length per probe), looked up by world cell. Reset where an object moved (boxes), all
+    // of it when a light, a material or the environment changed (prevValid 0).
+    float3 prevCamPos; uint prevCap;
+    uint prevIrr; uint prevHist; uint histMax; uint movedCount;   // word offsets in u22, history cap (0 = off)
+    uint hist; uint prevValid; uint frame; uint pad0;             // history lengths of this frame (word offset in u16)
+    float4 movedMin[SRC_MAX_MOVED]; float4 movedMax[SRC_MAX_MOVED];
 };
+
+#define SRC_FLAG_ANIMATE 1u      // the ray set and the light samples change every frame
+#define SRC_DEBUG_CELLS 1u       // inspection: probe cells of cascade debugCascade (random colour per cell, LOD tint)
+#define SRC_DEBUG_PROBES 2u      // irradiance of the nearest cascade-0 probe, no blending (the probes as blocks)
+#define SRC_DEBUG_HIT 3u         // cascade where the pixel's ray deposited its radiance (blue c0 ... red top, black sky)
+#define SRC_DEBUG_RAYS 4u        // rays received by the pixel's cascade-0 probe (heat map, white = 256)
+#define SRC_DEBUG_LOD 5u         // level of detail of the pixel
+#define SRC_DEBUG_HISTORY 6u     // frames accumulated (black = none, white = full history)
 
 #define RC_FLAG_BOUNCES 1u
 #define RC_FLAG_ANIMATED_NOISE 2u

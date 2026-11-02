@@ -87,8 +87,13 @@ struct RenderSettings {
     bool rcSplit = false;
     int rcSplitProbePx = 12;      // size of a cascade-0 probe cell on screen, in pixels (LODs keep it so with distance)
     float rcSplitInterval = 2.0f; // end of the cascade-0 interval, in cascade-0 spacings (x4 per cascade)
-    int rcSplitCascades = 4;      // 1..4, the top one to infinity
+    int rcSplitCascades = 4;      // 1..6, the top one to infinity
     bool rcSplitAnimate = false;  // jitter the ray set every frame (moving noise; off = a still image stays still)
+    // Accumulation while nothing moves: up to rcSplitHistory frames per cascade-0 probe (world space, so the camera can
+    // move), dropped around an object that moves and everywhere when a light or a material changes. 0 or 1 = off.
+    int rcSplitHistory = 16;
+    int rcSplitDebug = 0;         // inspection view: 0 off, SRC_DEBUG_* (cells, probes, hit cascade, rays, LOD, history)
+    int rcSplitDebugCascade = 0;  // cascade shown by the cells view
     // Raster modes: the sun shadow traced per pixel against the scene (needs the acceleration structure of the frame,
     // i.e. a GI mode) instead of the shadow map. sunAngle: angular diameter of the sun (degrees), its penumbra.
     bool rtSunShadows = true;
@@ -336,6 +341,13 @@ private:
     Buffer m_srcBuffer, m_srcConstants;          // Split Radiance Cascades (u16 as a raw buffer, b4)
     float m_splitMs = 0.0f;
     bool m_splitTimed = false;                   // the frame wrote the Split RC timestamps (4, 5)
+    // Split RC history: the previous frame's cascade-0 slots, irradiance and history lengths (u22), its layout and camera,
+    // the signature that drops it (lighting, materials, settings), the transforms of the draws (moves drop it locally)
+    Buffer m_srcPrev;
+    uint32_t m_srcPrevCap = 0, m_srcPrevProbes = 0, m_srcPrevSig = 0;
+    bool m_srcPrevValid = false;
+    float3 m_srcPrevCam;
+    std::vector<Affine> m_srcPrevXf;
     ComPtr<ID3D12Resource> m_screenGI;           // per pixel indirect irradiance (RCSGather.hlsl)
     ComPtr<ID3D12Resource> m_sunShadowRaw, m_sunShadow;   // ray traced sun visibility: raw (+ depth, normal), filtered
     ComPtr<ID3D12Resource> m_reflRaw, m_refl;             // ray traced reflections: raw (rgb, roughness), filtered

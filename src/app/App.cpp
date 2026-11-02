@@ -119,6 +119,8 @@ bool App::init(HINSTANCE inst, const Options& opt) {
     m_rs.temporalCap = opt.temporalCap;
     m_rs.ddgiHysteresis = opt.hysteresis;
     if (opt.splitPx > 0) m_rs.rcSplitProbePx = opt.splitPx;
+    if (opt.splitHistory >= 0) m_rs.rcSplitHistory = opt.splitHistory;
+    m_rs.rcSplitDebug = opt.splitDebug;
     if (opt.splitInterval > 0) m_rs.rcSplitInterval = opt.splitInterval;
     if (opt.splitCascades > 0) m_rs.rcSplitCascades = opt.splitCascades;
     if (opt.split) setRenderMode(4);
@@ -1169,6 +1171,8 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         else if (a == L"--ddgi-raster-view") opt.ddgiRasterView = _wtoi(next().c_str()) != 0;
         else if (a == L"--split") opt.split = _wtoi(next().c_str()) != 0;
         else if (a == L"--split-px") opt.splitPx = _wtoi(next().c_str());
+        else if (a == L"--split-history") opt.splitHistory = _wtoi(next().c_str());
+        else if (a == L"--split-debug") opt.splitDebug = _wtoi(next().c_str());
         else if (a == L"--anim-object") opt.animObject = _wtoi(next().c_str());
         else if (a == L"--anim-light") opt.animLight = _wtoi(next().c_str()) != 0;
         else if (a == L"--anim-period") opt.animPeriod = _wtoi(next().c_str());

@@ -1991,8 +1991,9 @@ void App::atlInspectorRender(float x, float y, float w, float) {
         y += 24 * s;
         sliderI("##srpx", "Probe size (pixels)", m_rs.rcSplitProbePx, 4, 16, "%.0f px", "Size on screen of a cascade-0 probe cell (levels of detail keep it so with distance). Smaller = finer contact shadows, fewer rays per probe (noisier) and more GPU cost.");
         sliderF("##srint", "First interval", m_rs.rcSplitInterval, 0.5f, 6, "%.1f cells", "Length of the cascade-0 rays in probe cells (x4 per cascade). Shorter = sharper near occlusion, more angular aliasing further.");
-        sliderI("##srcas", "Cascades", m_rs.rcSplitCascades, 2, 4, "%.0f", "Cascades of probes (the top one sees to infinity and the sky). Each has 2x the spacing and 4x the directions of the one below.");
-        check("##sranim", "Moving ray jitter", m_rs.rcSplitAnimate, "Turns the ray set every frame. Off: a still image stays perfectly still (nothing is accumulated over frames either way).");
+        sliderI("##srcas", "Cascades", m_rs.rcSplitCascades, 2, 6, "%.0f", "Cascades of probes (the top one sees to infinity and the sky). Each has 2x the spacing and 4x the directions of the one below. More cascades = longer rays before the sky (big scenes); the top ones have many directions, so few rays each.");
+        sliderI("##srhist", "Accumulate while still", m_rs.rcSplitHistory, 0, 64, m_rs.rcSplitHistory > 1 ? "%.0f frames" : "off", "Averages the probes over up to this many frames, in world space: the camera can move without losing it. Dropped around an object that moves, and everywhere when a light or a material changes, so nothing ghosts. Off (0 or 1): every frame on its own (flickers a little more).");
+        check("##sranim", "Moving ray jitter", m_rs.rcSplitAnimate, "Turns the ray set every frame (always on with the accumulation). Off and without accumulation: a still image stays perfectly still.");
         check("##srbn", "Further bounces", m_rs.rcBounces, "The ray hits read the world cascades of the previous frame (the bounce cache, no history either). Off: one bounce.");
         static const char* views[] = {"Full", "Indirect only", "Direct only"};
         int view = m_rs.ddgiView;
@@ -2002,6 +2003,18 @@ void App::atlInspectorRender(float x, float y, float w, float) {
         y += 36 * s;
         check("##srsh", "Ray traced sun shadow", m_rs.rtSunShadows, "Sun shadow traced per pixel (soft, filtered, no history) instead of the shadow map.");
         check("##srrf", "Ray traced reflections", m_rs.rtReflections, "Metals and glossy surfaces reflect the scene (traced per pixel, filtered, no history).");
+        y += 8 * s;
+        Label(x, y, "INSPECTION");
+        y += 24 * s;
+        {
+            static const char* insp[] = {"Off (shaded)", "Probe cells", "Probe irradiance (no blend)", "Cascade hit by the ray", "Rays per probe", "Level of detail", "Accumulated frames"};
+            int d = std::clamp(m_rs.rcSplitDebug, 0, 6);
+            ImGui::SetCursorScreenPos(ImVec2(x, y));
+            if (Combo("##srdbg", R{x, y, w - 22 * s, 28 * s}, d, insp, 7, Icon::Eye)) { m_rs.rcSplitDebug = d; ch = true; }
+            info("##srdbg_i", x + w - 18 * s, y + 5 * s, "Probe cells: a colour per probe cell of the chosen cascade (magenta = no probe, dark lines = cell borders). Probe irradiance: the light of the nearest cascade-0 probe, unblended. Cascade hit: where each pixel's ray found its light (blue = cascade 0 ... red = top, black = sky). Rays per probe: rays of the pixel's cascade-0 probe (white = 256). Level of detail: a colour per LOD. Accumulated frames: black = none (just moved), white = full history.");
+            y += 36 * s;
+            if (m_rs.rcSplitDebug == 1) sliderI("##srdbgc", "Cascade shown", m_rs.rcSplitDebugCascade, 0, (float)std::max(0, m_rs.rcSplitCascades - 1), "%.0f", "Cascade whose probe cells are drawn.");
+        }
         y += 8 * s;
         const vp3d::RCStats& st = m_renderer.rcStats();
         char b[160];

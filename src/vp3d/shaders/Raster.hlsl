@@ -438,6 +438,10 @@ float4 PSMain(VSOut i) : SV_Target {
         }
     }
 #endif
+#ifdef VP3D_SCREEN_GI
+    // Split RC inspection views (view 3): the screen GI texture holds the debug colour itself
+    if (R.giMode > 0 && G.view == 3) return float4(gScreenGI.Load(int3(i.pos.xy, 0)).rgb, 1);
+#endif
     return Shade(i, false, 0.0015, false);
 }
 float4 PSGhost(VSOut i) : SV_Target { return Shade(i, true, 0.0015, false); }
