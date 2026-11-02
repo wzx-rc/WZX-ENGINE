@@ -8,7 +8,7 @@ float4 IrrTexel(uint p, int2 t) {
     const int N = SRC_IRR_N;
     if (t.x < 0) { t.x = 0; t.y = N - 1 - t.y; } else if (t.x >= N) { t.x = N - 1; t.y = N - 1 - t.y; }
     if (t.y < 0) { t.y = 0; t.x = N - 1 - t.x; } else if (t.y >= N) { t.y = N - 1; t.x = N - 1 - t.x; }
-    return asfloat(gS.Load4((S.irr + (p * N * N + t.x + t.y * N) * 4) * 4));
+    return asfloat(gS.Load4((S.irrF + (p * N * N + t.x + t.y * N) * 4) * 4));
 }
 
 float4 ProbeIrradiance(uint p, float3 n) {

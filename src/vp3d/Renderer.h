@@ -92,6 +92,7 @@ struct RenderSettings {
     // Accumulation while nothing moves: up to rcSplitHistory frames per cascade-0 probe (world space, so the camera can
     // move), dropped around an object that moves and everywhere when a light or a material changes. 0 or 1 = off.
     int rcSplitHistory = 16;
+    bool rcSplitFilter = true;    // each cascade-0 probe averaged with its 6 neighbour cells (less noise, a cell of blur)
     int rcSplitDebug = 0;         // inspection view: 0 off, SRC_DEBUG_* (cells, probes, hit cascade, rays, LOD, history)
     int rcSplitDebugCascade = 0;  // cascade shown by the cells view
     // Raster modes: the sun shadow traced per pixel against the scene (needs the acceleration structure of the frame,
@@ -260,7 +261,7 @@ private:
     ComPtr<ID3D12PipelineState> m_psoRCVisibility, m_psoRCTrace, m_psoRCGather;
     ComPtr<ID3D12PipelineState> m_psoRCSProbes, m_psoRCSTrace, m_psoRCSProbeSH, m_psoRCSGather;
     ComPtr<ID3D12PipelineState> m_psoSRCClear, m_psoSRCInsert, m_psoSRCAlloc, m_psoSRCCount, m_psoSRCTrace, m_psoSRCMerge,
-        m_psoSRCIrradiance, m_psoSRCGather;
+        m_psoSRCIrradiance, m_psoSRCFilter, m_psoSRCGather;
     ComPtr<ID3D12PipelineState> m_psoSunTrace, m_psoSunFilter, m_psoReflTrace, m_psoReflFilter;
     ComPtr<ID3D12DescriptorHeap> m_heap;
     uint32_t m_descSize = 0;

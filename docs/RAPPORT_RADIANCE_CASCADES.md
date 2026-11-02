@@ -280,3 +280,14 @@ Test : `Viewport3D.exe --scene cornell --split 1 [--split-px 12] [--ddgi-view 1]
   4. rayons par sonde ;
   5. LOD ;
   6. images accumulées.
+
+### Petits carrés sombres (02/11/2026)
+
+- **Cause** : des sondes isolées recevaient trop peu de rayons vers la sphère émissive. C'est surtout visible en vue proche, où les cellules du LOD 0 devenaient grandes à l'écran, et là où l'historique est effacé (objet déplacé). Capture 43 : indirect seul, sans accumulation, sondes de 6 px.
+- **Correctifs** :
+  - filtre spatial des sondes (« Probe filter », activé par défaut) : chaque texel d'irradiance est moyenné avec celui des 6 cellules voisines, la sonde elle-même compte double. L'historique garde la version non filtrée ;
+  - espacement de base 16 fois plus fin, donc les LOD gardent environ 12 px même tout près de la caméra (LOD bornés à 15).
+- **Résultat** : capture 44, même vue, propre sans accumulation.
+  - scintillement caméra fixe : 0,28 sans accumulation, 0,05 avec ;
+  - fantôme du bloc : 0,75, contre 3,3 en DDGI.
+- **Coût** : une vue proche du LookDev monte à environ 10 ms de Split RC, contre 4,6 ms de plus loin, parce que plus de rayons touchent les sphères (ombrage des impacts).

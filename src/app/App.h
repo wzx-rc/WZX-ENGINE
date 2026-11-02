@@ -98,6 +98,8 @@ struct Options {
     bool split = false;            // start in the Split Radiance Cascades mode (--split 1)
     int splitPx = 0, splitCascades = 0;   // its probe size in pixels, cascade count (--split-px, --split-cascades)
     int splitHistory = -1, splitDebug = 0;   // accumulation frames, inspection view (--split-history, --split-debug)
+    int splitFilter = -1;                    // probe filter 0 / 1 (--split-filter)
+    float camDist = 0, camPitch = -1000;      // test: camera distance factor, pitch in degrees (--cam-dist, --cam-pitch)
     float splitInterval = 0;              // its first interval in probe cells (--split-interval)
     // Ghosting test: object index and / or light 0 swinging by animMove (--anim-object N, --anim-light 1,
     // --anim-move x,y,z, --anim-period frames, --anim-at F = frozen at the pose of frame F)

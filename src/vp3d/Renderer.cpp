@@ -324,6 +324,7 @@ bool Renderer::createPipelines(std::string* error) {
            make(L"SRCInsert.cso", m_psoSRCInsert) && make(L"SRCAlloc.cso", m_psoSRCAlloc) &&
            make(L"SRCCount.cso", m_psoSRCCount) && make(L"SRCTrace.cso", m_psoSRCTrace) &&
            make(L"SRCMerge.cso", m_psoSRCMerge) && make(L"SRCIrradiance.cso", m_psoSRCIrradiance) &&
+           make(L"SRCFilter.cso", m_psoSRCFilter) &&
            make(L"SRCGather.cso", m_psoSRCGather);
 }
 
@@ -1580,7 +1581,7 @@ void Renderer::recordSplitRC(const RenderSettings& rs, UINT gx, UINT gy) {
     // LOD 0 spacing: small (it only matters close to the camera, the LODs take over beyond lodDist). A LOD covers one
     // octave of distance; at its far end a cascade-0 cell is probePx pixels on screen (twice that at its near end).
     // The keys hold cells within +-256 of the camera's: the octave is capped at 120 cells.
-    const float s0 = m_sceneRadius / 256.0f;
+    const float s0 = m_sceneRadius / 4096.0f;   // fine enough that close-ups stay near probePx (big probes: slow atomics)
     const float ratio = std::min((float)H / (4.0f * tanHalf * probePx), 120.0f);
     const float t0 = std::max(0.25f, rs.rcSplitInterval) * s0;
     const uint32_t maxProbes0 = std::max(4096u, std::min(65536u, pixels / 24));
@@ -1622,6 +1623,11 @@ void Renderer::recordSplitRC(const RenderSettings& rs, UINT gx, UINT gy) {
     words += maxProbes0 * SRC_IRR_N * SRC_IRR_N * 4;
     sc.hist = words;   // right after the irradiance: both copied to the history in one go
     words += maxProbes0;
+    sc.irrF = sc.irr;
+    if (rs.rcSplitFilter) {   // the filtered copy the gather reads
+        sc.irrF = words;
+        words += maxProbes0 * SRC_IRR_N * SRC_IRR_N * 4;
+    }
     sc.pixels = words;
     words += pixels * 8;
     sc.cascadeCount = count;
@@ -1718,6 +1724,7 @@ void Renderer::recordSplitRC(const RenderSettings& rs, UINT gx, UINT gy) {
     for (int i = (int)count - 1; i >= 0; --i)
         pass(m_psoSRCMerge.Get(), (uint32_t)i, 0, groups((uint64_t)maxProbes[i] * sc.c[i].dirW * sc.c[i].dirH));
     pass(m_psoSRCIrradiance.Get(), 0, 0, groups((uint64_t)maxProbes0 * SRC_IRR_N * SRC_IRR_N));
+    if (rs.rcSplitFilter) pass(m_psoSRCFilter.Get(), 0, 0, groups((uint64_t)maxProbes0 * SRC_IRR_N * SRC_IRR_N));
     pass(m_psoSRCGather.Get(), 0, 0, gx, gy);
     uavBarrier();
     if (histOn) {   // this frame's cascade-0 slots, irradiance and history lengths become the next frame's history
@@ -1871,6 +1878,7 @@ uint32_t renderSignature(const RenderSettings& rs) {
     mix(&rs.rcSplitCascades, sizeof(int));
     mix(&rs.rcSplitAnimate, sizeof(bool));
     mix(&rs.rcSplitHistory, sizeof(int));
+    mix(&rs.rcSplitFilter, sizeof(bool));
     mix(&rs.rtSunShadows, sizeof(bool));
     mix(&rs.sunAngle, sizeof(float));
     mix(&rs.rtShadowSamples, sizeof(int));

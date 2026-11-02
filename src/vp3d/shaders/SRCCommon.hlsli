@@ -98,7 +98,7 @@ float3 UnpackNormal(uint v) { return OctDecode(float2(v & 0xFFFFu, v >> 16) / 65
 // LOD coordinate of a point: log2 of its Chebyshev distance to the camera in units of lodDist (0 below it).
 float LodCoord(float3 P) {
     float3 a = abs(P - F.camPos);
-    return log2(max(max(a.x, max(a.y, a.z)) / S.lodDist, 1.0));
+    return min(log2(max(max(a.x, max(a.y, a.z)) / S.lodDist, 1.0)), 14.99);   // 4 bits of LOD in the keys
 }
 
 // The pixel's LODs: its own, and the next one with a blend weight when it sits in the overlap at the far end.

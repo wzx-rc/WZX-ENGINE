@@ -194,7 +194,8 @@ struct SplitRCConstants {
     // of it when a light, a material or the environment changed (prevValid 0).
     float3 prevCamPos; uint prevCap;
     uint prevIrr; uint prevHist; uint histMax; uint movedCount;   // word offsets in u22, history cap (0 = off)
-    uint hist; uint prevValid; uint frame; uint pad0;             // history lengths of this frame (word offset in u16)
+    uint hist; uint prevValid; uint frame; uint irrF;             // history lengths of this frame, filtered irradiance
+                                                                  // (word offsets in u16; irrF = irr without the filter)
     float4 movedMin[SRC_MAX_MOVED]; float4 movedMax[SRC_MAX_MOVED];
 };
 

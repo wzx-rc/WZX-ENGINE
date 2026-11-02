@@ -121,6 +121,7 @@ bool App::init(HINSTANCE inst, const Options& opt) {
     if (opt.splitPx > 0) m_rs.rcSplitProbePx = opt.splitPx;
     if (opt.splitHistory >= 0) m_rs.rcSplitHistory = opt.splitHistory;
     m_rs.rcSplitDebug = opt.splitDebug;
+    if (opt.splitFilter >= 0) m_rs.rcSplitFilter = opt.splitFilter != 0;
     if (opt.splitInterval > 0) m_rs.rcSplitInterval = opt.splitInterval;
     if (opt.splitCascades > 0) m_rs.rcSplitCascades = opt.splitCascades;
     if (opt.split) setRenderMode(4);
@@ -137,6 +138,8 @@ bool App::init(HINSTANCE inst, const Options& opt) {
     }
     if (!opt.openPath.empty()) loadSceneFile(opt.openPath);
     if (!opt.hdri.empty()) setHdri(opt.hdri);
+    if (opt.camDist > 0) m_scene.camera.distance *= opt.camDist;   // test: camera closer (< 1) or further
+    if (opt.camPitch > -100) m_scene.camera.pitch = radians(opt.camPitch);
     if (opt.select >= 0 && opt.select < (int)m_scene.objects.size()) m_selected = opt.select;
     if (opt.tool >= 0 && opt.tool <= TOOL_ROTATE) m_tool = (Tool)opt.tool;
     m_game = new GameHost(*this);   // node graph, Play, builds, command API
@@ -1173,6 +1176,9 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         else if (a == L"--split-px") opt.splitPx = _wtoi(next().c_str());
         else if (a == L"--split-history") opt.splitHistory = _wtoi(next().c_str());
         else if (a == L"--split-debug") opt.splitDebug = _wtoi(next().c_str());
+        else if (a == L"--split-filter") opt.splitFilter = _wtoi(next().c_str());
+        else if (a == L"--cam-dist") opt.camDist = (float)_wtof(next().c_str());
+        else if (a == L"--cam-pitch") opt.camPitch = (float)_wtof(next().c_str());
         else if (a == L"--anim-object") opt.animObject = _wtoi(next().c_str());
         else if (a == L"--anim-light") opt.animLight = _wtoi(next().c_str()) != 0;
         else if (a == L"--anim-period") opt.animPeriod = _wtoi(next().c_str());
