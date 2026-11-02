@@ -64,7 +64,7 @@ const std::vector<ThemeDef>& themes();
 UiSettings& settings();
 inline bool ambre() { return settings().theme == "Ambre"; }     // Ambre: graphite + amber
 inline bool corail() { return settings().theme == "Corail"; }   // Anthracite-Corail: anthracite + coral
-inline bool halo() { return settings().theme == "Halo"; }       // Halo: graphite, one main colour, chamfers and HUD marks
+inline bool halo() { return settings().theme == "Spartan"; }    // Spartan: the Halo-style editor (own layout, SpartanUI.cpp)
 inline int skin() { return ambre() ? 1 : corail() ? 2 : halo() ? 3 : 0; }   // drawn theme (atelier::Palette::skin)
 inline bool styled() { return skin() != 0; }                    // drawn themes: always dark, own colours and drawing effects
 // effective sizes: each size setting times Global UI

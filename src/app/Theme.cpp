@@ -602,7 +602,7 @@ void loadSettings(const std::wstring& file) {
         std::string k = trim(line.substr(0, eq)), v = trim(line.substr(eq + 1));
         float c[4];
         if (k == "theme" && v == "Default") g_settings.mainColor = ImVec4(0.5f, 0.5f, 0.5f, 1);   // settings of an older version
-        else if (k == "uiTheme") g_settings.theme = v == "Ambre" || v == "Corail" || v == "Halo" ? v : "Atelier";
+        else if (k == "uiTheme") g_settings.theme = v == "Ambre" || v == "Corail" || v == "Spartan" ? v : v == "Halo" ? "Spartan" : "Atelier";
         else if (k == "haloMain") { if (parseVec(v, c, 4)) g_settings.haloMain = ImVec4(c[0], c[1], c[2], 1); }
         else if (k == "haloBg") { if (parseVec(v, c, 4)) g_settings.haloBg = ImVec4(c[0], c[1], c[2], 1); }
         else if (k == "haloSecond") { if (parseVec(v, c, 4)) g_settings.haloSecond = ImVec4(c[0], c[1], c[2], 1); }

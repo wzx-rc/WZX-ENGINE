@@ -30,6 +30,12 @@ public:
     ImFont* fontBold = nullptr;
     ImFont* fontSmall = nullptr;
     ImFont* fontHud = nullptr;    // Bahnschrift: titles of the Halo theme
+    // Spartan theme, sized like CSS pixels: Segoe UI (Inter), Segoe UI Semibold, Bahnschrift (Barlow Condensed), Consolas (JetBrains Mono)
+    ImFont* spUi = nullptr;
+    ImFont* spSemi = nullptr;
+    ImFont* spHud = nullptr;
+    ImFont* spMono = nullptr;
+    ImFont* spMonoBold = nullptr;
     float dpi = 1.0f;
 
 private:

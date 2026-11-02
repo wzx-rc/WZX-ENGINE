@@ -184,8 +184,8 @@ void App::drawSettingsWindow() {
             // theme: Atelier (Blue 01, tinted by the main / accent colours below), Ambre or Anthracite-Corail (fixed colours)
             propLabel("Theme", labelW);
             ImGui::SetNextItemWidth(-1);
-            const char* themeNames[] = {"Atelier (Blue 01)", "Ambre (graphite + amber)", "Anthracite-Corail (charcoal + coral)", "Halo (graphite, HUD)"};
-            const char* themeIds[] = {"Atelier", "Ambre", "Corail", "Halo"};
+            const char* themeNames[] = {"Atelier (Blue 01)", "Ambre (graphite + amber)", "Anthracite-Corail (charcoal + coral)", "Spartan (new editor layout)"};
+            const char* themeIds[] = {"Atelier", "Ambre", "Corail", "Spartan"};
             const int skin = th::skin();
             if (ImGui::BeginCombo("##uitheme", themeNames[skin])) {
                 for (int i = 0; i < 4; ++i)

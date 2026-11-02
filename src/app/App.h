@@ -321,10 +321,30 @@ private:
     void atlViewport(float x, float y, float w, float h);
     void atlContent(float x, float y, float w, float h);
     void atlInspector(float x, float y, float w, float h);
-    // Halo theme (design/halo/mockup-halo.html): flush panels, icon rail, full-frame viewport, bottom drawer, status bar
-    void atlHaloLayout(float X, float Y, float W, float H);
-    void atlHaloRail(float x, float y, float w, float h);
-    void atlHaloStatus(float x, float y, float w, float h);
+    void atlMenuItems(int menu);                                        // items of the top bar menus (classic and Spartan)
+    void atlInspectorPage(int page, float x, float y, float w, float h);  // an inspector page in a scrolling child
+    // Spartan theme (SpartanUI.cpp, design/halo/mockup-halo-espaces.html): its own layout and drawing for every workspace
+    void spDraw(float X, float Y, float W, float H);
+    void spTopBar(float x, float y, float w, float h);
+    void spRail(float x, float y, float w, float h);
+    void spScenePanel(float x, float y, float w, float h);
+    void spViewport(float x, float y, float w, float h);
+    void spDrawer(float x, float y, float w, float h);
+    void spInspector(float x, float y, float w, float h);
+    void spStatus(float x, float y, float w, float h);
+    void spMaterials(float x, float y, float w, float h);
+    void spPrefab(float x, float y, float w, float h);
+    struct SpartanState {
+        ImTextureID icons = 0;      // assets/ui/spartan_icons.png
+        float iconsW = 1024, iconsH = 896;
+        bool loaded = false;
+        int railPage = 0;           // inspector page shown (Actor, Light, Render, World)
+        int drawerTab = 0;          // Assets, Console, Graph
+        bool sect[8] = {true, true, true, false, true, true, true, true};   // open inspector sections (3: Avancé, closed)
+        int matSel = 0, matShape = 0, matTab = 0;
+        int prefabSel = 0, prefabComp = 4, prefabTab = 0;
+        bool prefabOn[7] = {true, true, true, true, true, false, true};
+    } m_sp;
     void atlInspectorActor(float x, float y, float w, float h);
     void atlInspectorLighting(float x, float y, float w, float h);
     void atlInspectorRender(float x, float y, float w, float h);

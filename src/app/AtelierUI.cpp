@@ -487,7 +487,8 @@ static void syncAtelierStyle(ImFont* bold, ImFont* hud) {
 
 void App::drawAtelier() {
     syncAtelierStyle(m_gui.fontBold, m_gui.fontHud);
-    if (m_workspace == 2) {
+    if (m_workspace == 3 && P().skin != 3) m_workspace = 0;   // Prefab: Spartan workspace only
+    if (m_workspace == 2 && P().skin != 3) {
         int target = atelier::material::Draw();
         if (target) m_workspace = target == 1 ? 0 : 1;
         return;
@@ -511,7 +512,7 @@ void App::drawAtelier() {
     Box({X, Y, W, H}, P().bg, 0);
 
     AtelierState& A = m_atl;
-    if (P().skin == 3) atlHaloLayout(X, Y, W, H);
+    if (P().skin == 3) spDraw(X, Y, W, H);   // Spartan: its own layout (SpartanUI.cpp)
     else {
     atlTopBar(X, Y, W);
     m_atelierTop = 42 * s;   // the game layer draws the Graph tab below this bar
@@ -545,100 +546,108 @@ void App::drawAtelier() {
     ImGui::End();
 }
 
-// --------------------------------------------------------------------------- Halo layout (design/halo/mockup-halo.html)
-
-// Columns: icon rail | Scene Manager | viewport | inspector (full height); the bottom drawer spans the Scene Manager
-// and the viewport; the status bar runs under everything. Panels are flush, separated by their 1 px borders.
-void App::atlHaloLayout(float X, float Y, float W, float H) {
-    AtelierState& A = m_atl;
-    atlTopBar(X, Y, W);
-    const float top = Y + 40 * s, statusH = 26 * s, railW = 48 * s;
-    m_atelierTop = 40 * s;   // the game layer draws the Graph tab below this bar
-    const float bodyH = H - 40 * s - statusH, bottom = top + bodyH;
-    atlHaloStatus(X, bottom, W, statusH);
-    if (m_workspace != 0) return;
-    float maxL = std::max(200.0f, std::min(360.0f, W / s - 700)), maxR = std::max(260.0f, std::min(420.0f, W / s - 680)), maxB = std::max(150.0f, bodyH / s - 240);
-    A.leftW = std::clamp(A.leftW, 200.0f, maxL);
-    A.rightW = std::clamp(A.rightW, 260.0f, maxR);
-    A.bottomH = std::clamp(A.bottomH, 150.0f, maxB);
-    const float lw = A.leftW * s, rw = A.rightW * s, bh = A.bottomH * s;
-    const float lx = X + railW, vx = lx + lw, vw = W - railW - lw - rw, dy = bottom - bh;
-    atlHaloRail(X, top, railW, bodyH);
-    atlHierarchy(lx, top, lw, dy - top);
-    atlViewport(vx, top, vw, dy - top);
-    atlContent(lx, dy, lw + vw, bh);
-    atlInspector(X + W - rw, top, rw, bodyH);
+// One inspector page (0 Actor, 1 Light, 2 Render, 3 World) in a scrolling child at (x, y): used by the Spartan
+// inspector for the pages it does not redraw itself.
+void App::atlInspectorPage(int page, float x, float y, float w, float h) {
+    ImGui::SetCursorScreenPos(ImVec2(x, y));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+    ImGui::BeginChild("spInspectorPage", ImVec2(w, h), ImGuiChildFlags_None, ImGuiWindowFlags_NoBackground);
+    ImGui::SetWindowFontScale(atelier::Style().layoutScale);
+    ImGui::PopStyleVar();
     dl = ImGui::GetWindowDrawList();
-    Splitter("splitLeft", {vx - 3 * s, top, 6 * s, dy - top}, A.leftW, 200, maxL, true);
-    Splitter("splitRight", {X + W - rw - 3 * s, top, 6 * s, bodyH}, A.rightW, 260, maxR, true, true);
-    Splitter("splitBottom", {lx, dy - 3 * s, lw + vw, 6 * s}, A.bottomH, 150, maxB, false, true);
-}
-
-// Icon rail: the inspector pages (Actor, Light, Render, World), the scenes, the search, and at the bottom the console.
-void App::atlHaloRail(float x, float y, float w, float h) {
-    AtelierState& A = m_atl;
-    Box({x, y, w, h}, P().panel, 0);
-    dl->AddLine(ImVec2(x + w - 0.5f, y), ImVec2(x + w - 0.5f, y + h), P().border);
-    float ry = y + 8 * s;
-    auto item = [&](const char* id, Icon icon, bool on, const char* tip, float yy) {
-        R r = {x + (w - 36 * s) / 2, yy, 36 * s, 36 * s};
-        bool q = Hit(id, r);
-        bool hv = ImGui::IsItemHovered();
-        if (on) {
-            Box(r, P().raised, 2);
-            dl->AddRectFilled(ImVec2(x, r.y + 9 * s), ImVec2(x + 2 * s, r.y + r.h - 9 * s), P().accent);
-        } else if (hv) Box(r, P().hover, 2);
-        Glyph(icon, r.x + (r.w - 18 * s) / 2, r.y + (r.h - 18 * s) / 2, 18, on || hv ? P().text : P().muted);
-        Tip(tip);
-        return q;
-    };
-    const Icon pages[] = {Icon::Cube, Icon::Light, Icon::Camera, Icon::World};
-    const char* tips[] = {"Actor: the selected object (transform, material)", "Light: lights and sun", "Render: camera, renderer and global illumination", "World: sky, environment and grid"};
-    for (int i = 0; i < 4; ++i) {
-        char id[20];
-        snprintf(id, sizeof(id), "railPage%d", i);
-        if (item(id, pages[i], A.inspectorTab == i, tips[i], ry)) A.inspectorTab = i;
-        ry += 40 * s;
-    }
-    dl->AddLine(ImVec2(x + 14 * s, ry + 2 * s), ImVec2(x + w - 14 * s, ry + 2 * s), P().border);
-    ry += 10 * s;
-    if (item("railScenes", Icon::Scene, false, "Open a scene", ry)) ImGui::OpenPopup("railScenesPopup");
-    if (ImGui::BeginPopup("railScenesPopup")) {
-        ImGui::SetWindowFontScale(1.4f * ts());
-        const char* scenes[] = {"Cornell Box", "Village", "LookDev"};
-        for (int i = 0; i < 3; ++i)
-            if (ImGui::MenuItem(scenes[i], nullptr, m_sceneId == i) && m_sceneId != i) m_pendingScene = i;
-        ImGui::EndPopup();
-    }
-    ry += 40 * s;
-    if (item("railSearch", Icon::Search, false, "Search the scene", ry)) A.searchFocus = true;
-    const float by = y + h - 44 * s;
-    if (item("railConsole", Icon::List, A.contentTab == 3, "Console (output log)", by)) A.contentTab = A.contentTab == 3 ? 0 : 3;
-}
-
-// Status bar: renderer state on the left, tools and scene counts on the right.
-void App::atlHaloStatus(float x, float y, float w, float h) {
-    Box({x, y, w, h}, P().bg, 0);
-    dl->AddLine(ImVec2(x, y + 0.5f), ImVec2(x + w, y + 0.5f), P().border);
-    const float ty = y + (h - 10 * s * ts()) / 2;
-    float tx = x + 12 * s;
-    const bool busy = !m_rs.raster && m_renderer.sampleCount() < (uint32_t)m_rs.maxSamples;
-    dl->AddRectFilled(ImVec2(tx, y + h / 2 - 3 * s), ImVec2(tx + 6 * s, y + h / 2 + 3 * s), busy ? kAmber : kGreen);
-    tx += 12 * s;
-    auto item = [&](const std::string& t, ImU32 c) { Text(tx, ty, t, c, 10); tx += TextSize(t, 10).x + 18 * s; };
-    item(busy ? "Rendering" : "Ready", P().text);
-    item("DirectX 12  ·  " + m_renderer.adapterName(), P().muted);
-    item("Scene: " + (m_scene.name.empty() ? std::string("untitled") : m_scene.name), P().muted);
-    // right side, from the right edge
-    size_t objs = 0;
-    for (auto& o : m_scene.objects) if (o.visible && o.part != "WALL" && o.part != "GROUND") ++objs;
-    const char* toolNames[] = {"Select", "Move", "Rotate", "Scale"};
-    std::string right = std::string(toolNames[std::clamp((int)m_tool, 0, 3)]) + "  ·  " + (m_magnet ? "Snap on" : "Snap off") + "  ·  " +
-                        (m_localSpace ? "Local" : "World") + "  ·  " + std::to_string(objs) + " objects  ·  " + std::to_string(m_scene.triangleCount()) + " triangles";
-    Text(x + w - 12 * s - TextSize(right, 10).x, ty, right, P().muted, 10);
+    g_labelRight = x + w - 8 * s;
+    ImVec2 c = ImGui::GetCursorScreenPos();
+    const float bw = w - 8 * s;
+    if (page == 0) atlInspectorActor(c.x, c.y, bw, 0);
+    else if (page == 1) atlInspectorLighting(c.x, c.y, bw, 0);
+    else if (page == 2) atlInspectorRender(c.x, c.y, bw, 0);
+    else atlInspectorWorld(c.x, c.y, bw, 0);
+    ImGui::EndChild();
+    dl = ImGui::GetWindowDrawList();
 }
 
 // --------------------------------------------------------------------------- header (former Atelier graph HeaderBar)
+
+// Items of the top bar menus (File, Edit, Create, View, Tools, Help), shared by the classic and Spartan top bars.
+void App::atlMenuItems(int mi) {
+    auto save = [&] { if (!m_themeTestOnly) th::saveSettings(m_exeDir + L"\\wzx_settings.ini"); };
+    // menu text as large as the top bar labels (the default popup text was too small), same for the sub-menus
+    const float menuScale = 1.4f * ts();
+    ImGui::SetWindowFontScale(menuScale);
+    if (mi == 0) {
+        if (ImGui::MenuItem("New Scene", "Ctrl+N")) m_pendingAction = PA_NEW;
+        if (ImGui::MenuItem("Open Scene…", "Ctrl+O")) m_pendingAction = PA_OPEN;
+        if (ImGui::MenuItem("Save Scene", "Ctrl+S")) m_pendingAction = PA_SAVE;
+        if (ImGui::MenuItem("Save Scene As…", "Ctrl+Shift+S")) m_pendingAction = PA_SAVE_AS;
+        if (ImGui::MenuItem("Import OBJ Mesh…")) m_pendingAction = PA_IMPORT_MESH;
+        ImGui::Separator();
+        if (ImGui::MenuItem("Cornell Box Scene", "F1", m_sceneId == SCENE_CORNELL)) m_pendingScene = SCENE_CORNELL;
+        if (ImGui::MenuItem("Village Scene", "F2", m_sceneId == SCENE_STUDIO)) m_pendingScene = SCENE_STUDIO;
+        if (ImGui::MenuItem("LookDev Scene", "F3", m_sceneId == SCENE_LOOKDEV)) m_pendingScene = SCENE_LOOKDEV;
+        ImGui::Separator();
+        if (ImGui::MenuItem("Build…", "F7") && m_game) m_game->openBuildWindow();
+        ImGui::Separator();
+        if (ImGui::MenuItem("Viewport Capture", "F12")) saveScreenshot(false);
+        if (ImGui::MenuItem("Settings…")) m_showSettings = true;
+        ImGui::Separator();
+        if (ImGui::MenuItem("Exit", "Alt+F4")) PostMessageW(m_hwnd, WM_CLOSE, 0, 0);
+    }
+    if (mi == 1) {
+        if (ImGui::MenuItem("Undo", "Ctrl+Z", false, !m_undo.empty())) undo();
+        if (ImGui::MenuItem("Redo", "Ctrl+Y", false, !m_redo.empty())) redo();
+        ImGui::Separator();
+        if (ImGui::MenuItem("Duplicate", "Ctrl+D", false, m_selected >= 0)) duplicateSelected();
+        if (ImGui::MenuItem("Delete", "Del", false, m_selected >= 0)) deleteSelected();
+        ImGui::Separator();
+        if (ImGui::BeginMenu("Add Object")) {
+            ImGui::SetWindowFontScale(menuScale);
+            for (const PartDef& p : parts())
+                if (ImGui::MenuItem(toUtf8(p.name).c_str())) addPartFromLibrary(p);
+            ImGui::EndMenu();
+        }
+    }
+    if (mi == 2 && ImGui::BeginMenu("Mesh")) {
+        ImGui::SetWindowFontScale(menuScale);
+        for (int t : {PRIM_CUBE, PRIM_SPHERE, PRIM_PLANE, PRIM_CYLINDER, PRIM_TORUS, PRIM_DISK})
+            if (ImGui::MenuItem(primitiveName(t))) addPrimitive(t);
+        ImGui::EndMenu();
+    }
+    if (mi == 3) {
+        if (ImGui::MenuItem("Frame Selection", "F")) frameSelection();
+        ImGui::MenuItem("Viewport Statistics", nullptr, &m_showStats);
+        ImGui::MenuItem("Transform Gizmo", nullptr, &m_showGizmo);
+        ImGui::Separator();
+        if (ImGui::MenuItem("Wireframe", nullptr, m_rs.wireframe == 1)) { m_rs.wireframe = m_rs.wireframe == 1 ? 0 : 1; markDirty(); }
+        if (ImGui::MenuItem("Wireframe Override", nullptr, m_rs.wireframe == 2)) { m_rs.wireframe = m_rs.wireframe == 2 ? 0 : 2; markDirty(); }
+        ImGui::Separator();
+        if (ImGui::MenuItem("Restore Panel Layout")) { m_atl.leftW = 222; m_atl.rightW = 284; m_atl.bottomH = 190; }
+        ImGui::Separator();
+        if (ImGui::MenuItem("Light Mode", nullptr, th::settings().light && !th::styled(), !th::styled())) { th::settings().light = !th::settings().light; th::apply(m_dpi); save(); }
+        if (ImGui::BeginMenu("Theme")) {
+            ImGui::SetWindowFontScale(menuScale);
+            const char* names[] = {"Atelier", "Ambre", "Anthracite-Corail", "Spartan"}, *ids[] = {"Atelier", "Ambre", "Corail", "Spartan"};
+            for (int i = 0; i < 4; ++i)
+                if (ImGui::MenuItem(names[i], nullptr, th::skin() == i)) { th::settings().theme = ids[i]; th::apply(m_dpi); save(); }
+            ImGui::EndMenu();
+        }
+        if (ImGui::MenuItem("Appearance Settings…")) m_showSettings = true;
+    }
+    if (mi == 4) {
+        if (ImGui::MenuItem("Select", "Q", m_tool == TOOL_SELECT)) m_tool = TOOL_SELECT;
+        if (ImGui::MenuItem("Move", "W", m_tool == TOOL_MOVE)) m_tool = TOOL_MOVE;
+        if (ImGui::MenuItem("Rotate", "E", m_tool == TOOL_ROTATE)) m_tool = TOOL_ROTATE;
+        if (ImGui::MenuItem("Scale", "R", m_tool == TOOL_SCALE)) m_tool = TOOL_SCALE;
+        ImGui::Separator();
+        ImGui::MenuItem("Snapping (1 cm / 90°)", nullptr, &m_magnet);
+        if (ImGui::MenuItem("Local Axes", nullptr, m_localSpace)) m_localSpace = !m_localSpace;
+        ImGui::SetNextItemWidth(150 * s);
+        ImGui::SliderFloat("Camera speed", &m_camSpeed, 0.1f, 5.0f, "%.1f");
+    }
+    if (mi == 5) {
+        if (ImGui::MenuItem("Controls & Shortcuts")) m_showShortcuts = true;
+        if (ImGui::MenuItem("About")) m_showAbout = true;
+    }
+}
 
 void App::atlTopBar(float x0, float y0, float width) {
     const bool halo = P().skin == 3;
@@ -664,82 +673,7 @@ void App::atlTopBar(float x0, float y0, float width) {
         if (menuHover) Box(r, halo ? P().hover : P().raised, halo ? 2 : 3);
         Center(r, menus[mi], halo && !menuHover ? P().muted : P().text, 11);
         if (ImGui::BeginPopup(id.c_str())) {
-            // menu text as large as the top bar labels (the default popup text was too small), same for the sub-menus
-            const float menuScale = 1.4f * ts();
-            ImGui::SetWindowFontScale(menuScale);
-            if (mi == 0) {
-                if (ImGui::MenuItem("New Scene", "Ctrl+N")) m_pendingAction = PA_NEW;
-                if (ImGui::MenuItem("Open Scene…", "Ctrl+O")) m_pendingAction = PA_OPEN;
-                if (ImGui::MenuItem("Save Scene", "Ctrl+S")) m_pendingAction = PA_SAVE;
-                if (ImGui::MenuItem("Save Scene As…", "Ctrl+Shift+S")) m_pendingAction = PA_SAVE_AS;
-                if (ImGui::MenuItem("Import OBJ Mesh…")) m_pendingAction = PA_IMPORT_MESH;
-                ImGui::Separator();
-                if (ImGui::MenuItem("Cornell Box Scene", "F1", m_sceneId == SCENE_CORNELL)) m_pendingScene = SCENE_CORNELL;
-                if (ImGui::MenuItem("Village Scene", "F2", m_sceneId == SCENE_STUDIO)) m_pendingScene = SCENE_STUDIO;
-                if (ImGui::MenuItem("LookDev Scene", "F3", m_sceneId == SCENE_LOOKDEV)) m_pendingScene = SCENE_LOOKDEV;
-                ImGui::Separator();
-                if (ImGui::MenuItem("Build…", "F7") && m_game) m_game->openBuildWindow();
-                ImGui::Separator();
-                if (ImGui::MenuItem("Viewport Capture", "F12")) saveScreenshot(false);
-                if (ImGui::MenuItem("Settings…")) m_showSettings = true;
-                ImGui::Separator();
-                if (ImGui::MenuItem("Exit", "Alt+F4")) PostMessageW(m_hwnd, WM_CLOSE, 0, 0);
-            }
-            if (mi == 1) {
-                if (ImGui::MenuItem("Undo", "Ctrl+Z", false, !m_undo.empty())) undo();
-                if (ImGui::MenuItem("Redo", "Ctrl+Y", false, !m_redo.empty())) redo();
-                ImGui::Separator();
-                if (ImGui::MenuItem("Duplicate", "Ctrl+D", false, m_selected >= 0)) duplicateSelected();
-                if (ImGui::MenuItem("Delete", "Del", false, m_selected >= 0)) deleteSelected();
-                ImGui::Separator();
-                if (ImGui::BeginMenu("Add Object")) {
-                    ImGui::SetWindowFontScale(menuScale);
-                    for (const PartDef& p : parts())
-                        if (ImGui::MenuItem(toUtf8(p.name).c_str())) addPartFromLibrary(p);
-                    ImGui::EndMenu();
-                }
-            }
-            if (mi == 2 && ImGui::BeginMenu("Mesh")) {
-                ImGui::SetWindowFontScale(menuScale);
-                for (int t : {PRIM_CUBE, PRIM_SPHERE, PRIM_PLANE, PRIM_CYLINDER, PRIM_TORUS, PRIM_DISK})
-                    if (ImGui::MenuItem(primitiveName(t))) addPrimitive(t);
-                ImGui::EndMenu();
-            }
-            if (mi == 3) {
-                if (ImGui::MenuItem("Frame Selection", "F")) frameSelection();
-                ImGui::MenuItem("Viewport Statistics", nullptr, &m_showStats);
-                ImGui::MenuItem("Transform Gizmo", nullptr, &m_showGizmo);
-                ImGui::Separator();
-                if (ImGui::MenuItem("Wireframe", nullptr, m_rs.wireframe == 1)) { m_rs.wireframe = m_rs.wireframe == 1 ? 0 : 1; markDirty(); }
-                if (ImGui::MenuItem("Wireframe Override", nullptr, m_rs.wireframe == 2)) { m_rs.wireframe = m_rs.wireframe == 2 ? 0 : 2; markDirty(); }
-                ImGui::Separator();
-                if (ImGui::MenuItem("Restore Panel Layout")) { m_atl.leftW = 222; m_atl.rightW = 284; m_atl.bottomH = 190; }
-                ImGui::Separator();
-                if (ImGui::MenuItem("Light Mode", nullptr, th::settings().light && !th::styled(), !th::styled())) { th::settings().light = !th::settings().light; th::apply(m_dpi); save(); }
-                if (ImGui::BeginMenu("Theme")) {
-                    ImGui::SetWindowFontScale(menuScale);
-                    const char* names[] = {"Atelier", "Ambre", "Anthracite-Corail", "Halo"}, *ids[] = {"Atelier", "Ambre", "Corail", "Halo"};
-                    for (int i = 0; i < 4; ++i)
-                        if (ImGui::MenuItem(names[i], nullptr, th::skin() == i)) { th::settings().theme = ids[i]; th::apply(m_dpi); save(); }
-                    ImGui::EndMenu();
-                }
-                if (ImGui::MenuItem("Appearance Settings…")) m_showSettings = true;
-            }
-            if (mi == 4) {
-                if (ImGui::MenuItem("Select", "Q", m_tool == TOOL_SELECT)) m_tool = TOOL_SELECT;
-                if (ImGui::MenuItem("Move", "W", m_tool == TOOL_MOVE)) m_tool = TOOL_MOVE;
-                if (ImGui::MenuItem("Rotate", "E", m_tool == TOOL_ROTATE)) m_tool = TOOL_ROTATE;
-                if (ImGui::MenuItem("Scale", "R", m_tool == TOOL_SCALE)) m_tool = TOOL_SCALE;
-                ImGui::Separator();
-                ImGui::MenuItem("Snapping (1 cm / 90°)", nullptr, &m_magnet);
-                if (ImGui::MenuItem("Local Axes", nullptr, m_localSpace)) m_localSpace = !m_localSpace;
-                ImGui::SetNextItemWidth(150 * s);
-                ImGui::SliderFloat("Camera speed", &m_camSpeed, 0.1f, 5.0f, "%.1f");
-            }
-            if (mi == 5) {
-                if (ImGui::MenuItem("Controls & Shortcuts")) m_showShortcuts = true;
-                if (ImGui::MenuItem("About")) m_showAbout = true;
-            }
+            atlMenuItems(mi);
             ImGui::EndPopup();
         }
         x += P().menuW * s;

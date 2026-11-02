@@ -26,12 +26,13 @@ enum Icon {
     I_MAP, I_WORKFLOW, I_PALETTE, I_PACKAGE, I_UNDO, I_REDO, I_PLAY, I_HAMMER, I_SETTINGS, I_LAYERS, I_SUN, I_VIDEO,
     I_SEARCH, I_TERMINAL, I_CHEV_DOWN, I_CHEV_RIGHT, I_GLOBE, I_EYE, I_POINTER, I_MOVE, I_ROTATE, I_SCALING, I_MAGNET,
     I_CAMERA, I_SPARKLES, I_MORE, I_MOVE3D, I_CLOCK, I_FOLDER_OPEN, I_BOX, I_IMAGE, I_OUTPOST, I_HELMET, I_GRID, I_BRAND,
-    I_COUNT
+    I_PLUS, I_ZAP, I_BRANCH, I_HAND, I_MAXIMIZE, I_DROPLET, I_PUZZLE, I_CROSSHAIR, I_SHIELD, I_REPEAT, I_COPY, I_CIRCLE_PLAY,
+    I_COUNT   // tools/atlas_names.txt order
 };
 const int kAtlasSizes[] = {16, 19, 22, 40, 42, 96};   // tools/atlas2.html: one grid per size, cells of size + 4
 
 ImTextureID g_atlas = (ImTextureID)0;
-float g_atlasW = 1024, g_atlasH = 656;
+float g_atlasW = 1024, g_atlasH = 896;
 Fonts g_f;
 ImFont* g_semi = nullptr;   // 500 / 600 weights of Inter -> Segoe UI Semibold
 ImFont* g_monoBold = nullptr;

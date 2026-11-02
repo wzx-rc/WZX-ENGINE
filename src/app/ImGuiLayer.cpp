@@ -1,11 +1,38 @@
 #include "ImGuiLayer.h"
 #include "backends/imgui_impl_dx12.h"
 #include "backends/imgui_impl_win32.h"
+#include <cstdio>
+#include <vector>
 
 namespace app {
 
 static const int kSrvSlots = 256;
 static ImGuiLayer* g_layer = nullptr;
+
+// ImGui sizes a font by ascent - descent, CSS by the em square: (ascent - descent) / unitsPerEm read from the 'hhea' and
+// 'head' tables makes an ImGui size equal to a CSS font-size (the Spartan theme reproduces an HTML mockup).
+static float emScale(const char* path) {
+    FILE* f = nullptr;
+    if (fopen_s(&f, path, "rb") || !f) return 1.0f;
+    std::vector<uint8_t> d;
+    fseek(f, 0, SEEK_END);
+    d.resize((size_t)ftell(f));
+    fseek(f, 0, SEEK_SET);
+    fread(d.data(), 1, d.size(), f);
+    fclose(f);
+    if (d.size() < 12) return 1.0f;
+    auto u16 = [&](size_t o) { return o + 1 < d.size() ? (uint16_t)((d[o] << 8) | d[o + 1]) : (uint16_t)0; };
+    auto u32 = [&](size_t o) { return o + 3 < d.size() ? (uint32_t)((d[o] << 24) | (d[o + 1] << 16) | (d[o + 2] << 8) | d[o + 3]) : 0u; };
+    size_t base = u32(0) == 0x74746366 ? u32(12) : 0;   // 'ttcf': first font of a collection
+    int n = u16(base + 4), upem = 0, asc = 0, desc = 0;
+    for (int i = 0; i < n; ++i) {
+        size_t r = base + 12 + (size_t)i * 16;
+        uint32_t tag = u32(r), off = u32(r + 8);
+        if (tag == 0x68656164) upem = u16(off + 18);                                            // 'head'
+        if (tag == 0x68686561) { asc = (int16_t)u16(off + 4); desc = (int16_t)u16(off + 6); }   // 'hhea'
+    }
+    return upem && asc - desc > 0 ? (float)(asc - desc) / (float)upem : 1.0f;
+}
 
 // --------------------------------------------------------------------------- descriptors
 
@@ -101,6 +128,20 @@ bool ImGuiLayer::init(HWND hwnd, vp3d::Renderer& r, float dpiScale) {
     fontHud = io.Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\bahnschrift.ttf", size);   // Halo titles (DIN-like, ships with Windows 10+)
     if (!fontBold) fontBold = io.Fonts->Fonts[0];
     if (!fontHud) fontHud = fontBold;
+    // Spartan theme: fonts sized like CSS (font-size = em square, not ascent - descent), see emScale
+    auto addEm = [&](const char* file) -> ImFont* {
+        ImFontConfig cfg;
+        cfg.ExtraSizeScale = emScale(file);
+        static const ImWchar ranges[] = {0x0020, 0x00FF, 0x2010, 0x2027, 0x2190, 0x2193, 0};   // Latin-1, dashes, dot, ellipsis, arrows
+        cfg.GlyphRanges = ranges;
+        ImFont* f = io.Fonts->AddFontFromFileTTF(file, size, &cfg);
+        return f ? f : io.Fonts->Fonts[0];
+    };
+    spUi = addEm("C:\\Windows\\Fonts\\segoeui.ttf");
+    spSemi = addEm("C:\\Windows\\Fonts\\seguisb.ttf");
+    spHud = addEm("C:\\Windows\\Fonts\\bahnschrift.ttf");
+    spMono = addEm("C:\\Windows\\Fonts\\consola.ttf");
+    spMonoBold = addEm("C:\\Windows\\Fonts\\consolab.ttf");
     if (!fontSmall) fontSmall = io.Fonts->Fonts[0];
 
 
