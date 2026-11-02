@@ -159,11 +159,36 @@ const MechMeta& Mech::meta(int part) {
                 float l = length(r);
                 if (l > best) { best = l; ex = l > 1e-5f ? r * (1.0f / l) : float3(1, 0, 0); }
             }
-            m.gears.push_back({t, c, h0->axis, ex});
+            const bool bevel = p.label.find("Bevel") != std::string::npos || p.label.find("Crown") != std::string::npos;
+            m.gears.push_back({t, c, h0->axis, ex, bevel ? 1 : 0, 0.0f});
         }
         MechConn keep = *h0;
         if (!m.gears.empty()) keep.p = m.gears[0].c;   // the axle goes through the centre
         m.holes.assign(1, keep);
+    }
+    // worm gears ("Worm Gear", not Duplo): one start, turning on their axle hole, radius = the farthest vertex
+    if (!m.holes.empty() && m.gears.empty() && p.label.find("Worm Gear") != std::string::npos && p.label.find("Duplo") == std::string::npos) {
+        const MechConn& h0 = m.holes[0];
+        float3 c = (p.bmin + p.bmax) * 0.5f, ex(1, 0, 0);
+        for (int j = 0; j < 3; ++j)
+            if ((&h0.axis.x)[j] > 0.5f) (&c.x)[j] = (&h0.p.x)[j] * 0 + (&c.x)[j];
+        float best = 0;
+        for (const Vertex& v : p.mesh.vertices) {
+            float3 r = v.pos - c;
+            r = r - h0.axis * dot(r, h0.axis);
+            float l = length(r);
+            if (l > best) { best = l; ex = l > 1e-5f ? r * (1.0f / l) : float3(1, 0, 0); }
+        }
+        m.gears.push_back({1, c, h0.axis, ex, 2, best});
+    }
+    // toothed turntables ("Turntable 28 Tooth Top"): a gear on the turntable axis, driven at 90 degrees
+    {
+        static const std::regex ttRe("Turntable\\s+(\\d+)\\s+Tooth", std::regex::icase);
+        std::smatch mt;
+        if (m.gears.empty() && m.pairRole == 2 && std::regex_search(p.label, mt, ttRe)) {
+            float3 ex(1, 0, 0);
+            m.gears.push_back({std::stoi(mt[1].str()), m.pairC, m.pairAxis, ex, 1, 0.0f});
+        }
     }
     return m;
 }
@@ -293,11 +318,32 @@ bool Mech::build(const std::vector<Brick>& bricks, MechModel& M) {
     // gears and meshes
     for (int i = 0; i < n; ++i)
         for (const MechGear& g : meta(bricks[i].part).gears)
-            M.gears.push_back({i, M.brickBody[i], g.teeth, wPos(i, g.c), wDir(i, g.axis), wDir(i, g.ex), 0.0f, (int)(&g - meta(bricks[i].part).gears.data())});
+            M.gears.push_back({i, M.brickBody[i], g.teeth, wPos(i, g.c), wDir(i, g.axis), wDir(i, g.ex), 0.0f, (int)(&g - meta(bricks[i].part).gears.data()), g.kind, g.radius});
     for (size_t x = 0; x < M.gears.size(); ++x)
         for (size_t y = x + 1; y < M.gears.size(); ++y) {
             const MechGearW &A = M.gears[x], &B = M.gears[y];
-            if (A.body == B.body || !parallel(A.u, B.u)) continue;
+            if (A.body == B.body) continue;
+            if (!parallel(A.u, B.u)) {   // 90 degrees: bevel / crown gears (axes crossing), worm and wheel (axes apart)
+                if (std::fabs(dot(A.u, B.u)) > 0.05f) continue;
+                // closest points of the two axis lines
+                const float3 w0 = A.c - B.c;
+                const float b = dot(A.u, B.u), dd = dot(A.u, w0), e = dot(B.u, w0), den = 1 - b * b;
+                const float sA = (b * e - dd) / den, sB = (e - b * dd) / den;
+                const float3 PA = A.c + A.u * sA, PB = B.c + B.u * sB;
+                const float gap = length(PA - PB);
+                if (A.kind == 2 || B.kind == 2) {
+                    const MechGearW& W = A.kind == 2 ? A : B;
+                    const MechGearW& G = A.kind == 2 ? B : A;
+                    if (G.kind == 2) continue;
+                    const float want = G.teeth * 0.05f + W.radius;
+                    if (std::fabs(gap - want) < 0.2f && std::fabs(dot(W.c - G.c, G.u)) < 0.35f) M.meshes.push_back({(int)x, (int)y});
+                } else if ((A.kind == 1 || B.kind == 1) && gap < 0.3f) {
+                    const float3 P = (PA + PB) * 0.5f;
+                    if (std::fabs(length(A.c - P) - B.teeth * 0.05f) < 0.35f && std::fabs(length(B.c - P) - A.teeth * 0.05f) < 0.35f) M.meshes.push_back({(int)x, (int)y});
+                }
+                continue;
+            }
+            if (A.kind == 2 || B.kind == 2) continue;
             float3 d = B.c - A.c;
             float ax = dot(d, A.u);
             if (std::fabs(ax) > 0.3f) continue;
@@ -315,7 +361,8 @@ bool Mech::build(const std::vector<Brick>& bricks, MechModel& M) {
     {
         const int ng = (int)M.gears.size();
         std::vector<std::vector<int>> gadj0(ng);
-        for (auto& ms : M.meshes) { gadj0[ms.first].push_back(ms.second); gadj0[ms.second].push_back(ms.first); }
+        for (auto& ms : M.meshes)
+            if (parallel(M.gears[ms.first].u, M.gears[ms.second].u)) { gadj0[ms.first].push_back(ms.second); gadj0[ms.second].push_back(ms.first); }
         auto angAbout = [](const float3& dir, const float3& ex, const float3& u) { return std::atan2(dot(dir, cross(u, ex)), dot(dir, ex)); };
         auto frac = [](float v) { return v - std::floor(v); };
         std::vector<bool> vis(ng, false);
@@ -413,71 +460,64 @@ bool Mech::build(const std::vector<Brick>& bricks, MechModel& M) {
             t.parent = M.tree[tp].parent;
     const int nq = (int)M.tree.size();
     M.qmode.assign(nq, MechModel::QMode());
-    // gear relations q_b = k q_a (spur gears: opposite direction, ratio of teeth)
-    struct Rel { int a, b; float k; };
-    std::vector<Rel> rel;
+    // gear meshes: constraints of the solver (any supports). sigma from the velocities of the two gears at the contact.
     for (auto& ms : M.meshes) {
         const MechGearW &A = M.gears[ms.first], &B = M.gears[ms.second];
-        int tA = tjOf[A.body], tB = tjOf[B.body];
-        // the two axles must be carried by one frame: the same body, or two fixed bodies (two roots do not move one
-        // against the other: a support of each axle, not studded together, still holds the gears in mesh)
-        const bool sameFrame = tA >= 0 && tB >= 0 && (M.tree[tA].parent == M.tree[tB].parent || (tjOf[M.tree[tA].parent] < 0 && tjOf[M.tree[tB].parent] < 0));
-        if (!sameFrame || !parallel(M.tree[tA].j.u, A.u) || !parallel(M.tree[tB].j.u, B.u)) {
-            char buf[128];
-            snprintf(buf, sizeof(buf), "Engrenages %d/%d : axes non portés par la même pièce, ignorés", A.teeth, B.teeth);
-            M.warnings.push_back(buf);
-            continue;
-        }
-        float s = dot(M.tree[tA].j.u, M.tree[tB].j.u) < 0 ? -1.0f : 1.0f;
-        rel.push_back({tA, tB, -((float)A.teeth / B.teeth) * s});
-    }
-    std::map<int, std::vector<std::pair<int, float>>> gadj;
-    for (const Rel& r : rel) { gadj[r.a].push_back({r.b, r.k}); gadj[r.b].push_back({r.a, 1.0f / r.k}); }
-    auto teethOf = [&](int qi) {
-        int t = 1 << 30;
-        for (const MechGearW& g : M.gears)
-            if (g.body == M.tree[qi].child) t = std::min(t, g.teeth);
-        return t;
-    };
-    std::set<int> done;
-    for (auto& kv : gadj) {
-        int start = kv.first;
-        if (done.count(start)) continue;
-        std::map<int, float> kk{{start, 1.0f}};
-        std::vector<int> st{start}, compQ;
-        bool bad = false;
-        while (!st.empty()) {
-            int x = st.back();
-            st.pop_back();
-            compQ.push_back(x);
-            for (auto& e : gadj[x]) {
-                float v = kk[x] * e.second;
-                auto it = kk.find(e.first);
-                if (it == kk.end()) { kk[e.first] = v; st.push_back(e.first); }
-                else if (std::fabs(it->second - v) > 1e-4f) bad = true;
+        float sigma = 1.0f;
+        if (A.kind != 2 && B.kind != 2) {
+            float3 dA = (B.c - A.c) - A.u * dot(B.c - A.c, A.u);
+            const float l = length(dA);
+            if (l > 1e-5f) {
+                const float3 K = A.c + dA * (A.teeth * 0.05f / l);
+                sigma = dot(cross(A.u, K - A.c), cross(B.u, K - B.c)) > 0 ? -1.0f : 1.0f;
             }
         }
-        for (int x : compQ) done.insert(x);
-        if (bad) {
-            for (int x : compQ) M.qmode[x].kind = 3;
-            M.warnings.push_back("Train d'engrenages bloqué (rapports incompatibles)");
-            continue;
+        MechModel::GearCon g{ms.first, ms.second, sigma, 0.0};
+        std::vector<Affine> rest(nb);
+        g.c0 = gearPhase(M, g, rest);
+        M.gearCons.push_back(g);
+    }
+    // commands: per gear train (gears linked by meshes), the pivot of its smallest moving gear (a worm first)
+    {
+        const int ng = (int)M.gears.size();
+        std::vector<int> gc(ng);
+        for (int i = 0; i < ng; ++i) gc[i] = i;
+        std::function<int(int)> gfind = [&](int i) { while (gc[i] != i) { gc[i] = gc[gc[i]]; i = gc[i]; } return i; };
+        for (auto& ms : M.meshes) gc[gfind(ms.first)] = gfind(ms.second);
+        for (int i = 0; i < ng; ++i)   // gears on one body (one axle) belong to one train
+            for (int j = i + 1; j < ng; ++j)
+                if (M.gears[i].body == M.gears[j].body) gc[gfind(i)] = gfind(j);
+        std::map<int, std::vector<int>> trains;
+        for (auto& ms : M.meshes) { trains[gfind(ms.first)]; }
+        for (int i = 0; i < ng; ++i)
+            if (trains.count(gfind(i))) trains[gfind(i)].push_back(i);
+        for (auto& kv : trains) {
+            int master = -1;
+            for (int gi : kv.second) {
+                const MechGearW& G = M.gears[gi];
+                const int t = tjOf[G.body];
+                if (t < 0 || M.qmode[t].kind != 0) continue;
+                if (master < 0 || G.teeth < M.gears[master].teeth) master = gi;
+            }
+            if (master < 0) {   // every gear of the train sits on a fixed part
+                char buf[96];
+                snprintf(buf, sizeof(buf), "Engrenages fixes : aucun ne peut tourner (%d dents)", M.gears[kv.second[0]].teeth);
+                M.warnings.push_back(buf);
+                continue;
+            }
+            MechCmd c;
+            c.name = "Moteur";
+            c.qi = tjOf[M.gears[master].body];
+            M.qmode[c.qi] = {1, -1, 0, (int)M.cmds.size()};
+            M.cmds.push_back(c);
         }
-        int master = compQ[0];
-        for (int x : compQ)
-            if (teethOf(x) < teethOf(master)) master = x;
-        float km = kk[master];
-        MechCmd c;
-        c.name = "Moteur";
-        c.qi = master;
-        for (int x : compQ)
-            if (x != master) { M.qmode[x] = {2, master, kk[x] / km, -1}; c.ratio.push_back({x, kk[x] / km}); }
-        M.qmode[master] = {1, -1, 0, (int)M.cmds.size()};
-        M.cmds.push_back(c);
     }
     // an axle carrying gears that turns alone in a fixed part also gets a motor
     for (int qi = 0; qi < nq; ++qi)
         if (M.qmode[qi].kind == 0 && hasGear[M.tree[qi].child]) {
+            bool meshed = false;
+            for (auto& ms : M.meshes) meshed |= M.gears[ms.first].body == M.tree[qi].child || M.gears[ms.second].body == M.tree[qi].child;
+            if (meshed) continue;
             MechCmd c;
             c.name = "Axe";
             c.qi = qi;
@@ -498,11 +538,27 @@ bool Mech::build(const std::vector<Brick>& bricks, MechModel& M) {
     M.q.assign(nq, 0.0);
     M.mats.assign(nb, Affine());
     fk(M, M.q, M.mats);
+    // ratios of each command, measured: a small turn of the command alone, the other pivots solved
+    for (size_t ci = 0; ci < M.cmds.size(); ++ci) {
+        MechModel t = M;
+        for (MechCmd& c : t.cmds) c.value = 0;
+        const float dv = 0.02f;
+        t.cmds[ci].value = dv;
+        if (!solve(t)) {
+            M.warnings.push_back("Train d'engrenages bloqué (rapports incompatibles) : " + M.cmds[ci].name);
+            continue;
+        }
+        for (int qi = 0; qi < nq; ++qi) {
+            if (qi == M.cmds[ci].qi || !hasGear[M.tree[qi].child]) continue;
+            const double k = t.q[qi] / dv;
+            if (std::fabs(k) > 1e-3) M.cmds[ci].ratio.push_back({qi, (float)k});
+        }
+    }
     // degrees of freedom: independent joint variables minus the rank of the loop equations
     std::vector<int> vars;
     for (int i = 0; i < nq; ++i)
         if (M.qmode[i].kind == 0 || M.qmode[i].kind == 1) vars.push_back(i);
-    const int rows = (int)M.closures.size() * 6;
+    const int rows = residualRows(M);
     std::vector<double> r0(rows), r1(rows);
     std::vector<std::vector<double>> J(vars.size(), std::vector<double>(rows));
     std::vector<double> q(nq, 0.0);
@@ -547,6 +603,22 @@ void Mech::applyGears(const MechModel& m, std::vector<double>& q) const {
     }
 }
 
+// Tooth phase of a mesh: the angle of each gear around its axis, from the direction of the other gear, times its teeth.
+double Mech::gearPhase(const MechModel& m, const MechModel::GearCon& g, const std::vector<Affine>& mats) {
+    const MechGearW &A = m.gears[g.ga], &B = m.gears[g.gb];
+    const Affine &MA = mats[A.body], &MB = mats[B.body];
+    const float3 cA = MA.point(A.c), cB = MB.point(B.c);
+    const float3 uA = normalize(MA.point(A.c + A.u) - cA), uB = normalize(MB.point(B.c + B.u) - cB);
+    const float3 eA = MA.point(A.c + A.ex) - cA, eB = MB.point(B.c + B.ex) - cB;
+    auto ang = [](float3 from, float3 to, const float3& u) {
+        from = from - u * dot(from, u);
+        to = to - u * dot(to, u);
+        return (double)std::atan2(dot(cross(from, to), u), dot(from, to));
+    };
+    const double aA = ang(cB - cA, eA, uA), aB = ang(cA - cB, eB, uB);
+    return A.teeth * aA + g.sigma * B.teeth * aB;
+}
+
 int Mech::closureRes(const MechModel& m, const std::vector<Affine>& mats, double* out) const {
     int k = 0;
     for (const MechJoint& c : m.closures)
@@ -556,6 +628,11 @@ int Mech::closureRes(const MechModel& m, const std::vector<Affine>& mats, double
             out[k++] = a.y - b.y;
             out[k++] = a.z - b.z;
         }
+    for (const MechModel::GearCon& g : m.gearCons) {   // (modulo one tooth: the teeth repeat)
+        double e = gearPhase(m, g, mats) - g.c0;
+        e -= 2 * 3.14159265358979 * std::round(e / (2 * 3.14159265358979));
+        out[k++] = e * 0.5;   // (weighted above the pull towards the previous pose of the solver: exact ratios)
+    }
     return k;
 }
 
@@ -596,7 +673,7 @@ bool Mech::solve(MechModel& m, const Drag* drag) {
         else if (md.kind == 0 || md.kind == 1) freeV.push_back(i);   // a drag moves the commands too
     }
     const double WD = 0.35;
-    const int rowsC = (int)m.closures.size() * 6, nf = (int)freeV.size(), rowsD = drag ? 3 : 0, rows = rowsC + rowsD + nf;
+    const int rowsC = residualRows(m), nf = (int)freeV.size(), rowsD = drag ? 3 : 0, rows = rowsC + rowsD + nf;
     const double LAM = 0.01, TOL = 0.004;
     std::vector<Affine> mats(m.bodyCount);
     std::vector<double> xRef(nf);
