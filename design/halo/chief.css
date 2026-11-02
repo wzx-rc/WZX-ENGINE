@@ -1,0 +1,31 @@
+/* Variante "armure" : tons de la reference Master Chief, posee par-dessus halo.css */
+:root {
+  --base: #0b1214;        /* nuit spatiale bleu-vert */
+  --panel: #151a17;       /* graphite olive */
+  --panel-2: #1c221e;
+  --hover: #252c26;
+  --line: #2a312b;
+  --line-hi: #3a443b;
+  --text: #dcdcd0;        /* metal clair chaud */
+  --text-2: #9a9c8c;
+  --text-3: #686d5f;
+  --accent: #e8a93c;      /* ambre de visiere, unique accent */
+  --accent-lo: #6e5321;
+  --accent-bg: rgba(232,169,60,.10);
+  --olive: #6f7756;       /* armure, pour les etats et la structure */
+  --teal: #4f8f93;        /* rappel du fond spatial, tres rare */
+}
+.top { background: linear-gradient(#181e1a, #141915); }
+.brand .mark { color: var(--accent); }
+.view { background: radial-gradient(ellipse at 70% 20%, #16302f 0%, #0d1a1b 45%, #090f10 100%); }
+.unitcard { color: #b9bca6; }
+/* nid d'abeille de visiere, seulement sous la selection, tres discret */
+.row.sel, .asset.sel .th, .rail .r.on {
+  background-image:
+    linear-gradient(90deg, rgba(232,169,60,.13), rgba(232,169,60,.02)),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='14' viewBox='0 0 12 14'%3E%3Cpath d='M6 1 11 4v6l-5 3-5-3V4z' fill='none' stroke='%23e8a93c' stroke-opacity='.10' stroke-width='.8'/%3E%3C/svg%3E");
+}
+.ws a.on { box-shadow: inset 0 -2px 0 var(--accent); }
+.f i.x { color: #c97a5e; } .f i.y { color: #9fb36a; } .f i.z { color: #6fa3a8; }
+.status .dot { background: var(--olive); }
+.chip b { color: var(--accent); }
