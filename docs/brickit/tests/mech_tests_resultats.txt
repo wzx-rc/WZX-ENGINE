@@ -1,0 +1,36 @@
+# 32524 : 7 trous, 0 mâles, 0 tenons, 0 anti-tenons
+#   trou (0.36 0.40 0.36) axe (0 1 0) demi 0.40 rond
+#   trou (0.36 0.40 1.16) axe (0 1 0) demi 0.40 rond
+#   trou (0.36 0.40 1.96) axe (0 1 0) demi 0.40 rond
+#   trou (0.36 0.40 2.76) axe (0 1 0) demi 0.40 rond
+#   trou (0.36 0.40 3.56) axe (0 1 0) demi 0.40 rond
+#   trou (0.36 0.40 4.36) axe (0 1 0) demi 0.40 rond
+#   trou (0.36 0.40 5.16) axe (0 1 0) demi 0.40 rond
+# 3673 : 0 trous, 1 mâles, 0 tenons, 0 anti-tenons
+#   mâle (0.80 0.32 0.32) axe (1 0 0) demi 0.80 pin
+# 73230 : 1 trous, 0 mâles, 1 tenons, 1 anti-tenons
+#   trou (0.40 0.56 0.40) axe (0 0 1) demi 0.40 croix
+# 6541 : 1 trous, 0 mâles, 1 tenons, 1 anti-tenons
+#   trou (0.40 0.56 0.40) axe (0 0 1) demi 0.40 rond
+[OK] 1. deux engrenages sur une poutre (8 / 24) : 3 corps, 1 commandes, 1 engrènements, rapports 1.0000, -0.3333
+[OK] 2. deux supports séparés (16 / 24) : 4 corps, 1 commandes, 1 engrènements, rapports 1.0000, -0.6667
+[OK] 3. supports empilés (8 / 16 en diagonale) : 3 corps, 1 commandes, 1 engrènements, rapports 1.0000, -0.5000
+[OK] 4. côte à côte, deux briques non reliées (24 / 8) : 4 corps, 1 commandes, 1 engrènements, rapports 1.0000, -0.3333
+[OK] 5. train planétaire (soleil 24 fixe, satellite 8 sur un bras) : 3 corps, 1 commandes, 1 engrènements, rapports 1.0000, 0.3333
+[OK] 6. train de 4 engrenages de 16 : 5 corps, 1 commandes, 3 engrènements, rapports 1.0000, -1.0000, 1.0000, -1.0000
+[OK] 7. rapports 8 / 40 / 24 : 4 corps, 1 commandes, 2 engrènements, rapports 1.0000, -0.2000, 0.3333
+[OK] 8. engrenages coniques à 90° (12 / 12) : 4 corps, 1 commandes, 1 engrènements, rapports 1.0000, -1.0000
+      (le signe dépend de l'orientation des axes : seul |rapport| = 1 est attendu)
+[OK] 9. différentiel 6573 entraîné par un 8 : 5 corps, 1 commandes, 1 engrènements, rapports 1.0000, -0.3333
+      (boîtier seul : les satellites internes ne sont pas montés)
+[OK] 10. plateau tournant 28 entraîné par un conique 12 : 4 corps, 1 commandes, 1 engrènements, rapports 1.0000, 0.4286
+      (seul |rapport| = 12/28 est attendu)
+[OK] 11. vis sans fin et 24 : 4 corps, 1 commandes, 1 engrènements, rapports 1.0000, -0.0417
+      (seul |rapport| = 1/24 est attendu)
+[NON PRIS EN CHARGE] 12. crémaillère et pignon : une crémaillère avance en ligne droite (liaison glissière) ; le solveur n'a que des pivots pour l'instant
+[OK] 13. axe traversant trois supports : 6 corps, 1 commandes, 1 engrènements, rapports 1.0000, -0.3333
+[OK] 14. montage 1 tourné de 90° puis 180° : 3 corps, 1 commandes, 1 engrènements, rapports 1.0000, -0.3333
+[OK] 15. deux poutres reliées par deux pins (un seul corps) : 1 corps, 0 commandes, 0 engrènements
+[OK] 16. scène de Wzx (16 / 24 sur deux piles) : 25 corps, 1 commandes, 1 engrènements, rapports 1.0000, -0.6667
+
+15 / 15 réussis (sur 16 montages, la crémaillère n'est pas encore prise en charge)

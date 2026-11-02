@@ -240,6 +240,7 @@ bool BrickApp::init(HINSTANCE inst, const Options& opt) {
         }
     }
 
+    if (opt.mechTests) { runMechTests(); return false; }   // (quits: the results are in mech_tests.txt)
     ShowWindow(m_hwnd, m_startMaximized ? SW_SHOWMAXIMIZED : SW_SHOWDEFAULT);
     UpdateWindow(m_hwnd);
     return true;
@@ -966,7 +967,8 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         else if (a == L"--manual") opt.manual = true;
         else if (a == L"--float-tray") { opt.floatTray = true; opt.floatX = (float)_wtof(next().c_str()); opt.floatY = (float)_wtof(next().c_str()); }
         else if (a == L"--opts-right") opt.optsRight = true;
-        else if (a == L"--cornell") opt.cornell = true;   // the Cornell box of WZX Engine (comparison of the renderers)
+        else if (a == L"--cornell") opt.cornell = true;
+        else if (a == L"--mechtests") opt.mechTests = true;   // the Cornell box of WZX Engine (comparison of the renderers)
         else if (a == L"--pt-trace") opt.ptTrace = next();   // per frame: samples, ms (convergence)
         else if (a == L"--settings") opt.settings = true;
         else if (a == L"--quality") opt.quality = _wtoi(next().c_str());   // 0 Rapide, 1 HQ

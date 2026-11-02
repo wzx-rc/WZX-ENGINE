@@ -64,6 +64,7 @@ struct Options {
     float floatX = 0, floatY = 0;
     std::string ttBase, ttTop;
     std::string mouseTest;
+    bool mechTests = false;     // --mechtests: the battery of mechanics tests, then quit
     int quality = -1;
     bool settings = false;
     bool cornell = false;       // --cornell
@@ -285,6 +286,7 @@ public:
 private:
     void mouseTestInput();
     void mouseTestFrame();
+    void runMechTests();   // BrickMechTests.cpp (--mechtests)
     std::vector<MouseStep> m_mouseScript;
     Brick m_mtBefore;
     std::vector<double> m_mtQ;

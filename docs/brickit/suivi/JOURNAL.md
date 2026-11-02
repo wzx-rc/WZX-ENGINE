@@ -30,3 +30,4 @@
 | 25 | 02/11/2026 | Réglages (engrenage) et défilement au glisser avec inertie dans la bibliothèque (tests souris verts) | 24_reglages.png |
 | 26 | 02/11/2026 | Path tracing : table d'importance HDRI 256 de large (moteur) + échantillonnage adaptatif de WZX Engine ; briques 28 × plus rapides, sans biais | 26_pt_avant_apres.png |
 | 27 | 02/11/2026 | Mécanique : engrènement accepté entre deux supports fixes (cas 16/24 de Wzx), diagnostic mech_diag.txt | 27_meca_16_24.png |
+| 28 | 02/11/2026 | Mécanique refondue : engrènements comme contraintes du solveur, poutres corrigées, tenons tolérants, 15 tests verts (--mechtests) | 28_meca_contraintes.png |

@@ -115,6 +115,12 @@ Cases : `[x]` porté et vérifié · `[~]` partiel (ce qui manque est dit) · `[
   (l'intention est 84 px). Le natif reprend 64 px pour l'identique visuel ; à corriger dans le web si 84 était voulu.
 
 ### Corrections mécanique
+- **Refonte (02/11/2026, `docs/brickit/MECANIQUE.md`)** : les engrènements sont des contraintes du solveur (phase des
+  dents mesurée depuis la ligne des centres, modulo une dent) au lieu de rapports figés entre pivots d'une même pièce :
+  supports séparés, empilés, côte à côte, mobiles, trains planétaires, coniques / couronnes à 90°, vis sans fin, plateaux
+  dentés. Trains = engrènements + engrenages d'un même axe, un moteur par train, rapports mesurés. Connecteurs des
+  poutres corrigés (trous lus d'une face à l'autre, faux « pin » retiré), tenons appariés à 0,06 cm près dans toute
+  orientation, Jacobien au pas 1e-4. Batterie `--mechtests` : 15 / 15 (crémaillère non prise en charge) — capture 28.
 - Engrenages dont les deux axes tournent dans deux supports fixes différents (scène `docs/brickit/tests/meca_16_24.json` :
   axe du 16 dents dans une pile de 3 briques Technic 1 × 1 à trou 6541, axe du 24 dents dans une autre pile de 4, les deux
   piles non reliées par des tenons, donc deux corps racines) : le web comme le natif exigeaient le même corps parent pour

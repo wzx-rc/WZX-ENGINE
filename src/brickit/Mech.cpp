@@ -37,8 +37,8 @@ static Affine rotAbout(const float3& p, const float3& u, float v) {
     return r;
 }
 
-static bool parallel(const float3& a, const float3& b) { return std::fabs(std::fabs(dot(a, b)) - 1.0f) < 1e-3f; }
-static bool onLine(const float3& p, const float3& p0, const float3& u, float tol = 0.05f) {
+static bool parallel(const float3& a, const float3& b) { return std::fabs(std::fabs(dot(a, b)) - 1.0f) < 2e-3f; }
+static bool onLine(const float3& p, const float3& p0, const float3& u, float tol = 0.08f) {
     float3 d = p - p0;
     d = d - u * dot(d, u);
     return dot(d, d) < tol * tol;
@@ -87,6 +87,43 @@ const MechMeta& Mech::meta(int part) {
         for (size_t i = 0; i < p.voxels.size(); ++i)
             if (p.conn[i] == k.conn) pts.push_back(p.voxels[i]);
         std::vector<bool> used(pts.size(), false);
+        if (k.hole) {
+            // a hole given by its two ends on opposite faces of the part (beams: one point on each face, 0.8 apart, the
+            // same spacing as the next hole along the beam): paired across the part first, along that axis
+            for (size_t a = 0; a < pts.size(); ++a) {
+                if (used[a]) continue;
+                for (size_t b = a + 1; b < pts.size(); ++b) {
+                    if (used[b]) continue;
+                    float d[3] = {std::fabs(pts[b].x - pts[a].x), std::fabs(pts[b].y - pts[a].y), std::fabs(pts[b].z - pts[a].z)};
+                    int nd = 0, kk = -1;
+                    for (int j = 0; j < 3; ++j)
+                        if (d[j] > 0.02f) { ++nd; kk = j; }
+                    if (nd != 1 || d[kk] < 0.3f || d[kk] > 1.7f) continue;
+                    const float lo = (&p.bmin.x)[kk], hi = (&p.bmax.x)[kk];
+                    const float va = (&pts[a].x)[kk], vb = (&pts[b].x)[kk];
+                    auto onFace = [&](float v) { return std::fabs(v - lo) < 0.06f || std::fabs(v - hi) < 0.06f; };
+                    if (!onFace(va) || !onFace(vb)) continue;
+                    float3 c = (pts[a] + pts[b]) * 0.5f, dir(0);
+                    (&dir.x)[kk] = 1;
+                    const float len = std::fabs(vb - va);
+                    const int nh = std::max(1, (int)std::lround(len / 0.8f));
+                    for (int sgm = 0; sgm < nh; ++sgm) {
+                        float3 q = c;
+                        (&q.x)[kk] = std::min(va, vb) + len / nh * (sgm + 0.5f);
+                        m.holes.push_back({q, dir, std::max(len / nh * 0.5f, 0.2f), k.cross});
+                    }
+                    used[a] = used[b] = true;
+                    for (size_t e = 0; e < pts.size(); ++e) {   // the points between the two ends belong to that hole
+                        if (used[e]) continue;
+                        float3 de = pts[e] - pts[a];
+                        float t = (&de.x)[kk];
+                        (&de.x)[kk] = 0;
+                        if (length(de) < 0.02f && t * (vb - va) > 0 && std::fabs(t) < std::fabs(vb - va)) used[e] = true;
+                    }
+                    break;
+                }
+            }
+        }
         for (size_t a = 0; a < pts.size(); ++a) {
             if (used[a]) continue;
             std::vector<size_t> line{a};
@@ -131,6 +168,17 @@ const MechMeta& Mech::meta(int part) {
             }
         }
     }
+    // a "male" line that runs across the part's own holes (beams: the middles of the holes typed as pins) is no male
+    m.males.erase(std::remove_if(m.males.begin(), m.males.end(), [&](const MechConn& ml) {
+        int crossed = 0;
+        for (const MechConn& h : m.holes) {
+            if (parallel(h.axis, ml.axis)) continue;
+            float3 d = h.p - ml.p;
+            d = d - ml.axis * dot(d, ml.axis);
+            if (length(d) < 0.08f && std::fabs(dot(h.p - ml.p, ml.axis)) <= ml.half + 0.05f) ++crossed;
+        }
+        return crossed >= 2;
+    }), m.males.end());
     // gears: "N Tooth" in the title, turning around the hole nearest to the centre of the part
     static const std::regex gearRe("Gear\\s+(\\d+)\\s+Tooth", std::regex::icase), toothRe("(\\d+)\\s+Tooth", std::regex::icase);
     if (!m.holes.empty() && std::regex_search(p.label, gearRe) && p.label.find("Rack") == std::string::npos) {
@@ -205,7 +253,6 @@ bool Mech::build(const std::vector<Brick>& bricks, MechModel& M) {
     auto unite = [&](int a, int b) { a = find(a); b = find(b); if (a != b) uf[b] = a; };
     auto wPos = [&](int i, const float3& v) { return qRot(bricks[i].rot, v) + bricks[i].pos; };
     auto wDir = [&](int i, const float3& v) { return normalize(qRot(bricks[i].rot, v)); };
-    auto key = [](const float3& v) { return ((int64_t)std::lround(v.x * 50) * 73856093) ^ ((int64_t)std::lround(v.y * 50) * 19349663) ^ ((int64_t)std::lround(v.z * 50) * 83492791); };
 
     // 0) turntable halves (same family, same axis, touching along it) = pivot (web step 3; the two halves are not
     // fused by their studs: the top turns on the base)
@@ -233,15 +280,28 @@ bool Mech::build(const std::vector<Brick>& bricks, MechModel& M) {
         }
     }
     // 1) a stud of one brick in an anti-stud of another = rigid
-    std::unordered_map<int64_t, std::vector<int>> tops;
+    // (any orientation: studs on the side, upside down, SNOT; a stud and an anti-stud within 0.06 cm, searched in the
+    // 27 cells of 0.1 cm around, robust to the small errors of position of turned parts)
+    auto cellKey = [](int x, int y, int z) { return ((int64_t)x * 73856093) ^ ((int64_t)y * 19349663) ^ ((int64_t)z * 83492791); };
+    struct TopPt { float3 p; int i; };
+    std::unordered_map<int64_t, std::vector<TopPt>> tops;
     for (int i = 0; i < n; ++i)
-        for (const float3& v : meta(bricks[i].part).top) tops[key(wPos(i, v))].push_back(i);
+        for (const float3& v : meta(bricks[i].part).top) {
+            const float3 w = wPos(i, v);
+            tops[cellKey((int)std::floor(w.x * 10), (int)std::floor(w.y * 10), (int)std::floor(w.z * 10))].push_back({w, i});
+        }
     for (int i = 0; i < n; ++i)
         for (const float3& v : meta(bricks[i].part).bottom) {
-            auto it = tops.find(key(wPos(i, v)));
-            if (it != tops.end())
-                for (int j : it->second)
-                    if (j != i && !pairs.count({std::min(i, j), std::max(i, j)})) unite(i, j);
+            const float3 w = wPos(i, v);
+            const int cx = (int)std::floor(w.x * 10), cy = (int)std::floor(w.y * 10), cz = (int)std::floor(w.z * 10);
+            for (int dz = -1; dz <= 1; ++dz)
+                for (int dy = -1; dy <= 1; ++dy)
+                    for (int dx = -1; dx <= 1; ++dx) {
+                        auto it = tops.find(cellKey(cx + dx, cy + dy, cz + dz));
+                        if (it == tops.end()) continue;
+                        for (const TopPt& t : it->second)
+                            if (t.i != i && length(t.p - w) < 0.06f && !pairs.count({std::min(i, t.i), std::max(i, t.i)})) unite(i, t.i);
+                    }
         }
     // 2) axles and pins through holes
     struct WH { int i; float3 p, u; bool cross; float half; };
@@ -350,10 +410,7 @@ bool Mech::build(const std::vector<Brick>& bricks, MechModel& M) {
             float dist = length(d - A.u * ax), want = (A.teeth + B.teeth) * 0.05f;
             char buf[160];
             if (std::fabs(dist - want) < 0.105f) M.meshes.push_back({(int)x, (int)y});
-            else if (std::fabs(dist - want) < 0.8f) {
-                snprintf(buf, sizeof(buf), "Engrenages %d/%d pas en prise : entraxe %.2f cm, il faut %.2f cm", A.teeth, B.teeth, dist, want);
-                M.warnings.push_back(buf);
-            }
+            // (near but not in mesh: no warning, only real blocks are reported)
         }
 
     // tooth phases: from the biggest gear of each train, every meshing gear turned so its teeth fall between the teeth
@@ -704,9 +761,10 @@ bool Mech::solve(MechModel& m, const Drag* drag) {
             if (!drag && closureMax(r) < 1e-4) break;
             for (int c = 0; c < nf; ++c) {
                 std::vector<double> xs = x;
-                xs[c] += 1e-6;
+                // (step 1e-4: the poses are single precision floats, a 1e-6 step only measured their rounding)
+                xs[c] += 1e-4;
                 evalR(xs, rj);
-                for (int k = 0; k < rows; ++k) J[c][k] = (rj[k] - r[k]) / 1e-6;
+                for (int k = 0; k < rows; ++k) J[c][k] = (rj[k] - r[k]) / 1e-4;
             }
             std::vector<std::vector<double>> A(nf, std::vector<double>(nf, 0.0));
             std::vector<double> g(nf, 0.0);
