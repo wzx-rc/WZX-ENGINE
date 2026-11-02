@@ -733,17 +733,23 @@ void Renderer::uploadEnvironment(const EnvImagePtr& img) {
     // below the radiance it returns makes fireflies.
     size_t li = 0;
     while (mips[li].w > 2048 && li + 1 < mips.size()) ++li;
-    const Level& S = mips[li];
+    const Level& S = mips[li];   // (the sun of the image, below, is found at this level)
     const Level& L0 = mips[0];
-    const uint32_t W = S.w, H = S.h, k = std::max(1u, L0.w / W);
+    const uint32_t W = S.w, H = S.h;
+    // The tables themselves on a level at most 256 wide (~130 KB, held by the GPU caches): sampling the 2k tables
+    // (16 MB, two binary searches of dependent reads per sample) cost 15 times the rest of a studio frame. Each cell
+    // keeps the largest luminance of the texels it covers, so the pdf never drops below the radiance it returns.
+    size_t ti = 0;
+    while (mips[ti].w > 256 && ti + 1 < mips.size()) ++ti;
+    const uint32_t TW = mips[ti].w, TH = mips[ti].h, k = std::max(1u, L0.w / TW);
     std::vector<float> lum0((size_t)L0.w * L0.h);
     for (size_t i = 0; i < lum0.size(); ++i) lum0[i] = std::max(lum(float3(L0.rgb[i * 3], L0.rgb[i * 3 + 1], L0.rgb[i * 3 + 2])), 0.0f);
-    std::vector<float> func((size_t)W * H), dist((size_t)W * H + (size_t)H * (W + 1) + H + 1);
+    std::vector<float> func((size_t)TW * TH), dist((size_t)TW * TH + (size_t)TH * (TW + 1) + TH + 1);
     double sum = 0;
-    for (uint32_t y = 0; y < H; ++y) {
-        float st = std::sin((y + 0.5f) / H * kPi);
+    for (uint32_t y = 0; y < TH; ++y) {
+        float st = std::sin((y + 0.5f) / TH * kPi);
         int y0 = std::max(0, (int)(y * k) - 1), y1 = std::min((int)L0.h - 1, (int)(y * k + k));
-        for (uint32_t x = 0; x < W; ++x) {
+        for (uint32_t x = 0; x < TW; ++x) {
             float m = 0;
             for (int sy = y0; sy <= y1; ++sy)
                 for (int sx = (int)(x * k) - 1; sx <= (int)(x * k + k); ++sx) {
@@ -751,50 +757,50 @@ void Renderer::uploadEnvironment(const EnvImagePtr& img) {
                     m = std::max(m, lum0[(size_t)sy * L0.w + wx]);
                 }
             float f = m * st;
-            func[(size_t)y * W + x] = f;
+            func[(size_t)y * TW + x] = f;
             sum += f;
         }
     }
     if (sum <= 0) {   // black image: uniform tables
         std::fill(func.begin(), func.end(), 1.0f);
-        sum = (double)W * H;
+        sum = (double)TW * TH;
     }
     // a small floor keeps every direction reachable by the sampling
-    float floorV = (float)(sum / ((double)W * H)) * 1e-3f;
+    float floorV = (float)(sum / ((double)TW * TH)) * 1e-3f;
     sum = 0;
     for (float& f : func) { f += floorV; sum += f; }
     std::copy(func.begin(), func.end(), dist.begin());
-    size_t condBase = (size_t)W * H, margBase = condBase + (size_t)H * (W + 1);
-    std::vector<double> rowSum(H);
-    for (uint32_t y = 0; y < H; ++y) {
+    size_t condBase = (size_t)TW * TH, margBase = condBase + (size_t)TH * (TW + 1);
+    std::vector<double> rowSum(TH);
+    for (uint32_t y = 0; y < TH; ++y) {
         double acc = 0;
-        for (uint32_t x = 0; x < W; ++x) acc += func[(size_t)y * W + x];
+        for (uint32_t x = 0; x < TW; ++x) acc += func[(size_t)y * TW + x];
         rowSum[y] = acc;
         double run = 0;
-        float* cdf = &dist[condBase + (size_t)y * (W + 1)];
+        float* cdf = &dist[condBase + (size_t)y * (TW + 1)];
         cdf[0] = 0;
-        for (uint32_t x = 0; x < W; ++x) {
-            run += func[(size_t)y * W + x];
+        for (uint32_t x = 0; x < TW; ++x) {
+            run += func[(size_t)y * TW + x];
             cdf[x + 1] = (float)(run / acc);
         }
-        cdf[W] = 1.0f;
+        cdf[TW] = 1.0f;
     }
     {
         double run = 0;
         float* cdf = &dist[margBase];
         cdf[0] = 0;
-        for (uint32_t y = 0; y < H; ++y) {
+        for (uint32_t y = 0; y < TH; ++y) {
             run += rowSum[y];
             cdf[y + 1] = (float)(run / sum);
         }
-        cdf[H] = 1.0f;
+        cdf[TH] = 1.0f;
     }
     Buffer up = createBuffer(dist.size() * sizeof(float), D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ);
     memcpy(up.mapped, dist.data(), dist.size() * sizeof(float));
     m_envDist = up;   // read directly from the upload heap (a few MB, read through the GPU caches)
-    m_envW = W;
-    m_envH = H;
-    m_envPdfScale = (float)((double)W * H / sum);
+    m_envW = TW;
+    m_envH = TH;
+    m_envPdfScale = (float)((double)TW * TH / sum);
 
     // Sun of the image: the brightest texel, if it stands well above the mean, and the bright texels around it
     // (6 degrees). The raster viewport uses it as its key light (with the shadow map) and leaves it out of the SH.

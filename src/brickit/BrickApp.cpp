@@ -804,7 +804,19 @@ void BrickApp::frame() {
     else m_stage = ImVec4(0, m_uiRects[0].w, ds.x, std::max(m_uiRects[0].w + 16, m_uiRects[1].y));
     const float sw = m_stage.z - m_stage.x, sh = m_stage.w - m_stage.y;
     m_vp = {0, 0, std::max(16, (int)(sw * scale)), std::max(16, (int)(sh * scale))};
-    m_rs.samplesPerFrame = m_rs.raster ? 1 : std::max(1, m_opt.ppf);
+    if (m_rs.raster) m_rs.samplesPerFrame = 1;
+    else if (!m_opt.shotPath.empty() || m_opt.ppf > 1) m_rs.samplesPerFrame = std::max(1, m_opt.ppf);   // captures: fixed
+    else {   // adaptive, as WZX Engine (App::frame): 1 sample and 1 pixel in 4 while the view moves; still: every pixel,
+             // one more sample per frame while the GPU stays under 9 ms (up to 8), one less above 22 ms
+        if (moving) { m_adaptiveSpp = 1; m_rs.traceStride = m_opt.stride > 0 ? m_opt.stride : 4; }
+        else {
+            const float g = m_renderer.gpuFrameMs();
+            if (g < 9.0f && m_adaptiveSpp < 8) ++m_adaptiveSpp;
+            else if (g > 22.0f && m_adaptiveSpp > 1) --m_adaptiveSpp;
+            m_rs.traceStride = m_opt.stride > 0 ? m_opt.stride : 1;
+        }
+        m_rs.samplesPerFrame = m_adaptiveSpp;
+    }
     m_rs.ssao = m_rs.raster && m_quality == 1 && m_ssaoOn;   // HQ of the web: SSAOPass (kernel radius 0.6)
     m_rs.ssaoRadius = 0.6f;
     std::vector<int> extra;

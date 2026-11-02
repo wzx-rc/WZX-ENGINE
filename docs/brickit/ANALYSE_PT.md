@@ -51,3 +51,23 @@ son débruiteur est actif). Le moteur n'est donc pas en cause.
   pendant le mouvement.
 - C. À plus long terme : HDRI plus petit (1k) pour le studio, ou éclairage studio par lumières de surface (comme les
   miniatures).
+
+## Corrections faites (A + B, 02/11/2026)
+
+- A (moteur vp3d, `Renderer::uploadEnvironment`) : la table d'importance de l'environnement est construite sur un niveau
+  d'au plus 256 de large (chaque cellule garde la plus forte luminance des texels qu'elle couvre) ; l'image, les reflets
+  et la détection du soleil restent en 2k. Viewport3D en profite (même `Renderer`).
+- B (BrickIt) : échantillonnage adaptatif de WZX Engine : 1 échantillon et 1 pixel sur 4 pendant un mouvement ; à
+  l'arrêt tous les pixels et +1 échantillon par image tant que le GPU reste sous 9 ms (jusqu'à 8), −1 au-dessus de 22 ms.
+  Les captures (`--shot`) gardent un nombre fixe.
+
+| Mesure | Avant | Après |
+|---|---|---|
+| Briques, 512 échantillons (sans interface) | 146,5 s, 480 ms / échantillon | **5,2 s, 6,9 ms / échantillon** |
+| Cornell box, 512 échantillons | 18,2 s (36 ms, GPU chargé à ce moment) | 5,1 s, 6,0 ms — image identique au bit près |
+| Briques en direct, 10 s, 2000 × 653 | 398 échantillons sur 1 pixel sur 4 (~100 par pixel) | **2448 par pixel** |
+| Cornell en direct, ~7 s avant redimensionnement | ~330 par pixel en 10 s | 1610 par pixel |
+
+Pas de biais : à 512 échantillons, la luminance moyenne des briques passe de 171,87 / 163,29 / 143,65 à
+171,75 / 163,18 / 143,55 (sur 255), écart moyen de 1,6 = le bruit ; la Cornell (sans HDRI) est identique.
+Capture : `suivi/26_pt_avant_apres.png`.

@@ -328,7 +328,8 @@ private:
     int m_ghostMaterial = -1, m_ghostBlockedMaterial = -1;
     int m_rimLight = -1;
     bool m_startMaximized = false;
-    bool m_cornell = false;            // --cornell: the WZX Engine Cornell box instead of bricks
+    bool m_cornell = false;
+    int m_adaptiveSpp = 1;             // path tracing samples per frame (adaptive, see frame)            // --cornell: the WZX Engine Cornell box instead of bricks
     std::vector<std::pair<int, float>> m_fpMats;   // materials with fingerprints and their strength
     bool m_fingerprints = true;        // fingerprints in the path tracing (settings)
     // native settings (gear button): UI scale over the screen scale, ambient occlusion of the HQ mode, automatic save
