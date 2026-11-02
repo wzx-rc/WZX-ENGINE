@@ -22,6 +22,8 @@ struct RasterConstants {
     float envVisible; uint sunLight; float giMode; float orthoHalfH;   // sunLight: index of the path tracer's sun quad (skipped here); giMode: DDGI probes (see Shade); orthoHalfH: orthographic camera (half the view height, 0 = perspective)
     float3 hemiSky; float hemiOn;        // hemisphere fill (three.js HemisphereLight): irradiance from the sky / the ground, x intensity
     float3 hemiGround; float bevelOn;    // bevelOn: scale of the material bevel radius in the raster view (0 = off, needs the TLAS)
+    float rtShadow; float sunTanRadius; float rtShadowSamples; float rtRefl;   // ray traced sun shadow (t12), reflections (t13)
+    float centreValid; float3 rcPad;     // centreValid: t14 is this frame's
 };
 ConstantBuffer<RasterConstants> R : register(b0);
 
@@ -81,6 +83,12 @@ static const float PI = 3.14159265;
 #define DDGI_PROBE_REG_STATE t22
 #endif
 #include "DDGIProbe.hlsli"
+#ifndef VP3D_ATTRIB_SEMANTICS
+// Screen-space Radiance Cascades (DDGIConstants flags bit 8): the indirect irradiance of each pixel, computed by
+// RCSGather.hlsl (DirectX 12 viewport only).
+#define VP3D_SCREEN_GI
+Texture2D<float4> gScreenGI : register(t11);
+#endif
 #endif
 // Bevel of the raster view (DirectX 12 only, shader model 6.5): rounded edges on every edge of every part, as the
 // bevel of the path tracer (PathTrace.hlsl, BevelNormal), from inline ray queries against the same TLAS restricted to
@@ -320,6 +328,52 @@ float Shadow(float3 wpos, float3 n, float bias) {
     return s / 12.0;
 }
 
+#if defined(VP3D_RT_SHADOWS) && !defined(VP3D_ATTRIB_SEMANTICS)
+// Sun shadow ray traced per pixel (DirectX 12 viewport, R.rtShadow): computed before this pass by SunShadowTrace.hlsl
+// (rays inside the sun's disc, from the smooth surface) and SunShadowFilter.hlsl (bilateral filter), read here
+// instead of the shadow map: physical penumbra, no shadow map resolution, no temporal.
+Texture2D<float> gSunShadow : register(t12);
+Texture2D<float4> gRefl : register(t13);   // ray traced reflections (alpha 1 where traced), DirectX 12 viewport
+Texture2D<float4> gCentre : register(t14);   // raw sun trace: .y = depth of the surface the pixel centre sees
+#endif
+
+// Pixel to read the traced screen textures from (sun shadow, screen GI, reflections). They are computed for the
+// surface at each pixel centre, but with MSAA an edge pixel also shades the other surface it covers: that fragment
+// would get the values of its neighbour across the edge (white or dark dotted lines along the edges). It takes the
+// pixel of the 3x3 around whose centre surface matches its own: same depth and same normal (where a block stands on
+// the floor both surfaces have the same depth along the contact line; only the normal tells them apart).
+#if defined(VP3D_RT_SHADOWS) && !defined(VP3D_ATTRIB_SEMANTICS)
+float CentreMismatch(int2 q, float d, float3 n) {
+    float4 c = gCentre.Load(int3(q, 0));
+    float3 cn = float3(c.zw, 1.0 - abs(c.z) - abs(c.w));   // octahedral normal (as SunShadowTrace's OctEnc)
+    if (cn.z < 0) cn.xy = (1.0 - abs(cn.yx)) * float2(cn.x >= 0 ? 1.0 : -1.0, cn.y >= 0 ? 1.0 : -1.0);
+    cn = normalize(cn);
+    return abs(c.y - d) / (0.01 * d) + (1.0 - dot(n, cn)) * 20.0;
+}
+#endif
+
+int2 TracedPixel(float2 pos, float3 wpos, float3 n) {
+    int2 p = int2(pos);
+#if defined(VP3D_RT_SHADOWS) && !defined(VP3D_ATTRIB_SEMANTICS)
+    if (R.centreValid <= 0) return p;
+    float d = length(wpos - R.camPos);
+    float best = CentreMismatch(p, d, n);
+    if (best < 1.0) return p;
+    uint w, h;
+    gCentre.GetDimensions(w, h);
+    int2 bp = p;
+    for (int y = -1; y <= 1; ++y)
+        for (int x = -1; x <= 1; ++x) {
+            int2 q = clamp(p + int2(x, y), int2(0, 0), int2(w, h) - 1);
+            float e = CentreMismatch(q, d, n);
+            if (e < best) { best = e; bp = q; }
+        }
+    return bp;
+#else
+    return p;
+#endif
+}
+
 float3 GridColor(float3 base, float3 wpos, inout float3 emission) {
     float g = R.gridScale;
     float2 p = wpos.xz / g;
@@ -409,7 +463,15 @@ float4 Shade(VSOut i, bool ghost, float shadowBias, bool capture) {
         if (NoL <= 0 || cosL <= 0) continue;
         float size = sqrt(l.area);
         float3 E = l.radiance * R.lightScale * l.area * cosL / max(d2, l.area * 0.5);
-        float shadow = (li == R.keyLight) ? Shadow(i.wpos, N, shadowBias) : 1.0;
+        float shadow = 1.0;
+        if (li == R.keyLight) {
+#if defined(VP3D_RT_SHADOWS) && !defined(VP3D_ATTRIB_SEMANTICS)
+            // no sun: the ray traced mask is the key area light's (SunShadowTrace, rays over the lamp's rectangle)
+            if (R.rtShadow > 0 && R.sunOn <= 0 && !capture) shadow = gSunShadow.Load(int3(TracedPixel(i.pos.xy, i.wpos, N), 0));
+            else
+#endif
+            shadow = Shadow(i.wpos, N, shadowBias);
+        }
         float3 H = normalize(V + L);
         float NoH = saturate(dot(N, H));
         float aL = saturate(a + size / (3.0 * sqrt(d2)));   // widen the lobe for the light's size
@@ -432,7 +494,14 @@ float4 Shade(VSOut i, bool ghost, float shadowBias, bool capture) {
             float3 F = Fresnel(f0, saturate(dot(V, H)));
             float3 spec = R.sunFromEnv > 0 ? 0 : D_GGX(NoH, a) * V_Smith(NoV, NoL, a) * F;
             float3 diff = diffuseCol / PI * (1 - F);
-            color += (diff + spec) * R.sunRadiance * R.lightScale * NoL * Shadow(i.wpos, N, shadowBias);
+            float sunVis;
+#if defined(VP3D_RT_SHADOWS) && !defined(VP3D_ATTRIB_SEMANTICS)
+            // the ray traced, filtered visibility of this pixel (SunShadowTrace / SunShadowFilter)
+            if (R.rtShadow > 0 && !capture) sunVis = gSunShadow.Load(int3(TracedPixel(i.pos.xy, i.wpos, N), 0));
+            else
+#endif
+            sunVis = Shadow(i.wpos, N, shadowBias);
+            color += (diff + spec) * R.sunRadiance * R.lightScale * NoL * sunVis;
         }
     }
     // Hemisphere ambient + reflection of the environment, darkened in cavities facing down.
@@ -440,6 +509,10 @@ float4 Shade(VSOut i, bool ghost, float shadowBias, bool capture) {
     // Ambient of Lit: diffuse and glossy parts kept apart (the DDGI probes replace the diffuse part only).
     float3 ambDiffuse, ambGlossy;
     float3 kdAmb;
+    // sky radiance the glossy ambient assumes: the brighter of the sky over the hemisphere of N and the sky around the
+    // reflection (a ceiling seen from below reflects the zenith); the probes tell how much of it really arrives
+    float3 skyN;
+    float3 kSpec;  // weight of the glossy ambient (Fresnel), for the reflection of the probe light
     if (R.envMapOn > 0) {
         // HDRI: SH irradiance (diffuse) and the blurred mips of the image along the reflection (glossy).
         float3 Rd = reflect(-V, N);
@@ -448,6 +521,9 @@ float4 Shade(VSOut i, bool ghost, float shadowBias, bool capture) {
         kdAmb = diffuseCol * (1 - Fe);
         ambDiffuse = kdAmb / PI * EnvIrradiance(N) * cavity;
         ambGlossy = Fe * refl * cavity;
+        float3 skyA = EnvIrradiance(N) / PI, skyB = EnvIrradiance(Rd) / PI;
+        skyN = dot(skyA, float3(0.2126, 0.7152, 0.0722)) > dot(skyB, float3(0.2126, 0.7152, 0.0722)) ? skyA : skyB;
+        kSpec = Fe;
     } else {
         float3 sky = Environment(N) + R.ambient * (0.65 + 0.35 * N.y);
         float3 refl = Environment(reflect(-V, N)) + R.ambient;
@@ -455,18 +531,40 @@ float4 Shade(VSOut i, bool ghost, float shadowBias, bool capture) {
         kdAmb = diffuseCol * (1 - Fa);
         ambDiffuse = diffuseCol * sky * cavity;
         ambGlossy = Fa * refl * cavity;
+        skyN = dot(sky, float3(0.2126, 0.7152, 0.0722)) > dot(refl, float3(0.2126, 0.7152, 0.0722)) ? sky : refl;
+        kSpec = EnvBRDFApprox(f0, rough, NoV);   // the split-sum fit: a rough surface seen at grazing angle reflects little
     }
     if (R.hemiOn > 0) ambDiffuse += diffuseCol / PI * lerp(R.hemiGround, R.hemiSky, 0.5 + 0.5 * N.y);
 #ifdef VP3D_DDGI_PROBES
     if (R.giMode > 0) {
         // Diffuse GI from the probes instead of the ambient (view 1: indirect only, 2: direct only, as GIShade.hlsl).
-        // Where no probe answers (inside geometry, outside the volume) the ambient of Lit stays. The glossy part is
-        // the one of Lit (environment reflection): the probes are too coarse for reflections.
+        // Where no probe answers (inside geometry, outside the volume) the ambient of Lit stays.
+        // Glossy part: the environment reflection, occluded by the ratio of the probe irradiance to the sky irradiance
+        // for the same normal (indoors the probes see much less than the open sky: the floor no longer reflects it).
         if (G.view == 1 && !capture) color = 0;
         if (!capture && G.view != 2) {
             float conf;
             float3 irr = SampleIrradiance(i.wpos, N, V, conf);
-            color += lerp(ambDiffuse, kdAmb * irr, conf) + ambGlossy;
+#ifdef VP3D_SCREEN_GI
+            if (G.flags & 8u) {   // screen-space cascades where they answer, the probe volume elsewhere
+                float4 s = gScreenGI.Load(int3(TracedPixel(i.pos.xy, i.wpos, N), 0));
+                irr = lerp(irr, s.rgb, s.a);
+                conf = max(conf, s.a);
+            }
+#endif
+            const float3 lw = float3(0.2126, 0.7152, 0.0722);
+            float occ = saturate(dot(irr, lw) / max(dot(skyN, lw), 1e-4));
+            occ *= occ;   // squared: grazing reflections of the sky indoors are occluded harder
+            // what the occluded sky no longer gives, the room gives: the probe light, reflected (metals keep a reflection)
+            float3 glossy = ambGlossy * occ + kSpec * irr * cavity * (1.0 - occ);
+            float3 glossyAmb = lerp(ambGlossy, glossy, conf);
+#if defined(VP3D_RT_SHADOWS) && !defined(VP3D_ATTRIB_SEMANTICS)
+            if (R.rtRefl > 0) {   // ray traced reflection of this pixel (ReflectTrace / ReflectFilter), Fresnel-weighted
+                float4 rr = gRefl.Load(int3(TracedPixel(i.pos.xy, i.wpos, N), 0));
+                if (rr.a > 0.5) glossyAmb = kSpec * rr.rgb;
+            }
+#endif
+            color += lerp(ambDiffuse, kdAmb * irr, conf) + glossyAmb;
         }
     } else
 #endif
@@ -506,6 +604,13 @@ float4 PSMain(VSOut i) : SV_Target {
             return float4(c, 1);
         }
     }
+#endif
+#ifdef VP3D_SCREEN_GI
+    // Split RC inspection views (view 3): the screen GI texture holds the debug colour itself
+    if (R.giMode > 0 && G.view == 3) return float4(gScreenGI.Load(int3(i.pos.xy, 0)).rgb, 1);
+#endif
+#if defined(VP3D_RT_SHADOWS) && !defined(VP3D_ATTRIB_SEMANTICS)
+    if (R.giMode > 0 && G.view == 4) return float4(gSunShadow.Load(int3(i.pos.xy, 0)).xxx, 1);   // inspection: shadow mask
 #endif
     return Shade(i, false, 0.0015, false);
 }

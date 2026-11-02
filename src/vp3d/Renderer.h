@@ -98,6 +98,69 @@ struct RenderSettings {
     // Path tracing: 1 = every pixel each frame; 4 = one pixel of each 2 x 2 block per frame, in turn (a quarter of the
     // rays per frame, same convergence over time; the first frame after a reset traces every pixel)
     int traceStride = 1;
+    // How the probes of the GI modes are computed: 0 DDGI (random rays, hysteresis), 1 Radiance Cascades (the
+    // cascades merged every frame, no temporal accumulation). Radiance Cascades need ray tracing (not ddgiRaster).
+    int giMethod = 0;
+    int rcProbeBudget = 8192;     // probes of cascade 0 (the DDGI grid of this mode)
+    int rcCascades = 4;           // cascade count (the top one traces to infinity)
+    int rcDirRes = 8;             // directions per side of cascade 0 (8 = 64 directions, x4 per cascade), 2..8
+    float rcInterval = 3.0f;      // ray length of cascade 0, in probe spacings (x4 per cascade): covers the
+                                  // probe visibility range (DDGI maxDistance 2.6 spacings), so the distances are exact
+    bool rcBounces = true;        // further bounces: the hits read the previous frame's probes (else one bounce)
+    int rcLightSamples = 2;       // light samples per hit (fixed per texel: stable, no flicker)
+    float rcHysteresis = 0.0f;    // 0 = no temporal accumulation; > 0 blends the frames (the light samples then move)
+    bool rcBilinearFix = false;   // merge with one traced segment per parent probe (8x the merge rays; not better here)
+    // Screen-space cascades (needs giMethod = 1 and the raster view): probes on the visible surfaces, one per
+    // rcScreenSpacing x rcScreenSpacing pixels in cascade 0; the world cascades stay the cache of the further bounces.
+    bool rcScreen = false;
+    int rcScreenSpacing = 8;      // pixels between the cascade-0 probes (x2 per cascade)
+    int rcScreenDirRes = 8;       // directions per side of cascade 0 (x2 per cascade)
+    float rcScreenInterval = 0.25f;   // ray length of cascade 0, in world probe spacings (x4 per cascade)
+    // Split Radiance Cascades (needs giMethod = 1 and the raster view; replaces rcScreen): sparse world probes around
+    // the visible surfaces (hash tables, LODs from the camera distance), one ray per pixel split into the cascades by
+    // its hit distance, nothing accumulated over frames. The world cascades stay the cache of the further bounces.
+    bool rcSplit = false;
+    int rcSplitProbePx = 12;      // size of a cascade-0 probe cell on screen, in pixels (LODs keep it so with distance)
+    float rcSplitInterval = 2.0f; // end of the cascade-0 interval, in cascade-0 spacings (x4 per cascade)
+    int rcSplitCascades = 4;      // 1..6, the top one to infinity
+    bool rcSplitAnimate = false;  // jitter the ray set every frame (moving noise; off = a still image stays still)
+    // Accumulation while nothing moves: up to rcSplitHistory frames per cascade-0 probe (world space, so the camera can
+    // move), dropped around an object that moves and everywhere when a light or a material changes. 0 or 1 = off.
+    int rcSplitHistory = 16;
+    bool rcSplitFilter = true;    // each cascade-0 probe averaged with its 6 neighbour cells (less noise, a cell of blur)
+    int rcSplitDebug = 0;         // inspection view: 0 off, SRC_DEBUG_* (cells, probes, hit cascade, rays, LOD, history)
+    int rcSplitDebugCascade = 0;  // cascade shown by the cells view
+    // Raster modes: the sun shadow traced per pixel against the scene (needs the acceleration structure of the frame,
+    // i.e. a GI mode) instead of the shadow map. sunAngle: angular diameter of the sun (degrees), its penumbra.
+    bool rtSunShadows = true;
+    float sunAngle = 0.53f;
+    int rtShadowSamples = 8;
+    // Raster modes with GI: reflections traced per pixel on metals and glossy surfaces (roughness under reflMaxRough):
+    // one mirror ray, or reflSamples GGX rays filtered spatially, instead of the environment reflection.
+    bool rtReflections = true;
+    int reflSamples = 4;
+    float reflMaxRough = 0.5f;
+    // GI raster modes (Metal iOS, Split RC...; Lit keeps 4x): 0 MSAA 4x, 1 MSAA 8x, 2 AAA = MSAA 8x resolved in
+    // tonemapped space (bright / dark edges stay smooth instead of stair-stepping on the bright side)
+    int aaQuality = 0;
+    // Ray traced shadows (sun and lamp) of the raster GI modes: 0 low ... 2 medium (8 sun / 16 lamp rays, the former
+    // default) ... 4 AAA (32 / 64 rays, wider filter)
+    int shadowQuality = 2;
+};
+
+// What the Radiance Cascades of the last frame looked like (viewer statistics).
+struct RCStats {
+    int cascades = 0;
+    uint32_t probes[RC_MAX_CASCADES] = {}, dirRes[RC_MAX_CASCADES] = {};
+    float tStart[RC_MAX_CASCADES] = {}, tEnd[RC_MAX_CASCADES] = {};
+    uint64_t rays = 0;            // texels traced per frame (all cascades)
+    int screenCascades = 0;       // screen-space cascades (rcScreen)
+    uint64_t screenRays = 0;
+    int splitCascades = 0;        // Split RC: cascades, probe capacity and directions per probe of each, rays (pixels)
+    uint32_t splitCapacity[RC_MAX_CASCADES] = {}, splitDirs[RC_MAX_CASCADES] = {};
+    uint64_t splitRays = 0;
+    float splitLodDist = 0, splitSpacing = 0;   // where LOD 1 starts, cascade-0 spacing at LOD 0
+    uint32_t splitProbes[RC_MAX_CASCADES] = {};   // probes allocated per cascade (read back from the previous frame)
 };
 
 struct ViewRect { int x = 0, y = 0, w = 1, h = 1; };
@@ -148,8 +211,10 @@ public:
     uint64_t rasterTriangles() const { return m_rasterTris; }   // triangles of the camera passes of the last raster frame (after LOD and culling)
     float giUpdateMs() const { return m_giUpdateMs; }     // DDGI probe ray tracing
     float giBlendMs() const { return m_giBlendMs; }       // DDGI probe blending
+    float splitMs() const { return m_splitMs; }           // Split Radiance Cascades (all passes, gather included)
     uint32_t giProbeCount() const { return m_giCounts[0] * m_giCounts[1] * m_giCounts[2]; }
     float giSpacing() const { return m_giSpacing; }
+    const RCStats& rcStats() const { return m_rcStats; }   // Radiance Cascades of the last GI frame
     bool converged(const RenderSettings& rs) const { return m_sampleIndex >= (uint32_t)rs.maxSamples; }
 
     // Reads back the last tonemapped viewport image (RGBA8).
@@ -209,7 +274,8 @@ private:
     float m_sceneRadius = 10;
 
     bool createPipelines(std::string* error);
-    bool createRasterPipelines(std::string* error);
+    // msaaOnly: rebuild only the multisampled pipelines (sample count change), keeping the root signature and heaps
+    bool createRasterPipelines(std::string* error, bool msaaOnly = false);
     bool createMsaaPipelines(std::string* error);   // the multisampled viewport passes (m_msaa samples)
     void resolveViewport(ID3D12Resource* src, ID3D12Resource* dst);   // the multisampled viewport colour into a texture
     void recordSelectionMask(const std::function<void(const Draw&)>& drawOne);   // coverage of the selection (t8)
@@ -227,6 +293,9 @@ private:
     void setupProbeGrid(const RenderSettings& rs);
     void createProbeTextures(const lit::ProbeGrid& grid);
     void recordDDGI(const RenderSettings& rs, UINT gx, UINT gy, bool shade = true);   // shade: GIShade (ray traced visibility)
+    void recordRC(const RenderSettings& rs);   // Radiance Cascades: trace + merge every cascade, then fill the probe atlases
+    void recordRCScreen(const RenderSettings& rs, UINT gx, UINT gy);   // screen-space cascades + per-pixel gather
+    void recordSplitRC(const RenderSettings& rs, UINT gx, UINT gy);    // Split Radiance Cascades + per-pixel gather
     void copyHistory();
     uint32_t sceneSignature(const Scene& scene) const;
     uint32_t transformSignature(const Scene& scene) const;
@@ -286,6 +355,11 @@ private:
     ComPtr<ID3D12RootSignature> m_rootSig;
     ComPtr<ID3D12PipelineState> m_psoTrace, m_psoDenoise, m_psoTonemap;
     ComPtr<ID3D12PipelineState> m_psoGIUpdate, m_psoGIBlend, m_psoGIShade, m_psoGIRaster;
+    ComPtr<ID3D12PipelineState> m_psoRCVisibility, m_psoRCTrace, m_psoRCGather;
+    ComPtr<ID3D12PipelineState> m_psoRCSProbes, m_psoRCSTrace, m_psoRCSProbeSH, m_psoRCSGather;
+    ComPtr<ID3D12PipelineState> m_psoSRCClear, m_psoSRCInsert, m_psoSRCAlloc, m_psoSRCCount, m_psoSRCTrace, m_psoSRCMerge,
+        m_psoSRCIrradiance, m_psoSRCFilter, m_psoSRCGather;
+    ComPtr<ID3D12PipelineState> m_psoSunTrace, m_psoSunFilter, m_psoReflTrace, m_psoReflFilter;
     ComPtr<ID3D12DescriptorHeap> m_heap;
     uint32_t m_descSize = 0;
 
@@ -301,8 +375,16 @@ private:
     static constexpr uint32_t kCapHeapSlot = kEnvHeapSlot + 1;
     // SRVs of the probe atlases (irradiance, distance, state) read by the raster pass, after the capture UAVs
     static constexpr uint32_t kProbeSrvSlot = kCapHeapSlot + 3;
+    // Screen GI texture (screen-space cascades): its SRV right after the probe SRVs (raster t11), then its UAV (u17)
+    // and the ray traced sun shadow: its mask SRV (raster t12), then its raw and filtered UAVs (u18, u19)
+    static constexpr uint32_t kScreenGISrvSlot = kProbeSrvSlot + 3, kSunShadowSrvSlot = kProbeSrvSlot + 4;
+    static constexpr uint32_t kReflSrvSlot = kProbeSrvSlot + 5;   // raster t13: ray traced reflections (filtered)
+    // UAVs: screen GI (u17), then u18..u21: sun shadow raw, filtered, reflections raw, filtered
+    static constexpr uint32_t kCenterSrvSlot = kProbeSrvSlot + 6;   // raster t14: the raw sun trace (pixel-centre depth)
+    static constexpr uint32_t kScreenGIUavSlot = kProbeSrvSlot + 7, kSunShadowUavSlot = kProbeSrvSlot + 8;
+    static constexpr uint32_t kMsaaSrvSlot = kSunShadowUavSlot + 4;   // the MSAA colour, read by the tonemapped resolve
     // coverage of the selection (resolved MSAA mask of the selected objects) read by the tonemapper (t8)
-    static constexpr uint32_t kSelCovSlot = kProbeSrvSlot + 3;
+    static constexpr uint32_t kSelCovSlot = kMsaaSrvSlot + 1;
     // extra views (renderView): per view, the u0..u5 table of the tonemapper then its selection coverage (t8)
     // depth of the viewport read by the ambient occlusion (t9, right after t8)
     static constexpr uint32_t kDepthSrvSlot = kSelCovSlot + 1;
@@ -363,6 +445,35 @@ private:
     float m_giUpdateMs = 0.0f, m_giBlendMs = 0.0f;
     bool m_giTimed = false;
     Rng m_giRng;
+    // Radiance Cascades: all cascades in one buffer (u15), their constants (b3)
+    Buffer m_rcBuffer, m_rcConstants;
+    Buffer m_rcsBuffer, m_rcsConstants;          // screen-space cascades (u16, b4)
+    Buffer m_srcBuffer, m_srcConstants;          // Split Radiance Cascades (u16 as a raw buffer, b4)
+    float m_splitMs = 0.0f;
+    bool m_splitTimed = false;                   // the frame wrote the Split RC timestamps (4, 5)
+    // Split RC history: the previous frame's cascade-0 slots, irradiance and history lengths (u22), its layout and camera,
+    // the signature that drops it (lighting, materials, settings), the transforms of the draws (moves drop it locally)
+    Buffer m_srcPrev, m_srcReadback;            // history; the counters read back (probes per cascade)
+    uint32_t m_srcKeys[RC_MAX_CASCADES] = {};   // keys of the last frame read back (recordRC resets m_rcStats)
+    uint32_t m_srcCapProbes[RC_MAX_CASCADES] = {};   // probe capacity per cascade, following the keys of the last frames
+    bool m_srcProfile = GetEnvironmentVariableA("VP3D_SRC_PROFILE", nullptr, 0) > 0;   // a timestamp after each pass
+    uint32_t m_srcProfileN = 0;
+public:
+    std::string srcProfile;   // last frame's per-pass times (VP3D_SRC_PROFILE)
+private:
+    uint32_t m_srcPrevCap = 0, m_srcPrevProbes = 0, m_srcPrevSig = 0;
+    bool m_srcPrevValid = false;
+    float3 m_srcPrevCam;
+    std::vector<Affine> m_srcPrevXf;
+    ComPtr<ID3D12Resource> m_screenGI;           // per pixel indirect irradiance (RCSGather.hlsl)
+    ComPtr<ID3D12Resource> m_sunShadowRaw, m_sunShadow;   // ray traced sun visibility: raw (+ depth, normal), filtered
+    ComPtr<ID3D12Resource> m_reflRaw, m_refl;             // ray traced reflections: raw (rgb, roughness), filtered
+    // SunShadowTrace (+ ReflectTrace) then the filters; shadow / reflections: what the raster pass reads this frame
+    // areaLight >= 0: the shadow mask is the one of that area light (its GPU light index) instead of the sun
+    void recordScreenTrace(const float3& sunDir, const RenderSettings& rs, bool shadow, bool refl, int areaLight = -1);
+    bool m_screenGIOn = false;                   // the last frame filled it (raster reads it)
+    bool m_asThisFrame = false;                  // the TLAS was built this frame (ray traced shadows of the raster pass)
+    RCStats m_rcStats;
 
     // Temporal history: copies of ACCUM and NORMAL of the previous frame, and the camera they were rendered with.
     ComPtr<ID3D12Resource> m_hist[2];
@@ -400,6 +511,8 @@ private:
     ComPtr<ID3D12Resource> m_selMask, m_selCov;
     ComPtr<ID3D12PipelineState> m_psoSelect;
     std::vector<uint32_t> m_selIds;   // instance ids + 1 of the selection (as FrameConstants)
+    bool m_msaa8 = false;           // the GPU supports 8x on the HDR colour format (Split RC / GI modes, aaQuality)
+    ComPtr<ID3D12PipelineState> m_psoResolve;   // tonemapped MSAA resolve (ResolveTM.hlsl)
     ComPtr<ID3D12RootSignature> m_rasterRoot;
     ComPtr<ID3D12PipelineState> m_psoShadow, m_psoBg, m_psoMain, m_psoTrans, m_psoGhost, m_psoId, m_psoWire, m_psoGrid, m_psoDepth;
     ComPtr<ID3D12DescriptorHeap> m_rtvHeap, m_dsvHeap;

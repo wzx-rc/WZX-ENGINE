@@ -96,6 +96,8 @@ struct RasterConstants {
     float envVisible; uint32_t sunLight; float giMode, pad3;   // giMode: DDGI probes read by Shade (Raster.hlsl)
     float3 hemiSky{0, 0, 0}; float hemiOn = 0;   // (Raster.hlsl layout)
     float3 hemiGround{0, 0, 0}; float hemiPad = 0;
+    float rtShadow = 0, sunTanRadius = 0, rtShadowSamples = 0, rtRefl = 0;   // ray traced sun shadow, reflections (DirectX 12 viewport only)
+    float centreValid = 0, rcPad0 = 0, rcPad1 = 0, rcPad2 = 0;
 };
 
 struct DrawConstants {

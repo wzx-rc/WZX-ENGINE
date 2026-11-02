@@ -121,6 +121,18 @@ struct Options {
     bool ddgi = false;          // start in the real-time probe GI mode
     bool ddgiRaster = false;    // probe rays from raster cube captures (no ray tracing for the probes)
     bool ddgiRasterView = false;   // diagnostic: raster viewport reading ray traced probes (--ddgi-raster-view 1)
+    bool split = false;            // start in the Split Radiance Cascades mode (--split 1)
+    int splitPx = 0, splitCascades = 0;   // its probe size in pixels, cascade count (--split-px, --split-cascades)
+    int splitHistory = -1, splitDebug = 0;   // accumulation frames, inspection view (--split-history, --split-debug)
+    int splitFilter = -1;                    // probe filter 0 / 1 (--split-filter)
+    int aaQuality = -1, shadowQuality = -1;  // GI raster modes: AA 0..2, shadows 0..4 (--aa, --shadow-quality)
+    float camDist = 0, camPitch = -1000;      // test: camera distance factor, pitch in degrees (--cam-dist, --cam-pitch)
+    float splitInterval = 0;              // its first interval in probe cells (--split-interval)
+    // Ghosting test: object index and / or light 0 swinging by animMove (--anim-object N, --anim-light 1,
+    // --anim-move x,y,z, --anim-period frames, --anim-at F = frozen at the pose of frame F)
+    int animObject = -1, animPeriod = 120, animAt = -1;
+    bool animLight = false;
+    vp3d::float3 animMove = vp3d::float3(10, 0, 0);
     bool showProbes = false;       // draw the probes as spheres shaded with their irradiance (--show-probes 1)
     bool baked = false;            // Lit mode: baked probes (--baked 1)
     // Stability tests: camera yaw oscillation (radians, 2 s period), first object bobbing, and the flicker statistics
@@ -312,6 +324,7 @@ private:
     void drawSettingsWindow();
     bool m_showSettings = false;
     float m_swayBase = 0.0f, m_animBase = 0.0f;   // camera yaw and object height before the stability test moves them
+    float3 m_animObjBase, m_animLightBase, m_animLightTarget;   // ghosting test: poses before it moves them
     std::vector<double> m_statMean, m_statM2;     // flicker statistics (Welford), one per pixel
     int m_statCount = 0;
     bool m_themeTestOnly = false;   // theme forced from the command line: do not save the settings

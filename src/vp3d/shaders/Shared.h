@@ -130,6 +130,93 @@ struct DDGIConstants {
 // Cube face texture size and the face field of view (90 degrees).
 #define DDGI_FACE 16
 
+// Radiance Cascades (world space, 3D). Cascade i: probes every spacing0 * 2^i, dirRes0 * 2^i octahedral directions
+// per side (4x the directions of the cascade below), rays over [tStart, tEnd] with intervals 4x longer per cascade.
+// Each texel of a cascade holds the radiance merged with the cascades above it (rgb) and the distance to the first
+// hit (w, negative = back face). Cascade 0 sits on the DDGI probe grid and fills its atlases (RCGather.hlsl).
+#define RC_MAX_CASCADES 6
+#define RC_MAX_DIR0 8         // dirRes of cascade 0 at most (groupshared size of the gather pass)
+
+struct RCCascade {
+    uint4 counts;             // probes per axis, w = total
+    float3 origin; float spacing;   // probe (0,0,0), distance between probes
+    uint dirRes; uint offset; float tStart; float tEnd;   // directions per side, first texel in the buffer, interval
+    uint maskOffset; uint pad0; uint pad1; uint pad2;     // per probe: which of its 8 parents it sees (RCVisibility)
+};
+
+struct RCConstants {
+    RCCascade c[RC_MAX_CASCADES];
+    uint cascadeCount; uint frame; uint flags; uint lightSamples;   // flags: 1 bounces (feedback), 2 animated noise
+    float hysteresis; float pad0; float pad1; float pad2;
+};
+
+// Screen-space Radiance Cascades (probes on the visible surfaces, rays traced in the whole scene): cascade i has one
+// probe per tile x tile pixels (tile = spacing * 2^i) placed where the tile centre's camera ray hits, dirRes
+// = dirRes0 * 2^i octahedral directions, intervals x4 per cascade, the top one to infinity. Every cascade holds about
+// the same number of texels. Cascade 0 is gathered per pixel into the screen GI texture read by the raster pass.
+#define RCS_MAX_CASCADES 8
+
+struct RCSCascade {
+    uint4 grid;                       // probes per row, per column, tile (pixels), directions per side
+    uint offset; uint probeOffset; float tStart; float tEnd;   // first texel, first probe record (2 float4 each)
+};
+
+struct RCSConstants {
+    RCSCascade c[RCS_MAX_CASCADES];
+    uint cascadeCount; uint flags; float planeTolerance; uint shOffset;   // planeTolerance: world size of a C0 tile;
+                                                                         // shOffset: irradiance SH of the C0 probes (7 float4 each)
+};
+
+// Split Radiance Cascades (Freeman, Sannikov, Pitt-Francis 2026): world-space probes kept sparse in a hash table per
+// cascade, only around the visible surfaces, with levels of detail that keep a probe about the same size on screen.
+// Cascade i: spacing s0 * 2^i, (2 D0 2^i) x (D0 2^i) equal-area directions, interval ]tEnd(i-1), tEnd(i)] with
+// tEnd(i) = t0 * 4^i (the top one to infinity); every LOD doubles s0 and t0. Ray splitting: one ray per pixel, from
+// the visible surface, deposited into every cascade its hit distance tells about (transparent below the hit cascade,
+// the hit radiance in it). Everything lives in one raw buffer (word offsets below) and is rebuilt every frame.
+#define SRC_CASCADES 6
+#define SRC_MAX_MOVED 8          // boxes of moved objects per frame (more: all the history is dropped)
+#define SRC_IRR_N 6              // per cascade-0 probe: 6x6 octahedral irradiance texels (rgb / pi, valid weight)
+#define SRC_SCALE 2048.0         // fixed point of the deposited radiance (atomic integer sums)
+
+struct SRCCascade {
+    uint cap; uint maxProbes; uint dirW; uint dirH;   // hash slots (power of 2), probe capacity, directions per row, rows
+    uint keys; uint vals; uint probes; uint entries;  // word offsets: slot keys, slot probe index, probe records (8 words:
+                                                      // cell xyz, lod, rays, offset, cursor, parent), entries (4 words
+                                                      // per probe and direction: deposits, then the merged radiance)
+    float spacing; float tEnd; float pad0; float pad1;   // at LOD 0
+};
+
+struct SplitRCConstants {
+    SRCCascade c[SRC_CASCADES];
+    uint cascadeCount; uint counters; uint pixels; uint irr;   // word offsets: counters (probes per cascade, then the
+                                                               // ray offset of the top cascade), pixel records (8 words),
+                                                               // irradiance texels of the cascade-0 probes (4 words each)
+    float lodDist; float lodOverlap; float jitterX; float jitterY;   // distance where LOD 1 starts, overlap of the LODs
+                                                                     // (fraction of an octave), jitter of the ray set
+    uint clearWords; uint flags; uint debug; uint debugCascade;   // words cleared at the start (counters and slot keys),
+                                                                  // SRC_FLAG_*, inspection view (SRC_DEBUG_*) and its cascade
+    // Accumulation while nothing moves: the cascade-0 irradiance of the previous frame (u22: slot keys, slot probe,
+    // irradiance texels, history length per probe), looked up by world cell. Reset where an object moved (boxes), all
+    // of it when a light, a material or the environment changed (prevValid 0).
+    float3 prevCamPos; uint prevCap;
+    uint prevIrr; uint prevHist; uint histMax; uint movedCount;   // word offsets in u22, history cap (0 = off)
+    uint hist; uint prevValid; uint frame; uint irrF;             // history lengths of this frame, filtered irradiance
+                                                                  // (word offsets in u16; irrF = irr without the filter)
+    float4 movedMin[SRC_MAX_MOVED]; float4 movedMax[SRC_MAX_MOVED];
+};
+
+#define SRC_FLAG_ANIMATE 1u      // the ray set and the light samples change every frame
+#define SRC_DEBUG_CELLS 1u       // inspection: probe cells of cascade debugCascade (random colour per cell, LOD tint)
+#define SRC_DEBUG_PROBES 2u      // irradiance of the nearest cascade-0 probe, no blending (the probes as blocks)
+#define SRC_DEBUG_HIT 3u         // cascade where the pixel's ray deposited its radiance (blue c0 ... red top, black sky)
+#define SRC_DEBUG_RAYS 4u        // rays received by the pixel's cascade-0 probe (heat map, white = 256)
+#define SRC_DEBUG_LOD 5u         // level of detail of the pixel
+#define SRC_DEBUG_HISTORY 6u     // frames accumulated (black = none, white = full history)
+
+#define RC_FLAG_BOUNCES 1u
+#define RC_FLAG_ANIMATED_NOISE 2u
+#define RC_FLAG_BILINEAR_FIX 4u   // merge with one traced segment per parent (RCTrace.hlsl, BilinearFixMerge)
+
 #ifdef __cplusplus
 }} // namespace vp3d::gpu
 #endif

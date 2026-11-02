@@ -111,7 +111,9 @@ float3 SampleIrradiance(float3 P, float3 N, float3 V, out float confidence) {
     float3 relP = (P - G.origin) / G.spacing;
     float3 outside = max(max(-relP, relP - float3(G.counts.xyz) + 1.0), 0.0);
     float inside = saturate(1.0 - 2.0 * max(outside.x, max(outside.y, outside.z)));
-    confidence = saturate(wsum / 0.25) * inside;
+    // Inside the volume the normalized probe light is kept even when the surrounding probes are poorly visible (a
+    // contact point under an object): falling back to the sky ambient there drew bright blue halos under objects.
+    confidence = (wsum > 0 ? 1.0 : 0.0) * inside;
     return wsum > 0 ? sum / wsum * G.energy : 0;
 }
 

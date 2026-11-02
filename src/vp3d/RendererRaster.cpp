@@ -32,6 +32,8 @@ struct RasterConstants {
     float envVisible; uint32_t sunLight; float giMode, orthoHalfH;   // giMode: DDGI probes read by Shade (Raster.hlsl); orthoHalfH: orthographic camera
     float3 hemiSky; float hemiOn;
     float3 hemiGround; float bevelOn;
+    float rtShadow, sunTanRadius, rtShadowSamples, rtRefl;   // ray traced sun shadow (mask in t12), reflections (t13)
+    float centreValid; float rcPad[3];                       // centreValid: t14 holds this frame's pixel-centre depth
 };
 
 struct DrawConstants {
@@ -111,7 +113,7 @@ void blendOn(D3D12_GRAPHICS_PIPELINE_STATE_DESC& d) {
 
 } // namespace
 
-bool Renderer::createRasterPipelines(std::string* error) {
+bool Renderer::createRasterPipelines(std::string* error, bool msaaOnly) {
     D3D12_DESCRIPTOR_RANGE range = {};
     range.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
     range.NumDescriptors = 1;
@@ -128,10 +130,18 @@ bool Renderer::createRasterPipelines(std::string* error) {
     envRange.NumDescriptors = 1;
     envRange.BaseShaderRegister = 3;
 
-    D3D12_DESCRIPTOR_RANGE probeRange = {};   // t4..t6 probe atlases (DDGI without ray tracing)
-    probeRange.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
-    probeRange.NumDescriptors = 3;
-    probeRange.BaseShaderRegister = 4;
+    // One table from kProbeSrvSlot: t4..t6 probe atlases (DDGI without ray tracing), then t11 screen GI (screen-space
+    // cascades), t12 ray traced sun shadow, t13 reflections, t14 pixel-centre depth of the traced passes (edge fix);
+    // (t7 is the buffer of the instanced draws)
+    D3D12_DESCRIPTOR_RANGE probeRanges[2] = {};
+    probeRanges[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+    probeRanges[0].NumDescriptors = 3;
+    probeRanges[0].BaseShaderRegister = 4;
+    probeRanges[0].OffsetInDescriptorsFromTableStart = 0;
+    probeRanges[1].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+    probeRanges[1].NumDescriptors = 4;
+    probeRanges[1].BaseShaderRegister = 11;
+    probeRanges[1].OffsetInDescriptorsFromTableStart = 3;
 
     D3D12_DESCRIPTOR_RANGE bevelRange = {};   // t0..t3 space2: the scene of the raster bevel (one table: the root
     bevelRange.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;   // signature is at 63 of its 64 DWORDs)
@@ -164,9 +174,9 @@ bool Renderer::createRasterPipelines(std::string* error) {
     p[7].ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;   // b3 probe face (DDGI capture), vertex + pixel
     p[7].Constants.ShaderRegister = 3;
     p[7].Constants.Num32BitValues = 32;   // probe face (20 values) or editor grid (32)
-    p[8].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;   // t4..t6 probe atlases, pixel
-    p[8].DescriptorTable.NumDescriptorRanges = 1;
-    p[8].DescriptorTable.pDescriptorRanges = &probeRange;
+    p[8].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;   // t4..t6 probe atlases, t11..t14, pixel
+    p[8].DescriptorTable.NumDescriptorRanges = 2;
+    p[8].DescriptorTable.pDescriptorRanges = probeRanges;
     p[8].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
     p[9].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;   // b2 DDGI constants, pixel
     p[9].Descriptor.ShaderRegister = 2;
@@ -206,7 +216,7 @@ bool Renderer::createRasterPipelines(std::string* error) {
         if (error) *error = err ? (const char*)err->GetBufferPointer() : "raster root signature";
         return false;
     }
-    m_device->CreateRootSignature(0, blob->GetBufferPointer(), blob->GetBufferSize(), IID_PPV_ARGS(&m_rasterRoot));
+    if (!msaaOnly || !m_rasterRoot) m_device->CreateRootSignature(0, blob->GetBufferPointer(), blob->GetBufferSize(), IID_PPV_ARGS(&m_rasterRoot));
 
     auto load = [&](const wchar_t* name, std::vector<char>& code) {
         if (readBlob(m_shaderDir + L"\\" + name, code)) return true;
@@ -262,6 +272,7 @@ bool Renderer::createRasterPipelines(std::string* error) {
 
     // Viewport passes (multisampled, m_msaa samples)
     if (!createMsaaPipelines(error)) return false;
+    if (msaaOnly) return true;
 
     // Object id pass (single sample) into the albedo texture (w = id)
     d = rasterDesc(m_rasterRoot.Get());
@@ -339,7 +350,7 @@ bool Renderer::createRasterPipelines(std::string* error) {
     sh.ptr += (SIZE_T)kTexCount * m_descSize;
     m_device->CreateShaderResourceView(m_shadowMap.Get(), &srv, sh);
 
-    m_rasterCB = createBuffer(1024, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ);
+    m_rasterCB = createBuffer(2048, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ);
     return true;
 }
 
@@ -503,6 +514,15 @@ void Renderer::createRasterTargets(uint32_t w, uint32_t h) {
     cc.Format = d.Format;
     m_msaaColor.Reset();
     m_device->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &d, D3D12_RESOURCE_STATE_RENDER_TARGET, &cc, IID_PPV_ARGS(&m_msaaColor));
+    {   // its SRV for the tonemapped resolve (compute, t7 of that pass)
+        D3D12_SHADER_RESOURCE_VIEW_DESC sv = {};
+        sv.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
+        sv.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2DMS;
+        sv.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+        D3D12_CPU_DESCRIPTOR_HANDLE h = m_heap->GetCPUDescriptorHandleForHeapStart();
+        h.ptr += (SIZE_T)kMsaaSrvSlot * m_descSize;
+        m_device->CreateShaderResourceView(m_msaaColor.Get(), &sv, h);
+    }
     // MSAA depth (typeless: also read as R32 by the ambient occlusion, SRV t9)
     d.Format = DXGI_FORMAT_R32_TYPELESS;
     d.Flags = D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;
@@ -715,11 +735,24 @@ void Renderer::recordRaster(const Scene& scene, const RenderSettings& rs, const 
     rc.envVisible = scene.env.visibleToCamera ? 1.0f : 0.0f;
     rc.sunLight = m_sunLight;
     rc.giMode = (probes || probeCapture) ? 1.0f : 0.0f;   // probes read by the main pass; the capture drops its ambient
-    // The id pass reads a copy without jitter (offset 512); the viewport passes may be jittered: MSAA x16 on a GPU with
+    // sun shadow traced per pixel when this frame has an acceleration structure (GI modes)
+    rc.rtShadow = (rs.rtSunShadows && m_asThisFrame && m_tlas.res) ? 1.0f : 0.0f;
+    rc.sunTanRadius = std::tan(radians(std::max(rs.sunAngle, 0.0f)) * 0.5f);
+    rc.rtShadowSamples = (float)std::max(1, std::min(rs.rtShadowSamples, 32));
+    // reflections traced per pixel on glossy surfaces: GI modes (the hits read the probes), not the probe captures
+    const bool reflOn = rs.rtReflections && probes && !probeCapture && !xv && m_asThisFrame && m_tlas.res;   // (main view only)
+    rc.rtRefl = reflOn ? 1.0f : 0.0f;
+    // ray traced sun shadow and reflections: computed now (compute passes), read by the main pass (t8, t9)
+    // the mask is the sun's, or without a sun the key area light's (a lamp in a room: the Cornell box)
+    const int areaKey = (rc.sunOn > 0 || key < 0) ? -1 : key;
+    const bool sunMask = rc.rtShadow > 0 && !probeCapture && !xv && (rc.sunOn > 0 || areaKey >= 0);
+    // the traced passes also give the depth of each pixel centre: the edge fix of the main pass (Raster.hlsl, t10)
+    rc.centreValid = (sunMask || reflOn) ? 1.0f : 0.0f;
+    // The id pass reads a copy without jitter (offset 768); the viewport passes may be jittered: MSAA x16 on a GPU with
     // 8 samples alternates two sub-pixel offsets of its pattern, frame after frame, and the tonemapper averages the last
     // two frames while nothing moves (16 different samples per pixel).
-    static_assert(sizeof(RasterConstants) <= 512, "two copies in m_rasterCB");
-    memcpy((uint8_t*)rcb.mapped + 512, &rc, sizeof(rc));
+    static_assert(sizeof(RasterConstants) <= 768, "two copies in m_rasterCB (768 + size <= 1536: the frame constants of an extra view)");
+    memcpy((uint8_t*)rcb.mapped + 768, &rc, sizeof(rc));
     if (m_msaaTemporal && !overlay && !probeCapture && !probes && !xv) {
         const float o = (m_taaFrame & 1) ? 1.0f / 32.0f : -1.0f / 32.0f;   // pixels: the two frames are 1/16 px apart
         const float jx = 2.0f * o / (float)vp.w, jy = -2.0f * o / (float)vp.h;
@@ -729,6 +762,7 @@ void Renderer::recordRaster(const Scene& scene, const RenderSettings& rs, const 
         }
     }
     memcpy(rcb.mapped, &rc, sizeof(rc));
+    if (sunMask || reflOn) recordScreenTrace(rc.sunDir, rs, sunMask, reflOn, areaKey);
 
     m_cmd->SetGraphicsRootSignature(m_rasterRoot.Get());
     {   // raster bevel: the scene for the inline ray queries (views written when the bevel is on; read nowhere when
@@ -1020,7 +1054,21 @@ void Renderer::recordRaster(const Scene& scene, const RenderSettings& rs, const 
     }
     // 3) resolve into the HDR slot read by the tonemapper
     ID3D12Resource* idTex = xv ? xv->id.Get() : m_tex[kTexAlbedo].Get();
-    resolveViewport(xv ? xv->color.Get() : m_msaaColor.Get(), xv ? xv->hdr.Get() : m_tex[kTexDenoiseA].Get());
+    if (!xv && rs.aaQuality >= 2 && !rs.raster && probes && !probeCapture) {
+        // AAA: resolve in tonemapped space (ResolveTM.hlsl), compute: MSAA colour as t7, the HDR slot as u3
+        transition(m_msaaColor.Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+        m_cmd->SetComputeRootSignature(m_rootSig.Get());
+        m_cmd->SetComputeRootDescriptorTable(8, m_heap->GetGPUDescriptorHandleForHeapStart());
+        D3D12_GPU_DESCRIPTOR_HANDLE msSrv = m_heap->GetGPUDescriptorHandleForHeapStart();
+        msSrv.ptr += (UINT64)kMsaaSrvSlot * m_descSize;
+        m_cmd->SetComputeRootDescriptorTable(14, msSrv);
+        m_cmd->SetPipelineState(m_psoResolve.Get());
+        m_cmd->Dispatch((vp.w + 7) / 8, (vp.h + 7) / 8, 1);
+        uavBarrier(m_tex[kTexDenoiseA].Get());
+        transition(m_msaaColor.Get(), D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_RENDER_TARGET);
+    } else {
+        resolveViewport(xv ? xv->color.Get() : m_msaaColor.Get(), xv ? xv->hdr.Get() : m_tex[kTexDenoiseA].Get());
+    }
 
     // 4) object ids (selection outline)
     D3D12_CPU_DESCRIPTOR_HANDLE idRtv = rtvBase;
@@ -1033,9 +1081,12 @@ void Renderer::recordRaster(const Scene& scene, const RenderSettings& rs, const 
     m_cmd->ClearRenderTargetView(idRtv, zero, 0, nullptr);
     m_cmd->ClearDepthStencilView(idDsv, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
     m_cmd->SetPipelineState(m_psoId.Get());
-    m_cmd->SetGraphicsRootConstantBufferView(0, rcb.va() + 512);   // ids without the anti-aliasing jitter
+    m_cmd->SetGraphicsRootConstantBufferView(0, rcb.va() + 768);   // ids without the anti-aliasing jitter
     if (rs.idPass) drawAll([&](const Draw& d) { return !(d.flags & 7u); });
     transition(idTex, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+    if (sunMask) transition(m_sunShadow.Get(), D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+    if (sunMask || reflOn) transition(m_sunShadowRaw.Get(), D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+    if (reflOn) transition(m_refl.Get(), D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
 }
 
 // --------------------------------------------------------------------------- extra views
@@ -1182,15 +1233,15 @@ void Renderer::renderView(int slot, const Scene& scene, const Camera& cam, const
     fc.selRadius = selectionRadius;
     fc.selPixelScale = 1.0f;
     fc.selCovValid = (!m_selIds.empty() && m_psoSelect) ? 1u : 0u;
-    memcpy((uint8_t*)v.cb.mapped + 1024, &fc, sizeof(fc));
+    memcpy((uint8_t*)v.cb.mapped + 1536, &fc, sizeof(fc));
     m_cmd->SetComputeRootSignature(m_rootSig.Get());
-    m_cmd->SetComputeRootConstantBufferView(0, v.cb.va() + 1024);
+    m_cmd->SetComputeRootConstantBufferView(0, v.cb.va() + 1536);
     D3D12_GPU_DESCRIPTOR_HANDLE table = m_heap->GetGPUDescriptorHandleForHeapStart();
     table.ptr += (UINT64)(kViewHeapBase + slot * kViewHeapStride) * m_descSize;
     m_cmd->SetComputeRootDescriptorTable(8, table);
     D3D12_GPU_DESCRIPTOR_HANDLE cov = table;
     cov.ptr += (UINT64)kTexCount * m_descSize;
-    m_cmd->SetComputeRootDescriptorTable(16, cov);
+    m_cmd->SetComputeRootDescriptorTable(23, cov);
     m_cmd->SetPipelineState(m_psoTonemap.Get());
     uint32_t tc[4] = {(uint32_t)kTexDenoiseA, 1u, (uint32_t)rs.tonemapper, 0u};
     m_cmd->SetComputeRoot32BitConstants(1, 4, tc, 0);
@@ -1251,7 +1302,7 @@ void Renderer::recordSSAO(const RenderSettings& rs, const ViewRect& vp, const Sc
     m_cmd->SetComputeRootDescriptorTable(8, m_heap->GetGPUDescriptorHandleForHeapStart());
     D3D12_GPU_DESCRIPTOR_HANDLE t8 = m_heap->GetGPUDescriptorHandleForHeapStart();
     t8.ptr += (UINT64)kSelCovSlot * m_descSize;
-    m_cmd->SetComputeRootDescriptorTable(16, t8);
+    m_cmd->SetComputeRootDescriptorTable(23, t8);
     m_cmd->SetComputeRoot32BitConstants(1, 4, &c, 0);
     m_cmd->SetPipelineState(pso);
     m_cmd->Dispatch((vp.w + 7) / 8, (vp.h + 7) / 8, 1);
