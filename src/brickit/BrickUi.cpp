@@ -214,7 +214,7 @@ void BrickApp::uiHeader() {
         {4, svg::I_UNDO, nullptr, nullptr, false, true, 0},
         {0, svg::I_VOXELS, nullptr, "Voir les voxels : tenons jaunes, pins cyan, axles magenta (V)", m_showVox, true, 12},
         {0, svg::I_DELETE, nullptr, "Supprimer la sélection", false, sel && !m_holding, 13},
-        {1, svg::I_UNDO, !m_rs.raster ? "Path tracing" : m_quality ? "HQ" : "Rapide", "Qualité", false, true, 14},
+        {1, svg::I_UNDO, m_rcMode ? "Radiance C." : !m_rs.raster ? "Path tracing" : m_quality ? "HQ" : "Rapide", "Qualité", false, true, 14},
         {1, svg::I_UNDO, tmNames[std::clamp(m_rs.tonemapper, 0, 3)], "Transformation de vue", false, true, 15},
         {4, svg::I_UNDO, nullptr, nullptr, false, true, 0},
         {2, svg::I_MECH, "Mécanique", "Mode Mécanique : animer pivots, engrenages et axes (cinématique)", m_mechOn, true, 16},
@@ -924,7 +924,7 @@ void BrickApp::uiPopups() {
     const float s = m_ui;
     struct Item { const char* label; bool on; int id; };
     std::vector<Item> items;
-    if (m_popup == 1) items = {{"Rapide", m_rs.raster && m_quality == 0, 0}, {"HQ", m_rs.raster && m_quality == 1, 1}, {"Path tracing", !m_rs.raster, 2}};
+    if (m_popup == 1) items = {{"Rapide", m_rs.raster && m_quality == 0, 0}, {"HQ", m_rs.raster && m_quality == 1, 1}, {"Path tracing", pathTraced(), 2}, {"Radiance Cascades", m_rcMode, 3}};
     else if (m_popup == 2) items = {{"ACES", m_rs.tonemapper == 0, 0}, {"AgX", m_rs.tonemapper == 1, 1}, {"Std", m_rs.tonemapper == 3, 3}};
     else if (m_popup == 3) items = {{"Bibliothèque", m_pTray.visible, 0}, {"Manuel d'instructions", m_pManual.visible, 4}, {"Infos (pièces, fps)", m_pHud.visible, 3},
                                     {"Couleurs", m_pColors.visible, 2}, {"Actions de la brique", m_pOpts.visible, 1}, {"Réinitialiser la disposition", false, 5}};
@@ -958,8 +958,9 @@ void BrickApp::uiPopups() {
         if (h && u.pressed) {
             clickedItem = true;
             if (m_popup == 1) {
-                if (it.id == 2) { if (m_rs.raster) { m_rs.raster = false; applyLook(); } }
-                else { m_quality = it.id; m_rs.msaaSamples = m_quality ? 4 : 1; if (!m_rs.raster) { m_rs.raster = true; applyLook(); } }
+                if (it.id == 3) { setRC(true); applyLook(); }
+                else if (it.id == 2) { setRC(false); m_rs.raster = false; applyLook(); }
+                else { setRC(false); m_quality = it.id; m_rs.msaaSamples = m_quality ? 4 : 1; if (!m_rs.raster) { m_rs.raster = true; applyLook(); } }
             }
             else if (m_popup == 2) { m_rs.tonemapper = it.id; m_renderer.resetAccumulation(); }
             else if (m_popup == 3) {
@@ -1860,7 +1861,9 @@ void BrickApp::uiSettings() {
     std::vector<Row> rows = {
         {"Échelle de l'interface", scales, 0},
         {"Taille des miniatures", {{"Petites", m_thumbSize == 0}, {"Moyennes", m_thumbSize == 1}, {"Grandes", m_thumbSize == 2}}, 1},
-        {"Rendu", {{"Rapide", m_rs.raster && m_quality == 0}, {"HQ", m_rs.raster && m_quality == 1}, {"Path tracing", !m_rs.raster}}, 2},
+        {"Rendu", {{"Rapide", m_rs.raster && m_quality == 0}, {"HQ", m_rs.raster && m_quality == 1}, {"PT", pathTraced()}, {"RC", m_rcMode}}, 2},
+        {"Anti-aliasing (Radiance Cascades)", {{"MSAA 4x", m_rs.aaQuality == 0}, {"MSAA 8x", m_rs.aaQuality == 1}, {"AAA", m_rs.aaQuality == 2}}, 9},
+        {"Ombres (Radiance Cascades)", {{"Basse", m_rs.shadowQuality <= 1}, {"Moyenne", m_rs.shadowQuality == 2}, {"Haute", m_rs.shadowQuality == 3}, {"AAA", m_rs.shadowQuality == 4}}, 10},
         {"Occlusion ambiante (HQ)", {{"Oui", m_ssaoOn}, {"Non", !m_ssaoOn}}, 3},
         {"Transformation de vue", {{"ACES", m_rs.tonemapper == 0}, {"AgX", m_rs.tonemapper == 1}, {"Std", m_rs.tonemapper == 3}}, 4},
         {"Voxels", {{"Affichés", m_showVox}, {"Masqués", !m_showVox}}, 6},
@@ -1899,14 +1902,17 @@ void BrickApp::uiSettings() {
         case 0: m_uiScaleUser = kScales[clickOpt]; m_ui = (m_opt.uiScale > 0 ? m_opt.uiScale : m_dpi) * m_uiScaleUser; app::th::apply(m_ui); break;
         case 1: m_thumbSize = clickOpt; break;
         case 2:
-            if (clickOpt == 2) { if (m_rs.raster) { m_rs.raster = false; applyLook(); } }
-            else { m_quality = clickOpt; m_rs.msaaSamples = m_quality ? 4 : 1; if (!m_rs.raster) { m_rs.raster = true; applyLook(); } }
+            if (clickOpt == 3) { setRC(true); applyLook(); }
+            else if (clickOpt == 2) { setRC(false); m_rs.raster = false; applyLook(); }
+            else { setRC(false); m_quality = clickOpt; m_rs.msaaSamples = m_quality ? 4 : 1; if (!m_rs.raster) { m_rs.raster = true; applyLook(); } }
             break;
         case 3: m_ssaoOn = clickOpt == 0; break;
         case 4: m_rs.tonemapper = clickOpt == 2 ? 3 : clickOpt; break;
         case 6: m_showVox = clickOpt == 0; syncObjects(); break;
         case 7: m_animOn = clickOpt == 0; break;
         case 8: m_autosaveOn = clickOpt == 0; break;
+        case 9: m_rs.aaQuality = clickOpt; break;
+        case 10: m_rs.shadowQuality = clickOpt == 0 ? 0 : clickOpt + 1; break;
         }
         m_renderer.resetAccumulation();
         savePrefs();

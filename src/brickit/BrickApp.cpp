@@ -1,4 +1,4 @@
-﻿#include "BrickApp.h"
+#include "BrickApp.h"
 #include "app/Content.h"
 #include "MeshLod.h"
 #include "app/Theme.h"
@@ -158,6 +158,9 @@ bool BrickApp::init(HINSTANCE inst, const Options& opt) {
     if (opt.manual) m_pManual.visible = true;
     if (opt.settings) { m_popup = 5; m_popupAt = ImVec2(1e6f, 34 * m_ui); }
     if (opt.quality >= 0) { m_quality = opt.quality; m_rs.msaaSamples = m_quality ? 4 : 1; }
+    if (opt.aa >= 0) m_rs.aaQuality = std::clamp(opt.aa, 0, 2);
+    if (opt.shadows >= 0) m_rs.shadowQuality = std::clamp(opt.shadows, 0, 4);
+    if (opt.rc) setRC(true);
     if (!opt.mouseTest.empty()) m_gui.beforeNewFrame = [this] { mouseTestInput(); };
     if (opt.floatTray) { m_pTray.floating = true; m_pTray.x = opt.floatX; m_pTray.y = opt.floatY; }
     if (opt.optsRight) m_optsRight = true;
@@ -416,6 +419,20 @@ void BrickApp::setupStage() {
 // Real time: the stage of the web builder (background and fog 0x111214, ground 0x0e0f11 with the stud grid, warm key
 // light 3.4 from (-28, 34, 30) with shadows, environment at 0.55, ACES exposure 1). Path tracing: the bright studio
 // (light floor and background, HDRI studio, exposure 1.3) validated by Wzx on the captures 03b.
+// Radiance Cascades: the Split RC mode of WZX Engine (App::setRenderMode(4)): DDGI volume + raster view of the probes,
+// probes computed by the Split Radiance Cascades (giMethod 1), rebuilt every frame, no temporal blend.
+void BrickApp::setRC(bool on) {
+    m_rcMode = on;
+    m_rs.ddgi = on;
+    m_rs.ddgiRaster = false;
+    m_rs.ddgiRasterView = on;
+    m_rs.giMethod = on ? 1 : 0;
+    m_rs.rcSplit = on;
+    m_rs.rcScreen = false;
+    m_rs.rcHysteresis = 0.0f;
+    if (on) { m_rs.raster = false; m_rs.historyFixes = true; m_rs.denoise = false; }
+}
+
 void BrickApp::applyLook() {
     if (m_cornell) { m_renderer.resetAccumulation(); return; }   // (the scene keeps its own look)
     auto lin = [](int hex) { return float3(srgbToLinear(((hex >> 16) & 255) / 255.0f), srgbToLinear(((hex >> 8) & 255) / 255.0f), srgbToLinear((hex & 255) / 255.0f)); };
@@ -723,7 +740,7 @@ void BrickApp::cameraInput() {
     }
     if (!io.WantTextInput) {
         if (ImGui::IsKeyPressed(ImGuiKey_Home)) { frameAll(); changed = true; }   // (native: F is the focus mode, as the web)
-        if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_P)) { m_rs.raster = !m_rs.raster; applyLook(); changed = true; }
+        if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_P)) { setRC(false); m_rs.raster = !m_rs.raster; applyLook(); changed = true; }
         if (ImGui::IsKeyPressed(ImGuiKey_L)) {   // levels of detail on / off (comparison)
             std::swap(m_scene.lods, m_lodsOff);
             changed = true;
@@ -804,13 +821,13 @@ void BrickApp::frame() {
     ImVec2 ds = ImGui::GetIO().DisplaySize;
     // Path tracing: half resolution while the view moves (and 0.25 s after), full resolution to converge when still.
     const bool moving = ImGui::GetTime() - m_lastMove < 0.25 && m_opt.shotPath.empty();
-    const float scale = (!m_rs.raster && moving) ? m_opt.ptMoveScale : 1.0f;
+    const float scale = (pathTraced() && moving) ? m_opt.ptMoveScale : 1.0f;
     // the stage: between the top bar and the tray (no UI: the whole window)
     if (m_opt.noUi || m_uiRects.size() < 2) m_stage = ImVec4(0, 0, ds.x, ds.y);
     else m_stage = ImVec4(0, m_uiRects[0].w, ds.x, std::max(m_uiRects[0].w + 16, m_uiRects[1].y));
     const float sw = m_stage.z - m_stage.x, sh = m_stage.w - m_stage.y;
     m_vp = {0, 0, std::max(16, (int)(sw * scale)), std::max(16, (int)(sh * scale))};
-    if (m_rs.raster) m_rs.samplesPerFrame = 1;
+    if (m_rs.raster || m_rcMode) m_rs.samplesPerFrame = 1;
     else if (!m_opt.shotPath.empty() || m_opt.ppf > 1) m_rs.samplesPerFrame = std::max(1, m_opt.ppf);   // captures: fixed
     else {   // adaptive, as WZX Engine (App::frame): 1 sample and 1 pixel in 4 while the view moves; still: every pixel,
              // one more sample per frame while the GPU stays under 9 ms (up to 8), one less above 22 ms
@@ -825,7 +842,7 @@ void BrickApp::frame() {
     }
     m_rs.ssao = m_rs.raster && m_quality == 1 && m_ssaoOn;   // HQ of the web: SSAOPass (kernel radius 0.6)
     m_rs.ssaoRadius = 0.6f;
-    m_rs.rasterBevel = m_quality == 1;   // rounded edges in the real time view: HQ (inline ray queries, about 1 ms)
+    m_rs.rasterBevel = m_quality == 1 || m_rcMode;   // rounded edges in the real time views: HQ and RC (inline ray queries, about 1 ms)
     std::vector<int> extra;
     for (int i : m_multi) extra.push_back(m_firstBrickObject + i);
     m_renderer.setExtraSelection(extra);
@@ -865,7 +882,7 @@ void BrickApp::frame() {
     ++m_frame;
 
     if (!m_opt.shotPath.empty()) {
-        bool ready = m_rs.raster ? m_frame >= m_opt.shotFrames : (int)m_renderer.sampleCount() >= m_opt.shotSpp;
+        bool ready = (m_rs.raster || m_rcMode) ? m_frame >= m_opt.shotFrames : (int)m_renderer.sampleCount() >= m_opt.shotSpp;
         if (ready && m_frame > 6) {
             std::vector<uint8_t> img;
             uint32_t w, h;
@@ -886,7 +903,7 @@ void BrickApp::frame() {
             FILE* f = nullptr;
             if (_wfopen_s(&f, (m_opt.shotPath + L".txt").c_str(), L"w") == 0 && f) {
                 fprintf(f, "bricks=%d mode=%s gpu_ms=%.2f cpu_ms=%.2f frame_ms=%.2f tris_drawn=%.2fM spp=%u pick_ms=%.3f\n", (int)m_bricks.size(),
-                        m_rs.raster ? "raster" : "pathtrace", m_renderer.gpuFrameMs(), m_cpuMs, m_frameMs,
+                        m_rcMode ? "radiance_cascades" : (m_rs.raster ? "raster" : "pathtrace"), m_renderer.gpuFrameMs(), m_cpuMs, m_frameMs,
                         m_renderer.rasterTriangles() / 1e6, m_renderer.sampleCount(), pickMs);
                 fclose(f);
             }
@@ -918,6 +935,9 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         else if (a == L"--grid") opt.grid = true;
         else if (a == L"--bench") opt.bench = _wtoi(next().c_str());
         else if (a == L"--pt") opt.pathTrace = true;
+        else if (a == L"--rc") opt.rc = true;   // Radiance Cascades mode
+        else if (a == L"--aa") opt.aa = _wtoi(next().c_str());
+        else if (a == L"--shadows") opt.shadows = _wtoi(next().c_str());
         else if (a == L"--zoom") opt.zoom = (float)_wtof(next().c_str());
         else if (a == L"--bounces") opt.bounces = _wtoi(next().c_str());
         else if (a == L"--bevel-spp") opt.bevelSpp = _wtoi(next().c_str());

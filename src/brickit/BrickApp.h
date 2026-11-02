@@ -31,7 +31,9 @@ struct Options {
     int bench = 0;            // --bench N: N random bricks
     bool pathTrace = false;   // --pt: progressive path tracing
     int bounces = -1;         // --bounces N (path tracing, 0 = primary rays only)
-    int bevelSpp = -1;        // --bevel-spp N (0 = bevel off)
+    int bevelSpp = -1;
+    bool rc = false;          // --rc: Radiance Cascades mode
+    int aa = -1, shadows = -1;   // --aa 0..2 (MSAA 4x / 8x / AAA), --shadows 0..4 (ray traced shadows of the RC mode)        // --bevel-spp N (0 = bevel off)
     bool opaque = false;      // --opaque: benchmark bricks in standard colours only
     int denoise = -1;         // --denoise 0|1
     int ppf = 1;              // --ppf N: path tracing samples per frame
@@ -386,6 +388,11 @@ private:
     int m_mode = 1;                    // 0 select, 1 visor, 2 move, 3 rotate
     bool m_autoPivot = false, m_animOn = true, m_showVox = false, m_dev = false;
     int m_quality = 1;                 // 0 Rapide, 1 HQ
+    // Radiance Cascades (native addition, Réglages): the Split Radiance Cascades of WZX Engine (real time GI, ray
+    // traced, no history: sparse world probes around the visible surfaces), with the path tracing look
+    bool m_rcMode = false;
+    void setRC(bool on);
+    bool pathTraced() const { return !m_rs.raster && !m_rcMode; }
     struct PanelState { bool visible = true, collapsed = false, floating = false; float x = 0, y = 0; };
     // grip of the library / brick actions: click folds, click-drag undocks into a floating window, dropped on the
     // bottom edge (library) or a side edge (actions) it docks again (web: dockable panels)
