@@ -1,4 +1,5 @@
 #include "BrickApp.h"
+#include "app/Content.h"
 #include "MeshLod.h"
 #include "app/Theme.h"
 #include "backends/imgui_impl_win32.h"
@@ -175,6 +176,22 @@ bool BrickApp::init(HINSTANCE inst, const Options& opt) {
     else if (restoreAutosave()) keepCamera = true;   // the scene of the last session (vp3d-builder-scene)
     else { sampleScene(); keepCamera = true; }
     rebuildScene();
+    if (opt.cornell) {   // the very scene of WZX Engine (app::buildCornellBox, its main view, the settings of App::loadScene)
+        m_scene = Scene();
+        app::buildCornellBox(m_scene);
+        m_scene.env.ambient = float3(0.16f, 0.15f, 0.13f);
+        m_scene.camera = app::defaultViews(m_scene, true)[0].cam;
+        m_bricks.clear();
+        m_firstBrickObject = (int)m_scene.objects.size();
+        m_ghostObject = -1;
+        m_rimLight = -1;
+        m_fpMats.clear();
+        m_partMesh.assign(m_partMesh.size(), -1);
+        m_rs.exposure = 1.0f;
+        m_rs.vignette = 0.10f;
+        m_cornell = true;
+        keepCamera = true;
+    }
     if (test || !keepCamera) frameAll();
     m_scene.camera.distance *= opt.zoom;
     if (opt.yaw > -999) m_scene.camera.yaw = radians(opt.yaw);
@@ -374,7 +391,7 @@ void BrickApp::setupStage() {
     std::string err;
     if (!m_opt.noHdri && fileExists(hdr) && loadEnvImage(hdr, *img, &err)) m_status = "HDRI studio_small_09_2k";
     else { makeProceduralSky(*img); m_status = "HDRI: procedural sky (studio_small_09_2k.hdr not found)"; }
-    m_scene.env.hdri = img;
+    m_scene.env.hdri = m_opt.noEnv ? nullptr : img;   // --no-env: no environment image at all (profiling)
     m_scene.env.hdriIntensity = 1.0f;
     m_scene.env.visibleToCamera = false;
     m_scene.env.top = float3(0.82f, 0.83f, 0.86f);   // background behind the bricks (the HDRI only lights)
@@ -392,6 +409,7 @@ void BrickApp::setupStage() {
 // light 3.4 from (-28, 34, 30) with shadows, environment at 0.55, ACES exposure 1). Path tracing: the bright studio
 // (light floor and background, HDRI studio, exposure 1.3) validated by Wzx on the captures 03b.
 void BrickApp::applyLook() {
+    if (m_cornell) { m_renderer.resetAccumulation(); return; }   // (the scene keeps its own look)
     auto lin = [](int hex) { return float3(srgbToLinear(((hex >> 16) & 255) / 255.0f), srgbToLinear(((hex >> 8) & 255) / 255.0f), srgbToLinear((hex & 255) / 255.0f)); };
     Material& g = m_scene.materials[0];
     if (m_rs.raster) {
@@ -447,6 +465,7 @@ int BrickApp::meshOf(int part) {
 }
 
 void BrickApp::rebuildScene() {
+    if (m_cornell) return;
     m_scene.objects.resize(m_firstBrickObject);
     m_scene.objects.reserve(m_firstBrickObject + m_bricks.size());
     for (const Brick& b : m_bricks) {
@@ -473,6 +492,7 @@ void BrickApp::rebuildScene() {
 // Transforms and materials of the brick objects: colour, focus mode (the rest at 50 %), the brick in hand red and
 // translucent when it cannot be dropped.
 void BrickApp::syncObjects() {
+    if (m_cornell) return;
     const bool dim = m_focusDim && (m_selected >= 0 || m_holding);
     for (size_t i = 0; i < m_bricks.size(); ++i) {
         Object& o = m_scene.objects[m_firstBrickObject + i];
@@ -855,6 +875,11 @@ void BrickApp::frame() {
         }
     }
     m_renderer.present(m_opt.shotPath.empty());
+    if (!m_opt.ptTrace.empty()) {   // convergence: samples accumulated and the cost of each frame
+        static FILE* tf = nullptr;
+        if (!tf) _wfopen_s(&tf, m_opt.ptTrace.c_str(), L"w");
+        if (tf) { fprintf(tf, "%d %u %.2f %.2f %d %d\n", m_frame, m_renderer.sampleCount(), m_renderer.gpuFrameMs(), m_frameMs, m_vp.w, m_vp.h); fflush(tf); }
+    }
 }
 
 } // namespace brickit
@@ -888,6 +913,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         else if (a == L"--yaw") opt.yaw = (float)_wtof(next().c_str());
         else if (a == L"--pitch") opt.pitch = (float)_wtof(next().c_str());
         else if (a == L"--no-hdri") opt.noHdri = true;
+        else if (a == L"--no-env") opt.noEnv = true;
         else if (a == L"--no-ground") opt.noGround = true;
         else if (a == L"--ground") opt.groundSize = (float)_wtof(next().c_str());
         else if (a == L"--denoise") opt.denoise = _wtoi(next().c_str());
@@ -906,6 +932,8 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         else if (a == L"--manual") opt.manual = true;
         else if (a == L"--float-tray") { opt.floatTray = true; opt.floatX = (float)_wtof(next().c_str()); opt.floatY = (float)_wtof(next().c_str()); }
         else if (a == L"--opts-right") opt.optsRight = true;
+        else if (a == L"--cornell") opt.cornell = true;   // the Cornell box of WZX Engine (comparison of the renderers)
+        else if (a == L"--pt-trace") opt.ptTrace = next();   // per frame: samples, ms (convergence)
         else if (a == L"--settings") opt.settings = true;
         else if (a == L"--quality") opt.quality = _wtoi(next().c_str());   // 0 Rapide, 1 HQ
         else if (a == L"--mouse-test") { std::wstring w = next(); opt.mouseTest.assign(w.begin(), w.end()); }

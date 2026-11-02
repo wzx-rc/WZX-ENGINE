@@ -78,7 +78,7 @@ link /nologo /OUT:%OUT%\Viewport3D.exe build\obj\app\*.obj build\obj\app\wzx.res
 echo [6/6] BrickIt (native brick builder, same renderer and theme)
 if not exist build\obj\brickit mkdir build\obj\brickit
 del /q build\obj\brickit\*.obj 2>nul
-cl %CFLAGS% /c src\brickit\*.cpp src\app\ImGuiLayer.cpp src\app\Theme.cpp /Fo:build\obj\brickit\ || exit /b 1
+cl %CFLAGS% /c src\brickit\*.cpp src\app\ImGuiLayer.cpp src\app\Theme.cpp src\app\Content.cpp /Fo:build\obj\brickit\ || exit /b 1
 link /nologo /OUT:%OUT%\BrickIt.exe build\obj\brickit\*.obj build\obj\app\wzx.res build\lib\vp3d.lib build\lib\imgui_te_mt.lib d3d12.lib dxgi.lib d3dcompiler.lib windowscodecs.lib user32.lib gdi32.lib ole32.lib shell32.lib shcore.lib comdlg32.lib dwmapi.lib /SUBSYSTEM:WINDOWS || exit /b 1
 rem Technic packs of the web builder (geometry, read as they are)
 if not exist "%OUT%\assets\brickit\technic" mkdir "%OUT%\assets\brickit\technic"

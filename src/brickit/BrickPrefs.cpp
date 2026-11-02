@@ -105,6 +105,7 @@ void BrickApp::loadPrefs() {
 }
 
 void BrickApp::autosave() {
+    if (m_cornell) return;
     manualDirty();   // the steps change with the scene
     if (m_opt.shotPath.empty() && m_autosaveOn) writeText(m_exeDir + L"\\brickit_scene.v3d.json", m_build.toJson(m_scene.camera));
 }

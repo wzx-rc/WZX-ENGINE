@@ -65,7 +65,10 @@ struct Options {
     std::string ttBase, ttTop;
     std::string mouseTest;
     int quality = -1;
-    bool settings = false;      // --settings: the settings panel open (captures)           // --quality 0 | 1      // --mouse-test marquee | gizmo | ring | mech  // --turntable-test <base> <top>: mechanics self-test
+    bool settings = false;
+    bool cornell = false;       // --cornell
+    bool noEnv = false;         // --no-env
+    std::wstring ptTrace;       // --pt-trace <file>      // --settings: the settings panel open (captures)           // --quality 0 | 1      // --mouse-test marquee | gizmo | ring | mech  // --turntable-test <base> <top>: mechanics self-test
     std::string devRoundtrip;
     std::wstring mayaOut;       // --maya <file.zip>: export the scene to Maya then quit (tests)   // --dev-roundtrip <part>: OBJ export / import self-test
     int libCategory = -1;     // --cat N
@@ -325,6 +328,7 @@ private:
     int m_ghostMaterial = -1, m_ghostBlockedMaterial = -1;
     int m_rimLight = -1;
     bool m_startMaximized = false;
+    bool m_cornell = false;            // --cornell: the WZX Engine Cornell box instead of bricks
     std::vector<std::pair<int, float>> m_fpMats;   // materials with fingerprints and their strength
     bool m_fingerprints = true;        // fingerprints in the path tracing (settings)
     // native settings (gear button): UI scale over the screen scale, ambient occlusion of the HQ mode, automatic save
