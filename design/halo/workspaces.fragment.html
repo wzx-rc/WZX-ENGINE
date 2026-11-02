@@ -1,0 +1,395 @@
+<style>
+/* ---------- shared additions ---------- */
+main.body[hidden] { display: none; }
+.slider span { line-height: 23px; }   /* the font shorthand of halo.css resets it */
+.ws a { cursor: pointer; }
+.btnrow { display: flex; gap: 6px; padding: 10px 12px; }
+.btn.full { flex: 1; clip-path: none; border-radius: 2px; }
+.label { font: 600 11px/1 "Barlow Condensed", sans-serif; letter-spacing: .2em; text-transform: uppercase; color: var(--text-3); padding: 12px 12px 6px; }
+.row .tag { margin-left: auto; font: 500 10.5px "JetBrains Mono", monospace; color: var(--text-3); }
+.row:hover { background: var(--hover); }
+.swatch { width: 14px; height: 14px; border-radius: 2px; border: 1px solid var(--line-hi); flex: none; }
+.colorfield { height: 25px; display: flex; align-items: center; gap: 8px; padding: 0 7px; background: var(--base); border: 1px solid var(--line); border-radius: 2px; font: 500 11.5px "JetBrains Mono", monospace; }
+.colorfield .swatch { width: 15px; height: 15px; }
+.mapslot { height: 25px; display: flex; align-items: center; gap: 8px; padding: 0 7px; background: var(--base); border: 1px solid var(--line); border-radius: 2px; font-size: 12px; color: var(--text-2); }
+.mapslot .thumb { width: 17px; height: 17px; border-radius: 1px; flex: none; }
+.addcomp { margin: 12px; }
+.tile-swatch { width: 52px; height: 52px; border-radius: 2px; }
+
+/* ---------- GRAPH ---------- */
+.graph-canvas { position: relative; overflow: hidden; background-color: #101418;
+  background-image: radial-gradient(circle, rgba(139,150,161,.16) 1px, transparent 1.2px), radial-gradient(circle, rgba(139,150,161,.07) 1px, transparent 1.2px);
+  background-size: 96px 96px, 16px 16px; background-position: -1px -1px, -1px -1px; }
+.graph-canvas svg.wires { position: absolute; inset: 0; width: 100%; height: 100%; }
+.node { position: absolute; width: 214px; background: var(--panel); border: 1px solid var(--line-hi); border-radius: 2px; box-shadow: 0 6px 18px rgba(0,0,0,.35); }
+.node.sel { border-color: var(--accent); box-shadow: 0 0 0 1px rgba(108,196,220,.25), 0 6px 18px rgba(0,0,0,.35); }
+.node .nh { display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 10px; border-bottom: 1px solid var(--line); position: relative; }
+.node .nh::before { content: ""; position: absolute; left: -1px; top: -1px; width: 8px; height: 8px; border-left: 1px solid var(--k, var(--accent)); border-top: 1px solid var(--k, var(--accent)); }
+.node .nh .ic { color: var(--k, var(--accent)); }
+.node .nh b { font: 600 12px "Barlow Condensed", sans-serif; letter-spacing: .14em; text-transform: uppercase; color: var(--text); }
+.node .nh i.cat { margin-left: auto; font: 500 10px "JetBrains Mono", monospace; font-style: normal; color: var(--text-3); }
+.node .pins { display: grid; grid-template-columns: 1fr 1fr; padding: 6px 0; }
+.pin { display: flex; align-items: center; gap: 7px; height: 22px; font-size: 12px; color: var(--text-2); }
+.pin.in { padding-left: 10px; } .pin.out { padding-right: 10px; justify-content: flex-end; }
+.pin .p { width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid currentColor; flex: none; }
+.pin .p.on { background: currentColor; }
+.pin .x { width: 0; height: 0; border-left: 7px solid var(--text); border-top: 5px solid transparent; border-bottom: 5px solid transparent; flex: none; }
+.pin.t-unit { --pc: #84c48f; } .pin.t-num { --pc: #7ea6d8; } .pin.t-vec { --pc: #d6a64a; } .pin.t-bool { --pc: #d77a7a; }
+.pin .p { color: var(--pc, var(--text-2)); }
+.node .val { margin: 0 10px 8px; }
+.minimap { position: absolute; right: 10px; bottom: 10px; width: 176px; height: 110px; background: rgba(19,23,27,.92); border: 1px solid var(--line); border-radius: 2px; }
+.minimap i { position: absolute; background: var(--line-hi); border-radius: 1px; }
+.minimap .vp { position: absolute; border: 1px solid var(--accent); background: rgba(108,196,220,.06); }
+.log { padding: 10px 14px; font: 500 11.5px/1.75 "JetBrains Mono", monospace; color: var(--text-2); }
+.log .t { color: var(--text-3); margin-right: 12px; } .log .ok { color: var(--ok); } .log .warn { color: var(--amber); } .log .acc { color: var(--accent); }
+
+/* ---------- MATÉRIAUX ---------- */
+.mat-stage { position: relative; overflow: hidden; background: radial-gradient(ellipse at 50% 38%, #222a31 0%, #12171b 55%, #0c0f12 100%); display: grid; place-items: center; }
+.sphere { width: 300px; height: 300px; border-radius: 50%;
+  background: radial-gradient(circle at 34% 30%, #e9eef2 0%, #9aa6b0 9%, #5c6a74 26%, #34404a 48%, #1b2228 72%, #0d1114 100%);
+  box-shadow: inset -26px -30px 60px rgba(0,0,0,.55), inset 10px 12px 30px rgba(255,255,255,.04), 0 40px 60px -30px rgba(0,0,0,.8); position: relative; }
+.sphere::after { content: ""; position: absolute; inset: 0; border-radius: 50%; background: repeating-linear-gradient(118deg, transparent 0 22px, rgba(255,255,255,.025) 22px 23px); }
+.mat-floor { position: absolute; left: 50%; top: calc(50% + 150px); width: 360px; height: 46px; transform: translateX(-50%); border-radius: 50%; background: radial-gradient(ellipse, rgba(0,0,0,.55), transparent 70%); }
+.mat-shapes { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); display: flex; gap: 2px; padding: 3px; background: rgba(19,23,27,.9); border: 1px solid var(--line); border-radius: 2px; }
+.mat-shapes .t { width: 28px; height: 28px; display: grid; place-items: center; color: var(--text-2); border-radius: 2px; }
+.mat-shapes .t.on { color: var(--accent); background: var(--accent-bg); }
+.channel { position: absolute; left: 10px; bottom: 14px; display: flex; gap: 6px; }
+.tex { height: 116px; }
+.tex .th { background: none !important; }
+
+/* ---------- PREFAB ---------- */
+.prefab-stage { position: relative; overflow: hidden; background: linear-gradient(#1a2026, #0f1317 70%); }
+.prefab-stage .floor { position: absolute; left: 50%; top: 66%; width: 420px; height: 120px; transform: translate(-50%, -50%); border-radius: 50%;
+  background: radial-gradient(ellipse, rgba(108,196,220,.08), transparent 70%); border: 1px solid rgba(108,196,220,.25); }
+.prefab-stage .model { position: absolute; left: 50%; top: 46%; transform: translate(-50%, -50%); width: 190px; height: 190px; color: #c9d2da; }
+.gizmo { position: absolute; left: 50%; top: 62%; width: 0; height: 0; }
+.gizmo i { position: absolute; left: 0; top: 0; height: 2px; transform-origin: 0 50%; }
+.gizmo i::after { content: ""; position: absolute; right: -4px; top: -3px; width: 8px; height: 8px; border-radius: 50%; background: inherit; }
+.gizmo .gx { width: 70px; background: #d77a7a; transform: rotate(18deg); }
+.gizmo .gy { width: 80px; background: #84c48f; transform: rotate(-90deg); }
+.gizmo .gz { width: 62px; background: #7ea6d8; transform: rotate(158deg); }
+.comp { display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 12px; border-bottom: 1px solid var(--line); color: var(--text-2); font-size: 13px; }
+.comp .ic { color: var(--text-3); }
+.comp.sel { background: var(--accent-bg); color: var(--text); box-shadow: inset 2px 0 0 var(--accent); }
+.comp.sel .ic { color: var(--accent); }
+.comp .tg { margin-left: auto; width: 26px; height: 14px; border-radius: 2px; background: var(--accent-lo); position: relative; }
+.comp .tg::after { content: ""; position: absolute; right: 2px; top: 2px; width: 10px; height: 10px; border-radius: 1px; background: var(--accent); }
+.comp .tg.off { background: var(--line); } .comp .tg.off::after { right: auto; left: 2px; background: var(--text-3); }
+.badge { font: 500 10px "JetBrains Mono", monospace; color: var(--amber); border: 1px solid #5e4a26; border-radius: 2px; padding: 1px 5px; margin-left: auto; }
+</style>
+
+<!-- ======================= GRAPH ======================= -->
+<main class="body" data-ws="1" hidden>
+  <aside class="rail">
+    <span class="r on" title="Graph de scène"><i class="ic" data-i="workflow"></i></span>
+    <span class="r" title="Événements"><i class="ic" data-i="zap"></i></span>
+    <span class="r" title="Variables"><i class="ic" data-i="box"></i></span>
+    <span class="r" title="Fonctions"><i class="ic" data-i="git-branch"></i></span>
+    <div class="sep"></div>
+    <span class="r" title="Recherche"><i class="ic" data-i="search"></i></span>
+    <div class="spacer"></div>
+    <span class="r" title="Console"><i class="ic" data-i="terminal"></i></span>
+  </aside>
+
+  <section class="panel">
+    <div class="ph">Nœuds <span class="count">Village.graph</span></div>
+    <div class="search"><i class="ic" data-i="search"></i>Ajouter un nœud…  <span style="margin-left:auto;font:500 10.5px 'JetBrains Mono',monospace">Tab</span></div>
+    <div class="tree">
+      <div class="row"><i class="ic" data-i="chevron-down"></i><i class="ic" data-i="zap"></i>Événements<span class="tag">4</span></div>
+      <div class="row ind1"><i class="ic" data-i="circle-play"></i>Au démarrage</div>
+      <div class="row ind1"><i class="ic" data-i="repeat"></i>Toutes les N secondes</div>
+      <div class="row ind1"><i class="ic" data-i="crosshair"></i>Unité sélectionnée</div>
+      <div class="row"><i class="ic" data-i="chevron-down"></i><i class="ic" data-i="helmet"></i>Unités<span class="tag">5</span></div>
+      <div class="row ind1 sel"><i class="ic" data-i="helmet"></i>Faire apparaître une unité</div>
+      <div class="row ind1"><i class="ic" data-i="move"></i>Déplacer vers</div>
+      <div class="row ind1"><i class="ic" data-i="shield"></i>Attaquer la cible</div>
+      <div class="row"><i class="ic" data-i="chevron-right"></i><i class="ic" data-i="outpost"></i>Bâtiments<span class="tag">3</span></div>
+      <div class="row"><i class="ic" data-i="chevron-right"></i><i class="ic" data-i="git-branch"></i>Logique<span class="tag">6</span></div>
+      <div class="row"><i class="ic" data-i="chevron-right"></i><i class="ic" data-i="grid"></i>Grille<span class="tag">4</span></div>
+    </div>
+  </section>
+
+  <section class="view graph-canvas">
+    <!-- wires in canvas pixels: pin rows sit at node top + 48 + 22 * row -->
+    <svg class="wires">
+      <g fill="none" stroke-width="2">
+        <path d="M253 148 C 330 148, 330 148, 409 148" stroke="#d5dce2" stroke-opacity=".75"/>
+        <path d="M603 148 C 670 148, 655 342, 723 342" stroke="#d5dce2" stroke-opacity=".75"/>
+        <path d="M254 364 C 330 364, 330 192, 410 192" stroke="#7ea6d8" stroke-opacity=".85"/>
+        <path d="M604 170 C 672 170, 656 364, 724 364" stroke="#84c48f" stroke-opacity=".85"/>
+      </g>
+    </svg>
+
+    <div class="node" style="left:48px;top:100px;--k:#d6a64a">
+      <div class="nh"><i class="ic" data-i="circle-play"></i><b>Au démarrage</b><i class="cat">EVT</i></div>
+      <div class="pins"><span></span><span class="pin out">Exéc <span class="x"></span></span></div>
+    </div>
+
+    <div class="node sel" style="left:398px;top:100px">
+      <div class="nh"><i class="ic" data-i="helmet"></i><b>Faire apparaître</b><i class="cat">UNIT</i></div>
+      <div class="pins">
+        <span class="pin in"><span class="x"></span>Exéc</span><span class="pin out">Exéc <span class="x"></span></span>
+        <span class="pin in t-unit"><span class="p"></span>Type</span><span class="pin out t-unit">Unité <span class="p on"></span></span>
+        <span class="pin in t-num"><span class="p on"></span>Nombre</span><span></span>
+        <span class="pin in t-vec"><span class="p"></span>Position</span><span></span>
+      </div>
+      <div class="val select">Marine <i class="ic" data-i="chevron-down"></i></div>
+    </div>
+
+    <div class="node" style="left:48px;top:316px;--k:#7ea6d8">
+      <div class="nh"><i class="ic" data-i="box"></i><b>Variable</b><i class="cat">INT</i></div>
+      <div class="pins" style="grid-template-columns:0 1fr"><span></span><span class="pin out t-num">Taille escouade <span class="p on"></span></span></div>
+      <div class="val f" style="margin:0 10px 8px">6</div>
+    </div>
+
+    <div class="node" style="left:712px;top:294px">
+      <div class="nh"><i class="ic" data-i="move"></i><b>Déplacer vers</b><i class="cat">UNIT</i></div>
+      <div class="pins">
+        <span class="pin in"><span class="x"></span>Exéc</span><span class="pin out">Arrivé <span class="x"></span></span>
+        <span class="pin in t-unit"><span class="p on"></span>Unité</span><span></span>
+        <span class="pin in t-vec"><span class="p"></span>Cible</span><span></span>
+      </div>
+      <div class="vec" style="margin:0 10px 8px"><span class="f"><i class="x">X</i>24</span><span class="f"><i class="y">Y</i>0</span><span class="f"><i class="z">Z</i>-8</span></div>
+    </div>
+
+    <div class="node" style="left:398px;top:430px;--k:#d6a64a;opacity:.75">
+      <div class="nh"><i class="ic" data-i="repeat"></i><b>Toutes les 5 s</b><i class="cat">EVT</i></div>
+      <div class="pins"><span></span><span class="pin out">Tick <span class="x"></span></span></div>
+    </div>
+
+    <div class="vtools">
+      <span class="t on"><i class="ic" data-i="mouse-pointer-2"></i></span>
+      <span class="t"><i class="ic" data-i="hand"></i></span>
+      <span class="s"></span>
+      <span class="t"><i class="ic" data-i="maximize"></i></span>
+      <span class="t on"><i class="ic" data-i="grid"></i></span>
+    </div>
+    <div class="vinfo">
+      <span class="chip"><i class="ic" data-i="workflow"></i>Village.graph</span>
+      <span class="chip"><i class="ic" data-i="circle-play"></i>Exécuter à blanc</span>
+      <span class="chip"><b>5</b> nœuds · <b>4</b> liens</span>
+      <span class="chip"><b>100</b> %</span>
+    </div>
+    <div class="minimap">
+      <i style="left:12px;top:22px;width:34px;height:12px"></i><i style="left:76px;top:22px;width:40px;height:26px;background:var(--accent-lo)"></i>
+      <i style="left:12px;top:60px;width:34px;height:16px"></i><i style="left:130px;top:52px;width:36px;height:20px"></i><i style="left:130px;top:86px;width:36px;height:12px"></i>
+      <span class="vp" style="left:6px;top:12px;width:120px;height:74px"></span>
+    </div>
+  </section>
+
+  <section class="panel right">
+    <div class="ph">Nœud</div>
+    <div class="sect"><div class="sh"><i class="ic" data-i="helmet"></i>Faire apparaître une unité<i class="ic chev" data-i="more-horizontal"></i></div></div>
+    <div class="sect">
+      <div class="sh"><i class="ic" data-i="sparkles"></i>Entrées<i class="ic chev" data-i="chevron-down"></i></div>
+      <div class="prop">Type<span class="select">Marine<i class="ic" data-i="chevron-down"></i></span></div>
+      <div class="prop">Nombre<div class="slider"><div class="fill" style="width:50%"></div><span>6</span></div></div>
+      <div class="prop">Faction<span class="select">Joueur 1<i class="ic" data-i="chevron-down"></i></span></div>
+      <div class="prop" style="padding-bottom:10px">Position<div class="vec"><span class="f"><i class="x">X</i>12</span><span class="f"><i class="y">Y</i>0</span><span class="f"><i class="z">Z</i>-4</span></div></div>
+    </div>
+    <div class="sect">
+      <div class="sh"><i class="ic" data-i="settings"></i>Options<i class="ic chev" data-i="chevron-down"></i></div>
+      <div class="prop">Formation<span class="select">Ligne<i class="ic" data-i="chevron-down"></i></span></div>
+      <div class="prop">Sur la grille<span class="toggle"></span></div>
+      <div class="prop" style="padding-bottom:12px">Délai (s)<div class="slider"><div class="fill" style="width:20%"></div><span>0.50</span></div></div>
+    </div>
+    <div class="sect"><div class="sh"><i class="ic" data-i="git-branch"></i>Sorties<i class="ic chev" data-i="chevron-right"></i></div></div>
+  </section>
+
+  <section class="drawer">
+    <div class="tabs">
+      <span class="tab on"><i class="ic" data-i="terminal"></i>Sortie</span>
+      <span class="tab"><i class="ic" data-i="box"></i>Variables</span>
+      <span class="tab"><i class="ic" data-i="crosshair"></i>Débogage</span>
+    </div>
+    <div class="log">
+      <div><span class="t">16:31:02</span><span class="acc">EXÉCUTION À BLANC</span>  Village.graph</div>
+      <div><span class="t">16:31:02</span>Au démarrage → Faire apparaître une unité <span class="ok">(6 × Marine)</span></div>
+      <div><span class="t">16:31:02</span>Faire apparaître → Déplacer vers  X 24  Y 0  Z -8</div>
+      <div><span class="t">16:31:02</span><span class="warn">Toutes les 5 s : sortie Tick non reliée</span></div>
+      <div><span class="t">16:31:02</span><span class="ok">Terminé</span>  5 nœuds · 0 erreur · 1 avertissement</div>
+    </div>
+  </section>
+</main>
+
+<!-- ======================= MATÉRIAUX ======================= -->
+<main class="body" data-ws="2" hidden>
+  <aside class="rail">
+    <span class="r on" title="Matériaux"><i class="ic" data-i="palette"></i></span>
+    <span class="r" title="Textures"><i class="ic" data-i="image"></i></span>
+    <span class="r" title="Éclairage d'aperçu"><i class="ic" data-i="sun"></i></span>
+    <div class="sep"></div>
+    <span class="r" title="Recherche"><i class="ic" data-i="search"></i></span>
+    <div class="spacer"></div>
+    <span class="r" title="Console"><i class="ic" data-i="terminal"></i></span>
+  </aside>
+
+  <section class="panel">
+    <div class="ph">Matériaux <span class="count">14</span></div>
+    <div class="search"><i class="ic" data-i="search"></i>Rechercher…</div>
+    <div class="tree">
+      <div class="row"><i class="ic" data-i="chevron-down"></i><i class="ic" data-i="helmet"></i>Unités</div>
+      <div class="row ind1 sel"><span class="swatch" style="background:#5d6a52"></span>M_Blindage</div>
+      <div class="row ind1"><span class="swatch" style="background:#d6a64a"></span>M_Visière</div>
+      <div class="row ind1"><span class="swatch" style="background:#2b2f33"></span>M_Combinaison</div>
+      <div class="row"><i class="ic" data-i="chevron-down"></i><i class="ic" data-i="outpost"></i>Bâtiments</div>
+      <div class="row ind1"><span class="swatch" style="background:#8a8f94"></span>M_Béton</div>
+      <div class="row ind1"><span class="swatch" style="background:#6cc4dc"></span>M_Écran</div>
+      <div class="row"><i class="ic" data-i="chevron-down"></i><i class="ic" data-i="grid"></i>Terrain</div>
+      <div class="row ind1"><span class="swatch" style="background:#b08a5a"></span>M_Sol_désert</div>
+      <div class="row ind1"><span class="swatch" style="background:#4f5a3c"></span>M_Herbe_sèche</div>
+    </div>
+    <div class="btnrow"><span class="btn full"><i class="ic" data-i="plus"></i>Nouveau</span><span class="btn full"><i class="ic" data-i="copy"></i>Dupliquer</span></div>
+  </section>
+
+  <section class="view mat-stage">
+    <div class="mat-floor"></div>
+    <div class="sphere"></div>
+    <div class="vtools">
+      <span class="t on"><i class="ic" data-i="rotate-3d"></i></span>
+      <span class="t"><i class="ic" data-i="maximize"></i></span>
+    </div>
+    <div class="vinfo">
+      <span class="chip"><i class="ic" data-i="sun"></i>HDRI_Aube</span>
+      <span class="chip"><i class="ic" data-i="sparkles"></i>Rendu · <b>Path</b></span>
+      <span class="chip"><b>64</b> spp</span>
+    </div>
+    <div class="mat-shapes">
+      <span class="t on" title="Sphère"><i class="ic" data-i="globe"></i></span>
+      <span class="t" title="Cube"><i class="ic" data-i="box"></i></span>
+      <span class="t" title="Unité"><i class="ic" data-i="helmet"></i></span>
+      <span class="t" title="Plan"><i class="ic" data-i="image"></i></span>
+    </div>
+  </section>
+
+  <section class="panel right">
+    <div class="ph">Matériau</div>
+    <div class="sect"><div class="sh"><span class="swatch" style="background:#5d6a52"></span>M_Blindage<i class="ic chev" data-i="more-horizontal"></i></div></div>
+    <div class="sect">
+      <div class="sh"><i class="ic" data-i="droplet"></i>Surface<i class="ic chev" data-i="chevron-down"></i></div>
+      <div class="prop">Shader<span class="select">Standard PBR<i class="ic" data-i="chevron-down"></i></span></div>
+      <div class="prop">Couleur<span class="colorfield"><span class="swatch" style="background:#5d6a52"></span>#5D6A52</span></div>
+      <div class="prop">Métal<div class="slider"><div class="fill" style="width:85%"></div><span>0.85</span></div></div>
+      <div class="prop">Rugosité<div class="slider"><div class="fill" style="width:42%"></div><span>0.42</span></div></div>
+      <div class="prop" style="padding-bottom:10px">Usure<div class="slider"><div class="fill" style="width:18%"></div><span>0.18</span></div></div>
+    </div>
+    <div class="sect">
+      <div class="sh"><i class="ic" data-i="image"></i>Textures<i class="ic chev" data-i="chevron-down"></i></div>
+      <div class="prop">Couleur<span class="mapslot"><span class="thumb" style="background:linear-gradient(135deg,#6d7a60,#47513e)"></span>T_Blindage_C</span></div>
+      <div class="prop">Normale<span class="mapslot"><span class="thumb" style="background:linear-gradient(135deg,#8c8cf0,#7f80ff)"></span>T_Blindage_N</span></div>
+      <div class="prop" style="padding-bottom:10px">ORM<span class="mapslot"><span class="thumb" style="background:linear-gradient(135deg,#c86f3a,#3a6f2a)"></span>T_Blindage_ORM</span></div>
+    </div>
+    <div class="sect">
+      <div class="sh"><i class="ic" data-i="zap"></i>Émission<i class="ic chev" data-i="chevron-down"></i></div>
+      <div class="prop">Couleur<span class="colorfield"><span class="swatch" style="background:#6cc4dc"></span>#6CC4DC</span></div>
+      <div class="prop" style="padding-bottom:12px">Intensité<div class="slider"><div class="fill" style="width:0%"></div><span>0.0</span></div></div>
+    </div>
+  </section>
+
+  <section class="drawer">
+    <div class="tabs">
+      <span class="tab on"><i class="ic" data-i="image"></i>Textures</span>
+      <span class="tab"><i class="ic" data-i="sun"></i>HDRI</span>
+      <span class="tab"><i class="ic" data-i="terminal"></i>Console</span>
+    </div>
+    <div class="assets">
+      <div class="asset sel tex"><div class="th"><span class="tile-swatch" style="background:linear-gradient(135deg,#6d7a60,#3f4836)"></span></div><div class="nm">T_Blindage_C</div></div>
+      <div class="asset tex"><div class="th"><span class="tile-swatch" style="background:linear-gradient(135deg,#9393f2,#7778f6)"></span></div><div class="nm">T_Blindage_N</div></div>
+      <div class="asset tex"><div class="th"><span class="tile-swatch" style="background:linear-gradient(135deg,#c86f3a,#3a6f2a 60%,#202a60)"></span></div><div class="nm">T_Blindage_ORM</div></div>
+      <div class="asset tex"><div class="th"><span class="tile-swatch" style="background:linear-gradient(135deg,#e2b863,#9b6f24)"></span></div><div class="nm">T_Visière_C</div></div>
+      <div class="asset tex"><div class="th"><span class="tile-swatch" style="background:linear-gradient(135deg,#c9a06a,#7e5c36)"></span></div><div class="nm">T_Sol_desert</div></div>
+      <div class="asset tex"><div class="th"><span class="tile-swatch" style="background:linear-gradient(135deg,#9aa0a4,#55595c)"></span></div><div class="nm">T_Béton_C</div></div>
+      <div class="asset tex"><div class="th"><span class="tile-swatch" style="background:radial-gradient(circle at 40% 35%,#ffd9a0,#c06a3a 45%,#2a2030)"></span></div><div class="nm">HDRI_Aube</div></div>
+    </div>
+  </section>
+</main>
+
+<!-- ======================= PREFAB ======================= -->
+<main class="body" data-ws="3" hidden>
+  <aside class="rail">
+    <span class="r on" title="Prefabs"><i class="ic" data-i="package"></i></span>
+    <span class="r" title="Unités"><i class="ic" data-i="helmet"></i></span>
+    <span class="r" title="Bâtiments"><i class="ic" data-i="outpost"></i></span>
+    <span class="r" title="Composants"><i class="ic" data-i="puzzle"></i></span>
+    <div class="sep"></div>
+    <span class="r" title="Recherche"><i class="ic" data-i="search"></i></span>
+    <div class="spacer"></div>
+    <span class="r" title="Console"><i class="ic" data-i="terminal"></i></span>
+  </aside>
+
+  <section class="panel">
+    <div class="ph">Prefab <span class="count">Marine.prefab</span></div>
+    <div class="search"><i class="ic" data-i="search"></i>Rechercher…</div>
+    <div class="label">Composants</div>
+    <div class="comp"><i class="ic" data-i="move-3d"></i>Transform</div>
+    <div class="comp"><i class="ic" data-i="box"></i>Mesh · SM_Marine<span class="tg"></span></div>
+    <div class="comp"><i class="ic" data-i="shield"></i>Collision · Capsule<span class="tg"></span></div>
+    <div class="comp"><i class="ic" data-i="helmet"></i>Unité RTS<span class="tg"></span></div>
+    <div class="comp sel"><i class="ic" data-i="crosshair"></i>Arme · Fusil<span class="tg"></span></div>
+    <div class="comp"><i class="ic" data-i="sparkles"></i>FX · Tir<span class="tg off"></span></div>
+    <div class="comp"><i class="ic" data-i="grid"></i>Empreinte grille<span class="tg"></span></div>
+    <div class="btnrow"><span class="btn full"><i class="ic" data-i="plus"></i>Ajouter un composant</span></div>
+  </section>
+
+  <section class="view prefab-stage">
+    <svg class="grid" viewBox="0 0 800 560" preserveAspectRatio="xMidYMid slice">
+      <defs><linearGradient id="pfade" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#9fb3c4" stop-opacity="0"/><stop offset="1" stop-color="#9fb3c4" stop-opacity=".14"/></linearGradient></defs>
+      <g stroke="url(#pfade)" stroke-width="1" fill="none">
+        <path d="M-300 560 L400 220 L1100 560 M-100 560 L400 220 M100 560 L400 220 M300 560 L400 220 M500 560 L400 220 M700 560 L400 220 M900 560 L400 220"/>
+        <path d="M0 300 H800 M0 350 H800 M0 420 H800 M0 510 H800"/>
+      </g>
+    </svg>
+    <div class="floor"></div>
+    <i class="ic model" data-i="helmet"></i>
+    <div class="gizmo"><i class="gx"></i><i class="gy"></i><i class="gz"></i></div>
+    <div class="vtools">
+      <span class="t on"><i class="ic" data-i="mouse-pointer-2"></i></span>
+      <span class="t"><i class="ic" data-i="move"></i></span>
+      <span class="t"><i class="ic" data-i="rotate-3d"></i></span>
+      <span class="t"><i class="ic" data-i="scaling"></i></span>
+      <span class="s"></span>
+      <span class="t on"><i class="ic" data-i="grid"></i></span>
+    </div>
+    <div class="vinfo">
+      <span class="chip"><i class="ic" data-i="camera"></i>Orbite</span>
+      <span class="chip"><i class="ic" data-i="grid"></i>Empreinte <b>1 × 1</b></span>
+      <span class="chip"><b>2 480</b> tris</span>
+    </div>
+  </section>
+
+  <section class="panel right">
+    <div class="ph">Composant</div>
+    <div class="sect"><div class="sh"><i class="ic" data-i="crosshair"></i>Arme · Fusil<i class="ic chev" data-i="more-horizontal"></i></div></div>
+    <div class="sect">
+      <div class="sh"><i class="ic" data-i="zap"></i>Tir<i class="ic chev" data-i="chevron-down"></i></div>
+      <div class="prop">Dégâts<div class="slider"><div class="fill" style="width:30%"></div><span>12</span></div></div>
+      <div class="prop">Portée<div class="slider"><div class="fill" style="width:55%"></div><span>8.0 m</span></div></div>
+      <div class="prop">Cadence<div class="slider"><div class="fill" style="width:40%"></div><span>1.2 /s</span></div></div>
+      <div class="prop">Projectile<span class="select">Balle traçante<i class="ic" data-i="chevron-down"></i></span></div>
+      <div class="prop" style="padding-bottom:10px">Cible air<span class="toggle"></span></div>
+    </div>
+    <div class="sect">
+      <div class="sh"><i class="ic" data-i="sparkles"></i>Effets<i class="ic chev" data-i="chevron-down"></i></div>
+      <div class="prop">Flash<span class="select">FX_Flash_Bleu<i class="ic" data-i="chevron-down"></i></span></div>
+      <div class="prop" style="padding-bottom:12px">Son<span class="select">SFX_Fusil_01<i class="ic" data-i="chevron-down"></i></span></div>
+    </div>
+    <div class="sect"><div class="sh"><i class="ic" data-i="copy"></i>Surcharges de variante<span class="badge">2</span></div></div>
+  </section>
+
+  <section class="drawer">
+    <div class="tabs">
+      <span class="tab on"><i class="ic" data-i="copy"></i>Variantes</span>
+      <span class="tab"><i class="ic" data-i="package"></i>Prefabs</span>
+      <span class="tab"><i class="ic" data-i="terminal"></i>Console</span>
+    </div>
+    <div class="assets">
+      <div class="asset sel"><div class="th"><i class="ic" data-i="helmet" style="width:42px;height:42px"></i></div><div class="nm">Marine</div></div>
+      <div class="asset"><div class="th"><i class="ic" data-i="helmet" style="width:42px;height:42px"></i></div><div class="nm">Marine_Lourd</div></div>
+      <div class="asset"><div class="th"><i class="ic" data-i="helmet" style="width:42px;height:42px"></i></div><div class="nm">Marine_Sniper</div></div>
+      <div class="asset"><div class="th"><i class="ic" data-i="outpost" style="width:42px;height:42px"></i></div><div class="nm">Avant-poste</div></div>
+      <div class="asset"><div class="th"><i class="ic" data-i="outpost" style="width:42px;height:42px"></i></div><div class="nm">QG</div></div>
+      <div class="asset"><div class="th"><i class="ic" data-i="crosshair" style="width:40px;height:40px"></i></div><div class="nm">Tourelle</div></div>
+      <div class="asset" style="border-style:dashed"><div class="th"><i class="ic" data-i="plus" style="width:28px;height:28px"></i></div><div class="nm">Nouvelle variante</div></div>
+    </div>
+  </section>
+</main>
