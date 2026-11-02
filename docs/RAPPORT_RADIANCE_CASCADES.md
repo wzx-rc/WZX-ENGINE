@@ -314,3 +314,4 @@ La passe raster lit ce masque pour la lampe principale. Capture 45 : ombres douc
   - désormais, la capacité de chaque cascade suit le nombre de clés de l'image précédente (×2), lu sur le GPU : Cornell 2,3 ms en 4 cascades ;
   - les stats de l'onglet Render affichent sondes / capacité ;
   - `VP3D_SRC_PROFILE=1` écrit le temps de chaque passe dans le `.txt` des captures.
+- **Contact bloc / sol** : le long de la ligne où un bloc touche le sol, les deux surfaces ont la même profondeur, donc les pointillés restaient. Le choix du pixel compare maintenant aussi la normale. La ligne est propre : capture 48.
