@@ -115,6 +115,15 @@ Cases : `[x]` porté et vérifié · `[~]` partiel (ce qui manque est dit) · `[
   (l'intention est 84 px). Le natif reprend 64 px pour l'identique visuel ; à corriger dans le web si 84 était voulu.
 
 ### Corrections mécanique
+- Engrenages dont les deux axes tournent dans deux supports fixes différents (scène `docs/brickit/tests/meca_16_24.json` :
+  axe du 16 dents dans une pile de 3 briques Technic 1 × 1 à trou 6541, axe du 24 dents dans une autre pile de 4, les deux
+  piles non reliées par des tenons, donc deux corps racines) : le web comme le natif exigeaient le même corps parent pour
+  les deux pivots (`mechTree`, test `M.tree[tA].parent != M.tree[tB].parent`) et ignoraient l'engrènement (« axes non
+  portés par la même pièce »). Correction : l'engrènement est accepté si les deux pivots sont portés par le même corps
+  **ou par deux corps fixes (racines)**, qui ne bougent pas l'un par rapport à l'autre. Deux axes portés par des pièces
+  mobiles différentes restent refusés. Résultat : 1 commande « Moteur », rapport 1:1,5 (24 dents à −16/24 du 16 dents),
+  les deux engrenages tournent ensemble — capture 27. Diagnostic : `--mech` écrit `mech_diag.txt` (corps, liaisons,
+  engrenages, rapports).
 - Plateaux tournants : le web v26 contient la détection (`metas[i].pair`) mais aucune pièce ne reçoit cette donnée, donc
   ils ne tournent jamais. Le natif la dérive du titre LDraw (Top / Bottom / Base, même famille, axe vertical par le centre
   de la pièce). Le test du web (centres à 1 mm près le long de l'axe) échoue toujours pour deux moitiés de hauteurs

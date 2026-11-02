@@ -419,7 +419,10 @@ bool Mech::build(const std::vector<Brick>& bricks, MechModel& M) {
     for (auto& ms : M.meshes) {
         const MechGearW &A = M.gears[ms.first], &B = M.gears[ms.second];
         int tA = tjOf[A.body], tB = tjOf[B.body];
-        if (tA < 0 || tB < 0 || M.tree[tA].parent != M.tree[tB].parent || !parallel(M.tree[tA].j.u, A.u) || !parallel(M.tree[tB].j.u, B.u)) {
+        // the two axles must be carried by one frame: the same body, or two fixed bodies (two roots do not move one
+        // against the other: a support of each axle, not studded together, still holds the gears in mesh)
+        const bool sameFrame = tA >= 0 && tB >= 0 && (M.tree[tA].parent == M.tree[tB].parent || (tjOf[M.tree[tA].parent] < 0 && tjOf[M.tree[tB].parent] < 0));
+        if (!sameFrame || !parallel(M.tree[tA].j.u, A.u) || !parallel(M.tree[tB].j.u, B.u)) {
             char buf[128];
             snprintf(buf, sizeof(buf), "Engrenages %d/%d : axes non portés par la même pièce, ignorés", A.teeth, B.teeth);
             M.warnings.push_back(buf);

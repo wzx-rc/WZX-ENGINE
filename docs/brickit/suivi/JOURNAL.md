@@ -29,3 +29,4 @@
 | 24 | 02/11/2026 | Retours Wzx : traces de doigts retirées du temps réel, miniatures du web à l'identique, fenêtre limitée à l'écran | 22_sans_traces_temps_reel.png, 23_miniatures_web.png |
 | 25 | 02/11/2026 | Réglages (engrenage) et défilement au glisser avec inertie dans la bibliothèque (tests souris verts) | 24_reglages.png |
 | 26 | 02/11/2026 | Path tracing : table d'importance HDRI 256 de large (moteur) + échantillonnage adaptatif de WZX Engine ; briques 28 × plus rapides, sans biais | 26_pt_avant_apres.png |
+| 27 | 02/11/2026 | Mécanique : engrènement accepté entre deux supports fixes (cas 16/24 de Wzx), diagnostic mech_diag.txt | 27_meca_16_24.png |

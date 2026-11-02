@@ -216,6 +216,28 @@ bool BrickApp::init(HINSTANCE inst, const Options& opt) {
             }
             mechApplyPose();
         }
+        FILE* f = nullptr;   // diagnostic of the mechanism (bodies, joints, gears, commands) next to the exe
+        if (_wfopen_s(&f, (m_exeDir + L"\\mech_diag.txt").c_str(), L"w") == 0 && f) {
+            fprintf(f, "bodies=%d roots=%zu joints=%zu gears=%zu meshes=%zu cmds=%zu\n", m_mm.bodyCount, m_mm.roots.size(), m_mm.tree.size(), m_mm.gears.size(), m_mm.meshes.size(), m_mm.cmds.size());
+            for (int b = 0; b < m_mm.bodyCount; ++b) {
+                bool root = false;
+                for (int r : m_mm.roots) root |= r == b;
+                fprintf(f, "body %d%s:", b, root ? " (root)" : "");
+                for (size_t i = 0; i < m_bricks.size(); ++i)
+                    if (m_mm.brickBody[i] == b) fprintf(f, " #%zu %s", i, m_lib.parts[m_bricks[i].part].name.c_str());
+                fprintf(f, "\n");
+            }
+            for (const MechTreeJ& t : m_mm.tree) fprintf(f, "joint q%d: parent body %d -> child body %d, axis (%.2f %.2f %.2f) at (%.2f %.2f %.2f)\n", t.qi, t.parent, t.child, t.j.u.x, t.j.u.y, t.j.u.z, t.j.p.x, t.j.p.y, t.j.p.z);
+            for (const MechGearW& g : m_mm.gears) fprintf(f, "gear %d teeth on body %d (brick #%d) centre (%.2f %.2f %.2f)\n", g.teeth, g.body, g.brick, g.c.x, g.c.y, g.c.z);
+            for (auto& ms : m_mm.meshes) fprintf(f, "mesh: gear %d (%d t) <-> gear %d (%d t)\n", ms.first, m_mm.gears[ms.first].teeth, ms.second, m_mm.gears[ms.second].teeth);
+            for (const MechCmd& c : m_mm.cmds) {
+                fprintf(f, "cmd %s q%d ratios:", c.name.c_str(), c.qi);
+                for (auto& r : c.ratio) fprintf(f, " q%d x %.4f", r.first, r.second);
+                fprintf(f, "\n");
+            }
+            for (const std::string& w : m_mm.warnings) fprintf(f, "warning: %s\n", w.c_str());
+            fclose(f);
+        }
     }
 
     ShowWindow(m_hwnd, m_startMaximized ? SW_SHOWMAXIMIZED : SW_SHOWDEFAULT);
