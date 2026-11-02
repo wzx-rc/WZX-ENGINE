@@ -321,12 +321,17 @@ private:
     void atlViewport(float x, float y, float w, float h);
     void atlContent(float x, float y, float w, float h);
     void atlInspector(float x, float y, float w, float h);
+    // Halo theme (design/halo/mockup-halo.html): flush panels, icon rail, full-frame viewport, bottom drawer, status bar
+    void atlHaloLayout(float X, float Y, float W, float H);
+    void atlHaloRail(float x, float y, float w, float h);
+    void atlHaloStatus(float x, float y, float w, float h);
     void atlInspectorActor(float x, float y, float w, float h);
     void atlInspectorLighting(float x, float y, float w, float h);
     void atlInspectorRender(float x, float y, float w, float h);
     void atlInspectorWorld(float x, float y, float w, float h);
     struct AtelierState {
         float leftW = 222, rightW = 284, bottomH = 190;   // reference pixels of the Graph Editor (scaled by s)
+        bool searchFocus = false;                          // Halo rail: focus the Scene Manager search next frame
         int sceneTab = 0, inspectorTab = 0, contentTab = 0, folder = 0;
         bool expanded[10] = {true, true, true, true, false, false, false, true, true, true};
         bool folderOpen[4] = {true, false, true, true};    // hierarchy: root, environment, objects, lights
