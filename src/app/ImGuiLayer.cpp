@@ -98,7 +98,9 @@ bool ImGuiLayer::init(HWND hwnd, vp3d::Renderer& r, float dpiScale) {
     if (!addFont("C:\\Windows\\Fonts\\segoeui.ttf", size)) io.Fonts->AddFontDefault();
     fontBold = addFont("C:\\Windows\\Fonts\\seguisb.ttf", size);
     fontSmall = addFont("C:\\Windows\\Fonts\\segoeui.ttf", 13.0f * dpi);
+    fontHud = io.Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\bahnschrift.ttf", size);   // Halo titles (DIN-like, ships with Windows 10+)
     if (!fontBold) fontBold = io.Fonts->Fonts[0];
+    if (!fontHud) fontHud = fontBold;
     if (!fontSmall) fontSmall = io.Fonts->Fonts[0];
 
 

@@ -181,6 +181,42 @@ static ImGuiStyle corailStyle() {
     return s;
 }
 
+// Halo theme (design/halo/mockup-halo.html): neutral graphite surfaces stepped up from the background colour of the
+// settings, one main colour for the selection and the active tools, a second colour for the primary action.
+static ThemePalette haloPalette(const UiSettings& u) {
+    const ImVec4 white(1, 1, 1, 1);
+    auto up = [&](float k) { return mix(u.haloBg, white, k); };   // lighter step of the background
+    ThemePalette p;
+    p.bg0 = u.haloBg;           // window, fields
+    p.bg1 = up(0.025f);         // panels   (#13171B over #0D1013)
+    p.bg2 = up(0.045f);         // raised   (#181D22)
+    p.field = u.haloBg;
+    p.hover = up(0.072f);       // #1F252B
+    p.border = up(0.092f);      // #242B32
+    p.text = hexv(0xD5DCE2);
+    p.dim = hexv(0x8B96A1);
+    p.faint = hexv(0x5D6873);
+    p.accent = u.haloMain;
+    p.select = mix(p.bg1, u.haloMain, 0.14f);
+    p.bar = p.bg1;
+    p.strong = u.haloSecond;
+    return p;
+}
+// Sharp geometry: 2 px corners everywhere, thin borders.
+static ImGuiStyle haloStyle() {
+    ImGuiStyle s = editorStyle();
+    s.WindowRounding = 2;
+    s.ChildRounding = 2;
+    s.FrameRounding = 2;
+    s.PopupRounding = 2;
+    s.GrabRounding = 1;
+    s.ScrollbarRounding = 2;
+    s.TabRounding = 2;
+    s.GrabMinSize = 6;
+    s.FramePadding = ImVec2(8, 5);
+    return s;
+}
+
 // Full ImGui colour table from a palette (used by the built-in theme and the light mode).
 static void colorsFromPalette(const ThemePalette& p, bool light, ImVec4* c) {
     c[ImGuiCol_Text] = p.text;
@@ -505,6 +541,27 @@ void apply(float dpi) {
         c[ImGuiCol_TextSelectedBg] = alpha(g_pal.accent, 0.30f);
         for (int i = 0; i < ImGuiCol_COUNT; ++i) c[i] = tint(c[i]);   // accents keep their hue
         tintPalette(g_pal);
+    } else if (halo()) {
+        // colours of the settings (main, background, second); no tint, no light mode
+        g_tintMul = ImVec4(1, 1, 1, 1);
+        g_bright = 1.0f;
+        g_pal = haloPalette(g_settings);
+        st = haloStyle();
+        colorsFromPalette(g_pal, false, st.Colors);
+        ImVec4* c = st.Colors;
+        c[ImGuiCol_PopupBg] = alpha(mix(g_pal.bg1, g_pal.bg2, 0.5f), 0.99f);
+        c[ImGuiCol_FrameBgHovered] = mix(g_pal.field, g_pal.hover, 0.5f);
+        c[ImGuiCol_FrameBgActive] = mix(g_pal.field, g_pal.select, 0.6f);
+        c[ImGuiCol_CheckMark] = g_pal.accent;
+        c[ImGuiCol_SliderGrab] = g_pal.text;
+        c[ImGuiCol_SliderGrabActive] = g_pal.accent;
+        c[ImGuiCol_Tab] = g_pal.bg1;
+        c[ImGuiCol_TabSelected] = g_pal.bg2;
+        c[ImGuiCol_TitleBg] = c[ImGuiCol_TitleBgActive] = c[ImGuiCol_TitleBgCollapsed] = c[ImGuiCol_MenuBarBg] = g_pal.bar;
+        c[ImGuiCol_ScrollbarGrab] = mix(g_pal.border, g_pal.dim, 0.25f);
+        c[ImGuiCol_ScrollbarGrabHovered] = mix(g_pal.border, g_pal.dim, 0.5f);
+        c[ImGuiCol_ScrollbarGrabActive] = g_pal.accent;
+        c[ImGuiCol_TextSelectedBg] = alpha(g_pal.accent, 0.30f);
     } else if (g_settings.light) {
         // light surfaces carry a softer tint
         ImVec4 r = mix(ImVec4(1, 1, 1, 1), ref, 0.12f), w = mix(ImVec4(1, 1, 1, 1), want, 0.12f);   // 0.12: blue tint of the light palette
@@ -545,7 +602,10 @@ void loadSettings(const std::wstring& file) {
         std::string k = trim(line.substr(0, eq)), v = trim(line.substr(eq + 1));
         float c[4];
         if (k == "theme" && v == "Default") g_settings.mainColor = ImVec4(0.5f, 0.5f, 0.5f, 1);   // settings of an older version
-        else if (k == "uiTheme") g_settings.theme = v == "Ambre" || v == "Corail" ? v : "Atelier";
+        else if (k == "uiTheme") g_settings.theme = v == "Ambre" || v == "Corail" || v == "Halo" ? v : "Atelier";
+        else if (k == "haloMain") { if (parseVec(v, c, 4)) g_settings.haloMain = ImVec4(c[0], c[1], c[2], 1); }
+        else if (k == "haloBg") { if (parseVec(v, c, 4)) g_settings.haloBg = ImVec4(c[0], c[1], c[2], 1); }
+        else if (k == "haloSecond") { if (parseVec(v, c, 4)) g_settings.haloSecond = ImVec4(c[0], c[1], c[2], 1); }
         else if (k == "light") g_settings.light = v == "1";
         else if (k == "customAccent") g_settings.customAccent = v == "1";
         else if (k == "accent") { if (parseVec(v, c, 4)) g_settings.accent = ImVec4(c[0], c[1], c[2], 1); }
@@ -569,13 +629,17 @@ void saveSettings(const std::wstring& file) {
     std::ofstream f(file, std::ios::binary);
     if (!f) return;
     const UiSettings& s = g_settings;
-    char a[64], m[64], sc[64], cm[64], ca[64];
+    char a[64], m[64], sc[64], cm[64], ca[64], hm[64], hb[64], hs[64];
+    snprintf(hm, sizeof(hm), "%.3f %.3f %.3f 1", s.haloMain.x, s.haloMain.y, s.haloMain.z);
+    snprintf(hb, sizeof(hb), "%.3f %.3f %.3f 1", s.haloBg.x, s.haloBg.y, s.haloBg.z);
+    snprintf(hs, sizeof(hs), "%.3f %.3f %.3f 1", s.haloSecond.x, s.haloSecond.y, s.haloSecond.z);
     snprintf(a, sizeof(a), "%.3f %.3f %.3f 1", s.accent.x, s.accent.y, s.accent.z);
     snprintf(m, sizeof(m), "%.3f %.3f %.3f 1", s.mainColor.x, s.mainColor.y, s.mainColor.z);
     snprintf(sc, sizeof(sc), "%.3f %.3f %.3f 1", s.graphSelectColor.x, s.graphSelectColor.y, s.graphSelectColor.z);
     snprintf(cm, sizeof(cm), "%.3f %.3f %.3f 1", s.corailMain.x, s.corailMain.y, s.corailMain.z);
     snprintf(ca, sizeof(ca), "%.3f %.3f %.3f 1", s.corailAccent.x, s.corailAccent.y, s.corailAccent.z);
-    f << "uiTheme=" << s.theme << "\nlight=" << (s.light ? 1 : 0) << "\nmainColor=" << m << "\ncorailMainColor=" << cm << "\ncorailAccent=" << ca << "\ncustomAccent=" << (s.customAccent ? 1 : 0) << "\naccent=" << a
+    f << "uiTheme=" << s.theme << "\nlight=" << (s.light ? 1 : 0) << "\nmainColor=" << m << "\ncorailMainColor=" << cm << "\ncorailAccent=" << ca
+      << "\nhaloMain=" << hm << "\nhaloBg=" << hb << "\nhaloSecond=" << hs << "\ncustomAccent=" << (s.customAccent ? 1 : 0) << "\naccent=" << a
       << "\ntextScale=" << s.textScale << "\niconScale=" << s.iconScale << "\nlayoutScale=" << s.layoutScale << "\nglobalScale=" << s.globalScale
       << "\nlockBrightness=" << (s.lockBrightness ? 1 : 0) << "\nlanguage=" << s.language
       << "\ngraphOutline=" << (s.graphOutline ? 1 : 0) << "\ngraphOutlineWeight=" << s.graphOutlineWeight

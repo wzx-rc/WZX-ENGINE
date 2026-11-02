@@ -43,10 +43,12 @@ struct Palette {
     float layoutScale = 1.0f; // layout size (spacing): multiplies the module scale
     bool light = false;
     // Drawn themes: 0 Atelier (flat boxes), 1 Ambre (graphite + amber: gradients, glow, light edges),
-    // 2 Corail (anthracite + coral: rounded cards, floating bars, sliders with the value inside).
+    // 2 Corail (anthracite + coral: rounded cards, floating bars, sliders with the value inside),
+    // 3 Halo (flat graphite, one main colour, chamfered corners and HUD corner marks).
     // When non zero the modules draw their buttons, panels and tabs with the effects of ambre_fx.h.
     int skin = 0;
     ImFont* fontBold = nullptr;   // semibold text of the Ambre tabs and primary buttons (null: regular font)
+    ImFont* fontHud = nullptr;    // Halo: condensed titles (Bahnschrift; null: regular font)
     // top bar: start and width of the menus, offset of the workspace buttons (the Ambre brand is wider)
     float menuX = 53, menuW = 53, headerShift = 0;
 };

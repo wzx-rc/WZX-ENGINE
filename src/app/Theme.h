@@ -35,13 +35,16 @@ struct ThemeDef {
 };
 
 struct UiSettings {
-    std::string theme = "Atelier";        // "Atelier" (Blue 01, main / accent colours), "Ambre" or "Corail" (fixed colours)
+    std::string theme = "Atelier";        // "Atelier" (Blue 01, main / accent colours), "Ambre", "Corail" or "Halo" (drawn themes)
     bool light = false;
     bool customAccent = false;
     ImVec4 accent = ImVec4(0.400f, 0.729f, 0.816f, 1.0f);   // used when customAccent
     ImVec4 mainColor = ImVec4(0.415f, 0.506f, 0.578f, 1.0f); // tint of the surfaces (Blue Slate = the Blue 01 theme)
     ImVec4 corailMain = ImVec4(0.5f, 0.5f, 0.5f, 1.0f);      // Anthracite-Corail: tint of its surfaces (Graphite = the pack colours)
     ImVec4 corailAccent = ImVec4(0.847f, 0.592f, 0.486f, 1.0f); // Anthracite-Corail: selection colour (#D8977C coral of the pack)
+    ImVec4 haloMain = ImVec4(0.424f, 0.769f, 0.863f, 1.0f);   // Halo: main colour = selection and active tools (#6CC4DC ice blue)
+    ImVec4 haloBg = ImVec4(0.051f, 0.063f, 0.075f, 1.0f);     // Halo: background (#0D1013), the panels are derived from it
+    ImVec4 haloSecond = ImVec4(0.839f, 0.651f, 0.290f, 1.0f); // Halo: second colour = primary action (Build) and warnings (#D6A64A)
     float textScale = 1.0f;
     float iconScale = 1.0f;
     float layoutScale = 1.0f;             // spacing of the Atelier layouts: < 1 compact, > 1 spacious
@@ -61,7 +64,8 @@ const std::vector<ThemeDef>& themes();
 UiSettings& settings();
 inline bool ambre() { return settings().theme == "Ambre"; }     // Ambre: graphite + amber
 inline bool corail() { return settings().theme == "Corail"; }   // Anthracite-Corail: anthracite + coral
-inline int skin() { return ambre() ? 1 : corail() ? 2 : 0; }    // drawn theme (atelier::Palette::skin)
+inline bool halo() { return settings().theme == "Halo"; }       // Halo: graphite, one main colour, chamfers and HUD marks
+inline int skin() { return ambre() ? 1 : corail() ? 2 : halo() ? 3 : 0; }   // drawn theme (atelier::Palette::skin)
 inline bool styled() { return skin() != 0; }                    // drawn themes: always dark, own colours and drawing effects
 // effective sizes: each size setting times Global UI
 inline float textSize();

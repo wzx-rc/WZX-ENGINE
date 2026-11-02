@@ -184,19 +184,46 @@ void App::drawSettingsWindow() {
             // theme: Atelier (Blue 01, tinted by the main / accent colours below), Ambre or Anthracite-Corail (fixed colours)
             propLabel("Theme", labelW);
             ImGui::SetNextItemWidth(-1);
-            const char* themeNames[] = {"Atelier (Blue 01)", "Ambre (graphite + amber)", "Anthracite-Corail (charcoal + coral)"};
-            const char* themeIds[] = {"Atelier", "Ambre", "Corail"};
+            const char* themeNames[] = {"Atelier (Blue 01)", "Ambre (graphite + amber)", "Anthracite-Corail (charcoal + coral)", "Halo (graphite, HUD)"};
+            const char* themeIds[] = {"Atelier", "Ambre", "Corail", "Halo"};
             const int skin = th::skin();
             if (ImGui::BeginCombo("##uitheme", themeNames[skin])) {
-                for (int i = 0; i < 3; ++i)
+                for (int i = 0; i < 4; ++i)
                     if (ImGui::Selectable(themeNames[i], skin == i)) { s.theme = themeIds[i]; changed = true; }
                 ImGui::EndCombo();
             }
             const bool amb = skin != 0;
             if (amb) {
                 indent();
-                ImGui::TextColored(th::dimV(), skin == 1 ? "Fixed colours: dark mode, amber accent." : "Dark mode; main and selection colours of its own.");
+                ImGui::TextColored(th::dimV(), skin == 1 ? "Fixed colours: dark mode, amber accent." : skin == 2 ? "Dark mode; main and selection colours of its own."
+                                                                                                        : "Dark mode; main, background and second colours below.");
             }
+            if (skin == 3) {
+                // Halo: three colours; the panels and borders are lighter steps of the background
+                auto colorRow = [&](const char* label, const char* id, ImVec4& value, const Preset* presets, int count, const char* tip) {
+                    ImGui::Spacing();
+                    propLabel(label, labelW);
+                    int k = presetRow(id, presets, count, value);
+                    if (k >= 0) { value = presets[k].c; changed = true; }
+                    indent();
+                    ImGui::SetNextItemWidth(-1);
+                    float c3[3] = {value.x, value.y, value.z};
+                    if (ImGui::ColorEdit3((std::string("##") + id).c_str(), c3, ImGuiColorEditFlags_DisplayHex)) { value = ImVec4(c3[0], c3[1], c3[2], 1); changed = true; }
+                    if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", tip);
+                };
+                static const Preset haloMains[] = {{"Ice", ImVec4(0.424f, 0.769f, 0.863f, 1)},   {"Cobalt", ImVec4(0.290f, 0.560f, 0.960f, 1)},
+                                                   {"Signal", ImVec4(0.420f, 0.820f, 0.560f, 1)}, {"Visor", ImVec4(0.910f, 0.663f, 0.235f, 1)},
+                                                   {"Red", ImVec4(0.880f, 0.360f, 0.340f, 1)},    {"White", ImVec4(0.850f, 0.880f, 0.900f, 1)}};
+                static const Preset haloBgs[] = {{"Graphite", ImVec4(0.051f, 0.063f, 0.075f, 1)}, {"Black", ImVec4(0.035f, 0.035f, 0.040f, 1)},
+                                                 {"Navy", ImVec4(0.039f, 0.059f, 0.098f, 1)},     {"Olive", ImVec4(0.067f, 0.075f, 0.059f, 1)},
+                                                 {"Space", ImVec4(0.043f, 0.071f, 0.078f, 1)},    {"Steel", ImVec4(0.090f, 0.100f, 0.110f, 1)}};
+                static const Preset haloSeconds[] = {{"Amber", ImVec4(0.839f, 0.651f, 0.290f, 1)}, {"Orange", ImVec4(0.960f, 0.550f, 0.200f, 1)},
+                                                     {"Ice", ImVec4(0.424f, 0.769f, 0.863f, 1)},   {"Green", ImVec4(0.500f, 0.780f, 0.600f, 1)},
+                                                     {"Red", ImVec4(0.880f, 0.360f, 0.340f, 1)},   {"Steel", ImVec4(0.700f, 0.740f, 0.780f, 1)}};
+                colorRow("Main Color", "haloMain", s.haloMain, haloMains, 6, "Selection, active tools, tabs, sliders and checkboxes");
+                colorRow("Background", "haloBg", s.haloBg, haloBgs, 6, "Window background; panels, fields and borders are lighter steps of it");
+                colorRow("Second Color", "haloSecond", s.haloSecond, haloSeconds, 6, "Primary action (Build) and warnings");
+            } else {
             // mode and accent only apply to the Atelier theme; the main colour to Atelier and Anthracite-Corail (its own value)
             ImGui::BeginDisabled(amb);
             // mode
@@ -255,6 +282,7 @@ void App::drawSettingsWindow() {
                 if (ImGui::ColorEdit3("##accent", c3, ImGuiColorEditFlags_DisplayHex)) { s.accent = ImVec4(c3[0], c3[1], c3[2], 1); s.customAccent = true; changed = true; }
             }
             ImGui::EndDisabled();
+            }   // skin != 3
             // sizes
             ImGui::Spacing();
             percent("Global UI", "##globalscale", s.globalScale, 80, 130, "%.0f %%");

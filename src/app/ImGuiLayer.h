@@ -29,6 +29,7 @@ public:
 
     ImFont* fontBold = nullptr;
     ImFont* fontSmall = nullptr;
+    ImFont* fontHud = nullptr;    // Bahnschrift: titles of the Halo theme
     float dpi = 1.0f;
 
 private:

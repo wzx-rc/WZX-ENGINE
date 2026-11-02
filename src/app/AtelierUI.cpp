@@ -95,7 +95,7 @@ bool Button(const char* id, R r, const char* label, Icon icon, bool active = fal
         // gradient face, light top edge; active: amber border, inner ring and halo, glowing icon
         afx::Face f = !enabled ? afx::Face::Disabled : active ? afx::Face::Active : hover ? afx::Face::Hover : afx::Face::Normal;
         ImU32 c = afx::Button(dl, r.min(), r.max(), f, s, 4);
-        if (P().skin == 2) Glyph(icon, ix, iy, 13, c);   // Corail: no glow
+        if (P().skin >= 2) Glyph(icon, ix, iy, 13, c);   // Corail, Halo: no glow
         else if (active) GlowGlyph(icon, ix, iy, 13, c, afx::col::accent, 0.08f);
         else GlowGlyph(icon, ix, iy, 13, c, c, enabled ? 0.025f : 0.0f);
         if (!iconOnly && label && *label) {
@@ -209,8 +209,15 @@ void Panel(R r, Icon icon, const char* title, const char* tag, ImU32 iconColor) 
     }
     if (P().skin) {   // surface gradient with a title band (structure-header.svg)
         afx::Panel(dl, r.min(), r.max(), s, 34 * s);
-        GlowGlyph(icon, r.x + 12 * s, r.y + 11 * s, 13, iconColor, iconColor, iconColor == P().accent ? 0.06f : 0.0f);
-        Text(r.x + 33 * s, r.y + 10 * s, title, P().text, 13);
+        if (P().skin == 3) {   // Halo: muted icon, condensed spaced capitals
+            Glyph(icon, r.x + 12 * s, r.y + 11 * s, 13, P().muted);
+            std::string up = title;
+            for (char& ch : up) ch = (char)std::toupper((unsigned char)ch);
+            afx::SpacedText(dl, P().fontHud ? P().fontHud : font, 12 * s * ts(), ImVec2(r.x + 33 * s, r.y + 10 * s), P().mutedLight, up.c_str(), 1.6f * s);
+        } else {
+            GlowGlyph(icon, r.x + 12 * s, r.y + 11 * s, 13, iconColor, iconColor, iconColor == P().accent ? 0.06f : 0.0f);
+            Text(r.x + 33 * s, r.y + 10 * s, title, P().text, 13);
+        }
         if (tag && *tag) Text(r.x + r.w - 12 * s - TextSize(tag, 8).x, r.y + 14 * s, tag, P().muted, 8);
         return;
     }
@@ -385,7 +392,7 @@ std::vector<Asset> assetList() {
 // Feeds the Atelier modules (graph, material studio, inspector, scene) with the current theme settings:
 // dark mode: the Atelier reference colours with the main colour tint (Blue Slate gives the exact values),
 // light mode: derived from the light palette.
-static void syncAtelierStyle(ImFont* bold) {
+static void syncAtelierStyle(ImFont* bold, ImFont* hud) {
     atelier::Palette& a = atelier::Style();
     const atelier::Palette ref;
     const ThemePalette& p = th::P();
@@ -396,6 +403,7 @@ static void syncAtelierStyle(ImFont* bold) {
     a.textScale = th::textSize() / a.layoutScale;
     a.iconScale = th::iconSize() / a.layoutScale;
     a.fontBold = bold;
+    a.fontHud = hud;
     a.skin = th::skin();
     if (a.skin == 1) {
         // Ambre: colours of the pack; the graph keeps its Atelier node style on graphite surfaces
@@ -432,6 +440,24 @@ static void syncAtelierStyle(ImFont* bold) {
         a.menuX = 168; a.menuW = 46; a.headerShift = 111;   // room for the WZX Engine brand
         return;
     }
+    if (a.skin == 3) {
+        // Halo: the three colours of the settings; the graph keeps its Atelier node style on these surfaces
+        using namespace atelier::fx::halo;
+        const UiSettings& us = th::settings();
+        atelier::fx::SetHalo(u(us.haloMain), u(us.haloBg), u(us.haloSecond));
+        auto over = [&](ImU32 base, ImU32 c, float k, int al = 255) { ImVec4 m = mixc(v(base), v(c), k); return u(m, al / 255.0f); };
+        a.light = false;
+        a.accent = accent; a.select = accentBg; a.strong = second;
+        a.bg = shell; a.panel = panel; a.raised = raised; a.hover = hover; a.bar = panel; a.border = border;
+        a.text = text; a.muted = muted; a.mutedLight = atelier::fx::col::rgb(0xAEB7C0);
+        a.canvas = over(shell, raised, 0.6f); a.node = raised; a.nodeOff = panel;
+        a.gridDot = over(border, muted, 0.2f, 150); a.gridLine = over(panel, border, 0.8f, 95);
+        a.overlay = over(panel, panel, 0, 230); a.minimap = over(panel, panel, 0, 240); a.headerBar = panel; a.popupHeader = raised;
+        a.track = border; a.frameHover = borderHi; a.checkerA = atelier::fx::col::rgb(0x3A424A); a.checkerB = atelier::fx::col::rgb(0x6B757E);
+        a.toast = over(panel, accent, 0.10f, 245); a.knob = text; a.pinExec = atelier::fx::col::rgb(0xE2E7EB);
+        a.menuX = 158; a.menuW = 46; a.headerShift = 101;   // room for the WZX brand
+        return;
+    }
     a.menuX = 53; a.menuW = 53; a.headerShift = 53;
     a.light = th::settings().light;
     a.accent = u(a.light ? th::accentTextV() : p.accent);
@@ -460,7 +486,7 @@ static void syncAtelierStyle(ImFont* bold) {
 // --------------------------------------------------------------------------- frame
 
 void App::drawAtelier() {
-    syncAtelierStyle(m_gui.fontBold);
+    syncAtelierStyle(m_gui.fontBold, m_gui.fontHud);
     if (m_workspace == 2) {
         int target = atelier::material::Draw();
         if (target) m_workspace = target == 1 ? 0 : 1;
@@ -592,8 +618,8 @@ void App::atlTopBar(float x0, float y0, float width) {
                 if (ImGui::MenuItem("Light Mode", nullptr, th::settings().light && !th::styled(), !th::styled())) { th::settings().light = !th::settings().light; th::apply(m_dpi); save(); }
                 if (ImGui::BeginMenu("Theme")) {
                     ImGui::SetWindowFontScale(menuScale);
-                    const char* names[] = {"Atelier", "Ambre", "Anthracite-Corail"}, *ids[] = {"Atelier", "Ambre", "Corail"};
-                    for (int i = 0; i < 3; ++i)
+                    const char* names[] = {"Atelier", "Ambre", "Anthracite-Corail", "Halo"}, *ids[] = {"Atelier", "Ambre", "Corail", "Halo"};
+                    for (int i = 0; i < 4; ++i)
                         if (ImGui::MenuItem(names[i], nullptr, th::skin() == i)) { th::settings().theme = ids[i]; th::apply(m_dpi); save(); }
                     ImGui::EndMenu();
                 }
@@ -1095,7 +1121,10 @@ void App::atlViewport(float x, float y, float w, float h) {
     // header
     R hr = {x, y, w, 35 * s};
     if (P().skin == 2) afx::FloatBar(dl, hr.min(), hr.max(), s);   // Corail: floating tool bar with its shadow
-    else if (P().skin) {   // header strip of the pack (header gradient, border, light edge)
+    else if (P().skin == 3) {   // Halo: flat strip with its corner mark
+        Box(hr, P().panel, 2, true);
+        afx::CornerTick(dl, hr.min(), 8 * s, afx::Alpha(P().accent, 0.8f));
+    } else if (P().skin) {   // header strip of the pack (header gradient, border, light edge)
         afx::Gradient(dl, hr.min(), hr.max(), afx::col::headerTop, afx::col::headerBottom, 4 * s);
         dl->AddRect(hr.min(), hr.max(), P().border, 4 * s);
         afx::TopEdge(dl, hr.min(), hr.max(), s, IM_COL32(181, 186, 192, 255), 0.10f);
@@ -1217,7 +1246,7 @@ void App::atlViewport(float x, float y, float w, float h) {
     // footer (former Atelier graph Footer): state of the tools and of the renderer
     R fr = {x, r.y + r.h + 3 * s, w, 24 * s};
     if (P().skin == 2) afx::FloatBar(dl, fr.min(), fr.max(), s);   // Corail: floating status bar
-    else if (P().skin) { Box(fr, afx::col::footer, 0); dl->AddLine(ImVec2(fr.x, fr.y + 0.5f), ImVec2(fr.x + fr.w, fr.y + 0.5f), P().border); }
+    else if (P().skin) { Box(fr, P().skin == 3 ? P().bg : afx::col::footer, 0); dl->AddLine(ImVec2(fr.x, fr.y + 0.5f), ImVec2(fr.x + fr.w, fr.y + 0.5f), P().border); }
     else Box(fr, P().bg, 0);
     float fx = fr.x + 9 * s;
     const char* toolNames[] = {"Select", "Move", "Rotate", "Scale"};
