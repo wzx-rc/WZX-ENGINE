@@ -79,9 +79,18 @@ bool BrickApp::init(HINSTANCE inst, const Options& opt) {
     m_dpi = sysDpi / 96.0f;
     RECT r = {0, 0, (LONG)(opt.width * m_dpi), (LONG)(opt.height * m_dpi)};
     AdjustWindowRectExForDpi(&r, WS_OVERLAPPEDWINDOW, FALSE, 0, sysDpi);
-    m_hwnd = CreateWindowExW(0, wc.lpszClassName, L"BrickIt — WZX Engine", WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT,
-                             r.right - r.left, r.bottom - r.top, nullptr, nullptr, inst, nullptr);
+    // never larger than the work area of the screen (1600 x 900 at 200 % is 3200 x 1800 px: wider than a 3072 px
+    // screen, the header tools, the colours and the library ended up off screen); interactive runs open maximised then
+    MONITORINFO mi = {sizeof(mi)};
+    GetMonitorInfoW(MonitorFromPoint(POINT{0, 0}, MONITOR_DEFAULTTOPRIMARY), &mi);
+    const int workW = mi.rcWork.right - mi.rcWork.left, workH = mi.rcWork.bottom - mi.rcWork.top;
+    int winW = r.right - r.left, winH = r.bottom - r.top;
+    const bool tooBig = winW > workW || winH > workH;
+    if (tooBig && opt.shotPath.empty()) { winW = std::min(winW, workW); winH = std::min(winH, workH); }
+    m_hwnd = CreateWindowExW(0, wc.lpszClassName, L"BrickIt — WZX Engine", WS_OVERLAPPEDWINDOW, opt.shotPath.empty() && tooBig ? mi.rcWork.left : CW_USEDEFAULT,
+                             opt.shotPath.empty() && tooBig ? mi.rcWork.top : CW_USEDEFAULT, winW, winH, nullptr, nullptr, inst, nullptr);
     if (!m_hwnd) return false;
+    m_startMaximized = tooBig && opt.shotPath.empty();
     m_dpi = GetDpiForWindow(m_hwnd) / 96.0f;
 
     RECT cr;
@@ -100,7 +109,7 @@ bool BrickApp::init(HINSTANCE inst, const Options& opt) {
     th::loadSettings(m_exeDir + L"\\brickit_settings.ini");
     th::apply(m_ui);
     if (opt.shotPath.empty()) {   // .loading of the web while the library and the thumbnails load
-        ShowWindow(m_hwnd, SW_SHOWDEFAULT);
+        ShowWindow(m_hwnd, m_startMaximized ? SW_SHOWMAXIMIZED : SW_SHOWDEFAULT);
         for (int f = 0; f < 2; ++f) {
             m_gui.newFrame();
             ImDrawList* dl = ImGui::GetBackgroundDrawList();
@@ -190,7 +199,7 @@ bool BrickApp::init(HINSTANCE inst, const Options& opt) {
         }
     }
 
-    ShowWindow(m_hwnd, SW_SHOWDEFAULT);
+    ShowWindow(m_hwnd, m_startMaximized ? SW_SHOWMAXIMIZED : SW_SHOWDEFAULT);
     UpdateWindow(m_hwnd);
     return true;
 }
@@ -289,6 +298,7 @@ void BrickApp::setupStage() {
     // two bricks that touch, path tracing)
     m_colorMaterial.clear();
     m_tintMaterial.clear();
+    m_fpMats.clear();
     for (const Color& c : m_lib.palette) {
         Material m;
         m.name = c.name;
@@ -321,6 +331,7 @@ void BrickApp::setupStage() {
             m.subsurface = 0.0f;
         }
         m_colorMaterial.push_back(m_scene.addMaterial(m));
+        m_fpMats.push_back({m_colorMaterial.back(), m.roughTexStrength});
     }
     // focus mode: the same materials at 50 % for the bricks that are not the focus
     m_dimMaterial.clear();
@@ -331,6 +342,7 @@ void BrickApp::setupStage() {
         d.specular *= 0.5f;
         d.coat *= 0.5f;
         m_dimMaterial.push_back(m_scene.addMaterial(d));
+        m_fpMats.push_back({m_dimMaterial.back(), d.roughTexStrength});
     }
     {
         Material gm;   // ghostMat of the web: 0xffe08a, emissive 0x6b5a1a
@@ -407,6 +419,8 @@ void BrickApp::applyLook() {
         if (m_rimLight >= 0) m_scene.lights[m_rimLight].enabled = false;
         m_rs.exposure = m_opt.exposure;
     }
+    // fingerprints: path tracing only (Wzx: none in the real time view), switchable in the settings
+    for (auto& [mi, base] : m_fpMats) m_scene.materials[mi].roughTexStrength = (!m_rs.raster && m_fingerprints) ? base : 0.0f;
     ++m_scene.objectsVersion;
     m_renderer.resetAccumulation();
 }

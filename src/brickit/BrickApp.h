@@ -289,6 +289,7 @@ private:
 
     // Thumbs.cpp
     void buildThumbs();
+    static bool decodeImage(const uint8_t* data, size_t size, std::vector<uint8_t>& rgba, int& w, int& h);
     int setupStudio(Scene& ts);
     // 3D viewer of the part sheet (web: partViewer): the part alone in the thumbnail studio, turned by dragging. While the
     // sheet is open the main view is frozen (its last image) and the renderer draws the viewer instead.
@@ -320,7 +321,10 @@ private:
     std::vector<int> m_tintMaterial;   // Mechanical mode: one material per body (Couleurs par corps)
     int m_blockedMaterial = -1;        // brick in hand that cannot be dropped (red ghost)
     int m_ghostMaterial = -1, m_ghostBlockedMaterial = -1;
-    int m_rimLight = -1;               // cool rim light of the web (raster)   // placement preview (ghostMat of the web)
+    int m_rimLight = -1;
+    bool m_startMaximized = false;
+    std::vector<std::pair<int, float>> m_fpMats;   // materials with fingerprints and their strength
+    bool m_fingerprints = true;        // fingerprints in the path tracing (settings)   // the default size does not fit the screen               // cool rim light of the web (raster)   // placement preview (ghostMat of the web)
     int m_firstBrickObject = 0;        // scene objects before it: the stage
     ViewRect m_vp;
     int m_frame = 0;
@@ -403,7 +407,7 @@ private:
     // thumbnails
     std::vector<ImTextureID> m_thumbAtlas;
     std::vector<int> m_thumbSlot;      // part -> slot (-1 none)
-    int m_thumbPx = 96, m_thumbCols = 21;
+    int m_thumbPx = 128, m_thumbCols = 21;   // the web images are 240 x 192: 128 px cells stay sharp at 4K
 };
 
 } // namespace brickit
