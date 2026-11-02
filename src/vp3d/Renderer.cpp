@@ -147,7 +147,7 @@ bool Renderer::init(HWND hwnd, uint32_t width, uint32_t height, const std::wstri
         h.ptr += (SIZE_T)kEnvHeapSlot * m_descSize;
         m_device->CreateShaderResourceView(nullptr, &sv, h);
         // no probe grid yet: null views in the probe SRV slots of the raster pass (and the screen GI, sun shadow ones)
-        for (uint32_t k = 0; k < 6; ++k) {
+        for (uint32_t k = 0; k < 7; ++k) {
             D3D12_CPU_DESCRIPTOR_HANDLE ph = m_heap->GetCPUDescriptorHandleForHeapStart();
             ph.ptr += (SIZE_T)(kProbeSrvSlot + k) * m_descSize;
             m_device->CreateShaderResourceView(nullptr, &sv, ph);
@@ -178,9 +178,9 @@ bool Renderer::init(HWND hwnd, uint32_t width, uint32_t height, const std::wstri
 
     D3D12_QUERY_HEAP_DESC qhd = {};
     qhd.Type = D3D12_QUERY_HEAP_TYPE_TIMESTAMP;
-    qhd.Count = 6;   // 0 start, 1 end, 2 after DDGI probe rays, 3 after DDGI blend, 4 and 5 around Split RC
+    qhd.Count = 64;   // 0 start, 1 end, 2 after DDGI probe rays, 3 after DDGI blend, 4 and 5 around Split RC
     m_device->CreateQueryHeap(&qhd, IID_PPV_ARGS(&m_queryHeap));
-    m_queryReadback = createBuffer(256, D3D12_HEAP_TYPE_READBACK, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST);
+    m_queryReadback = createBuffer(512, D3D12_HEAP_TYPE_READBACK, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST);
     UINT64 freq = 1;
     m_queue->GetTimestampFrequency(&freq);
     m_tsFreq = (double)freq;
@@ -446,6 +446,9 @@ void Renderer::createTargets(uint32_t w, uint32_t h) {
         hnd = cpu;
         hnd.ptr += (SIZE_T)kReflSrvSlot * m_descSize;
         m_device->CreateShaderResourceView(m_refl.Get(), &sv, hnd);
+        hnd = cpu;   // the raw sun trace: its .y is the depth of the surface the pixel centre sees (raster t10)
+        hnd.ptr += (SIZE_T)kCenterSrvSlot * m_descSize;
+        m_device->CreateShaderResourceView(m_sunShadowRaw.Get(), &sv, hnd);
     }
     createRasterTargets(w, h);
     m_sampleIndex = 0;
@@ -1588,13 +1591,23 @@ void Renderer::recordSplitRC(const RenderSettings& rs, UINT gx, UINT gy) {
     uint32_t words = 16;   // counters
     uint32_t caps[SRC_CASCADES], maxProbes[SRC_CASCADES];
     for (uint32_t i = 0; i < count; ++i) {
-        // each cascade has about 4x fewer probes on a surface and 4x more directions: the same entries (2x margin)
-        maxProbes[i] = i == 0 ? maxProbes0 : std::max(64u, maxProbes0 >> (2 * i - 1));
-        maxProbes[i] = std::min(maxProbes[i], maxProbes0);
-        maxProbes[i] = std::min(maxProbes[i], 65535u * 64u / ((8u << i) * (4u << i)));   // one dispatch per cascade
-        uint32_t cap = 1024;
-        while (cap < maxProbes[i] * 2) cap <<= 1;
+        // upper bound: each cascade has about 4x fewer probes on a surface and 4x more directions (2x margin)
+        uint32_t bound = i == 0 ? maxProbes0 : std::max(64u, maxProbes0 >> (2 * i - 1));
+        bound = std::min(bound, maxProbes0);
+        bound = std::min(bound, 65535u * 64u / ((8u << i) * (4u << i)));   // one dispatch per cascade
+        uint32_t cap = 1024;   // hash slots for the bound (only keys: small)
+        while (cap < bound * 2) cap <<= 1;
         caps[i] = cap;
+        // probe records and entries for what the last frame used (x2), not for the bound: the bound's entries reach
+        // hundreds of MB, which spill out of video memory beside another 3D app and make every pass 50x slower
+        uint32_t& c = m_srcCapProbes[i];
+        const uint32_t keys = m_srcKeys[i];
+        const uint32_t lo = std::max(16u, 1024u >> (2 * i));   // the same few entries at least, whatever the cascade
+        if (c == 0) c = std::max(lo, bound / 4);
+        if (keys > c * 9 / 10) c = keys * 2;
+        else if (keys * 4 < c) c = std::max(lo, keys * 2);
+        c = std::min(c, bound);
+        maxProbes[i] = c;
     }
     for (uint32_t i = 0; i < count; ++i) {   // slot keys right after the counters: one clear covers them all
         sc.c[i].keys = words;
@@ -1620,13 +1633,13 @@ void Renderer::recordSplitRC(const RenderSettings& rs, UINT gx, UINT gy) {
         m_rcStats.splitDirs[i] = c.dirW * c.dirH;
     }
     sc.irr = words;
-    words += maxProbes0 * SRC_IRR_N * SRC_IRR_N * 4;
+    words += maxProbes[0] * SRC_IRR_N * SRC_IRR_N * 4;
     sc.hist = words;   // right after the irradiance: both copied to the history in one go
-    words += maxProbes0;
+    words += maxProbes[0];
     sc.irrF = sc.irr;
     if (rs.rcSplitFilter) {   // the filtered copy the gather reads
         sc.irrF = words;
-        words += maxProbes0 * SRC_IRR_N * SRC_IRR_N * 4;
+        words += maxProbes[0] * SRC_IRR_N * SRC_IRR_N * 4;
     }
     sc.pixels = words;
     words += pixels * 8;
@@ -1680,6 +1693,7 @@ void Renderer::recordSplitRC(const RenderSettings& rs, UINT gx, UINT gy) {
     m_rcStats.splitRays = pixels;
     m_rcStats.splitLodDist = sc.lodDist;
     m_rcStats.splitSpacing = s0;
+    for (int i = 0; i < RC_MAX_CASCADES; ++i) m_rcStats.splitProbes[i] = m_srcKeys[i];
 
     const uint64_t bytes = (uint64_t)words * 4;
     if (!m_srcBuffer.res || m_srcBuffer.size < bytes) {
@@ -1692,7 +1706,7 @@ void Renderer::recordSplitRC(const RenderSettings& rs, UINT gx, UINT gy) {
     m_cmd->SetComputeRootConstantBufferView(18, m_srcConstants.va());
     m_cmd->SetComputeRootUnorderedAccessView(19, m_srcBuffer.va());
     m_cmd->SetComputeRootDescriptorTable(20, screenTable);
-    const uint64_t prevBytes = ((uint64_t)caps[0] * 2 + (uint64_t)maxProbes0 * (SRC_IRR_N * SRC_IRR_N * 4 + 1)) * 4;
+    const uint64_t prevBytes = ((uint64_t)caps[0] * 2 + (uint64_t)maxProbes[0] * (SRC_IRR_N * SRC_IRR_N * 4 + 1)) * 4;
     if (histOn && (!m_srcPrev.res || m_srcPrev.size < prevBytes)) {
         waitIdle();
         m_srcPrev = createBuffer(prevBytes, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS,
@@ -1708,6 +1722,7 @@ void Renderer::recordSplitRC(const RenderSettings& rs, UINT gx, UINT gy) {
         m_cmd->SetPipelineState(pso);
         m_cmd->SetComputeRoot32BitConstants(1, 4, c, 0);
         m_cmd->Dispatch(std::max(1u, x), y, 1);
+        if (m_srcProfile && m_srcProfileN < 58) m_cmd->EndQuery(m_queryHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 6 + m_srcProfileN++);
         uavBarrier(buf);
     };
     auto groups = [](uint64_t n) { return (UINT)((n + 63) / 64); };
@@ -1723,10 +1738,16 @@ void Renderer::recordSplitRC(const RenderSettings& rs, UINT gx, UINT gy) {
     pass(m_psoSRCTrace.Get(), 0, 0, gx, gy);
     for (int i = (int)count - 1; i >= 0; --i)
         pass(m_psoSRCMerge.Get(), (uint32_t)i, 0, groups((uint64_t)maxProbes[i] * sc.c[i].dirW * sc.c[i].dirH));
-    pass(m_psoSRCIrradiance.Get(), 0, 0, groups((uint64_t)maxProbes0 * SRC_IRR_N * SRC_IRR_N));
-    if (rs.rcSplitFilter) pass(m_psoSRCFilter.Get(), 0, 0, groups((uint64_t)maxProbes0 * SRC_IRR_N * SRC_IRR_N));
+    pass(m_psoSRCIrradiance.Get(), 0, 0, groups((uint64_t)maxProbes[0] * SRC_IRR_N * SRC_IRR_N));
+    if (rs.rcSplitFilter) pass(m_psoSRCFilter.Get(), 0, 0, groups((uint64_t)maxProbes[0] * SRC_IRR_N * SRC_IRR_N));
     pass(m_psoSRCGather.Get(), 0, 0, gx, gy);
     uavBarrier();
+    {   // the counters (probes per cascade), read back in present() for the statistics
+        if (!m_srcReadback.res) m_srcReadback = createBuffer(256, D3D12_HEAP_TYPE_READBACK, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST);
+        transition(buf, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_COPY_SOURCE);
+        m_cmd->CopyBufferRegion(m_srcReadback.res.Get(), 0, buf, 0, 64);
+        transition(buf, D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+    }
     if (histOn) {   // this frame's cascade-0 slots, irradiance and history lengths become the next frame's history
         ID3D12Resource* prev = m_srcPrev.res.Get();
         transition(buf, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_COPY_SOURCE);
@@ -1734,11 +1755,11 @@ void Renderer::recordSplitRC(const RenderSettings& rs, UINT gx, UINT gy) {
         m_cmd->CopyBufferRegion(prev, 0, buf, (uint64_t)sc.c[0].keys * 4, (uint64_t)caps[0] * 4);
         m_cmd->CopyBufferRegion(prev, (uint64_t)caps[0] * 4, buf, (uint64_t)sc.c[0].vals * 4, (uint64_t)caps[0] * 4);
         m_cmd->CopyBufferRegion(prev, (uint64_t)caps[0] * 8, buf, (uint64_t)sc.irr * 4,
-                                (uint64_t)maxProbes0 * (SRC_IRR_N * SRC_IRR_N * 4 + 1) * 4);
+                                (uint64_t)maxProbes[0] * (SRC_IRR_N * SRC_IRR_N * 4 + 1) * 4);
         transition(buf, D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
         transition(prev, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
         m_srcPrevCap = caps[0];
-        m_srcPrevProbes = maxProbes0;
+        m_srcPrevProbes = maxProbes[0];
         m_srcPrevCam = fc->camPos;
         m_srcPrevSig = m_sceneSignature;
         m_srcPrevXf.resize(m_draws.size());
@@ -1827,6 +1848,7 @@ void Renderer::recordScreenTrace(const float3& sunDir, const RenderSettings& rs,
     }
     uavBarrier();
     if (shadow) transition(m_sunShadow.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+    transition(m_sunShadowRaw.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);   // t10
     if (refl) transition(m_refl.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
 }
 
@@ -2029,6 +2051,7 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
     beginCommands();
     m_giTimed = false;
     m_splitTimed = false;
+    m_srcProfileN = 0;
     buildTLAS(scene, needAS);
     m_asThisFrame = needAS;
 
@@ -2249,7 +2272,7 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
         m_prevCam = {fc.camPos, fc.camRight, fc.camUp, fc.camFwd, fc.tanHalfFovY, fc.aspect};
     }
     m_cmd->EndQuery(m_queryHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 1);
-    m_cmd->ResolveQueryData(m_queryHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 0, m_splitTimed ? 6 : (m_giTimed ? 4 : 2),
+    m_cmd->ResolveQueryData(m_queryHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 0, m_splitTimed ? 6 + m_srcProfileN : (m_giTimed ? 4 : 2),
                             m_queryReadback.res.Get(), 0);
 
     if (!toBackBuffer) {
@@ -2294,7 +2317,7 @@ void Renderer::present(bool vsync) {
     m_swapChain->Present(vsync ? 1 : 0, 0);
     waitIdle();
     void* p = nullptr;
-    D3D12_RANGE r = {0, 48};
+    D3D12_RANGE r = {0, 512};
     if (SUCCEEDED(m_queryReadback.res->Map(0, &r, &p))) {
         uint64_t* ts = (uint64_t*)p;
         if (ts[1] > ts[0]) m_gpuMs = (float)((ts[1] - ts[0]) * 1000.0 / m_tsFreq);
@@ -2303,6 +2326,25 @@ void Renderer::present(bool vsync) {
             m_giBlendMs = (float)((ts[3] - ts[2]) * 1000.0 / m_tsFreq);
         }
         if (m_splitTimed && ts[5] >= ts[4]) m_splitMs = (float)((ts[5] - ts[4]) * 1000.0 / m_tsFreq);
+        if (m_splitTimed && m_srcProfileN > 0) {   // per pass: clear, insert, alloc x C, clear x C, count..., trace, merge x C, irr, filter, gather
+            srcProfile.clear();
+            uint64_t prev = ts[4];
+            for (uint32_t i = 0; i < m_srcProfileN; ++i) {
+                char b[32];
+                snprintf(b, sizeof(b), "%.2f ", (ts[6 + i] - prev) * 1000.0 / m_tsFreq);
+                srcProfile += b;
+                prev = ts[6 + i];
+            }
+        }
+        if (m_splitTimed && m_srcReadback.res) {   // keys inserted per cascade (above the capacity: probes dropped)
+            void* q = nullptr;
+            D3D12_RANGE rr = {0, 64};
+            if (SUCCEEDED(m_srcReadback.res->Map(0, &rr, &q))) {
+                for (int i = 0; i < RC_MAX_CASCADES; ++i) m_srcKeys[i] = ((const uint32_t*)q)[i];
+                D3D12_RANGE nw = {0, 0};
+                m_srcReadback.res->Unmap(0, &nw);
+            }
+        }
         D3D12_RANGE w = {0, 0};
         m_queryReadback.res->Unmap(0, &w);
     }

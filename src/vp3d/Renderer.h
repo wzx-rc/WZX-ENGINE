@@ -119,6 +119,7 @@ struct RCStats {
     uint32_t splitCapacity[RC_MAX_CASCADES] = {}, splitDirs[RC_MAX_CASCADES] = {};
     uint64_t splitRays = 0;
     float splitLodDist = 0, splitSpacing = 0;   // where LOD 1 starts, cascade-0 spacing at LOD 0
+    uint32_t splitProbes[RC_MAX_CASCADES] = {};   // probes allocated per cascade (read back from the previous frame)
 };
 
 struct ViewRect { int x = 0, y = 0, w = 1, h = 1; };
@@ -283,7 +284,8 @@ private:
     static constexpr uint32_t kScreenGISrvSlot = kProbeSrvSlot + 3, kSunShadowSrvSlot = kProbeSrvSlot + 4;
     static constexpr uint32_t kReflSrvSlot = kProbeSrvSlot + 5;   // raster t9: ray traced reflections (filtered)
     // UAVs: screen GI (u17), then u18..u21: sun shadow raw, filtered, reflections raw, filtered
-    static constexpr uint32_t kScreenGIUavSlot = kProbeSrvSlot + 6, kSunShadowUavSlot = kProbeSrvSlot + 7;
+    static constexpr uint32_t kCenterSrvSlot = kProbeSrvSlot + 6;   // raster t10: the raw sun trace (pixel-centre depth)
+    static constexpr uint32_t kScreenGIUavSlot = kProbeSrvSlot + 7, kSunShadowUavSlot = kProbeSrvSlot + 8;
     static constexpr uint32_t kProbeFace = 16;   // texels per cube face of a probe capture
     std::vector<ComPtr<ID3D12Resource>> m_materialTex;
     ComPtr<ID3D12Resource> m_tex[kTexCount];
@@ -344,7 +346,14 @@ private:
     bool m_splitTimed = false;                   // the frame wrote the Split RC timestamps (4, 5)
     // Split RC history: the previous frame's cascade-0 slots, irradiance and history lengths (u22), its layout and camera,
     // the signature that drops it (lighting, materials, settings), the transforms of the draws (moves drop it locally)
-    Buffer m_srcPrev;
+    Buffer m_srcPrev, m_srcReadback;            // history; the counters read back (probes per cascade)
+    uint32_t m_srcKeys[RC_MAX_CASCADES] = {};   // keys of the last frame read back (recordRC resets m_rcStats)
+    uint32_t m_srcCapProbes[RC_MAX_CASCADES] = {};   // probe capacity per cascade, following the keys of the last frames
+    bool m_srcProfile = GetEnvironmentVariableA("VP3D_SRC_PROFILE", nullptr, 0) > 0;   // a timestamp after each pass
+    uint32_t m_srcProfileN = 0;
+public:
+    std::string srcProfile;   // last frame's per-pass times (VP3D_SRC_PROFILE)
+private:
     uint32_t m_srcPrevCap = 0, m_srcPrevProbes = 0, m_srcPrevSig = 0;
     bool m_srcPrevValid = false;
     float3 m_srcPrevCam;

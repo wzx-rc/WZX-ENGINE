@@ -2026,7 +2026,11 @@ void App::atlInspectorRender(float x, float y, float w, float) {
                  st.splitCascades, st.splitDirs[0], st.splitDirs[std::max(0, st.splitCascades - 1)]);
         Text(x, y, b, P().muted, 11);
         y += 19 * s;
-        Text(x, y, "No temporal accumulation: what moves is right the next frame.", P().muted, 11);
+        snprintf(b, sizeof(b), "Probes C0 %u / %u, C1 %u / %u%s", st.splitProbes[0], st.splitCapacity[0], st.splitProbes[1],
+                 st.splitCapacity[1], st.splitProbes[0] > st.splitCapacity[0] ? " (full: bigger probes)" : "");
+        Text(x, y, b, st.splitProbes[0] > st.splitCapacity[0] ? P().accent : P().muted, 11);
+        y += 19 * s;
+        Text(x, y, "History only while nothing moves: what moves is right the next frame.", P().muted, 11);
         y += 22 * s;
     } else {
         Label(x, y, "PROBES");

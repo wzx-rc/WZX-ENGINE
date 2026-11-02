@@ -301,3 +301,16 @@ Désormais, quand il n'y a pas de soleil, `SunShadowTrace` trace l'ombre de la l
 - puis le même filtre bilatéral que pour le soleil.
 
 La passe raster lit ce masque pour la lampe principale. Capture 45 : ombres douces des blocs et des billes. Le mode Lit n'est pas touché.
+
+### Liseré blanc aux bords, ombres de lampe, mémoire vidéo (02/11/2026)
+
+- **Liseré** :
+  - cause : avec le MSAA, un pixel de bord ombre les deux surfaces qu'il couvre, mais l'ombre, la GI écran et les reflets tracés sont calculés pour la seule surface vue par le centre du pixel. L'autre surface prenait donc les valeurs de sa voisine, d'où des pointillés blancs ou sombres le long des arêtes ;
+  - correctif : la passe raster lit ces textures au pixel du voisinage 3 × 3 dont la profondeur au centre correspond à celle du fragment (t10 = la trace brute du soleil, qui contient cette profondeur) ;
+  - avant / après : captures 46 et 47. Les rebords très fins (soucoupes) gardent un léger pointillé.
+- **Ombre de la lampe** : filtre bilatéral 9 × 9 (sigma 3 px) au lieu de 5 × 5, plus proche de l'ombre douce du mode GI.
+- **Mémoire vidéo** :
+  - les cascades étaient dimensionnées pour le pire cas, soit 200 Mo ou plus avec 4 cascades et davantage avec 6. À côté d'une autre application 3D (un second éditeur ouvert), elles débordaient de la mémoire vidéo et chaque passe devenait environ 50 fois plus lente (Split RC à 250 ms) ;
+  - désormais, la capacité de chaque cascade suit le nombre de clés de l'image précédente (×2), lu sur le GPU : Cornell 2,3 ms en 4 cascades ;
+  - les stats de l'onglet Render affichent sondes / capacité ;
+  - `VP3D_SRC_PROFILE=1` écrit le temps de chaque passe dans le `.txt` des captures.

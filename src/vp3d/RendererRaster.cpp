@@ -27,7 +27,8 @@ struct RasterConstants {
     float3 sunRadiance; float sunFromEnv;
     float shIrr[9][4];
     float envMapOn; float envRotation; float envMapIntensity; float envMips;
-    float envVisible; uint32_t sunLight; float giMode, pad3;   // giMode: DDGI probes read by Shade (Raster.hlsl)
+    float envVisible; uint32_t sunLight; float giMode, centreValid;   // giMode: DDGI probes read by Shade (Raster.hlsl);
+                                                                       // centreValid: t10 holds this frame's pixel-centre depth
     float rtShadow, sunTanRadius, rtShadowSamples, rtRefl;   // ray traced sun shadow (mask in t8), reflections (t9)
 };
 
@@ -86,7 +87,8 @@ bool Renderer::createRasterPipelines(std::string* error) {
 
     D3D12_DESCRIPTOR_RANGE probeRange = {};   // t4..t6 probe atlases (DDGI without ray tracing)
     probeRange.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
-    probeRange.NumDescriptors = 6;   // + t7 screen GI (screen-space cascades), t8 ray traced sun shadow, t9 reflections
+    probeRange.NumDescriptors = 7;   // + t7 screen GI (screen-space cascades), t8 ray traced sun shadow, t9 reflections,
+                                     // t10 pixel-centre depth of the traced passes (edge fix)
     probeRange.BaseShaderRegister = 4;
 
     D3D12_ROOT_PARAMETER p[10] = {};
@@ -500,6 +502,9 @@ void Renderer::recordRaster(const Scene& scene, const RenderSettings& rs, const 
     // the mask is the sun's, or without a sun the key area light's (a lamp in a room: the Cornell box)
     const int areaKey = (rc.sunOn > 0 || key < 0) ? -1 : key;
     const bool sunMask = rc.rtShadow > 0 && !probeCapture && (rc.sunOn > 0 || areaKey >= 0);
+    // the traced passes also give the depth of each pixel centre: the edge fix of the main pass (Raster.hlsl, t10)
+    rc.centreValid = (sunMask || reflOn) ? 1.0f : 0.0f;
+    memcpy(m_rasterCB.mapped, &rc, sizeof(rc));
     if (sunMask || reflOn) recordScreenTrace(rc.sunDir, rs, sunMask, reflOn, areaKey);
 
     m_cmd->SetGraphicsRootSignature(m_rasterRoot.Get());
@@ -678,6 +683,7 @@ void Renderer::recordRaster(const Scene& scene, const RenderSettings& rs, const 
         if (!(d.flags & 7u)) drawOne(d);
     transition(m_tex[kTexAlbedo].Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
     if (sunMask) transition(m_sunShadow.Get(), D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+    if (sunMask || reflOn) transition(m_sunShadowRaw.Get(), D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
     if (reflOn) transition(m_refl.Get(), D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
 }
 

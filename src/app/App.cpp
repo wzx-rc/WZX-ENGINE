@@ -605,6 +605,11 @@ void App::frame() {
         if (FILE* tf = _wfopen((m_opt.shotPath + L".txt").c_str(), L"w")) {   // GPU timings of the last frame
             fprintf(tf, "gpu_ms=%.3f split_ms=%.3f gi_update_ms=%.3f gi_blend_ms=%.3f frames=%d size=%ux%u\n", m_renderer.gpuFrameMs(),
                     m_renderer.splitMs(), m_renderer.giUpdateMs(), m_renderer.giBlendMs(), m_frameCounter, w, h);
+            const vp3d::RCStats& rst = m_renderer.rcStats();
+            fprintf(tf, "split_keys=%u,%u,%u,%u,%u,%u capacity=%u,%u,%u,%u,%u,%u\n", rst.splitProbes[0], rst.splitProbes[1], rst.splitProbes[2],
+                    rst.splitProbes[3], rst.splitProbes[4], rst.splitProbes[5], rst.splitCapacity[0], rst.splitCapacity[1],
+                    rst.splitCapacity[2], rst.splitCapacity[3], rst.splitCapacity[4], rst.splitCapacity[5]);
+            if (!m_renderer.srcProfile.empty()) fprintf(tf, "passes_ms=%s\n", m_renderer.srcProfile.c_str());
             fclose(tf);
         }
         if (const char* dump = getenv("VP3D_DUMP_CAPTURE")) {   // debug: the probe cube captures of the last frame

@@ -19,7 +19,7 @@ struct RasterConstants {
     float3 sunRadiance; float sunFromEnv;   // sunFromEnv: the key is the sun of the HDRI (its highlight is in the reflections)
     float4 shIrr[9];                     // HDRI irradiance (cosine-convolved SH, without the sun), image space
     float envMapOn; float envRotation; float envMapIntensity; float envMips;
-    float envVisible; uint sunLight; float giMode; float pad3;   // sunLight: index of the path tracer's sun quad (skipped here); giMode: DDGI probes (see Shade)
+    float envVisible; uint sunLight; float giMode; float centreValid;   // sunLight: index of the path tracer's sun quad (skipped here); giMode: DDGI probes (see Shade); centreValid: t10 is this frame's
     float rtShadow; float sunTanRadius; float rtShadowSamples; float rtRefl;   // ray traced sun shadow (t8), reflections (t9)
 };
 ConstantBuffer<RasterConstants> R : register(b0);
@@ -232,7 +232,34 @@ float Shadow(float3 wpos, float3 n, float bias) {
 // instead of the shadow map: physical penumbra, no shadow map resolution, no temporal.
 Texture2D<float> gSunShadow : register(t8);
 Texture2D<float4> gRefl : register(t9);   // ray traced reflections (alpha 1 where traced), DirectX 12 viewport
+Texture2D<float4> gCentre : register(t10);   // raw sun trace: .y = depth of the surface the pixel centre sees
 #endif
+
+// Pixel to read the traced screen textures from (sun shadow, screen GI, reflections). They are computed for the
+// surface at each pixel centre, but with MSAA an edge pixel also shades the other surface it covers: that fragment
+// would get the values of its neighbour across the edge (white or dark dotted lines along the edges). It takes the
+// pixel of the 3x3 around whose centre depth matches its own instead.
+int2 TracedPixel(float2 pos, float3 wpos) {
+    int2 p = int2(pos);
+#if defined(VP3D_RT_SHADOWS) && !defined(VP3D_ATTRIB_SEMANTICS)
+    if (R.centreValid <= 0) return p;
+    float d = length(wpos - R.camPos);
+    float best = abs(gCentre.Load(int3(p, 0)).y - d);
+    if (best < 0.01 * d) return p;
+    uint w, h;
+    gCentre.GetDimensions(w, h);
+    int2 bp = p;
+    for (int y = -1; y <= 1; ++y)
+        for (int x = -1; x <= 1; ++x) {
+            int2 q = clamp(p + int2(x, y), int2(0, 0), int2(w, h) - 1);
+            float e = abs(gCentre.Load(int3(q, 0)).y - d);
+            if (e < best) { best = e; bp = q; }
+        }
+    return bp;
+#else
+    return p;
+#endif
+}
 
 float3 GridColor(float3 base, float3 wpos, inout float3 emission) {
     float g = R.gridScale;
@@ -311,7 +338,7 @@ float4 Shade(VSOut i, bool ghost, float shadowBias, bool capture) {
         if (li == R.keyLight) {
 #if defined(VP3D_RT_SHADOWS) && !defined(VP3D_ATTRIB_SEMANTICS)
             // no sun: the ray traced mask is the key area light's (SunShadowTrace, rays over the lamp's rectangle)
-            if (R.rtShadow > 0 && R.sunOn <= 0 && !capture) shadow = gSunShadow.Load(int3(i.pos.xy, 0));
+            if (R.rtShadow > 0 && R.sunOn <= 0 && !capture) shadow = gSunShadow.Load(int3(TracedPixel(i.pos.xy, i.wpos), 0));
             else
 #endif
             shadow = Shadow(i.wpos, N, shadowBias);
@@ -341,7 +368,7 @@ float4 Shade(VSOut i, bool ghost, float shadowBias, bool capture) {
             float sunVis;
 #if defined(VP3D_RT_SHADOWS) && !defined(VP3D_ATTRIB_SEMANTICS)
             // the ray traced, filtered visibility of this pixel (SunShadowTrace / SunShadowFilter)
-            if (R.rtShadow > 0 && !capture) sunVis = gSunShadow.Load(int3(i.pos.xy, 0));
+            if (R.rtShadow > 0 && !capture) sunVis = gSunShadow.Load(int3(TracedPixel(i.pos.xy, i.wpos), 0));
             else
 #endif
             sunVis = Shadow(i.wpos, N, shadowBias);
@@ -390,7 +417,7 @@ float4 Shade(VSOut i, bool ghost, float shadowBias, bool capture) {
             float3 irr = SampleIrradiance(i.wpos, N, V, conf);
 #ifdef VP3D_SCREEN_GI
             if (G.flags & 8u) {   // screen-space cascades where they answer, the probe volume elsewhere
-                float4 s = gScreenGI.Load(int3(i.pos.xy, 0));
+                float4 s = gScreenGI.Load(int3(TracedPixel(i.pos.xy, i.wpos), 0));
                 irr = lerp(irr, s.rgb, s.a);
                 conf = max(conf, s.a);
             }
@@ -403,7 +430,7 @@ float4 Shade(VSOut i, bool ghost, float shadowBias, bool capture) {
             float3 glossyAmb = lerp(ambGlossy, glossy, conf);
 #if defined(VP3D_RT_SHADOWS) && !defined(VP3D_ATTRIB_SEMANTICS)
             if (R.rtRefl > 0) {   // ray traced reflection of this pixel (ReflectTrace / ReflectFilter), Fresnel-weighted
-                float4 rr = gRefl.Load(int3(i.pos.xy, 0));
+                float4 rr = gRefl.Load(int3(TracedPixel(i.pos.xy, i.wpos), 0));
                 if (rr.a > 0.5) glossyAmb = kSpec * rr.rgb;
             }
 #endif
