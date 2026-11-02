@@ -68,7 +68,7 @@ const float3 kProbeUp[6] = {float3(0, 1, 0), float3(0, 1, 0), float3(0, 0, -1), 
 
 } // namespace
 
-bool Renderer::createRasterPipelines(std::string* error) {
+bool Renderer::createRasterPipelines(std::string* error, bool msaaOnly) {
     D3D12_DESCRIPTOR_RANGE range = {};
     range.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
     range.NumDescriptors = 1;
@@ -152,7 +152,7 @@ bool Renderer::createRasterPipelines(std::string* error) {
         if (error) *error = err ? (const char*)err->GetBufferPointer() : "raster root signature";
         return false;
     }
-    m_device->CreateRootSignature(0, blob->GetBufferPointer(), blob->GetBufferSize(), IID_PPV_ARGS(&m_rasterRoot));
+    if (!msaaOnly || !m_rasterRoot) m_device->CreateRootSignature(0, blob->GetBufferPointer(), blob->GetBufferSize(), IID_PPV_ARGS(&m_rasterRoot));
 
     auto load = [&](const wchar_t* name, std::vector<char>& code) {
         if (readBlob(m_shaderDir + L"\\" + name, code)) return true;
@@ -226,7 +226,7 @@ bool Renderer::createRasterPipelines(std::string* error) {
         auto x = base();
         x.NumRenderTargets = 1;
         x.RTVFormats[0] = DXGI_FORMAT_R16G16B16A16_FLOAT;
-        x.SampleDesc.Count = kMsaa;
+        x.SampleDesc.Count = m_msaa;
         return x;
     };
     d = ms();
@@ -251,6 +251,7 @@ bool Renderer::createRasterPipelines(std::string* error) {
     d.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_LINE;
     d.RasterizerState.AntialiasedLineEnable = TRUE;
     if (!make(d, m_psoWire, "wireframe")) return false;
+    if (msaaOnly) return true;
 
     // Object id pass (single sample) into the albedo texture (w = id)
     d = base();
@@ -375,12 +376,21 @@ void Renderer::createRasterTargets(uint32_t w, uint32_t h) {
 
     // MSAA colour
     d.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
-    d.SampleDesc.Count = kMsaa;
+    d.SampleDesc.Count = m_msaa;
     d.Flags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
     D3D12_CLEAR_VALUE cc = {};
     cc.Format = d.Format;
     m_msaaColor.Reset();
     m_device->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &d, D3D12_RESOURCE_STATE_RENDER_TARGET, &cc, IID_PPV_ARGS(&m_msaaColor));
+    {   // its SRV for the tonemapped resolve (compute, t7 of that pass)
+        D3D12_SHADER_RESOURCE_VIEW_DESC sv = {};
+        sv.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
+        sv.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2DMS;
+        sv.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+        D3D12_CPU_DESCRIPTOR_HANDLE h = m_heap->GetCPUDescriptorHandleForHeapStart();
+        h.ptr += (SIZE_T)kMsaaSrvSlot * m_descSize;
+        m_device->CreateShaderResourceView(m_msaaColor.Get(), &sv, h);
+    }
     // MSAA depth
     d.Format = DXGI_FORMAT_D32_FLOAT;
     d.Flags = D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;
@@ -662,11 +672,25 @@ void Renderer::recordRaster(const Scene& scene, const RenderSettings& rs, const 
     }
 
     // 3) resolve into the HDR slot read by the tonemapper
-    transition(m_msaaColor.Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_RESOLVE_SOURCE);
-    transition(m_tex[kTexDenoiseA].Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_RESOLVE_DEST);
-    m_cmd->ResolveSubresource(m_tex[kTexDenoiseA].Get(), 0, m_msaaColor.Get(), 0, DXGI_FORMAT_R16G16B16A16_FLOAT);
-    transition(m_tex[kTexDenoiseA].Get(), D3D12_RESOURCE_STATE_RESOLVE_DEST, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
-    transition(m_msaaColor.Get(), D3D12_RESOURCE_STATE_RESOLVE_SOURCE, D3D12_RESOURCE_STATE_RENDER_TARGET);
+    if (rs.aaQuality >= 2 && !rs.raster && probes && !probeCapture) {
+        // AAA: resolve in tonemapped space (ResolveTM.hlsl), compute: MSAA colour as t7, the HDR slot as u3
+        transition(m_msaaColor.Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+        m_cmd->SetComputeRootSignature(m_rootSig.Get());
+        m_cmd->SetComputeRootDescriptorTable(8, m_heap->GetGPUDescriptorHandleForHeapStart());
+        D3D12_GPU_DESCRIPTOR_HANDLE msSrv = m_heap->GetGPUDescriptorHandleForHeapStart();
+        msSrv.ptr += (UINT64)kMsaaSrvSlot * m_descSize;
+        m_cmd->SetComputeRootDescriptorTable(14, msSrv);
+        m_cmd->SetPipelineState(m_psoResolve.Get());
+        m_cmd->Dispatch((vp.w + 7) / 8, (vp.h + 7) / 8, 1);
+        uavBarrier(m_tex[kTexDenoiseA].Get());
+        transition(m_msaaColor.Get(), D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_RENDER_TARGET);
+    } else {
+        transition(m_msaaColor.Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_RESOLVE_SOURCE);
+        transition(m_tex[kTexDenoiseA].Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_RESOLVE_DEST);
+        m_cmd->ResolveSubresource(m_tex[kTexDenoiseA].Get(), 0, m_msaaColor.Get(), 0, DXGI_FORMAT_R16G16B16A16_FLOAT);
+        transition(m_tex[kTexDenoiseA].Get(), D3D12_RESOURCE_STATE_RESOLVE_DEST, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+        transition(m_msaaColor.Get(), D3D12_RESOURCE_STATE_RESOLVE_SOURCE, D3D12_RESOURCE_STATE_RENDER_TARGET);
+    }
 
     // 4) object ids (selection outline)
     D3D12_CPU_DESCRIPTOR_HANDLE idRtv = rtvBase;

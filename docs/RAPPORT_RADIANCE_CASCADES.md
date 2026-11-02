@@ -315,3 +315,22 @@ La passe raster lit ce masque pour la lampe principale. Capture 45 : ombres douc
   - les stats de l'onglet Render affichent sondes / capacité ;
   - `VP3D_SRC_PROFILE=1` écrit le temps de chaque passe dans le `.txt` des captures.
 - **Contact bloc / sol** : le long de la ligne où un bloc touche le sol, les deux surfaces ont la même profondeur, donc les pointillés restaient. Le choix du pixel compare maintenant aussi la normale. La ligne est propre : capture 48.
+
+### Réglages de qualité AAA (02/11/2026)
+
+Onglet Render > Quality (modes GI raster ; Lit reste en MSAA 4x et n'est pas touché) :
+
+- **Anti-aliasing** :
+  - MSAA 4x (comme avant) ;
+  - MSAA 8x ;
+  - AAA : MSAA 8x résolu en espace tonemappé (`ResolveTM.hlsl`, poids 1 / (1 + max rgb) par échantillon, Karis). Les arêtes claires sur fond sombre ne font plus d'escalier.
+  - Le nombre d'échantillons change à la volée : les pipelines MSAA et les cibles sont recréés.
+- **Ombres** (soleil et lampe principale, de « low » à « AAA ») :
+  - rayons par pixel pour le soleil : 2, 4, 8, 16, 32, et deux fois plus pour la lampe ;
+  - rayon du filtre bilatéral : jusqu'à 8 px ;
+  - le filtre compare la profondeur à celle du plan du pixel (pente locale), donc un sol vu en rasant n'écarte plus ses voisins ;
+  - « high » est le réglage précédent.
+- **Inspection** : nouvelle vue « Shadow mask » (le masque d'ombre ray tracé).
+- **Coût** (Cornell, 1 335 × 726) : 7,8 ms en standard, 12,2 ms en AAA, dont environ 3 ms pour les 64 rayons de lampe et 1 à 2 ms pour le MSAA 8x.
+- **Limite** : au coin mur / sol (deux surfaces au même pixel et sans voisin de la même surface), un léger pointillé peut rester. Pour l'effacer, il faudrait tracer l'ombre par fragment sur ces pixels de bord.
+- Ligne de commande : `--aa 0..2 --shadow-quality 0..4 --split-debug 7`. Capture 49 : standard à gauche, AAA à droite.

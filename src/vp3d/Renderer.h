@@ -105,6 +105,12 @@ struct RenderSettings {
     bool rtReflections = true;
     int reflSamples = 4;
     float reflMaxRough = 0.5f;
+    // GI raster modes (Metal iOS, Split RC...; Lit keeps 4x): 0 MSAA 4x, 1 MSAA 8x, 2 AAA = MSAA 8x resolved in
+    // tonemapped space (bright / dark edges stay smooth instead of stair-stepping on the bright side)
+    int aaQuality = 0;
+    // Ray traced shadows (sun and lamp) of the raster GI modes: 0 low ... 2 medium (8 sun / 16 lamp rays, the former
+    // default) ... 4 AAA (32 / 64 rays, wider filter)
+    int shadowQuality = 2;
 };
 
 // What the Radiance Cascades of the last frame looked like (viewer statistics).
@@ -211,7 +217,8 @@ private:
     float m_sceneRadius = 10;
 
     bool createPipelines(std::string* error);
-    bool createRasterPipelines(std::string* error);
+    // msaaOnly: rebuild only the multisampled pipelines (sample count change), keeping the root signature and heaps
+    bool createRasterPipelines(std::string* error, bool msaaOnly = false);
     void createRasterTargets(uint32_t w, uint32_t h);
     // probeCapture: shadow map, then the cube captures of the next probes (m_capSlots) instead of the viewport.
     // probes: DDGI without ray tracing, the main pass reads the probe atlases (SRVs t4..t6) instead of the ambient.
@@ -286,6 +293,7 @@ private:
     // UAVs: screen GI (u17), then u18..u21: sun shadow raw, filtered, reflections raw, filtered
     static constexpr uint32_t kCenterSrvSlot = kProbeSrvSlot + 6;   // raster t10: the raw sun trace (pixel-centre depth)
     static constexpr uint32_t kScreenGIUavSlot = kProbeSrvSlot + 7, kSunShadowUavSlot = kProbeSrvSlot + 8;
+    static constexpr uint32_t kMsaaSrvSlot = kSunShadowUavSlot + 4;   // the MSAA colour, read by the tonemapped resolve
     static constexpr uint32_t kProbeFace = 16;   // texels per cube face of a probe capture
     std::vector<ComPtr<ID3D12Resource>> m_materialTex;
     ComPtr<ID3D12Resource> m_tex[kTexCount];
@@ -386,7 +394,10 @@ private:
     bool m_envSunValid = false;
 
     // Raster viewport
-    static constexpr uint32_t kShadowSize = 2048, kMsaa = 4;
+    static constexpr uint32_t kShadowSize = 2048;
+    uint32_t m_msaa = 4;            // MSAA samples of the raster viewport (8 with RenderSettings::aaQuality in the GI modes)
+    bool m_msaa8 = false;           // the GPU supports 8x on the HDR colour format
+    ComPtr<ID3D12PipelineState> m_psoResolve;   // tonemapped MSAA resolve (ResolveTM.hlsl)
     ComPtr<ID3D12RootSignature> m_rasterRoot;
     ComPtr<ID3D12PipelineState> m_psoShadow, m_psoBg, m_psoMain, m_psoTrans, m_psoGhost, m_psoId, m_psoWire;
     ComPtr<ID3D12DescriptorHeap> m_rtvHeap, m_dsvHeap;

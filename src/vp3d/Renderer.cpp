@@ -132,7 +132,7 @@ bool Renderer::init(HWND hwnd, uint32_t width, uint32_t height, const std::wstri
 
     D3D12_DESCRIPTOR_HEAP_DESC hd = {};
     hd.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-    hd.NumDescriptors = kSunShadowUavSlot + 4;  // + shadow map SRV + material textures + DDGI UAVs + history UAVs + HDRI SRV + capture UAVs + probe SRVs + screen GI, sun shadow and reflection views
+    hd.NumDescriptors = kMsaaSrvSlot + 1;  // + shadow map SRV + material textures + DDGI UAVs + history UAVs + HDRI SRV + capture UAVs + probe SRVs + screen GI, sun shadow and reflection views
     hd.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
     m_device->CreateDescriptorHeap(&hd, IID_PPV_ARGS(&m_heap));
     m_descSize = m_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
@@ -163,6 +163,16 @@ bool Renderer::init(HWND hwnd, uint32_t width, uint32_t height, const std::wstri
         }
         m_envDist = createBuffer(256, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ);
         memset(m_envDist.mapped, 0, 256);
+    }
+    {   // 8x MSAA for the AA quality settings of the GI modes (HDR colour and depth formats)
+        auto levels = [&](DXGI_FORMAT f) {
+            D3D12_FEATURE_DATA_MULTISAMPLE_QUALITY_LEVELS q = {};
+            q.Format = f;
+            q.SampleCount = 8;
+            m_device->CheckFeatureSupport(D3D12_FEATURE_MULTISAMPLE_QUALITY_LEVELS, &q, sizeof(q));
+            return q.NumQualityLevels;
+        };
+        m_msaa8 = levels(DXGI_FORMAT_R16G16B16A16_FLOAT) > 0 && levels(DXGI_FORMAT_D32_FLOAT) > 0;
     }
     if (!createPipelines(error)) return false;
     if (!createRasterPipelines(error)) return false;
@@ -325,7 +335,7 @@ bool Renderer::createPipelines(std::string* error) {
            make(L"SRCCount.cso", m_psoSRCCount) && make(L"SRCTrace.cso", m_psoSRCTrace) &&
            make(L"SRCMerge.cso", m_psoSRCMerge) && make(L"SRCIrradiance.cso", m_psoSRCIrradiance) &&
            make(L"SRCFilter.cso", m_psoSRCFilter) &&
-           make(L"SRCGather.cso", m_psoSRCGather);
+           make(L"SRCGather.cso", m_psoSRCGather) && make(L"ResolveTM.cso", m_psoResolve);
 }
 
 void Renderer::createTargets(uint32_t w, uint32_t h) {
@@ -1368,7 +1378,8 @@ void Renderer::recordDDGI(const RenderSettings& rs, UINT gx, UINT gy, bool shade
     // Screen-space or split cascades: only for the raster view (shade = false), which reads their screen GI texture.
     const bool screen = rs.giMethod == 1 && (rs.rcScreen || rs.rcSplit) && !rs.ddgiRaster && !shade;
     if (screen) c.flags |= 8u;
-    if (screen && rs.rcSplit && rs.rcSplitDebug > 0) c.view = 3;   // Split RC inspection: the raster pass shows it as is
+    if (screen && rs.rcSplit && rs.rcSplitDebug > 0) c.view = rs.rcSplitDebug == 7 ? 4 : 3;   // Split RC inspection: the raster
+                                                                                                  // pass shows it as is (7: the ray traced shadow mask)
     memcpy(m_giConstants.mapped, &c, sizeof(c));
 
     D3D12_GPU_DESCRIPTOR_HANDLE giTable = m_heap->GetGPUDescriptorHandleForHeapStart();
@@ -1789,16 +1800,19 @@ void Renderer::recordScreenTrace(const float3& sunDir, const RenderSettings& rs,
     }
     const float tanR = std::tan(radians(std::max(rs.sunAngle, 0.0f)) * 0.5f);
     // without the shadow, one ray per pixel: the pass still writes the depth and normal the reflection filter needs
-    const uint32_t samples = shadow ? (uint32_t)std::max(1, std::min(rs.rtShadowSamples, 32)) : 1u;
+    // shadow quality: rays per pixel (sun; a lamp, a wide source, twice as many) and filter radius (pixels)
+    const int q = std::max(0, std::min(rs.shadowQuality, 4));
+    const uint32_t sunRays[5] = {2, 4, 8, 16, 32}, sunRadius[5] = {1, 2, 2, 3, 4}, lampRadius[5] = {2, 3, 4, 6, 8};
+    const uint32_t samples = shadow ? (q == 2 ? (uint32_t)std::max(1, std::min(rs.rtShadowSamples, 32)) : sunRays[q]) : 1u;
     uint32_t c[4];
     memcpy(&c[0], &ox, 4);
     memcpy(&c[1], &oy, 4);
     memcpy(&c[2], &tanR, 4);
-    c[3] = samples;
-    if (shadow && areaLight >= 0) {   // area light: twice the rays (a wide source), its index above the sample count
+    c[3] = samples | (sunRadius[q] << 24);
+    if (shadow && areaLight >= 0) {   // area light: its index in bits 8..23, the filter radius in 24..31
         const float area = -1.0f;
         memcpy(&c[2], &area, 4);
-        c[3] = std::min(samples * 2, 32u) | ((uint32_t)areaLight << 8);
+        c[3] = std::min(samples * 2, 64u) | ((uint32_t)areaLight << 8) | (lampRadius[q] << 24);
     }
     m_cmd->SetComputeRootSignature(m_rootSig.Get());
     m_cmd->SetComputeRootConstantBufferView(0, m_constants.va());
@@ -1906,6 +1920,8 @@ uint32_t renderSignature(const RenderSettings& rs) {
     mix(&rs.rcSplitAnimate, sizeof(bool));
     mix(&rs.rcSplitHistory, sizeof(int));
     mix(&rs.rcSplitFilter, sizeof(bool));
+    mix(&rs.aaQuality, sizeof(int));
+    mix(&rs.shadowQuality, sizeof(int));
     mix(&rs.rtSunShadows, sizeof(bool));
     mix(&rs.sunAngle, sizeof(float));
     mix(&rs.rtShadowSamples, sizeof(int));
@@ -2047,6 +2063,15 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
     const bool giRaster = liveProbes || baking || bakedView;
     const bool useHistory = rs.ddgi && !rs.raster && !giRaster;
     const bool needAS = (!rs.raster && !(liveProbes && rs.ddgiRaster)) || baking;
+
+    // AA quality of the GI raster modes: the sample count of the viewport (Lit and the others keep 4x)
+    const uint32_t msaa = (!rs.raster && giRaster && rs.aaQuality >= 1 && m_msaa8) ? 8u : 4u;
+    if (msaa != m_msaa) {
+        waitIdle();
+        m_msaa = msaa;
+        createRasterPipelines(nullptr, true);
+        createRasterTargets(m_rtW, m_rtH);
+    }
 
     beginCommands();
     m_giTimed = false;

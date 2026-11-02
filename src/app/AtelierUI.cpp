@@ -2005,13 +2005,30 @@ void App::atlInspectorRender(float x, float y, float w, float) {
         check("##srsh", "Ray traced sun shadow", m_rs.rtSunShadows, "Sun shadow traced per pixel (soft, filtered, no history) instead of the shadow map.");
         check("##srrf", "Ray traced reflections", m_rs.rtReflections, "Metals and glossy surfaces reflect the scene (traced per pixel, filtered, no history).");
         y += 8 * s;
+        Label(x, y, "QUALITY");
+        y += 24 * s;
+        {
+            static const char* aa[] = {"Anti-aliasing: MSAA 4x", "Anti-aliasing: MSAA 8x", "Anti-aliasing: AAA (8x, HDR resolve)"};
+            int a = std::clamp(m_rs.aaQuality, 0, 2);
+            ImGui::SetCursorScreenPos(ImVec2(x, y));
+            if (Combo("##sraa", R{x, y, w - 22 * s, 28 * s}, a, aa, 3, Icon::Cube)) { m_rs.aaQuality = a; ch = true; }
+            info("##sraa_i", x + w - 18 * s, y + 5 * s, "Edges of the objects. MSAA 4x: as Lit. 8x: twice the samples per pixel. AAA: 8x resolved in tonemapped space, so the edges between a bright and a dark surface stay smooth instead of stair-stepping. Lit keeps 4x.");
+            y += 36 * s;
+            static const char* sq[] = {"Shadows: low", "Shadows: medium", "Shadows: high (default)", "Shadows: ultra", "Shadows: AAA"};
+            int q = std::clamp(m_rs.shadowQuality, 0, 4);
+            ImGui::SetCursorScreenPos(ImVec2(x, y));
+            if (Combo("##srsq", R{x, y, w - 22 * s, 28 * s}, q, sq, 5, Icon::Sun)) { m_rs.shadowQuality = q; ch = true; }
+            info("##srsq_i", x + w - 18 * s, y + 5 * s, "Ray traced shadows of the sun and of the main lamp: rays per pixel (sun 2 / 4 / 8 / 16 / 32, lamp twice as many) and the width of their smoothing filter. AAA: 32 / 64 rays, the softest and cleanest penumbra, the most GPU time.");
+            y += 36 * s;
+        }
+        y += 8 * s;
         Label(x, y, "INSPECTION");
         y += 24 * s;
         {
-            static const char* insp[] = {"Off (shaded)", "Probe cells", "Probe irradiance (no blend)", "Cascade hit by the ray", "Rays per probe", "Level of detail", "Accumulated frames"};
-            int d = std::clamp(m_rs.rcSplitDebug, 0, 6);
+            static const char* insp[] = {"Off (shaded)", "Probe cells", "Probe irradiance (no blend)", "Cascade hit by the ray", "Rays per probe", "Level of detail", "Accumulated frames", "Shadow mask (ray traced)"};
+            int d = std::clamp(m_rs.rcSplitDebug, 0, 7);
             ImGui::SetCursorScreenPos(ImVec2(x, y));
-            if (Combo("##srdbg", R{x, y, w - 22 * s, 28 * s}, d, insp, 7, Icon::Eye)) { m_rs.rcSplitDebug = d; ch = true; }
+            if (Combo("##srdbg", R{x, y, w - 22 * s, 28 * s}, d, insp, 8, Icon::Eye)) { m_rs.rcSplitDebug = d; ch = true; }
             info("##srdbg_i", x + w - 18 * s, y + 5 * s, "Probe cells: a colour per probe cell of the chosen cascade (magenta = no probe, dark lines = cell borders). Probe irradiance: the light of the nearest cascade-0 probe, unblended. Cascade hit: where each pixel's ray found its light (blue = cascade 0 ... red = top, black = sky). Rays per probe: rays of the pixel's cascade-0 probe (white = 256). Level of detail: a colour per LOD. Accumulated frames: black = none (just moved), white = full history.");
             y += 36 * s;
             if (m_rs.rcSplitDebug == 1) sliderI("##srdbgc", "Cascade shown", m_rs.rcSplitDebugCascade, 0, (float)std::max(0, m_rs.rcSplitCascades - 1), "%.0f", "Cascade whose probe cells are drawn.");

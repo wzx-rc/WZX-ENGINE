@@ -121,6 +121,8 @@ bool App::init(HINSTANCE inst, const Options& opt) {
     if (opt.splitPx > 0) m_rs.rcSplitProbePx = opt.splitPx;
     if (opt.splitHistory >= 0) m_rs.rcSplitHistory = opt.splitHistory;
     m_rs.rcSplitDebug = opt.splitDebug;
+    if (opt.aaQuality >= 0) m_rs.aaQuality = opt.aaQuality;
+    if (opt.shadowQuality >= 0) m_rs.shadowQuality = opt.shadowQuality;
     if (opt.splitFilter >= 0) m_rs.rcSplitFilter = opt.splitFilter != 0;
     if (opt.splitInterval > 0) m_rs.rcSplitInterval = opt.splitInterval;
     if (opt.splitCascades > 0) m_rs.rcSplitCascades = opt.splitCascades;
@@ -1181,6 +1183,8 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         else if (a == L"--split-px") opt.splitPx = _wtoi(next().c_str());
         else if (a == L"--split-history") opt.splitHistory = _wtoi(next().c_str());
         else if (a == L"--split-debug") opt.splitDebug = _wtoi(next().c_str());
+        else if (a == L"--aa") opt.aaQuality = _wtoi(next().c_str());
+        else if (a == L"--shadow-quality") opt.shadowQuality = _wtoi(next().c_str());
         else if (a == L"--split-filter") opt.splitFilter = _wtoi(next().c_str());
         else if (a == L"--cam-dist") opt.camDist = (float)_wtof(next().c_str());
         else if (a == L"--cam-pitch") opt.camPitch = (float)_wtof(next().c_str());

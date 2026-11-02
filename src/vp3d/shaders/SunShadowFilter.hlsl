@@ -23,17 +23,24 @@ void main(uint3 id : SV_DispatchThreadID) {
     if (c.y <= 0) { gShadowMask[id.xy] = 1; return; }   // sky
     float3 n = OctDec(c.zw);
     float sum = 0, wsum = 0;
-    // the penumbra of an area light spans many pixels: a wider kernel (9 x 9, sigma 3) for its few rays per pixel
-    const int r = S.tanRadius < 0 ? 4 : 2;
-    const float sig2 = S.tanRadius < 0 ? 18.0 : 4.5;
+    // the penumbra of an area light spans many pixels: a wider kernel for it (radius set by the shadow quality)
+    // depth slope of this pixel's surface (the smaller one-sided difference, so an edge next to it does not count):
+    // neighbours are compared with the depth the plane predicts, else a floor seen at a grazing angle (its depth
+    // changes by more than 2 % per pixel) would reject all its neighbours and keep its noise
+    int2 ip = int2(id.xy);
+    float dxa = gShadowRaw[min(ip + int2(1, 0), int2(w, h) - 1)].y - c.y, dxb = c.y - gShadowRaw[max(ip - int2(1, 0), 0)].y;
+    float dya = gShadowRaw[min(ip + int2(0, 1), int2(w, h) - 1)].y - c.y, dyb = c.y - gShadowRaw[max(ip - int2(0, 1), 0)].y;
+    float gx = abs(dxa) < abs(dxb) ? dxa : dxb, gy = abs(dya) < abs(dyb) ? dya : dyb;
+    const int r = clamp(int(S.samples >> 24), 1, 8);   // shadow quality (Renderer::recordScreenTrace)
+    const float sig2 = 2.0 * (0.75 * r) * (0.75 * r);
     for (int y = -r; y <= r; ++y)
         for (int x = -r; x <= r; ++x) {
             int2 q = clamp(int2(id.xy) + int2(x, y), int2(0, 0), int2(w, h) - 1);
             float4 s = gShadowRaw[q];
             if (s.y <= 0) continue;
-            float wd = exp(-abs(s.y - c.y) / (0.02 * c.y));                // same surface: depth within 2 %
+            float wd = exp(-abs(s.y - (c.y + gx * x + gy * y)) / (0.02 * c.y));   // same plane: within 2 % of the depth
             float wn = pow(saturate(dot(n, OctDec(s.zw))), 16.0);           // and the same orientation
-            float ws = exp(-(x * x + y * y) / sig2);                        // gaussian, sigma 1.5 px (3 px for a lamp)
+            float ws = exp(-(x * x + y * y) / sig2);                        // gaussian, sigma 0.75 radius
             float wt = wd * wn * ws;
             sum += s.x * wt;
             wsum += wt;

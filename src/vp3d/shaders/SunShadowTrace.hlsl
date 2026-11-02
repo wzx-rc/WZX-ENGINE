@@ -68,7 +68,7 @@ void main(uint3 id : SV_DispatchThreadID) {
 
     float vis = 0;
     if (S.tanRadius < 0) {   // area light (S.samples >> 8): rays to points spread over its rectangle (R2, turned per pixel)
-        GpuLight l = gLights[S.samples >> 8];
+        GpuLight l = gLights[(S.samples >> 8) & 0xFFFFu];
         float3 o = P + ng * (1e-4 * (1.0 + max(abs(P.x), max(abs(P.y), abs(P.z)))));
         float2 jit = frac(52.9829189 * frac(float2(dot(float2(id.xy) + 0.5, float2(0.06711056, 0.00583715)),
                                                    dot(float2(id.yx) + 0.5, float2(0.06711056, 0.00583715)))));
