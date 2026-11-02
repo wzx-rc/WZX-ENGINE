@@ -249,7 +249,7 @@ void BrickApp::runMechTests() {
         fflush(f);
     };
     auto mk = [&]() { Mount m; m.app = this; m.lib = &m_lib; m.mech = &m_mech; return m; };
-    for (const char* pn : {"32524", "32525", "3673", "73230", "6541", "2909", "2910", "92695", "92696", "32526", "32140", "32056", "32348", "6629", "32271"}) {   // connectors of the parts used (diagnostic)
+    for (const char* pn : {"32524", "32525", "3673", "73230", "6541", "2909", "2910", "92695", "92696", "32526", "32140", "32056", "32348", "6629", "32271", "3700", "32270", "32269", "32198", "4019", "3705", "3706"}) {   // connectors of the parts used (diagnostic)
         const int pi = m_lib.find(pn);
         if (pi < 0) continue;
         m_lib.get(pn);
@@ -258,6 +258,7 @@ void BrickApp::runMechTests() {
         if (mm.cylRole) fprintf(f, "#   vérin rôle %d type %s centre (%.2f %.2f %.2f) axe (%.2f %.2f %.2f) longueur %.2f\n", mm.cylRole, mm.cylKind.c_str(), mm.cylC.x, mm.cylC.y, mm.cylC.z, mm.cylAxis.x, mm.cylAxis.y, mm.cylAxis.z, mm.cylLen);
         for (const float3& v : mm.bottom) fprintf(f, "#   anti-tenon (%.2f %.2f %.2f)\n", v.x, v.y, v.z);
         fprintf(f, "#   boîte (%.2f %.2f %.2f) .. (%.2f %.2f %.2f) %s\n", m_lib.parts[pi].bmin.x, m_lib.parts[pi].bmin.y, m_lib.parts[pi].bmin.z, m_lib.parts[pi].bmax.x, m_lib.parts[pi].bmax.y, m_lib.parts[pi].bmax.z, m_lib.parts[pi].label.c_str());
+        for (const MechGear& g : mm.gears) fprintf(f, "#   engrenage %d dents type %d centre (%.2f %.2f %.2f) axe (%.0f %.0f %.0f)\n", g.teeth, g.kind, g.c.x, g.c.y, g.c.z, g.axis.x, g.axis.y, g.axis.z);
         for (const MechConn& h : mm.holes) fprintf(f, "#   trou (%.2f %.2f %.2f) axe (%.0f %.0f %.0f) demi %.2f %s\n", h.p.x, h.p.y, h.p.z, h.axis.x, h.axis.y, h.axis.z, h.half, h.cross ? "croix" : "rond");
         for (const MechConn& h : mm.males) fprintf(f, "#   mâle (%.2f %.2f %.2f) axe (%.0f %.0f %.0f) demi %.2f %s\n", h.p.x, h.p.y, h.p.z, h.axis.x, h.axis.y, h.axis.z, h.half, h.cross ? "axe" : "pin");
     }
@@ -589,6 +590,62 @@ void BrickApp::runMechTests() {
         m_build.bricks = keep;
         FILE* sf = nullptr;
         if (_wfopen_s(&sf, (m_exeDir + L"\\meca_pelleteuse.json").c_str(), L"wb") == 0 && sf) { fwrite(text.data(), 1, text.size(), sf); fclose(sf); }
+    }
+    // 23-28. case of Wzx (capture meca_cas2_engrenages_cote): two Technic bricks 1 x 2 with a hole (3700) side by side,
+    // an axle in each hole, a gear on each axle, the two gears meshing between the bricks
+    auto cas2 = [&](const char* name, const char* ga, const char* gb, bool plate, float turnY, double ra, double rc) {   // ratios relative to the motor (the smallest gear)
+        Mount m = mk();
+        const int bp = m.partOf("3700");
+        const MechMeta& bm = m_mech.meta(bp);
+        const float4 q0(0, 0, 0, 1);
+        const int A = m.add(bp, q0, float3(0, 0, 0));
+        const int B = m.add(bp, q0, float3(1.6f, 0, 0));   // touching, holes 1.6 cm apart (not linked)
+        (void)bm;
+        if (plate) {   // both on a plate 1 x 4 (or 2 x 4)
+            int pp = m.partOf("3710");
+            if (pp < 0) pp = m.partOf("3020");
+            if (pp >= 0) m.add(pp, q0, float3(0, -0.32f, 0));
+        }
+        const float3 pa = m.holeW(A, 0), pb = m.holeW(B, 0);
+        m.axle("3706", pa + Z * 0.8f, Z);
+        m.axle("3706", pb + Z * 0.8f, Z);
+        const int a = m.gear(ga, pa + Z * 1.6f, Z), c = m.gear(gb, pb + Z * 1.6f, Z);
+        if (turnY != 0) m.rotateAll(qAxisAngle(Y, turnY));
+        run(name, m, plate ? 3 : 4, 1, {{a, ra, true}, {c, rc, true}});
+        if (std::string(name).rfind("23.", 0) == 0) {   // the scene, to open it in BrickIt (meca_cas2.json next to the exe)
+            const std::vector<Brick> keep = m_build.bricks;
+            m_build.bricks = m.b;
+            auto col2 = [&](const char* a2, const char* b2) { for (size_t ci = 0; ci < m_lib.palette.size(); ++ci) if (m_lib.palette[ci].name == a2 || m_lib.palette[ci].name == b2) return (int)ci; return 0; };
+            for (size_t i = 0; i < m_build.bricks.size(); ++i) {
+                const std::string& pn = m_lib.parts[m_build.bricks[i].part].name;
+                m_build.bricks[i].color = pn == "3700" ? col2("Medium Azure", "Medium Blue") : pn == "3706" ? col2("Black", "Black") : col2("Light Bluish Grey", "Light Bluish Gray");
+            }
+            const std::string text = m_build.toJson(m_scene.camera);
+            m_build.bricks = keep;
+            FILE* sf = nullptr;
+            if (_wfopen_s(&sf, (m_exeDir + L"\\meca_cas2.json").c_str(), L"wb") == 0 && sf) { fwrite(text.data(), 1, text.size(), sf); fclose(sf); }
+        }
+    };
+    cas2("23. cas 2 : deux briques 3700 côte à côte, doubles coniques 12 / 20", "32270", "32269", false, 0, 1.0, 12.0 / 20);
+    cas2("24. cas 2 : deux briques 3700 côte à côte, 16 / 16 (4019)", "4019", "4019", false, 0, 1.0, 1.0);
+    cas2("25. cas 2 : conique simple 20 (32198) / double conique 12", "32198", "32270", false, 0, 12.0 / 20, 1.0);
+    cas2("26. cas 2 : 12 / 20 sur une plaque 1 x 4 (un seul corps fixe)", "32270", "32269", true, 0, 1.0, 12.0 / 20);
+    cas2("27. cas 2 : 12 / 20, montage tourné de 90° autour de la verticale", "32270", "32269", false, 3.14159265f * 0.5f, 1.0, 12.0 / 20);
+    {
+        // 28. the two bricks at 90 degrees: double bevels 20 / 12 with axes crossing (one brick turned a quarter turn)
+        Mount m = mk();
+        const int bp = m.partOf("3700");
+        const float rA = m.gearR("32269"), rB = m.gearR("32270");
+        const float3 P(0, 0.56f, 0);
+        const float4 q0(0, 0, 0, 1), q90 = qAxisAngle(Y, 3.14159265f * 0.5f);
+        const MechMeta& bm = m_mech.meta(bp);
+        const float3 hA = P + Z * (rB + 2.0f), hB = P + X * (rA + 2.0f);
+        m.add(bp, q0, hA - qRot(q0, bm.holes[0].p));
+        m.add(bp, q90, hB - qRot(q90, bm.holes[0].p));
+        m.axle("3706", P + Z * (rB + 1.6f), Z);
+        m.axle("3706", P + X * (rA + 1.6f), X);
+        const int a = m.gear("32269", P + Z * rB, Z), c = m.gear("32270", P + X * rA, X);
+        run("28. cas 2 : 3700 à 90°, doubles coniques 20 / 12 (axes qui se croisent)", m, 4, 1, {{c, 1.0, true}, {a, 12.0 / 20, true}});
     }
     // 13. one axle through three supports, a 24 on it driven by an 8
     {

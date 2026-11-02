@@ -126,7 +126,7 @@ refusée (butée) si un résidu de boucle ou d'engrènement dépasse 0,004.
 - Engrenages « Large Tooth » (module différent) : non détectés.
 - Les satellites internes d'un différentiel ne sont pas testés (le boîtier l'est).
 
-## 8. Tests (`--mechtests`) — 25 / 25
+## 8. Tests (`--mechtests`) — 31 / 31
 
 1 deux engrenages sur une poutre (8 / 24) · 2 deux supports séparés (16 / 24) · 3 supports empilés (8 / 16 en
 diagonale) · 4 côte à côte, deux briques non reliées · 5 train planétaire (soleil fixe, satellite sur un bras) · 6 train
@@ -139,7 +139,14 @@ flèche + balancier, deux vérins : vérin 1 piloté (la flèche bouge, le balan
 vérin 2 piloté (le balancier bouge, la flèche non) · **21** godet sur quadrilatère (biellette + bielle, deux boucles)
 piloté par un vérin · **22** construction sur la grille comme dans l'éditeur (rotations de 90° : châssis en L 32526 +
 poutre 32525, bras horizontal, vérin vertical ; scène `docs/brickit/tests/meca_pelleteuse.json`) · **22b** sens : un
-vérin allongé de 0,8 cm lève le bout du bras (4,8 → 8,8 cm). Les tests 19 à 21 placent le bras pour que le vérin soit
+vérin allongé de 0,8 cm lève le bout du bras (4,8 → 8,8 cm) · **23 à 28** cas 2 de Wzx (deux briques Technic 1 × 2 à trou
+3700 côte à côte, non reliées, un axe 3706 dans chaque trou, un engrenage sur chaque axe, engrènement entre les deux
+briques ; scène `docs/brickit/tests/meca_cas2.json`, capture 35) : doubles coniques 12 / 20 (32270 / 32269), 16 / 16
+(4019), conique simple 20 (32198) / double conique 12, sur une plaque 1 × 4 (un seul corps fixe), montage tourné de 90°,
+et les deux briques à 90° (doubles coniques 20 / 12, axes qui se croisent). Tous verts sans changement du code : titres
+« Double Bevel » / « Bevel » lus (type 1), entraxe = (N1 + N2) × 0,05 cm (1,6 cm pour 12 + 20 ou 16 + 16 : deux briques
+1 × 2 qui se touchent). À savoir : 12 + 12 (1,2 cm) ou 20 + 20 (2,0 cm) ne tombent pas sur deux briques côte à côte
+(1,6 cm) ; les dents ne se touchent pas, chaque axe reçoit alors sa commande « Axe » (pas d'engrènement). Les tests 19 à 21 placent le bras pour que le vérin soit
 à sa longueur naturelle et choisissent les trous qui donnent l'angle de transmission le plus proche de 90°. Chaque test vérifie le nombre de corps, de commandes, puis
 un tour complet de la commande en 36 pas : chaque engrenage tourne de son rapport attendu (2 %) et les engrènements
 restent en prise (écart de phase < 0,05 rad).

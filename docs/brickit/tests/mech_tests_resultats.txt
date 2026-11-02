@@ -137,6 +137,33 @@
 #   trou (0.36 0.40 4.52) axe (0 1 0) demi 0.40 rond
 #   trou (0.36 0.40 5.32) axe (0 1 0) demi 0.40 rond
 #   trou (0.36 0.40 6.12) axe (0 1 0) demi 0.40 croix
+# 3700 : 1 trous, 0 mâles, 2 tenons, 2 anti-tenons
+#   anti-tenon (0.40 0.00 0.40)
+#   anti-tenon (1.20 0.00 0.40)
+#   boîte (0.00 0.00 0.00) .. (1.60 1.12 0.80) Technic Brick 1 x 2 with Hole
+#   trou (0.80 0.56 0.40) axe (0 0 1) demi 0.40 rond
+# 32270 : 1 trous, 0 mâles, 0 tenons, 0 anti-tenons
+#   boîte (0.00 0.00 0.00) .. (1.36 1.36 0.80) Technic Gear 12 Tooth Double Bevel
+#   engrenage 12 dents type 1 centre (0.68 0.68 0.40) axe (0 0 1)
+#   trou (0.68 0.68 0.40) axe (0 0 1) demi 0.40 croix
+# 32269 : 1 trous, 0 mâles, 0 tenons, 0 anti-tenons
+#   boîte (0.00 0.00 0.00) .. (2.16 2.16 0.80) Technic Gear 20 Tooth Double Bevel
+#   engrenage 20 dents type 1 centre (1.08 1.08 0.40) axe (0 0 1)
+#   trou (1.08 1.08 0.40) axe (0 0 1) demi 0.40 croix
+# 32198 : 1 trous, 0 mâles, 0 tenons, 0 anti-tenons
+#   boîte (0.00 0.00 0.00) .. (2.08 2.08 0.40) Technic Gear 20 Tooth Bevel
+#   engrenage 20 dents type 1 centre (1.04 1.04 0.26) axe (0 0 1)
+#   trou (1.04 1.04 0.26) axe (0 0 1) demi 0.20 croix
+# 4019 : 1 trous, 0 mâles, 0 tenons, 0 anti-tenons
+#   boîte (0.00 0.00 0.00) .. (1.73 1.73 0.80) Technic Gear 16 Tooth
+#   engrenage 16 dents type 0 centre (0.87 0.87 0.40) axe (0 0 1)
+#   trou (0.87 0.87 0.40) axe (0 0 1) demi 0.40 croix
+# 3705 : 0 trous, 1 mâles, 0 tenons, 0 anti-tenons
+#   boîte (0.00 0.00 0.00) .. (3.20 0.48 0.48) Technic Axle 4
+#   mâle (1.60 0.24 0.24) axe (1 0 0) demi 1.60 axe
+# 3706 : 0 trous, 1 mâles, 0 tenons, 0 anti-tenons
+#   boîte (0.00 0.00 0.00) .. (4.80 0.48 0.48) Technic Axle 6
+#   mâle (2.40 0.24 0.24) axe (1 0 0) demi 2.40 axe
 [OK] 1. deux engrenages sur une poutre (8 / 24) : 3 corps, 1 commandes, 1 engrènements, rapports 1.0000, -0.3333
 [OK] 2. deux supports séparés (16 / 24) : 4 corps, 1 commandes, 1 engrènements, rapports 1.0000, -0.6667
 [OK] 3. supports empilés (8 / 16 en diagonale) : 3 corps, 1 commandes, 1 engrènements, rapports 1.0000, -0.5000
@@ -170,9 +197,15 @@
 [OK] 22. bras horizontal + vérin vertical (sur la grille, comme dans l'éditeur) : 4 corps, 1 commandes, 0 engrènements, rapports 1.0000, -0.6066
       (le vérin à 90° du bras, levier 1,6 cm ; scène enregistrée : docs/brickit/tests/meca_pelleteuse.json)
 [OK] 22b. sens : vérin + 0,8 cm, bout du bras 4.80 -> 8.78 cm (doit monter)
+[OK] 23. cas 2 : deux briques 3700 côte à côte, doubles coniques 12 / 20 : 4 corps, 1 commandes, 1 engrènements, rapports 1.0000, -0.6000
+[OK] 24. cas 2 : deux briques 3700 côte à côte, 16 / 16 (4019) : 4 corps, 1 commandes, 1 engrènements, rapports 1.0000, -1.0000
+[OK] 25. cas 2 : conique simple 20 (32198) / double conique 12 : 4 corps, 1 commandes, 1 engrènements, rapports -0.6000, 1.0000
+[OK] 26. cas 2 : 12 / 20 sur une plaque 1 x 4 (un seul corps fixe) : 3 corps, 1 commandes, 1 engrènements, rapports 1.0000, -0.6000
+[OK] 27. cas 2 : 12 / 20, montage tourné de 90° autour de la verticale : 4 corps, 1 commandes, 1 engrènements, rapports 1.0000, -0.6000
+[OK] 28. cas 2 : 3700 à 90°, doubles coniques 20 / 12 (axes qui se croisent) : 4 corps, 1 commandes, 1 engrènements, rapports 1.0000, -0.6000
 [OK] 13. axe traversant trois supports : 6 corps, 1 commandes, 1 engrènements, rapports 1.0000, -0.3333
 [OK] 14. montage 1 tourné de 90° puis 180° : 3 corps, 1 commandes, 1 engrènements, rapports 1.0000, -0.3333
 [OK] 15. deux poutres reliées par deux pins (un seul corps) : 1 corps, 0 commandes, 0 engrènements
 [OK] 16. scène de Wzx (16 / 24 sur deux piles) : 25 corps, 1 commandes, 1 engrènements, rapports 1.0000, -0.6667
 
-25 / 25 réussis
+31 / 31 réussis
