@@ -147,10 +147,10 @@ bool BrickApp::mayaExportScript(std::string& py, MayaStats& st, std::string& err
             for (int e = 0; e < 3; ++e) { jd[k].al[e] = r6(jd[k].al[e]); jd[k].un[e] = r6(jd[k].un[e]); }
             jd[k].align = true;
         }
-        jd[k].chan = std::string("rotate") + axis;   // (the native mechanics has revolute joints only)
+        jd[k].chan = std::string(m.tree[k].j.type == 1 ? "translate" : "rotate") + axis;
     }
     const double DEG = 3.14159265358979323846 / 180;
-    auto chanVal = [&](size_t k, double q) { return q / DEG * jd[k].s; };
+    auto chanVal = [&](size_t k, double q) { return m.tree[k].j.type == 1 ? q * jd[k].s : q / DEG * jd[k].s; };
     // --- solve helpers
     auto setCmds = [&](const std::vector<double>& vals) { for (size_t i = 0; i < m.cmds.size(); ++i) m.cmds[i].value = (float)vals[i]; };
     auto solveAt = [&](const std::vector<double>& vals, std::vector<double>& q) { setCmds(vals); if (!m_mech.solve(m)) return false; q = m.q; return true; };
@@ -164,19 +164,21 @@ bool BrickApp::mayaExportScript(std::string& py, MayaStats& st, std::string& err
     std::vector<CO> cmdsOut;
     std::vector<std::string> fails;
     for (size_t ci = 0; ci < m.cmds.size(); ++ci) {
-        std::vector<int> list;
-        for (int a = -360; a <= 360; a += 30) list.push_back(a);
+        std::vector<double> list;   // motors: -360..360 degrees by 30; actuators: their travel in 16 steps (cm)
+        const bool cyl = m.cmds[ci].type == 1;
+        if (cyl) { const double lo = std::max<double>(m.cmds[ci].lo, -50), hi = std::min<double>(m.cmds[ci].hi, 50); for (int s = 0; s <= 16; ++s) list.push_back(r6(lo + (hi - lo) * s / 16)); }
+        else for (int a = -360; a <= 360; a += 30) list.push_back(a);
         std::map<double, std::vector<double>> res;
         res[0] = q0;
         for (int dir : {1, -1}) {
             m.q = q0;
             std::vector<double> last = q0;
-            std::vector<int> sel;
-            for (int x : list) if (dir > 0 ? x > 0 : x < 0) sel.push_back(x);
-            std::sort(sel.begin(), sel.end(), [&](int a, int b) { return dir * (a - b) < 0; });
-            for (int x : sel) {
+            std::vector<double> sel;
+            for (double x : list) if (dir > 0 ? x > 0 : x < 0) sel.push_back(x);
+            std::sort(sel.begin(), sel.end(), [&](double a, double b) { return dir * (a - b) < 0; });
+            for (double x : sel) {
                 std::vector<double> vals = zeros, q;
-                vals[ci] = x * DEG;
+                vals[ci] = cyl ? x : x * DEG;
                 if (!solveAt(vals, q)) { fails.push_back(m.cmds[ci].name + " = " + std::to_string(x)); m.q = last; break; }
                 res[x] = q;
                 last = q;
@@ -190,9 +192,10 @@ bool BrickApp::mayaExportScript(std::string& py, MayaStats& st, std::string& err
             if (mx < 1e-5) continue;
             jd[k].sdk[(int)ci] = keys;
         }
-        int nMotors = 0;
-        for (auto& o : cmdsOut) nMotors += o.type == "motor";
-        cmdsOut.push_back({m.cmds[ci].name, "moteur" + std::to_string(nMotors + 1), "motor", -360, 360});
+        int nSame = 0;
+        for (auto& o : cmdsOut) nSame += o.type == (cyl ? "cyl" : "motor");
+        if (cyl) cmdsOut.push_back({m.cmds[ci].name, "verin" + std::to_string(nSame + 1), "cyl", r6(res.begin()->first), r6(res.rbegin()->first)});
+        else cmdsOut.push_back({m.cmds[ci].name, "moteur" + std::to_string(nSame + 1), "motor", -360, 360});
     }
     // --- coupling check: Maya adds the per-command curves; compare with the true solve for random combinations
     double coupling = 0;
@@ -206,7 +209,7 @@ bool BrickApp::mayaExportScript(std::string& py, MayaStats& st, std::string& err
         bool ok = true;
         for (int s = 1; s <= 8 && ok; ++s) {
             std::vector<double> v(vals.size());
-            for (size_t ci = 0; ci < vals.size(); ++ci) v[ci] = vals[ci] * DEG * (s / 8.0);
+            for (size_t ci = 0; ci < vals.size(); ++ci) v[ci] = vals[ci] * (m.cmds[ci].type == 1 ? 1.0 : DEG) * (s / 8.0);
             ok = solveAt(v, q);
         }
         if (!ok) continue;
@@ -230,7 +233,7 @@ bool BrickApp::mayaExportScript(std::string& py, MayaStats& st, std::string& err
     for (size_t k = 0; k < m.tree.size(); ++k) {
         const MechTreeJ& t = m.tree[k];
         const JD& d = jd[k];
-        std::string o = "{\"k\":" + std::to_string(k) + ",\"type\":\"rev\",\"parent\":" + std::to_string(t.parent) + ",\"child\":" + std::to_string(t.child) +
+        std::string o = "{\"k\":" + std::to_string(k) + ",\"type\":" + js(t.j.type == 1 ? "pri" : "rev") + ",\"parent\":" + std::to_string(t.parent) + ",\"child\":" + std::to_string(t.child) +
                         ",\"p\":[" + jn(r6(t.j.p.x)) + "," + jn(r6(t.j.p.y)) + "," + jn(r6(t.j.p.z)) + "]";
         if (d.align) o += ",\"align\":[" + jn(d.al[0]) + "," + jn(d.al[1]) + "," + jn(d.al[2]) + "],\"unalign\":[" + jn(d.un[0]) + "," + jn(d.un[1]) + "," + jn(d.un[2]) + "]";
         else o += ",\"align\":null";

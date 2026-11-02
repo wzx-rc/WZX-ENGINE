@@ -764,7 +764,8 @@ void BrickApp::uiMechPanel() {
             ratio += t;
         }
         if (!ratio.empty()) u.text(ImVec2(x + ns.x + 6 * s, y + 1 * s), 11.5f, C_FAINT, ratio.c_str());
-        snprintf(line, sizeof(line), "%d°", (int)std::lround(c.value * 180.0f / 3.14159265f));
+        if (c.type == 1) snprintf(line, sizeof(line), "%.1f cm", c.value);
+        else snprintf(line, sizeof(line), "%d°", (int)std::lround(c.value * 180.0f / 3.14159265f));
         float vw = u.textW(12, line);
         u.text(ImVec2(p1.x - pad - vw, y), 12, C_ACCENT, line);
         y += 20 * s;
@@ -772,6 +773,7 @@ void BrickApp::uiMechPanel() {
         ImVec2 ra(x, y + 6 * s), rb(p1.x - pad, y + 10 * s);
         u.dl->AddRectFilled(ra, rb, C_CARD_HI, 2 * s);
         float deg = std::clamp(c.value * 180.0f / 3.14159265f, -720.0f, 720.0f), t = (deg + 720.0f) / 1440.0f;
+        if (c.type == 1) t = c.hi > c.lo ? std::clamp((c.value - c.lo) / (c.hi - c.lo), 0.0f, 1.0f) : 0.5f;
         float kx = ra.x + (rb.x - ra.x) * t;
         u.dl->AddRectFilled(ra, ImVec2(kx, rb.y), C_ACCENT, 2 * s);
         u.dl->AddCircleFilled(ImVec2(kx, (ra.y + rb.y) * 0.5f), 7 * s, C_ACCENT, 20);
@@ -779,6 +781,7 @@ void BrickApp::uiMechPanel() {
         if (u.hover(ImVec2(ra.x, y), ImVec2(rb.x, y + 16 * s)) && u.pressed) dragCmd = (int)k;
         if (dragCmd == (int)k) {
             if (!ImGui::IsMouseDown(ImGuiMouseButton_Left)) dragCmd = -1;
+            else if (c.type == 1) c.value = c.lo + (c.hi - c.lo) * std::clamp((u.mouse.x - ra.x) / (rb.x - ra.x), 0.0f, 1.0f);
             else c.value = (-720.0f + 1440.0f * std::clamp((u.mouse.x - ra.x) / (rb.x - ra.x), 0.0f, 1.0f)) * 3.14159265f / 180.0f;
         }
         y += 20 * s;

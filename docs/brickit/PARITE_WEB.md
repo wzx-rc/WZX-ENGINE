@@ -106,7 +106,7 @@ Cases : `[x]` porté et vérifié · `[~]` partiel (ce qui manque est dit) · `[
 - [x] Connecteurs, corps, pivots, engrènements, arbre, boucles, solveur LM, butées, rapports, phase des dents, couleurs par corps, liaisons
 - [x] Glisser une pièce mobile — `--mouse-test mech` sur la démo (liaisons tournées de 48°)
 - [x] Plateaux tournants : pivot entre une moitié « Bottom / Base » et sa moitié « Top » de la même famille (5 familles : 5 x 5, 28 dents, 60 dents, Type 1, Type 2), vérifié par `--turntable-test` (2 corps, 1 pivot pour chacune) ; sans engrenage il n'a pas de moteur et se manipule au glisser, comme la règle du web
-- [ ] Vérins : inactifs comme dans le web v26 (aucune pièce ne reçoit `cyl`) ; la conversion LDraw → BrickIt ne porte pas les glissières LDCad (axe, course), il faut les ajouter au convertisseur (`ldraw2brickit.mjs`) avant de pouvoir les détecter
+- [x] Vérins et crémaillère : liaison glissière dans le solveur (course = butée) ; vérins 2909 + 2910 et 92695 + 92696 (axe et course tirés du maillage, la conversion LDraw ne porte pas les glissières), crémaillère `Gear Rack` + pignon (guidée par le support du pignon) — tests 12, 17, 18 (`MECANIQUE.md` § 4 bis)
 
 ## Écarts voulus
 

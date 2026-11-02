@@ -9,7 +9,8 @@
 namespace brickit {
 
 struct MechConn { float3 p, axis; float half = 0.4f; bool cross = false; };   // hole or male (axle / pin), local
-// kind: 0 spur, 1 bevel / crown (also meshes at 90 degrees), 2 worm (teeth = starts = 1, radius from the mesh)
+// kind: 0 spur, 1 bevel / crown (also meshes at 90 degrees), 2 worm (teeth = starts = 1, radius from the mesh),
+// 3 rack (c = centre, axis = the direction of the teeth row, radius = half its length)
 struct MechGear { int teeth = 0; float3 c, axis, ex; int kind = 0; float radius = 0; };   // ex: direction of a tooth tip (phase)
 struct MechMeta {
     std::vector<MechConn> holes, males;   // males: cross = axle, else pin
@@ -18,15 +19,24 @@ struct MechMeta {
     // turntable half (web: metas[i].pair, never filled by the web v26): role 1 base / bottom, 2 top, family from the
     // LDraw title, vertical axis through the centre of the part, extent along the axis
     int pairRole = 0;
+    // linear actuator half ("Shock Absorber ... Cylinder" / "Piston Rod", "Linear Actuator ... Actuator" / "Piston"):
+    // role 1 body, 2 rod; axis = the longest side of the part, through the centre of its box, length along it
+    int cylRole = 0;
+    std::string cylKind;
+    float3 cylC, cylAxis;
+    float cylLen = 0;
     std::string pairKind;
     float3 pairC, pairAxis{0, 1, 0};
     float pairLo = 0, pairHi = 0;
 };
 
 struct MechGearW { int brick, body, teeth; float3 c, u, ex; float spin = 0; int local = 0; int kind = 0; float radius = 0; };   // spin: tooth phase at rest (radians around u)
-struct MechJoint { int a, b; float3 p, u; float3 p2; };   // revolute between bodies a and b, axis u through p
+// between bodies a and b: type 0 revolute (axis u through p), 1 slide along u (rack guide, linear actuator), limits
+// lo..hi on its value (cm)
+struct MechJoint { int a, b; float3 p, u; float3 p2; int type = 0; float lo = -1e30f, hi = 1e30f; };
 struct MechTreeJ { MechJoint j; int parent, child, qi; };
-struct MechCmd { std::string name; int qi; float value = 0, speed = 3.2f; std::vector<std::pair<int, float>> ratio; int keyPlus = 0, keyMinus = 0; };
+// type 0 motor (radians, -720..720 degrees), 1 linear actuator (cm, lo..hi)
+struct MechCmd { std::string name; int qi; float value = 0, speed = 3.2f; std::vector<std::pair<int, float>> ratio; int keyPlus = 0, keyMinus = 0; int type = 0; float lo = -12.566371f, hi = 12.566371f; };
 
 struct MechModel {
     int bodyCount = 0;
@@ -73,7 +83,7 @@ private:
     int closureRes(const MechModel& m, const std::vector<vp3d::Affine>& mats, double* out) const;   // loops then gear meshes
 public:
     static double gearPhase(const MechModel& m, const MechModel::GearCon& g, const std::vector<vp3d::Affine>& mats);
-    static int residualRows(const MechModel& m) { return (int)m.closures.size() * 6 + (int)m.gearCons.size(); }
+    static int residualRows(const MechModel& m) { int n = (int)m.closures.size() * 6 + (int)m.gearCons.size(); for (const MechTreeJ& t : m.tree) n += t.j.type == 1; return n; }
 private:
 };
 

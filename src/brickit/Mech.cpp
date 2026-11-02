@@ -229,6 +229,36 @@ const MechMeta& Mech::meta(int part) {
         }
         m.gears.push_back({1, c, h0.axis, ex, 2, best});
     }
+    // racks ("Gear Rack", not the steering rack): a row of teeth along the longest side of the part
+    if (m.gears.empty() && p.label.find("Gear Rack") != std::string::npos && p.loaded) {
+        const float3 ext = p.bmax - p.bmin;
+        int ax = 0;
+        for (int j = 1; j < 3; ++j) if ((&ext.x)[j] > (&ext.x)[ax]) ax = j;
+        float3 dir(0);
+        (&dir.x)[ax] = 1;
+        m.gears.push_back({0, (p.bmin + p.bmax) * 0.5f, dir, float3(0), 3, (&ext.x)[ax] * 0.5f});
+    }
+    // linear actuators: body and rod halves, axis = the longest side (from the mesh: the converter gives no slide)
+    {
+        const std::string& t = p.label;
+        int role = 0;
+        std::string kind;
+        if (t.find("Shock Absorber") != std::string::npos && t.find("Cylinder") != std::string::npos) { role = 1; kind = "shock"; }
+        else if (t.find("Shock Absorber") != std::string::npos && t.find("Piston Rod") != std::string::npos) { role = 2; kind = "shock"; }
+        else if (t.find("Linear Actuator") != std::string::npos && t.find("Axle Actuator") != std::string::npos) { role = 1; kind = "linear"; }
+        else if (t.find("Linear Actuator") != std::string::npos && t.find("Piston") != std::string::npos) { role = 2; kind = "linear"; }
+        if (role && p.loaded) {
+            const float3 ext = p.bmax - p.bmin;
+            int ax = 0;
+            for (int j = 1; j < 3; ++j) if ((&ext.x)[j] > (&ext.x)[ax]) ax = j;
+            m.cylRole = role;
+            m.cylKind = kind;
+            m.cylC = (p.bmin + p.bmax) * 0.5f;
+            m.cylAxis = float3(0);
+            (&m.cylAxis.x)[ax] = 1;
+            m.cylLen = (&ext.x)[ax];
+        }
+    }
     // toothed turntables ("Turntable 28 Tooth Top"): a gear on the turntable axis, driven at 90 degrees
     {
         static const std::regex ttRe("Turntable\\s+(\\d+)\\s+Tooth", std::regex::icase);
@@ -383,6 +413,19 @@ bool Mech::build(const std::vector<Brick>& bricks, MechModel& M) {
         for (size_t y = x + 1; y < M.gears.size(); ++y) {
             const MechGearW &A = M.gears[x], &B = M.gears[y];
             if (A.body == B.body) continue;
+            if (A.kind == 3 || B.kind == 3) {   // rack and pinion: the pinion axis across the rack, its centre over the row
+                if (A.kind == 3 && B.kind == 3) continue;
+                const MechGearW& R = A.kind == 3 ? A : B;
+                const MechGearW& P = A.kind == 3 ? B : A;
+                if (P.kind == 2 || std::fabs(dot(P.u, R.u)) > 0.05f) continue;
+                const float3 d = P.c - R.c;
+                const float t = dot(d, R.u);
+                const float3 perp = d - R.u * t;
+                const float side = std::fabs(dot(perp, P.u)), dist = length(perp - P.u * dot(perp, P.u));
+                const float rp = P.teeth * 0.05f;
+                if (std::fabs(t) < R.radius && side < 0.4f && dist > rp - 0.1f && dist < rp + 0.6f) M.meshes.push_back({(int)(&P - M.gears.data()), (int)(&R - M.gears.data())});
+                continue;
+            }
             if (!parallel(A.u, B.u)) {   // 90 degrees: bevel / crown gears (axes crossing), worm and wheel (axes apart)
                 if (std::fabs(dot(A.u, B.u)) > 0.05f) continue;
                 // closest points of the two axis lines
@@ -413,6 +456,47 @@ bool Mech::build(const std::vector<Brick>& bricks, MechModel& M) {
             // (near but not in mesh: no warning, only real blocks are reported)
         }
 
+    // slides. A rack meshed with a pinion and held by nothing slides along its row, guided by the part carrying the
+    // pinion axle; a linear actuator: its rod slides in its body (coaxial halves of the same kind)
+    {
+        std::vector<int> jointsOf(nb, 0);
+        for (const MechJoint& j : joints) { ++jointsOf[j.a]; ++jointsOf[j.b]; }
+        for (auto& ms : M.meshes) {
+            const MechGearW& P = M.gears[ms.first];
+            const MechGearW& R = M.gears[ms.second];
+            if (R.kind != 3 || jointsOf[R.body] > 0) continue;
+            int S = -1;
+            for (const MechJoint& j : joints) if (j.type == 0 && (j.a == P.body || j.b == P.body)) S = j.a == P.body ? j.b : j.a;
+            if (S < 0 || S == R.body) continue;
+            const float t0 = dot(P.c - R.c, R.u), half = std::max(0.0f, R.radius - 0.4f);
+            MechJoint j{S, R.body, R.c, R.u, R.c + R.u};
+            j.type = 1;
+            j.lo = t0 - half;   // the rack moves by q: the pinion, at t0 - q along it, stays on the teeth
+            j.hi = t0 + half;
+            joints.push_back(j);
+            ++jointsOf[R.body];
+        }
+        for (int i = 0; i < n; ++i) {
+            const MechMeta& cb = meta(bricks[i].part);
+            if (cb.cylRole != 1) continue;
+            const float3 cB = wPos(i, cb.cylC), uB = wDir(i, cb.cylAxis);
+            for (int k = 0; k < n; ++k) {
+                const MechMeta& cr = meta(bricks[k].part);
+                if (k == i || cr.cylRole != 2 || cr.cylKind != cb.cylKind || M.brickBody[k] == M.brickBody[i]) continue;
+                const float3 cR = wPos(k, cr.cylC), uR = wDir(k, cr.cylAxis);
+                if (!parallel(uB, uR) || !onLine(cR, cB, uB, 0.15f)) continue;
+                const float t = dot(cR - cB, uB), reach = (cb.cylLen + cr.cylLen) * 0.5f;
+                if (std::fabs(t) > reach - 0.2f) continue;   // the rod must go into the body
+                // travel (no slide data in LDraw): a third of the shorter half each way, at most 2.4 cm, rod kept in
+                const float stroke = std::min(2.4f, std::max(0.4f, std::min(cb.cylLen, cr.cylLen) / 3));
+                MechJoint j{M.brickBody[i], M.brickBody[k], cB, uB, cB + uB};
+                j.type = 1;
+                j.lo = -stroke;
+                j.hi = stroke;
+                joints.push_back(j);
+            }
+        }
+    }
     // tooth phases: from the biggest gear of each train, every meshing gear turned so its teeth fall between the teeth
     // of the gear it meshes with (spin around its own axis, applied to its brick at rest)
     {
@@ -478,7 +562,7 @@ bool Mech::build(const std::vector<Brick>& bricks, MechModel& M) {
     std::vector<int> order(joints.size());
     for (size_t k = 0; k < joints.size(); ++k) order[k] = (int)k;
     std::stable_sort(order.begin(), order.end(), [&](int x, int y) {
-        int px = hasGear[joints[x].a] || hasGear[joints[x].b] ? 0 : 1, py = hasGear[joints[y].a] || hasGear[joints[y].b] ? 0 : 1;
+        int px = joints[x].type == 1 ? -1 : (hasGear[joints[x].a] || hasGear[joints[x].b] ? 0 : 1), py = joints[y].type == 1 ? -1 : (hasGear[joints[y].a] || hasGear[joints[y].b] ? 0 : 1);
         return px < py;
     });
     std::vector<int> tf(nb);
@@ -488,6 +572,7 @@ bool Mech::build(const std::vector<Brick>& bricks, MechModel& M) {
     for (int k : order) {
         int a = tfind(joints[k].a), b = tfind(joints[k].b);
         if (a != b) { tf[a] = b; inTree[k] = true; }
+        else if (joints[k].type == 1) M.warnings.push_back("Vérin dans une boucle : non piloté");
         else M.closures.push_back(joints[k]);
     }
     std::vector<std::vector<int>> adj(nb);
@@ -506,14 +591,16 @@ bool Mech::build(const std::vector<Brick>& bricks, MechModel& M) {
                 if (seenB[c]) continue;
                 seenB[c] = true;
                 queue.push_back(c);
-                M.tree.push_back({j, p, c, (int)M.tree.size()});
+                MechJoint jj = j;
+                if (jj.type == 1 && jj.a != p) { jj.u = jj.u * -1.0f; std::swap(jj.lo, jj.hi); jj.lo = -jj.lo; jj.hi = -jj.hi; }
+                M.tree.push_back({jj, p, c, (int)M.tree.size()});
                 tjOf[c] = (int)M.tree.size() - 1;
             }
         }
     }
     // a part turning on an axle that itself turns in the same line: its angle is measured from the part carrying the axle
     for (MechTreeJ& t : M.tree)
-        for (int tp = tjOf[t.parent]; tp >= 0 && parallel(M.tree[tp].j.u, t.j.u) && onLine(t.j.p, M.tree[tp].j.p, M.tree[tp].j.u); tp = tjOf[t.parent])
+        for (int tp = tjOf[t.parent]; t.j.type == 0 && tp >= 0 && M.tree[tp].j.type == 0 && parallel(M.tree[tp].j.u, t.j.u) && onLine(t.j.p, M.tree[tp].j.p, M.tree[tp].j.u); tp = tjOf[t.parent])
             t.parent = M.tree[tp].parent;
     const int nq = (int)M.tree.size();
     M.qmode.assign(nq, MechModel::QMode());
@@ -521,7 +608,14 @@ bool Mech::build(const std::vector<Brick>& bricks, MechModel& M) {
     for (auto& ms : M.meshes) {
         const MechGearW &A = M.gears[ms.first], &B = M.gears[ms.second];
         float sigma = 1.0f;
-        if (A.kind != 2 && B.kind != 2) {
+        if (B.kind == 3) {
+            const float3 foot = B.c + B.u * dot(A.c - B.c, B.u);
+            float3 toward = foot - A.c;
+            toward = toward - A.u * dot(toward, A.u);
+            const float l = length(toward);
+            const float3 K = A.c + (l > 1e-5f ? toward * (A.teeth * 0.05f / l) : float3(0));
+            sigma = dot(cross(A.u, K - A.c), B.u) > 0 ? 1.0f : -1.0f;
+        } else if (A.kind != 2 && B.kind != 2) {
             float3 dA = (B.c - A.c) - A.u * dot(B.c - A.c, A.u);
             const float l = length(dA);
             if (l > 1e-5f) {
@@ -553,7 +647,7 @@ bool Mech::build(const std::vector<Brick>& bricks, MechModel& M) {
             for (int gi : kv.second) {
                 const MechGearW& G = M.gears[gi];
                 const int t = tjOf[G.body];
-                if (t < 0 || M.qmode[t].kind != 0) continue;
+                if (G.kind == 3 || t < 0 || M.qmode[t].kind != 0 || M.tree[t].j.type != 0) continue;
                 if (master < 0 || G.teeth < M.gears[master].teeth) master = gi;
             }
             if (master < 0) {   // every gear of the train sits on a fixed part
@@ -571,7 +665,7 @@ bool Mech::build(const std::vector<Brick>& bricks, MechModel& M) {
     }
     // an axle carrying gears that turns alone in a fixed part also gets a motor
     for (int qi = 0; qi < nq; ++qi)
-        if (M.qmode[qi].kind == 0 && hasGear[M.tree[qi].child]) {
+        if (M.qmode[qi].kind == 0 && hasGear[M.tree[qi].child] && M.tree[qi].j.type == 0) {
             bool meshed = false;
             for (auto& ms : M.meshes) meshed |= M.gears[ms.first].body == M.tree[qi].child || M.gears[ms.second].body == M.tree[qi].child;
             if (meshed) continue;
@@ -581,6 +675,22 @@ bool Mech::build(const std::vector<Brick>& bricks, MechModel& M) {
             M.qmode[qi] = {1, -1, 0, (int)M.cmds.size()};
             M.cmds.push_back(c);
         }
+    {   // linear actuators: one command each (cm), its travel as range; a slide of a rack is driven by its pinion
+        int k = 0;
+        for (int qi = 0; qi < nq; ++qi) {
+            const MechTreeJ& t = M.tree[qi];
+            if (t.j.type != 1 || M.qmode[qi].kind != 0 || hasGear[t.child]) continue;
+            MechCmd c;
+            c.name = "Vérin " + std::to_string(++k);
+            c.qi = qi;
+            c.type = 1;
+            c.lo = t.j.lo;
+            c.hi = t.j.hi;
+            c.speed = 1.0f;
+            M.qmode[qi] = {1, -1, 0, (int)M.cmds.size()};
+            M.cmds.push_back(c);
+        }
+    }
     int motors = 0;
     for (MechCmd& c : M.cmds) if (c.name == "Moteur") ++motors;
     int k = 0;
@@ -615,7 +725,7 @@ bool Mech::build(const std::vector<Brick>& bricks, MechModel& M) {
     std::vector<int> vars;
     for (int i = 0; i < nq; ++i)
         if (M.qmode[i].kind == 0 || M.qmode[i].kind == 1) vars.push_back(i);
-    const int rows = residualRows(M);
+    const int rows = (int)M.closures.size() * 6 + (int)M.gearCons.size();
     std::vector<double> r0(rows), r1(rows);
     std::vector<std::vector<double>> J(vars.size(), std::vector<double>(rows));
     std::vector<double> q(nq, 0.0);
@@ -649,7 +759,9 @@ bool Mech::build(const std::vector<Brick>& bricks, MechModel& M) {
 
 void Mech::fk(const MechModel& m, const std::vector<double>& q, std::vector<Affine>& mats) const {
     for (int r : m.roots) mats[r] = Affine();
-    for (const MechTreeJ& t : m.tree) mats[t.child] = mul(mats[t.parent], rotAbout(t.j.p, t.j.u, (float)q[t.qi]));
+    for (const MechTreeJ& t : m.tree)
+        mats[t.child] = mul(mats[t.parent], t.j.type == 1 ? Affine::fromBasis(float3(1, 0, 0), float3(0, 1, 0), float3(0, 0, 1), t.j.u * (float)q[t.qi])
+                                                          : rotAbout(t.j.p, t.j.u, (float)q[t.qi]));
 }
 
 void Mech::applyGears(const MechModel& m, std::vector<double>& q) const {
@@ -663,6 +775,18 @@ void Mech::applyGears(const MechModel& m, std::vector<double>& q) const {
 // Tooth phase of a mesh: the angle of each gear around its axis, from the direction of the other gear, times its teeth.
 double Mech::gearPhase(const MechModel& m, const MechModel::GearCon& g, const std::vector<Affine>& mats) {
     const MechGearW &A = m.gears[g.ga], &B = m.gears[g.gb];
+    if (B.kind == 3) {   // pinion A and rack B: the pinion's phase and the pitch (pi x module 0.1 cm) of the rack
+        const Affine &MA = mats[A.body], &MB = mats[B.body];
+        const float3 cA = MA.point(A.c), cB = MB.point(B.c);
+        const float3 uA = normalize(MA.point(A.c + A.u) - cA), dB = normalize(MB.point(B.c + B.u) - cB);
+        const float3 eA = MA.point(A.c + A.ex) - cA;
+        float3 toward = (cB + dB * dot(cA - cB, dB)) - cA;   // to the foot of the pinion on the row
+        toward = toward - uA * dot(toward, uA);
+        const float3 e = eA - uA * dot(eA, uA);
+        const double aA = std::atan2(dot(cross(toward, e), uA), dot(toward, e));
+        const double sAlong = dot(cA - cB, dB);
+        return A.teeth * aA + g.sigma * (2 * 3.14159265358979 / (3.14159265358979 * 0.1)) * sAlong;
+    }
     const Affine &MA = mats[A.body], &MB = mats[B.body];
     const float3 cA = MA.point(A.c), cB = MB.point(B.c);
     const float3 uA = normalize(MA.point(A.c + A.u) - cA), uB = normalize(MB.point(B.c + B.u) - cB);
@@ -740,6 +864,8 @@ bool Mech::solve(MechModel& m, const Drag* drag) {
         applyGears(m, m.q);
         fk(m, m.q, mats);
         int k = closureRes(m, mats, out.data());
+        for (const MechTreeJ& t : m.tree)   // travel of the slides (a stop beyond)
+            if (t.j.type == 1) { const double v = m.q[t.qi]; out[k++] = v > t.j.hi ? v - t.j.hi : (v < t.j.lo ? t.j.lo - v : 0.0); }
         if (drag) {
             float3 p = mats[drag->body].point(drag->local);
             out[k++] = (p.x - drag->target.x) * WD;

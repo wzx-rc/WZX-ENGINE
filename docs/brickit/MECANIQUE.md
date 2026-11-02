@@ -64,6 +64,26 @@ bras qui tourne autour d'un soleil fixe donne bien bras = satellite × tS / (tS 
 Plus de règle « axes portés par la même pièce » : deux supports séparés, empilés, côte à côte, mobiles, un axe dans
 plusieurs supports, tout passe par la même contrainte.
 
+## 4 bis. Glissières (crémaillère, vérins)
+
+Une liaison peut être un **pivot** (angle) ou une **glissière** (avance en cm le long d'un axe, avec une course
+lo..hi). Dans l'arbre, la pose d'un enfant de glissière est la translation `u × q` ; la course est une ligne de résidu
+de plus (`q − hi` au-delà, `lo − q` en deçà, 0 sinon) : au bout de la course, le solveur refuse la pose (butée).
+
+- **Crémaillère** (titre `Gear Rack`, pas la crémaillère de direction) : rangée de dents le long du plus grand côté de
+  la pièce. Engrène avec un pignon dont l'axe est en travers de la rangée, son centre au-dessus de la rangée (dans le
+  plan du pignon, à 0,4 cm près), à une distance de la ligne médiane de la crémaillère entre r − 0,1 et r + 0,6 cm. Si
+  rien ne tient la crémaillère, elle glisse le long de sa rangée, guidée par la pièce qui porte l'axe du pignon, course
+  = tant que le pignon reste sur les dents (demi-longueur − 0,4 cm). Contrainte : `tP·αP + σ·(2π / p)·s` constante modulo
+  2π, p = π × 0,1 cm (pas des dents), s = position du pignon le long de la rangée, σ = signe(vP·u). Un tour de pignon fait
+  avancer la crémaillère de 2π r (test 12 : 0,8 cm par radian pour un 16).
+- **Vérins** : amortisseur `Shock Absorber … Cylinder` + `Piston Rod`, actionneur `Linear Actuator … Axle Actuator` +
+  `Piston` : axe = plus grand côté de chaque moitié, les deux coaxiales (0,15 cm), la tige engagée dans le corps.
+  Glissière entre leurs deux corps ; **course estimée sur le maillage** (le convertisseur LDraw ne donne pas les
+  glissières LDCad) : un tiers de la plus courte des deux moitiés de chaque côté, de 0,4 à 2,4 cm. Une commande
+  « Vérin n » par vérin (cm, curseur sur la course) ; une glissière qui fermerait une boucle est signalée (« Vérin dans
+  une boucle : non piloté »).
+
 ## 5. Commandes et rapports
 
 - **Train** = engrenages reliés par des engrènements **ou portés par le même corps** (même axe). Une commande « Moteur »
@@ -83,18 +103,18 @@ refusée (butée) si un résidu de boucle ou d'engrènement dépasse 0,004.
 
 ## 7. Limites connues
 
-- Crémaillère (glissière) : non simulée, le solveur n'a que des pivots.
+- Course des vérins : estimée (pas de données de glissière dans la conversion LDraw).
 - Couronnes intérieures : pas de pièce Technic de ce type dans la bibliothèque ; le signe σ = −1 les couvrirait.
 - Engrenages « Large Tooth » (module différent) : non détectés.
 - Les satellites internes d'un différentiel ne sont pas testés (le boîtier l'est).
 
-## 8. Tests (`--mechtests`) — 15 / 15
+## 8. Tests (`--mechtests`) — 18 / 18
 
 1 deux engrenages sur une poutre (8 / 24) · 2 deux supports séparés (16 / 24) · 3 supports empilés (8 / 16 en
 diagonale) · 4 côte à côte, deux briques non reliées · 5 train planétaire (soleil fixe, satellite sur un bras) · 6 train
 de 4 engrenages de 16 · 7 rapports 8 / 40 / 24 · 8 coniques à 90° · 9 différentiel 6573 entraîné par un 8 · 10 plateau
-tournant 28 entraîné par un conique 12 · 11 vis sans fin et 24 · 12 crémaillère (non prise en charge) · 13 axe
+tournant 28 entraîné par un conique 12 · 11 vis sans fin et 24 · 12 crémaillère et pignon (16, un quart de tour : 0,8 cm / rad) · 13 axe
 traversant trois supports · 14 montage 1 tourné de 90° puis 180° · 15 deux poutres reliées par deux pins (un seul
-corps) · 16 scène de Wzx `docs/brickit/tests/meca_16_24.json`. Chaque test vérifie le nombre de corps, de commandes, puis
+corps) · 16 scène de Wzx `docs/brickit/tests/meca_16_24.json` · 17 vérin amortisseur 2909 + 2910 · 18 actionneur linéaire 92695 + 92696. Chaque test vérifie le nombre de corps, de commandes, puis
 un tour complet de la commande en 36 pas : chaque engrenage tourne de son rapport attendu (2 %) et les engrènements
 restent en prise (écart de phase < 0,05 rad).

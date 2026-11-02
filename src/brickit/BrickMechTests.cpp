@@ -93,7 +93,7 @@ void BrickApp::runMechTests() {
     if (_wfopen_s(&f, (m_exeDir + L"\\mech_tests.txt").c_str(), L"w") != 0 || !f) return;
     const float3 X(1, 0, 0), Y(0, 1, 0), Z(0, 0, 1);
     int passed = 0, total = 0;
-    auto run = [&](const char* name, Mount& mt, int expBodies, int expCmds, const std::vector<Expect>& ex, const char* note = nullptr) {
+    auto run = [&](const char* name, Mount& mt, int expBodies, int expCmds, const std::vector<Expect>& ex, const char* note = nullptr, float target = 2.0f * 3.14159265f) {
         ++total;
         MechModel M;
         const bool built = m_mech.build(mt.b, M);
@@ -108,7 +108,7 @@ void BrickApp::runMechTests() {
             bool ok = true;
             int failStep = -1;
             for (int s = 1; s <= steps && ok; ++s) {
-                M.cmds[0].value = 2.0f * 3.14159265f * s / steps;
+                M.cmds[0].value = (M.cmds[0].type == 1 ? std::min(target, M.cmds[0].hi * 0.8f) : target) * s / steps;
                 ok = m_mech.solve(M);
                 if (!ok) failStep = s;
             }
@@ -320,11 +320,34 @@ void BrickApp::runMechTests() {
         const int worm = m.gear("4716", cw, X);
         run("11. vis sans fin et 24", m, -1, 1, {{worm, 1.0}, {wheel, 1.0 / 24, true}}, "(seul |rapport| = 1/24 est attendu)");
     }
-    // 12. rack and pinion: a slide, not simulated (no prismatic joint yet)
+    // 12. rack and pinion: a 16 over a rack 1 x 8, a quarter turn (the rack slides, guided by the pinion support)
     {
-        ++total;
-        fprintf(f, "[NON PRIS EN CHARGE] 12. crémaillère et pignon : une crémaillère avance en ligne droite (liaison glissière) ; le solveur n'a que des pivots pour l'instant\n");
+        Mount m = mk();
+        m.hole("6541", 0, float3(0, 2.0f, 0), Z, &X);
+        m.axle("3706", float3(0, 2.0f, 0.8f), Z);
+        const int pin = m.gear("94925", float3(0, 2.0f, 1.2f), Z);
+        const int rp = m.partOf("6630");
+        const MechMeta& rm = m_mech.meta(rp);
+        int rack = -1;
+        if (rp >= 0 && !rm.gears.empty()) {
+            const float4 q = Mount::rotFor(rm.gears[0].axis, X);
+            rack = m.add(rp, q, float3(0, 2.0f - (0.8f + 0.25f), 1.2f) - qRot(q, rm.gears[0].c));
+        }
+        run("12. crémaillère et pignon (16, un quart de tour)", m, -1, 1, {{pin, 1.0}, {rack, 0.8, true}}, "(cm par radian : rayon primitif 0,8 cm)", 3.14159265f * 0.5f);
     }
+    // 17. shock absorber: cylinder 2909 and piston rod 2910 (a slide, travel from the mesh)
+    auto actuator = [&](const char* name, const char* body, const char* rodName) {
+        Mount m = mk();
+        const int bp = m.partOf(body), rp = m.partOf(rodName);
+        const MechMeta& bm = m_mech.meta(bp);
+        const MechMeta& rmm = m_mech.meta(rp);
+        const float4 qb = Mount::rotFor(bm.cylAxis, X), qr = Mount::rotFor(rmm.cylAxis, X);
+        m.add(bp, qb, float3(0, 2.0f, 0) - qRot(qb, bm.cylC));
+        const int rod = m.add(rp, qr, float3(bm.cylLen * 0.5f, 2.0f, 0) - qRot(qr, rmm.cylC));
+        run(name, m, 2, 1, {{rod, 1.0}}, "(commande en cm, course estimée sur le maillage)", 10.0f);
+    };
+    actuator("17. vérin : amortisseur 2909 + tige 2910", "2909", "2910");
+    actuator("18. vérin : actionneur linéaire 92695 + piston 92696", "92695", "92696");
     // 13. one axle through three supports, a 24 on it driven by an 8
     {
         Mount m = mk();
@@ -370,7 +393,7 @@ void BrickApp::runMechTests() {
         } else { ++total; fprintf(f, "[ÉCHEC] 16. scène introuvable\n"); }
         m_bricks = keep;
     }
-    fprintf(f, "\n%d / %d réussis (sur %d montages, la crémaillère n'est pas encore prise en charge)\n", passed, total - 1, total);
+    fprintf(f, "\n%d / %d réussis\n", passed, total);
     fclose(f);
 }
 
