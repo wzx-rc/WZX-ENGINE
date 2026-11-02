@@ -1,4 +1,4 @@
-#include "BrickApp.h"
+﻿#include "BrickApp.h"
 #include "app/Content.h"
 #include "MeshLod.h"
 #include "app/Theme.h"
@@ -825,6 +825,7 @@ void BrickApp::frame() {
     }
     m_rs.ssao = m_rs.raster && m_quality == 1 && m_ssaoOn;   // HQ of the web: SSAOPass (kernel radius 0.6)
     m_rs.ssaoRadius = 0.6f;
+    m_rs.rasterBevel = m_quality == 1;   // rounded edges in the real time view: HQ (inline ray queries, about 1 ms)
     std::vector<int> extra;
     for (int i : m_multi) extra.push_back(m_firstBrickObject + i);
     m_renderer.setExtraSelection(extra);

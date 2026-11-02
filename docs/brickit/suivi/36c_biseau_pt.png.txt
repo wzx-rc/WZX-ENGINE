@@ -1,0 +1,1 @@
+bricks=58 mode=pathtrace gpu_ms=10.25 cpu_ms=1.34 frame_ms=11.78 tris_drawn=0.00M spp=384 pick_ms=0.008

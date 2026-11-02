@@ -43,6 +43,7 @@ struct RenderSettings {
     int denoisePasses = 3;          // a-trous passes (steps 1, 2, 4, ...): more = smoother, blurrier
     float denoiseEdgeLuma = 0.5f;   // luminance edge sensitivity: lower = the filter stops at shadow edges
     bool bevel = true;
+    bool rasterBevel = false;       // the bevel in the raster view too (inline ray queries: builds the TLAS in raster)
     float bevelScale = 1.0f;
     int bevelSamples = 4;
     float fireflyClamp = 25.0f;
@@ -305,7 +306,9 @@ private:
     // extra views (renderView): per view, the u0..u5 table of the tonemapper then its selection coverage (t8)
     // depth of the viewport read by the ambient occlusion (t9, right after t8)
     static constexpr uint32_t kDepthSrvSlot = kSelCovSlot + 1;
-    static constexpr uint32_t kViewHeapBase = kDepthSrvSlot + 1, kViewHeapStride = kTexCount + 1;
+    // scene of the raster bevel (t0..t3 space2 of the raster pass: TLAS, vertices, indices, instances)
+    static constexpr uint32_t kBevelSrvSlot = kDepthSrvSlot + 1;
+    static constexpr uint32_t kViewHeapBase = kBevelSrvSlot + 4, kViewHeapStride = kTexCount + 1;
     static constexpr uint32_t kProbeFace = 16;   // texels per cube face of a probe capture
     std::vector<ComPtr<ID3D12Resource>> m_materialTex;
     ComPtr<ID3D12PipelineState> m_psoSSAO, m_psoSSAOMS, m_psoSSAOBlur;   // ambient occlusion of the raster viewport (optional)

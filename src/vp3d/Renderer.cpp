@@ -1533,7 +1533,7 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
     const bool bakedView = rs.raster && rs.bakedProbes && m_bakeValid && !baking;
     const bool giRaster = liveProbes || baking || bakedView;
     const bool useHistory = rs.ddgi && !rs.raster && !giRaster;
-    const bool needAS = (!rs.raster && !(liveProbes && rs.ddgiRaster)) || baking;
+    const bool needAS = (!rs.raster && !(liveProbes && rs.ddgiRaster)) || baking || (rs.raster && rs.bevel && rs.rasterBevel);
 
     beginCommands();
     m_giTimed = false;

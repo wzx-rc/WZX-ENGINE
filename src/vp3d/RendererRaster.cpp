@@ -31,7 +31,7 @@ struct RasterConstants {
     float envMapOn; float envRotation; float envMapIntensity; float envMips;
     float envVisible; uint32_t sunLight; float giMode, orthoHalfH;   // giMode: DDGI probes read by Shade (Raster.hlsl); orthoHalfH: orthographic camera
     float3 hemiSky; float hemiOn;
-    float3 hemiGround; float hemiPad;
+    float3 hemiGround; float bevelOn;
 };
 
 struct DrawConstants {
@@ -133,7 +133,13 @@ bool Renderer::createRasterPipelines(std::string* error) {
     probeRange.NumDescriptors = 3;
     probeRange.BaseShaderRegister = 4;
 
-    D3D12_ROOT_PARAMETER p[11] = {};
+    D3D12_DESCRIPTOR_RANGE bevelRange = {};   // t0..t3 space2: the scene of the raster bevel (one table: the root
+    bevelRange.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;   // signature is at 63 of its 64 DWORDs)
+    bevelRange.NumDescriptors = 4;
+    bevelRange.BaseShaderRegister = 0;
+    bevelRange.RegisterSpace = 2;
+
+    D3D12_ROOT_PARAMETER p[12] = {};
     p[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
     p[0].Descriptor.ShaderRegister = 0;
     p[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
@@ -186,7 +192,11 @@ bool Renderer::createRasterPipelines(std::string* error) {
     D3D12_ROOT_SIGNATURE_DESC rsd = {};
     p[10].ParameterType = D3D12_ROOT_PARAMETER_TYPE_SRV;   // t7 instanced draw constants (gDraws), vertex + pixel
     p[10].Descriptor.ShaderRegister = 7;
-    rsd.NumParameters = 11;
+    p[11].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;   // raster bevel scene, pixel
+    p[11].DescriptorTable.NumDescriptorRanges = 1;
+    p[11].DescriptorTable.pDescriptorRanges = &bevelRange;
+    p[11].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+    rsd.NumParameters = 12;
     rsd.pParameters = p;
     rsd.NumStaticSamplers = 2;
     rsd.pStaticSamplers = samplers;
@@ -688,7 +698,7 @@ void Renderer::recordRaster(const Scene& scene, const RenderSettings& rs, const 
     rc.hemiSky = scene.env.hemiSky * scene.env.hemiIntensity;
     rc.hemiGround = scene.env.hemiGround * scene.env.hemiIntensity;
     rc.hemiOn = scene.env.hemiIntensity > 0 ? 1.0f : 0.0f;
-    rc.hemiPad = 0;
+    rc.bevelOn = (rs.bevel && rs.rasterBevel && m_tlas.res && m_tlasVersion == m_buildVersion) ? rs.bevelScale : 0.0f;   // raster bevel (TLAS built for it)
     rc.shadowTexel = 1.0f / kShadowSize;
     rc.keyPos = keyCenter;
     rc.lightScale = rs.lightScale;
@@ -721,6 +731,35 @@ void Renderer::recordRaster(const Scene& scene, const RenderSettings& rs, const 
     memcpy(rcb.mapped, &rc, sizeof(rc));
 
     m_cmd->SetGraphicsRootSignature(m_rasterRoot.Get());
+    {   // raster bevel: the scene for the inline ray queries (views written when the bevel is on; read nowhere when
+        // rc.bevelOn = 0, the table then points at whatever the slots hold)
+        D3D12_CPU_DESCRIPTOR_HANDLE h = m_heap->GetCPUDescriptorHandleForHeapStart();
+        h.ptr += (SIZE_T)kBevelSrvSlot * m_descSize;
+        if (rc.bevelOn > 0) {
+            D3D12_SHADER_RESOURCE_VIEW_DESC sv = {};
+            sv.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+            sv.ViewDimension = D3D12_SRV_DIMENSION_RAYTRACING_ACCELERATION_STRUCTURE;
+            sv.RaytracingAccelerationStructure.Location = m_tlas.va();
+            m_device->CreateShaderResourceView(nullptr, &sv, h);
+            auto structured = [&](ID3D12Resource* res, UINT64 bytes, UINT stride, UINT slot) {
+                D3D12_SHADER_RESOURCE_VIEW_DESC b = {};
+                b.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+                b.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
+                b.Format = DXGI_FORMAT_UNKNOWN;
+                b.Buffer.NumElements = (UINT)(bytes / stride);
+                b.Buffer.StructureByteStride = stride;
+                D3D12_CPU_DESCRIPTOR_HANDLE hh = h;
+                hh.ptr += (SIZE_T)slot * m_descSize;
+                m_device->CreateShaderResourceView(res, &b, hh);
+            };
+            structured(m_vb.res.Get(), m_vb.size, sizeof(gpu::GpuVertex), 1);
+            structured(m_ib.res.Get(), m_ib.size, 4, 2);
+            structured(m_instances.res.Get(), m_instances.size, sizeof(gpu::GpuInstance), 3);
+        }
+        D3D12_GPU_DESCRIPTOR_HANDLE g = m_heap->GetGPUDescriptorHandleForHeapStart();
+        g.ptr += (UINT64)kBevelSrvSlot * m_descSize;
+        m_cmd->SetGraphicsRootDescriptorTable(11, g);
+    }
     m_cmd->SetGraphicsRootConstantBufferView(0, rcb.va());
     m_cmd->SetGraphicsRootShaderResourceView(2, m_materials.va());
     m_cmd->SetGraphicsRootShaderResourceView(3, m_lights.va());

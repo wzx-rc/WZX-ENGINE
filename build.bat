@@ -39,7 +39,7 @@ for %%E in (VSMain VSWire VSShadow VSBackground VSProbe) do (
     "%DXC%" -nologo -T vs_6_0 -E %%E -HV 2021 -O3 -DVP3D_DDGI_PROBES -I src\vp3d\shaders src\vp3d\shaders\Raster.hlsl -Fo "%OUT%\shaders\Raster_%%E.cso" || exit /b 1
 )
 for %%E in (PSMain PSGhost PSId PSSelect PSWire PSBackground PSProbe PSProbeBackground) do (
-    "%DXC%" -nologo -T ps_6_0 -E %%E -HV 2021 -O3 -DVP3D_DDGI_PROBES -I src\vp3d\shaders src\vp3d\shaders\Raster.hlsl -Fo "%OUT%\shaders\Raster_%%E.cso" || exit /b 1
+    "%DXC%" -nologo -T ps_6_5 -E %%E -HV 2021 -O3 -DVP3D_DDGI_PROBES -I src\vp3d\shaders src\vp3d\shaders\Raster.hlsl -Fo "%OUT%\shaders\Raster_%%E.cso" || exit /b 1
 )
 rem editor ground grid of the raster viewport
 "%DXC%" -nologo -T vs_6_0 -E VSGrid -HV 2021 -O3 src\vp3d\shaders\EditorGrid.hlsl -Fo "%OUT%\shaders\EditorGrid_VSGrid.cso" || exit /b 1

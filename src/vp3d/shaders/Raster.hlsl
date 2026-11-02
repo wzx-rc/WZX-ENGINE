@@ -21,7 +21,7 @@ struct RasterConstants {
     float envMapOn; float envRotation; float envMapIntensity; float envMips;
     float envVisible; uint sunLight; float giMode; float orthoHalfH;   // sunLight: index of the path tracer's sun quad (skipped here); giMode: DDGI probes (see Shade); orthoHalfH: orthographic camera (half the view height, 0 = perspective)
     float3 hemiSky; float hemiOn;        // hemisphere fill (three.js HemisphereLight): irradiance from the sky / the ground, x intensity
-    float3 hemiGround; float hemiPad;
+    float3 hemiGround; float bevelOn;    // bevelOn: scale of the material bevel radius in the raster view (0 = off, needs the TLAS)
 };
 ConstantBuffer<RasterConstants> R : register(b0);
 
@@ -81,6 +81,71 @@ static const float PI = 3.14159265;
 #define DDGI_PROBE_REG_STATE t22
 #endif
 #include "DDGIProbe.hlsli"
+#endif
+// Bevel of the raster view (DirectX 12 only, shader model 6.5): rounded edges on every edge of every part, as the
+// bevel of the path tracer (PathTrace.hlsl, BevelNormal), from inline ray queries against the same TLAS restricted to
+// the instance itself. Real time version: 8 short rays along the surface (4 from just inside it: convex edges, 4 from
+// just outside: concave edges) find the neighbouring face within the radius and its distance; the normal turns towards
+// the bisector of the two faces as on a fillet (half way at the edge, unchanged at the radius). Deterministic (no
+// noise, no accumulation needed); skipped when the radius is under half a pixel.
+#ifndef VP3D_ATTRIB_SEMANTICS
+RaytracingAccelerationStructure gBvScene : register(t0, space2);
+StructuredBuffer<GpuVertex> gBvVerts : register(t1, space2);
+StructuredBuffer<uint> gBvIdx : register(t2, space2);
+StructuredBuffer<GpuInstance> gBvInst : register(t3, space2);
+
+void BvBasis(float3 n, out float3 t, out float3 b) {
+    float s = n.z >= 0 ? 1.0 : -1.0;
+    float a = -1.0 / (s + n.z);
+    float c = n.x * n.y * a;
+    t = float3(1.0 + s * n.x * n.x * a, s * c, -s * n.x);
+    b = float3(c, s + n.y * n.y * a, -n.y);
+}
+
+// geometric normal of a triangle of an instance, in world space
+float3 BvFaceNormal(uint inst, uint prim, float3x4 o2w) {
+    GpuInstance gi = gBvInst[inst];
+    uint b = gi.indexOffset + prim * 3;
+    float3 p0 = gBvVerts[gBvIdx[b + 0] + gi.vertexOffset].pos, p1 = gBvVerts[gBvIdx[b + 1] + gi.vertexOffset].pos, p2 = gBvVerts[gBvIdx[b + 2] + gi.vertexOffset].pos;
+    float3 a = mul((float3x3)o2w, p1 - p0), c = mul((float3x3)o2w, p2 - p0);
+    return normalize(cross(a, c));
+}
+
+float3 RasterBevel(float3 P, float3 Ng, float3 N, uint inst, float radius) {
+    float3 T, B;
+    BvBasis(Ng, T, B);
+    const float eps = radius * 0.06;
+    float3 sum = N;
+    float3 seen[4];
+    uint nSeen = 0;
+    [unroll] for (uint k = 0; k < 8; ++k) {
+        const bool inside = k < 4;   // inside: the ray leaves the part through the next face (convex edge)
+        float3 dir = (k & 1) ? ((k & 2) ? -B : B) : ((k & 2) ? -T : T);
+        RayQuery<RAY_FLAG_FORCE_NON_OPAQUE | RAY_FLAG_SKIP_PROCEDURAL_PRIMITIVES> q;
+        RayDesc r;
+        r.Origin = P + Ng * (inside ? -eps : eps); r.Direction = dir; r.TMin = 0.0; r.TMax = radius * 1.5;
+        q.TraceRayInline(gBvScene, RAY_FLAG_NONE, MASK_OPAQUE | MASK_GLASS, r);
+        while (q.Proceed()) {
+            if (q.CandidateType() == CANDIDATE_NON_OPAQUE_TRIANGLE && q.CandidateInstanceID() == inst)
+                q.CommitNonOpaqueTriangleHit();
+        }
+        if (q.CommittedStatus() != COMMITTED_TRIANGLE_HIT) continue;
+        float3 nh = BvFaceNormal(inst, q.CommittedPrimitiveIndex(), q.CommittedObjectToWorld3x4());
+        if (dot(nh, dir) < 0) nh = -nh;   // outward: the ray from inside leaves along it, the ray from outside meets it
+        if (!inside) nh = -nh;
+        if (dot(nh, Ng) > 0.9) continue;   // the same (curved) surface
+        float3 hp = r.Origin + dir * q.CommittedRayT();
+        float d = abs(dot(hp - P, nh));   // distance to the plane of the next face = to the edge
+        if (d >= radius) continue;
+        bool dup = false;
+        [unroll] for (uint s2 = 0; s2 < 4; ++s2) if (s2 < nSeen && dot(seen[s2], nh) > 0.98) dup = true;
+        if (dup || nSeen >= 4) continue;
+        seen[nSeen++] = nh;
+        float t = 1.0 - d / radius;
+        sum += nh * (t * t * (3.0 - 2.0 * t));   // smooth: the bisector (N + nh) at the edge
+    }
+    return normalize(sum);
+}
 #endif
 #define DRAW_GHOST 1u
 #define DRAW_LIGHT 2u
@@ -282,6 +347,15 @@ float4 Shade(VSOut i, bool ghost, float shadowBias, bool capture) {
     float3 N = normalize(i.nrm);
     float3 V = capture ? normalize(PF.origin - i.wpos) : ToViewer(i.wpos);   // the probe is the viewer of its capture
     if (dot(N, V) < 0) N = -N;
+#ifndef VP3D_ATTRIB_SEMANTICS
+    if (R.bevelOn > 0 && m.bevelRadius > 0 && !capture && !ghost) {   // rounded edges, as the path tracer
+        float3 Ng = normalize(cross(ddx(i.wpos), ddy(i.wpos)));
+        if (dot(Ng, N) < 0) Ng = -Ng;
+        const float rad = m.bevelRadius * R.bevelOn;
+        if (rad > 0.5 * max(length(ddx(i.wpos)), length(ddy(i.wpos))))   // at least half a pixel wide
+            N = RasterBevel(i.wpos, Ng, N, D.id - 1, rad);
+    }
+#endif
     float3 base = m.baseColor;
     float3 emission = m.emission;
     if (m.baseColorTex != NO_TEXTURE) base *= gTextures[NonUniformResourceIndex(m.baseColorTex)].Sample(gLinearWrap, i.uv).rgb;

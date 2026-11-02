@@ -164,6 +164,7 @@ Cases : `[x]` porté et vérifié · `[~]` partiel (ce qui manque est dit) · `[
 - Les captures et tests n'écrivent plus les préférences de l'utilisateur.
 
 ### Rendu
+- Biseau (02/11/2026) : path tracing = biseau de type Cycles sur toutes les arêtes (vérifié par différence avec/sans : joints entre briques, arêtes des pentes, tenons, engrenages). Le temps réel n'en avait aucun : ajout en HQ d'un biseau par requêtes de rayons en ligne (DXR 1.1 dans le pixel shader, TLAS construit aussi en raster quand il est actif) : 8 rayons courts le long de la surface trouvent la face voisine et sa distance, la normale tourne vers la bissectrice comme sur un congé. Le mode Rapide reste sans biseau. Captures 36a (HQ avant), 36b (HQ après), 36c (path tracing), 36e / 36f (Technic, engrenages après / avant), 36g (poutres). Cause du piège rencontré : 4 SRV racine de plus faisaient passer la signature racine du raster à 70 DWORD (limite 64) et l'application se bloquait au démarrage ; une seule table de 4 SRV (63 DWORD).
 - Traces de doigts : retirées partout à la demande de Wzx (02/11/2026) — aucune texture de traces chargée, aucun masque de rugosité sur les matériaux de BrickIt (temps réel, HQ, path tracing, miniatures, aperçu de fiche), réglage retiré. Le masque reste disponible dans le moteur vp3d (Viewport3D).
 - Polices : Segoe UI + Segoe UI Symbol fusionnées pour les glyphes du web (› … ★ ☆ ✎ ✋ ◀ ▶), absents de la police latine seule.
 - Path tracing natif (studio clair validé sur 03b) en plus du temps réel identique au web.
