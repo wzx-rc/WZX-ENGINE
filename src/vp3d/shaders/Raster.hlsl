@@ -23,9 +23,9 @@ struct RasterConstants {
     float3 hemiSky; float hemiOn;        // hemisphere fill (three.js HemisphereLight): irradiance from the sky / the ground, x intensity
     float3 hemiGround; float bevelOn;    // bevelOn: scale of the material bevel radius in the raster view (0 = off, needs the TLAS)
     float rtShadow; float sunTanRadius; float rtShadowSamples; float rtRefl;   // ray traced sun shadow (t12), reflections (t13)
-    float centreValid; float rtLights; float rtAO; float rtProbes;   // centreValid: t14 is this frame's; rtLights: area
+    float centreValid; float rtLights; float rtAO; uint gridLine;   // centreValid: t14 is this frame's; rtLights: area
                                          // lights shadowed by rays (TLAS, space2); rtAO: ambient occluded by rays; rtProbes:
-                                         // the reflection pass had probes (else the traced reflections carry no bounce)
+                                         // gridLine: Scene::gridLine (RGBA8 colour of the ground grid lines, 0 = default)
 };
 ConstantBuffer<RasterConstants> R : register(b0);
 
@@ -429,7 +429,11 @@ float3 GridColor(float3 base, float3 wpos, inout float3 emission) {
     float2 dm = abs(frac(pm + 0.5) - 0.5) / max(fwidth(pm), 1e-4);
     float major = 1 - saturate(min(dm.x, dm.y) - 0.3);
     float fade = saturate(1 - ViewDist(wpos) / (g * 160));
-    base = lerp(base, base * 2.2 + 0.015, max(minor * 0.4, major * 0.8) * fade);
+    if (R.gridLine != 0u) {   // the colour of the lines (Scene::gridLine), its opacity in the top byte
+        float3 lc = pow(float3(R.gridLine & 255u, (R.gridLine >> 8) & 255u, (R.gridLine >> 16) & 255u) / 255.0, 2.2);
+        base = lerp(base, lc, max(minor * 0.4, major * 0.8) * fade * ((R.gridLine >> 24) / 255.0));
+    } else
+        base = lerp(base, base * 2.2 + 0.015, max(minor * 0.4, major * 0.8) * fade);
     float ax = 1 - saturate(abs(wpos.z) / max(fwidth(wpos.z), 1e-4) - 0.2);
     float az = 1 - saturate(abs(wpos.x) / max(fwidth(wpos.x), 1e-4) - 0.2);
     base = lerp(base, float3(0.5, 0.06, 0.05), ax);

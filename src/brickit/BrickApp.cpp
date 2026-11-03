@@ -1,4 +1,6 @@
 #include "BrickApp.h"
+#include <chrono>
+#include <commdlg.h>
 #include "app/Content.h"
 #include "MeshLod.h"
 #include "app/Theme.h"
@@ -161,6 +163,10 @@ bool BrickApp::init(HINSTANCE inst, const Options& opt) {
     if (opt.aa >= 0) m_rs.aaQuality = std::clamp(opt.aa, 0, 2);
     if (opt.shadows >= 0) m_rs.shadowQuality = std::clamp(opt.shadows, 0, 4);
     if (opt.rc) setRC(true);
+    if (opt.hdriRot >= 0) m_hdriRotDeg = opt.hdriRot;
+    if (opt.hdriInt >= 0) m_hdriInt = opt.hdriInt;
+    if (opt.gridColor >= 0) { m_gridRgb = float3(((opt.gridColor >> 16) & 255) / 255.0f, ((opt.gridColor >> 8) & 255) / 255.0f, (opt.gridColor & 255) / 255.0f); if (m_gridAlpha <= 0) m_gridAlpha = 0.6f; }
+    if (opt.gridAlpha >= 0) m_gridAlpha = opt.gridAlpha;
     if (!opt.mouseTest.empty()) m_gui.beforeNewFrame = [this] { mouseTestInput(); };
     if (opt.floatTray) { m_pTray.floating = true; m_pTray.x = opt.floatX; m_pTray.y = opt.floatY; }
     if (opt.optsRight) m_optsRight = true;
@@ -396,13 +402,18 @@ void BrickApp::setupStage() {
         m_blockedMaterial = m_scene.addMaterial(bl);
     }
 
-    // studio HDRI (assets/hdri, kept out of git) else the procedural sky
-    std::wstring hdr = m_exeDir + L"\\assets\\hdri\\studio_small_09_2k.hdr";
-    auto img = std::make_shared<EnvImage>();
-    std::string err;
-    if (!m_opt.noHdri && fileExists(hdr) && loadEnvImage(hdr, *img, &err)) m_status = "HDRI studio_small_09_2k";
-    else { makeProceduralSky(*img); m_status = "HDRI: procedural sky (studio_small_09_2k.hdr not found)"; }
-    m_scene.env.hdri = m_opt.noEnv ? nullptr : img;   // --no-env: no environment image at all (profiling)
+    // HDRI of Réglages > Lumière (the studio of the web at the first start: assets/hdri, kept out of git), else the
+    // procedural sky
+    buildHdriList();
+    if (m_hdriPath == L"*") m_hdriPath = m_exeDir + L"\\assets\\hdri\\studio_small_09_2k.hdr";
+    if (!m_opt.hdri.empty()) {   // --hdri: a name of the list ("ciel": the procedural sky) or a path
+        std::wstring want = m_opt.hdri;
+        for (auto& c : want) c = (wchar_t)towlower(c);
+        if (want == L"ciel") m_hdriPath = L"";
+        else if (fileExists(m_opt.hdri)) m_hdriPath = m_opt.hdri;
+        else for (const std::wstring& p : m_hdriPaths) { std::wstring l = p; for (auto& c : l) c = (wchar_t)towlower(c); if (!p.empty() && l.find(want) != std::wstring::npos) { m_hdriPath = p; break; } }
+    }
+    setHdri(m_hdriPath);
     m_scene.env.hdriIntensity = 1.0f;
     m_scene.env.visibleToCamera = false;
     m_scene.env.top = float3(0.82f, 0.83f, 0.86f);   // background behind the bricks (the HDRI only lights)
@@ -433,13 +444,78 @@ void BrickApp::setRC(bool on) {
     if (on) { m_rs.raster = false; m_rs.historyFixes = true; m_rs.denoise = false; }
 }
 
+// --------------------------------------------------------------------------- Réglages > Lumière
+
+void BrickApp::buildHdriList() {
+    m_hdriPaths = {L""};   // the procedural sky
+    WIN32_FIND_DATAW fd;
+    for (const wchar_t* ext : {L"*.hdr", L"*.exr"}) {
+        HANDLE h = FindFirstFileW((m_exeDir + L"\\assets\\hdri\\" + ext).c_str(), &fd);
+        if (h == INVALID_HANDLE_VALUE) continue;
+        do {
+            if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) m_hdriPaths.push_back(m_exeDir + L"\\assets\\hdri\\" + fd.cFileName);
+        } while (FindNextFileW(h, &fd));
+        FindClose(h);
+    }
+    for (const std::wstring& c : m_hdriCustom)
+        if (std::find(m_hdriPaths.begin(), m_hdriPaths.end(), c) == m_hdriPaths.end() && fileExists(c)) m_hdriPaths.push_back(c);
+}
+
+// Loaded once (cached): switching back is instant. The renderer rebuilds the importance table of the path tracer,
+// the SH and the mips of the raster view when the image changes (Renderer::uploadEnvironment).
+void BrickApp::setHdri(const std::wstring& path) {
+    const auto t0 = std::chrono::steady_clock::now();
+    vp3d::EnvImagePtr img;
+    auto it = m_hdriCache.find(path);
+    if (it != m_hdriCache.end()) img = it->second;
+    else {
+        auto e = std::make_shared<EnvImage>();
+        std::string err;
+        if (path.empty() || m_opt.noHdri || !fileExists(path) || !loadEnvImage(path, *e, &err)) {
+            if (!path.empty()) m_status = "HDRI illisible, ciel procédural : " + err;
+            makeProceduralSky(*e);
+        }
+        img = e;
+        m_hdriCache[path] = img;
+    }
+    m_hdriPath = path;
+    m_scene.env.hdri = m_opt.noEnv ? nullptr : img;   // --no-env: no environment image at all (profiling)
+    m_hdriLoadMs = std::chrono::duration<float, std::milli>(std::chrono::steady_clock::now() - t0).count();
+    m_renderer.resetAccumulation();
+}
+
+void BrickApp::loadHdriDialog() {
+    wchar_t file[MAX_PATH] = L"";
+    OPENFILENAMEW ofn = {sizeof(ofn)};
+    ofn.hwndOwner = m_hwnd;
+    ofn.lpstrFilter = L"HDRI (*.hdr, *.exr)\0*.hdr;*.exr\0Tous les fichiers\0*.*\0";
+    ofn.lpstrFile = file;
+    ofn.nMaxFile = MAX_PATH;
+    ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST;
+    if (!GetOpenFileNameW(&ofn)) return;
+    const std::wstring p = file;
+    if (std::find(m_hdriCustom.begin(), m_hdriCustom.end(), p) == m_hdriCustom.end()) m_hdriCustom.push_back(p);
+    buildHdriList();
+    setHdri(p);
+    toast("HDRI chargée");
+    savePrefs();
+}
+
+uint32_t BrickApp::gridLineValue() const {
+    if (m_gridAlpha <= 0.0f) return 0u;
+    auto b = [](float v) { return (uint32_t)std::lround(std::clamp(v, 0.0f, 1.0f) * 255.0f); };
+    return b(m_gridRgb.x) | (b(m_gridRgb.y) << 8) | (b(m_gridRgb.z) << 16) | (std::max(1u, b(m_gridAlpha)) << 24);
+}
+
 void BrickApp::applyLook() {
     if (m_cornell) { m_renderer.resetAccumulation(); return; }   // (the scene keeps its own look)
     auto lin = [](int hex) { return float3(srgbToLinear(((hex >> 16) & 255) / 255.0f), srgbToLinear(((hex >> 8) & 255) / 255.0f), srgbToLinear((hex & 255) / 255.0f)); };
     Material& g = m_scene.materials[0];
     {   // every mode (Wzx: the dark floor of the Lit views in Radiance Cascades and path tracing too)
         m_scene.env.top = m_scene.env.horizon = m_scene.env.bottom = lin(0x111214);
-        m_scene.env.hdriIntensity = 0.55f;
+        m_scene.env.hdriIntensity = m_hdriInt;   // Réglages > Lumière (0.55 by default, the web's)
+        m_scene.env.hdriRotation = radians(m_hdriRotDeg);
+        m_scene.gridLine = gridLineValue();
         g.baseColor = lin(0x0e0f11);
         g.roughness = 0.8f;
         m_scene.sun.enabled = true;
@@ -956,6 +1032,11 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         else if (a == L"--pt") opt.pathTrace = true;
         else if (a == L"--rc") opt.rc = true;   // Radiance Cascades mode
         else if (a == L"--no-gi-bounds") opt.noGiBounds = true;
+        else if (a == L"--hdri") opt.hdri = next();
+        else if (a == L"--hdri-rot") opt.hdriRot = (float)_wtof(next().c_str());
+        else if (a == L"--hdri-int") opt.hdriInt = (float)_wtof(next().c_str());
+        else if (a == L"--grid-color") opt.gridColor = (int)wcstol(next().c_str(), nullptr, 16);
+        else if (a == L"--grid-alpha") opt.gridAlpha = (float)_wtof(next().c_str());
         else if (a == L"--hq-ao") opt.hqAO = (float)_wtof(next().c_str());   // (measures: traced occlusion range, 0 = off)
         else if (a == L"--hq-refl") opt.hqRefl = _wtoi(next().c_str());   // (measures: traced reflection rays, 0 = off)   // (comparison: the GI over the whole visible ground)
         else if (a == L"--aa") opt.aa = _wtoi(next().c_str());

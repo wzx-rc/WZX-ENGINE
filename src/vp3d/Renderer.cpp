@@ -2074,6 +2074,7 @@ uint32_t Renderer::sceneSignature(const Scene& s) const {
         mix(&o.ghost, sizeof(bool));
     }
     mix(&s.gridScale, sizeof(float));
+    mix(&s.gridLine, sizeof(uint32_t));
     return h;
 }
 
@@ -2219,6 +2220,7 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
     fc.fireflyClamp = rs.fireflyClamp;
     fc.sssScale = rs.sssScale;
     fc.gridScale = scene.gridScale;
+    fc.gridLine = scene.gridLine;
     fc.denoiseStrength = rs.denoiseStrength;
     fc.denoiseEdgeLuma = rs.denoiseEdgeLuma;
     fc.lightScale = rs.lightScale;

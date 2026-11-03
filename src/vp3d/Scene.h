@@ -203,6 +203,9 @@ struct Scene {
     Camera camera;               // default camera
     float gridScale = 1.0f;      // grid spacing for MAT_FLAG_GRID
     float unitsPerMeter = 1.0f;  // used for DOF and bevel defaults
+    // Lines of the ground grid (materials with MAT_FLAG_GRID): RGBA8, sRGB colour in the low bytes, opacity in the top
+    // byte; 0 = the default lines (lighter than the ground)
+    uint32_t gridLine = 0;
     uint32_t geometryVersion = 1; // bump when meshes change
     // Revision of everything per object (transforms, materials, visibility), the materials, the lights and the
     // environment, kept by the application: 0 (default) = the renderer rebuilds and hashes its per-object data every

@@ -33,7 +33,7 @@ struct RasterConstants {
     float3 hemiSky; float hemiOn;
     float3 hemiGround; float bevelOn;
     float rtShadow, sunTanRadius, rtShadowSamples, rtRefl;   // ray traced sun shadow (mask in t12), reflections (t13)
-    float centreValid, rtLights, rtAO, rtProbes;             // centreValid: t14 holds this frame's pixel-centre depth
+    float centreValid, rtLights, rtAO; uint32_t gridLine;   // centreValid: t14 holds this frame's pixel-centre depth
 };
 
 struct DrawConstants {
@@ -713,6 +713,7 @@ void Renderer::recordRaster(const Scene& scene, const RenderSettings& rs, const 
     rc.envBottom = scene.env.bottom;
     rc.envIntensity = scene.env.intensity;
     rc.gridScale = scene.gridScale;
+    rc.gridLine = scene.gridLine;
     rc.keyLight = key < 0 ? 0xFFFFFFFFu : (uint32_t)key;
     rc.ambient = scene.env.ambient;
     rc.hemiSky = scene.env.hemiSky * scene.env.hemiIntensity;

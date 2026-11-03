@@ -217,7 +217,12 @@ Surf MakeSurf(GpuMaterial m, Hit h) {
         float minor = (min(d.x, d.y) < lw) ? 1.0 : 0.0;
         float major = (min(dm.x, dm.y) < lw * 1.6) ? 1.0 : 0.0;
         float fade = saturate(1.0 - dist / (g * 160.0));
-        s.base = lerp(s.base, s.base * 2.2 + 0.015, max(minor * 0.55, major) * fade);
+        if (F.gridLine != 0u) {   // the colour of the lines (Scene::gridLine), its opacity in the top byte
+            float3 lc = float3(F.gridLine & 255u, (F.gridLine >> 8) & 255u, (F.gridLine >> 16) & 255u) / 255.0;
+            lc = pow(lc, 2.2);
+            s.base = lerp(s.base, lc, max(minor * 0.55, major) * fade * ((F.gridLine >> 24) / 255.0));
+        } else
+            s.base = lerp(s.base, s.base * 2.2 + 0.015, max(minor * 0.55, major) * fade);
         float axisW = lw * 1.8 * g;
         if (abs(h.P.z) < axisW) { s.base = float3(0.5, 0.06, 0.05); s.emission += float3(0.25, 0.02, 0.02); }
         if (abs(h.P.x) < axisW) { s.base = float3(0.06, 0.12, 0.6); s.emission += float3(0.02, 0.05, 0.3); }

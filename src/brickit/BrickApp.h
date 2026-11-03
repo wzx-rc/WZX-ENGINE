@@ -34,6 +34,10 @@ struct Options {
     int bevelSpp = -1;
     bool rc = false;          // --rc: Radiance Cascades mode
     bool noGiBounds = false;  // --no-gi-bounds
+    std::wstring hdri;        // --hdri name (part of a file name of assets\hdri, "ciel" = procedural sky) or path
+    float hdriRot = -1, hdriInt = -1;   // --hdri-rot degrees, --hdri-int
+    int gridColor = -1;       // --grid-color RRGGBB (hex)
+    float gridAlpha = -1;     // --grid-alpha 0..1
     float hqAO = -1;          // --hq-ao cm
     int hqRefl = -1;          // --hq-refl rays
     int aa = -1, shadows = -1;   // --aa 0..2 (MSAA 4x / 8x / AAA), --shadows 0..4 (ray traced shadows of the RC mode)        // --bevel-spp N (0 = bevel off)
@@ -103,6 +107,19 @@ private:
     void buildDemo();
     int colorIndex(int ldrawId) const;   // palette index of an LDraw colour code
     void setupStage();        // ground, HDRI, materials of the palette
+    // Réglages > Lumière (native addition): environment image, its rotation and intensity, colour of the ground grid;
+    // the same scene for every renderer (Rapide, HQ, RC, path tracing), saved in brickit_prefs.json ("light")
+    void buildHdriList();     // L"" (procedural sky), assets\hdri\*.hdr | *.exr, then the user's HDRI
+    void setHdri(const std::wstring& path);
+    void loadHdriDialog();
+    uint32_t gridLineValue() const;
+    std::vector<std::wstring> m_hdriPaths, m_hdriCustom;
+    std::wstring m_hdriPath = L"*";   // "*": the studio of the web (first start)
+    std::map<std::wstring, vp3d::EnvImagePtr> m_hdriCache;
+    float m_hdriRotDeg = 0.0f, m_hdriInt = 0.55f, m_hdriLoadMs = 0.0f;
+    float3 m_gridRgb{0.6f, 0.64f, 0.72f};
+    float m_gridAlpha = 0.0f;   // 0 = the default lines
+    int m_setDrag = -1;         // slider of the settings being dragged
     void applyLook();         // real time = the dark stage of the web; path tracing = the bright studio
     void frameAll();
     bool savePng(const std::wstring& path, std::vector<uint8_t> rgba, uint32_t w, uint32_t h);

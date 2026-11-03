@@ -24,6 +24,20 @@ static void writeText(const std::wstring& path, const std::string& t) {
     fwrite(t.data(), 1, t.size(), f);
     fclose(f);
 }
+static std::string narrowW(const std::wstring& w) {
+    if (w.empty()) return std::string();
+    int n = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), nullptr, 0, nullptr, nullptr);
+    std::string s(n, '\0');
+    WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), &s[0], n, nullptr, nullptr);
+    return s;
+}
+static std::wstring widenU(const std::string& s) {
+    if (s.empty()) return std::wstring();
+    int n = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), nullptr, 0);
+    std::wstring w(n, L'\0');
+    MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), &w[0], n);
+    return w;
+}
 static std::string jstr(const std::string& s) {
     std::string o = "\"";
     for (char c : s) { if (c == '"' || c == '\\') o.push_back('\\'); o.push_back(c); }
@@ -53,6 +67,15 @@ void BrickApp::savePrefs() {
     j += std::string("\"dev\": {\"on\": ") + (m_dev ? "true" : "false") + ", \"showVox\": " + (m_devShowVox ? "true" : "false") + ", \"showEdges\": " + (m_devShowEdges ? "true" : "false") + ", \"useOverrides\": " + (m_devUseOverrides ? "true" : "false") + "},";
     { char mb[160]; snprintf(mb, sizeof(mb), "\"manual\": {\"w\": %d, \"h\": %d, \"pdfPage\": %d, \"pdfName\": ", (int)m_manW, (int)m_manH, m_pdfPage); j += mb; j += jstr(m_pdfName) + "},"; }
     { char sb[320]; snprintf(sb, sizeof(sb), "\"settings\": {\"uiScale\": %.2f, \"ssao\": %s, \"autosave\": %s, \"showVox\": %s},", m_uiScaleUser, m_ssaoOn ? "true" : "false", m_autosaveOn ? "true" : "false", m_showVox ? "true" : "false"); j += sb; }
+    {   // Réglages > Lumière
+        char lb[200];
+        const uint32_t rgb = (uint32_t)std::lround(m_gridRgb.x * 255) | ((uint32_t)std::lround(m_gridRgb.y * 255) << 8) | ((uint32_t)std::lround(m_gridRgb.z * 255) << 16);
+        snprintf(lb, sizeof(lb), "\"light\": {\"rotation\": %.1f, \"intensity\": %.3f, \"gridRgb\": %u, \"gridAlpha\": %.3f, \"hdri\": ", m_hdriRotDeg, m_hdriInt, rgb, m_gridAlpha);
+        j += lb;
+        j += jstr(narrowW(m_hdriPath)) + ", \"custom\": [";
+        for (size_t i = 0; i < m_hdriCustom.size(); ++i) j += (i ? ", " : "") + jstr(narrowW(m_hdriCustom[i]));
+        j += "]},";
+    }
     j += "\"recentParts\": " + names(m_recent) + ", \"favParts\": " + names(m_fav) + "}\n";
     writeText(m_exeDir + L"\\brickit_prefs.json", j);
 }
@@ -86,6 +109,21 @@ void BrickApp::loadPrefs() {
     auto list = [&](const char* k, std::vector<int>& v) { v.clear(); for (const app::Json& n : p[k].a) { int i = m_lib.find(n.str()); if (i >= 0) v.push_back(i); } };
     list("recentParts", m_recent);
     list("favParts", m_fav);
+    {   // Réglages > Lumière
+        const app::Json& lt = p["light"];
+        if (lt.type == app::Json::Object) {
+            if (lt["rotation"].type == app::Json::Number) m_hdriRotDeg = (float)lt["rotation"].n;
+            if (lt["intensity"].type == app::Json::Number) m_hdriInt = (float)lt["intensity"].n;
+            if (lt["gridAlpha"].type == app::Json::Number) m_gridAlpha = (float)lt["gridAlpha"].n;
+            if (lt["gridRgb"].type == app::Json::Number) {
+                const uint32_t c = (uint32_t)lt["gridRgb"].n;
+                m_gridRgb = float3((c & 255) / 255.0f, ((c >> 8) & 255) / 255.0f, ((c >> 16) & 255) / 255.0f);
+            }
+            if (lt["hdri"].type == app::Json::String) m_hdriPath = widenU(lt["hdri"].str());
+            m_hdriCustom.clear();
+            for (const app::Json& c : lt["custom"].a) m_hdriCustom.push_back(widenU(c.str()));
+        }
+    }
     {   // native settings (gear button)
         const app::Json& st = p["settings"];
         if (st["uiScale"].num() >= 0.5) m_uiScaleUser = (float)st["uiScale"].num();

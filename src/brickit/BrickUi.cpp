@@ -1871,7 +1871,11 @@ void BrickApp::uiSettings() {
         {"Sauvegarde automatique", {{"Oui", m_autosaveOn}, {"Non", !m_autosaveOn}}, 8},
     };
     const float H = pad + 20 * s + gap + rows.size() * (16 * s + rowH + gap) - gap + pad;
-    ImVec2 p0(std::min(m_popupAt.x, d.x - W - 10 * s), m_popupAt.y), p1(p0.x + W, std::min(p0.y + H, d.y - 8 * s));
+    // second column: Lumière (HDRI, rotation, intensity, custom HDRI, colour of the grid)
+    const float hdriRowsN = (float)((m_hdriPaths.size() + 1) / 2);
+    const float H2 = pad + 20 * s + gap + 16 * s + hdriRowsN * (rowH + 4 * s) + gap + rowH + gap + 2 * (16 * s + rowH + gap) + 16 * s + rowH + gap + 16 * s + rowH + gap + 18 * s + pad;
+    const float W2 = 2 * W;
+    ImVec2 p0(std::min(m_popupAt.x, d.x - W2 - 10 * s), m_popupAt.y), p1(p0.x + W2, std::min(p0.y + std::max(H, H2), d.y - 8 * s));
     u.dl->AddRectFilled(ImVec2(p0.x, p0.y + 10 * s), ImVec2(p1.x, p1.y + 10 * s), IM_COL32(0, 0, 0, 60), 12 * s);
     u.dl->AddRectFilled(p0, p1, C_PANEL_SOLID, 12 * s);
     u.dl->AddRect(p0, p1, C_LINE, 12 * s);
@@ -1896,6 +1900,121 @@ void BrickApp::uiSettings() {
             x += bw + 4 * s;
         }
         y += rowH + gap;
+    }
+    // ---- Lumière (native addition): the same scene for every renderer
+    {
+        const float x0 = p0.x + W, x1 = p1.x;
+        u.dl->AddLine(ImVec2(x0, p0.y + pad), ImVec2(x0, p1.y - pad), C_LINE, 1.0f);
+        float ly = p0.y + pad;
+        u.text(ImVec2(x0 + pad, ly), 14, C_TEXT, "Lumière", true);
+        ly += 20 * s + gap;
+        bool lookChanged = false;
+        // HDRI: the list, two per line
+        u.text(ImVec2(x0 + pad, ly), 11, C_DIM, "HDRI");
+        ly += 16 * s;
+        const float bw = (W - 2 * pad - 4 * s) / 2;
+        for (size_t i = 0; i < m_hdriPaths.size(); ++i) {
+            const float bx = x0 + pad + (i % 2) * (bw + 4 * s);
+            ImVec2 a(bx, ly), b(bx + bw, ly + rowH);
+            const bool on = m_hdriPaths[i] == m_hdriPath, h = u.hover(a, b);
+            u.dl->AddRectFilled(a, b, on ? C_ACCENT : (h ? C_CARD_HI : C_CARD), 7 * s);
+            std::string name = "Ciel procédural";
+            if (!m_hdriPaths[i].empty()) {
+                std::wstring f = m_hdriPaths[i].substr(m_hdriPaths[i].find_last_of(L"\\/") + 1);
+                const size_t dot = f.find_last_of(L'.');
+                std::wstring ext = dot != std::wstring::npos ? f.substr(dot + 1) : L"";
+                if (dot != std::wstring::npos) f = f.substr(0, dot);
+                for (const wchar_t* cut : {L"_2k", L"_4k", L"_1k", L"_8k"}) { const size_t k = f.find(cut); if (k != std::wstring::npos) f = f.substr(0, k); }
+                for (auto& c : f) if (c == L'_') c = L' ';
+                if (f.size() > 16) f = f.substr(0, 16);
+                if (ext == L"exr") f += L" (exr)";
+                name.assign(f.begin(), f.end());   // (file names of the HDRI: plain ASCII)
+            }
+            const float tw = u.textW(11, name.c_str(), on);
+            u.text(ImVec2((a.x + b.x) * 0.5f - tw * 0.5f, a.y + (rowH - u.fs(11)) * 0.5f), 11, on ? C_INK : C_TEXT, name.c_str(), on);
+            if (h && u.pressed && !on) { setHdri(m_hdriPaths[i]); savePrefs(); }
+            if (i % 2 == 1 || i + 1 == m_hdriPaths.size()) ly += rowH + 4 * s;
+        }
+        ly += gap - 4 * s;
+        {   // load a custom HDRI
+            ImVec2 a(x0 + pad, ly), b(x1 - pad, ly + rowH);
+            const bool h = u.hover(a, b);
+            u.dl->AddRectFilled(a, b, h ? C_CARD_HI : C_CARD, 7 * s);
+            const char* lab = "Charger une HDRI…  (.hdr, .exr)";
+            const float tw = u.textW(12, lab, false);
+            u.text(ImVec2((a.x + b.x) * 0.5f - tw * 0.5f, a.y + (rowH - u.fs(12)) * 0.5f), 12, C_TEXT, lab);
+            if (h && u.pressed) loadHdriDialog();
+            ly += rowH + gap;
+        }
+        // sliders (live)
+        auto slider = [&](int id, const char* label, float& v, float lo, float hi, const char* fmt, float shown) {
+            char vb[32];
+            snprintf(vb, sizeof(vb), fmt, shown);
+            u.text(ImVec2(x0 + pad, ly), 11, C_DIM, label);
+            const float vw = u.textW(11, vb, false);
+            u.text(ImVec2(x1 - pad - vw, ly), 11, C_TEXT, vb);
+            ly += 16 * s;
+            ImVec2 a(x0 + pad, ly), b(x1 - pad, ly + rowH);
+            const bool h = u.hover(a, b);
+            if (h && u.pressed) m_setDrag = id;
+            bool changed = false;
+            if (m_setDrag == id) {
+                if (ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+                    const float t = std::clamp((u.mouse.x - a.x) / std::max(1.0f, b.x - a.x), 0.0f, 1.0f);
+                    const float nv = lo + t * (hi - lo);
+                    if (std::fabs(nv - v) > 1e-5f) { v = nv; changed = true; }
+                } else { m_setDrag = -1; savePrefs(); }
+            }
+            const float t = std::clamp((v - lo) / (hi - lo), 0.0f, 1.0f), cy = ly + rowH * 0.5f;
+            u.dl->AddRectFilled(ImVec2(a.x, cy - 3 * s), ImVec2(b.x, cy + 3 * s), C_CARD, 3 * s);
+            u.dl->AddRectFilled(ImVec2(a.x, cy - 3 * s), ImVec2(a.x + (b.x - a.x) * t, cy + 3 * s), C_ACCENT, 3 * s);
+            u.dl->AddCircleFilled(ImVec2(a.x + (b.x - a.x) * t, cy), (h || m_setDrag == id ? 9 : 8) * s, C_ACCENT);
+            ly += rowH + gap;
+            return changed;
+        };
+        if (slider(101, "Rotation de la HDRI", m_hdriRotDeg, 0.0f, 360.0f, "%.0f°", m_hdriRotDeg)) lookChanged = true;
+        if (slider(102, "Intensité de la HDRI", m_hdriInt, 0.0f, 3.0f, "%.2f", m_hdriInt)) lookChanged = true;
+        // colour of the ground grid: swatches (Défaut = the lines of the web), then its opacity
+        u.text(ImVec2(x0 + pad, ly), 11, C_DIM, "Couleur de la grille");
+        ly += 16 * s;
+        {
+            static const uint32_t sw[7] = {0x9aa3b8, 0xffffff, 0xf2c230, 0x4fc3f7, 0xe53935, 0x43a047, 0x7e57c2};
+            const float cw = (W - 2 * pad - 7 * 4 * s) / 8;
+            for (int k = 0; k < 8; ++k) {
+                const float bx = x0 + pad + k * (cw + 4 * s);
+                ImVec2 a(bx, ly), b(bx + cw, ly + rowH);
+                const bool h = u.hover(a, b);
+                bool on;
+                if (k == 0) {
+                    on = m_gridAlpha <= 0;
+                    u.dl->AddRectFilled(a, b, on ? C_ACCENT : (h ? C_CARD_HI : C_CARD), 7 * s);
+                    const float tw = u.textW(10, "Défaut", on);
+                    u.text(ImVec2((a.x + b.x) * 0.5f - tw * 0.5f, a.y + (rowH - u.fs(10)) * 0.5f), 10, on ? C_INK : C_TEXT, "Défaut", on);
+                    if (h && u.pressed) { m_gridAlpha = 0; lookChanged = true; savePrefs(); }
+                } else {
+                    const uint32_t c = sw[k - 1];
+                    const float3 rgb(((c >> 16) & 255) / 255.0f, ((c >> 8) & 255) / 255.0f, (c & 255) / 255.0f);
+                    on = m_gridAlpha > 0 && length(rgb - m_gridRgb) < 0.01f;
+                    u.dl->AddRectFilled(a, b, IM_COL32((c >> 16) & 255, (c >> 8) & 255, c & 255, 255), 7 * s);
+                    if (on || h) u.dl->AddRect(a, b, on ? C_ACCENT : C_TEXT, 7 * s, 0, (on ? 3.0f : 1.5f) * s);
+                    if (h && u.pressed) { m_gridRgb = rgb; if (m_gridAlpha <= 0) m_gridAlpha = 0.6f; lookChanged = true; savePrefs(); }
+                }
+            }
+            ly += rowH + gap;
+        }
+        float alphaShown = m_gridAlpha * 100.0f;
+        if (slider(103, "Opacité de la grille", m_gridAlpha, 0.0f, 1.0f, "%.0f %%", alphaShown)) lookChanged = true;
+        {
+            char ib[96];
+            snprintf(ib, sizeof(ib), "HDRI chargée en %.0f ms · le soleil reste fixe", m_hdriLoadMs);
+            u.text(ImVec2(x0 + pad, ly), 10, C_DIM, ib);
+        }
+        if (lookChanged) {   // live: the environment and the grid of every renderer (accumulations reset)
+            m_scene.env.hdriRotation = radians(m_hdriRotDeg);
+            m_scene.env.hdriIntensity = m_hdriInt;
+            m_scene.gridLine = gridLineValue();
+            m_renderer.resetAccumulation();
+        }
     }
     if (clickRow >= 0) {
         switch (clickRow) {
