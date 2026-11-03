@@ -2640,7 +2640,8 @@ void App::atlInspectorRender(float x, float y, float w, float) {
         Label(x, y, "PROBES");
         y += 24 * s;
         sliderI("##pb", "Probe budget", m_rs.ddgiProbeBudget, 256, 8192, "%.0f", "Number of irradiance probes over the scene. More = finer indirect light, more GPU cost.");
-        sliderF("##hy", "Hysteresis", m_rs.ddgiHysteresis, 0.80f, 0.999f, "%.3f", "How much each probe keeps its previous value per frame. Higher = steadier, slower to react.");
+        sliderF("##hy", "Hysteresis", m_rs.ddgiHysteresis, 0.80f, 0.999f, "%.3f", "How much each probe keeps its previous value per frame. Higher = steadier, slower to react. Progressive probes: the value reached once still.");
+        check("##prog", "Progressive probes", m_rs.ddgiProgressive, "Running average while nothing changes (converged and still), only the probes around a moved object restart, a quarter of the probes per frame once still. Off: the former per-frame blend.");
         ImGui::SetCursorScreenPos(ImVec2(x, y));
         static const char* views[] = {"Full", "Indirect only", "Direct only"};
         int view = m_rs.ddgiView;

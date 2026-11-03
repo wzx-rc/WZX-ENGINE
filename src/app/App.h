@@ -145,7 +145,9 @@ struct Options {
     int probes = 2048;          // target probe count over the scene bounds
     int ddgiView = 0;           // 0 full, 1 indirect only, 2 direct only
     int temporalCap = 1024;      // history length in frames (converges; the history is dropped on lighting changes)
-    float hysteresis = 0.97f;
+    float hysteresis = -1.0f;   // < 0: 0.995 with the progressive probes, 0.97 without
+    int progressive = 1;        // GI mode: progressive probes (running average while still, restart around what changed,
+                                // a quarter of the probes per frame once still); --progressive 0 = the former blend
     int light = -1;             // test: 1 light mode, 0 dark mode
     bool openSettings = false;  // test: open the settings window at startup
     std::string theme;          // test: start with this theme ("Atelier" or "Ambre"), not saved

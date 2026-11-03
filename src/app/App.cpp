@@ -117,7 +117,8 @@ bool App::init(HINSTANCE inst, const Options& opt) {
     m_rs.ddgiProbeBudget = opt.probes;
     m_rs.ddgiView = opt.ddgiView;
     m_rs.temporalCap = opt.temporalCap;
-    m_rs.ddgiHysteresis = opt.hysteresis;
+    m_rs.ddgiProgressive = opt.progressive != 0;
+    m_rs.ddgiHysteresis = opt.hysteresis >= 0 ? opt.hysteresis : (m_rs.ddgiProgressive ? 0.995f : 0.97f);
     if (opt.splitPx > 0) m_rs.rcSplitProbePx = opt.splitPx;
     if (opt.splitHistory >= 0) m_rs.rcSplitHistory = opt.splitHistory;
     m_rs.rcSplitDebug = opt.splitDebug;
@@ -1299,6 +1300,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         else if (a == L"--ddgi-view") opt.ddgiView = _wtoi(next().c_str());
         else if (a == L"--temporal-cap") opt.temporalCap = _wtoi(next().c_str());
         else if (a == L"--hysteresis") opt.hysteresis = (float)_wtof(next().c_str());
+        else if (a == L"--progressive") opt.progressive = _wtoi(next().c_str());
         else if (a == L"--size") {
             std::wstring s = next();
             swscanf_s(s.c_str(), L"%dx%d", &opt.width, &opt.height);
