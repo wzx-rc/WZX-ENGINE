@@ -1990,6 +1990,7 @@ void BrickApp::uiSettings() {
         };
         if (slider(101, "Rotation de la HDRI", m_hdriRotDeg, 0.0f, 360.0f, "%.0f°", m_hdriRotDeg)) lookChanged = true;
         if (slider(102, "Intensité de la HDRI", m_hdriInt, 0.0f, 3.0f, "%.2f", m_hdriInt)) lookChanged = true;
+        if (m_softGI) slider(104, "Intensité GI (HQ)", m_softGIStrength, 0.0f, 2.0f, "%.2f", m_softGIStrength);   // (live, probes kept)
         // colour of the ground grid: swatches (Défaut = the lines of the web), then its opacity
         u.text(ImVec2(x0 + pad, ly), 11, C_DIM, "Couleur de la grille");
         ly += 16 * s;

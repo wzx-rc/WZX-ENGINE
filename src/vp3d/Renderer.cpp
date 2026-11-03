@@ -1459,6 +1459,7 @@ void Renderer::recordDDGI(const RenderSettings& rs, UINT gx, UINT gy, bool shade
     lit::ddgiConstants(grid, f, m_giRng, c);
     if (rs.ddgiProgressive) c.flags |= 16u;   // (DDGIBlend: no per-texel fast path, the noise would trigger it)
     c.stride = rs.ddgiRaster ? 1u : stride;
+    c.energy = std::max(0.0f, rs.ddgiEnergy);
     if (rs.ddgiProgressive && !rs.ddgiRaster && (m_giDrawVersion != m_buildVersion || m_buildVersion == 0)) {
         // the draws that appeared or went away since the last frame (a moved object: both): their box, grown by
         // two probe spacings, is where the probes restart their average

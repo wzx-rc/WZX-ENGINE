@@ -39,6 +39,7 @@ struct Options {
     int gridColor = -1;       // --grid-color RRGGBB (hex)
     float gridAlpha = -1;     // --grid-alpha 0..1
     int softGI = -1;          // --soft-gi 0 / 1
+    float giStrength = -1;    // --gi-strength 0..2
     int softGIProbes = 16384; 
     int giEditBrick = -1, giEditOff = 0, giEditOn = 0;   // --gi-edit i f1 f2: brick i removed at frame f1, back at f2 (GI reactivity)  // --soft-gi-probes n (measures: probe budget of the soft GI)
     std::wstring writeHouse;  // --write-house file: builds the GI reference house (light grey bricks) and saves it

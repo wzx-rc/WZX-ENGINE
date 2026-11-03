@@ -88,6 +88,7 @@ struct RenderSettings {
     // progressive probes: the hysteresis grows from 0.85 to ddgiHysteresis while nothing changes (a running average:
     // converged and still), back to 0.85 when the lights, the environment or an object change; no fast path per texel
     bool ddgiProgressive = false;
+    float ddgiEnergy = 1.0f;   // scale of the probe light where it is read (not in the bounces): no probe restart
     int temporalCap = 1024;        // history length in frames (exponential average window): 256 converges, 64 stays noisier
     int ddgiView = 0;             // 0 full, 1 indirect only, 2 direct only
     bool ddgiShowProbes = false;  // draw the probes as small spheres shaded with their irradiance

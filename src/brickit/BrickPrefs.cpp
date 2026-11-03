@@ -70,7 +70,7 @@ void BrickApp::savePrefs() {
     {   // Réglages > Lumière
         char lb[200];
         const uint32_t rgb = (uint32_t)std::lround(m_gridRgb.x * 255) | ((uint32_t)std::lround(m_gridRgb.y * 255) << 8) | ((uint32_t)std::lround(m_gridRgb.z * 255) << 16);
-        snprintf(lb, sizeof(lb), "\"light\": {\"rotation\": %.1f, \"intensity\": %.3f, \"gridRgb\": %u, \"gridAlpha\": %.3f, \"softGI\": %s, \"hdri\": ", m_hdriRotDeg, m_hdriInt, rgb, m_gridAlpha, m_softGI ? "true" : "false");
+        snprintf(lb, sizeof(lb), "\"light\": {\"rotation\": %.1f, \"intensity\": %.3f, \"gridRgb\": %u, \"gridAlpha\": %.3f, \"softGI\": %s, \"giStrength\": %.3f, \"hdri\": ", m_hdriRotDeg, m_hdriInt, rgb, m_gridAlpha, m_softGI ? "true" : "false", m_softGIStrength);
         j += lb;
         j += jstr(narrowW(m_hdriPath)) + ", \"custom\": [";
         for (size_t i = 0; i < m_hdriCustom.size(); ++i) j += (i ? ", " : "") + jstr(narrowW(m_hdriCustom[i]));
@@ -121,6 +121,7 @@ void BrickApp::loadPrefs() {
             }
             if (lt["hdri"].type == app::Json::String) m_hdriPath = widenU(lt["hdri"].str());
             if (lt["softGI"].type == app::Json::Bool) m_softGI = lt["softGI"].b;
+        if (lt["giStrength"].type == app::Json::Number) m_softGIStrength = std::clamp((float)lt["giStrength"].n, 0.0f, 2.0f);
             m_hdriCustom.clear();
             for (const app::Json& c : lt["custom"].a) m_hdriCustom.push_back(widenU(c.str()));
         }

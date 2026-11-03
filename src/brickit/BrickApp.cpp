@@ -168,6 +168,7 @@ bool BrickApp::init(HINSTANCE inst, const Options& opt) {
     if (opt.gridColor >= 0) { m_gridRgb = float3(((opt.gridColor >> 16) & 255) / 255.0f, ((opt.gridColor >> 8) & 255) / 255.0f, (opt.gridColor & 255) / 255.0f); if (m_gridAlpha <= 0) m_gridAlpha = 0.6f; }
     if (opt.gridAlpha >= 0) m_gridAlpha = opt.gridAlpha;
     if (opt.softGI >= 0) m_softGI = opt.softGI != 0;
+    if (opt.giStrength >= 0) m_softGIStrength = opt.giStrength;
     if (!opt.mouseTest.empty()) m_gui.beforeNewFrame = [this] { mouseTestInput(); };
     if (opt.floatTray) { m_pTray.floating = true; m_pTray.x = opt.floatX; m_pTray.y = opt.floatY; }
     if (opt.optsRight) m_optsRight = true;
@@ -1083,6 +1084,7 @@ void BrickApp::frame() {
             frs.rcScreen = false;
             frs.ddgiHysteresis = 0.997f;   // (reached after ~300 still frames, 0.85 right after a change)
             frs.ddgiProgressive = true;
+            frs.ddgiEnergy = m_softGIStrength;
             frs.ddgiProbeBudget = m_opt.softGIProbes;
             frs.samplesPerFrame = 1;
             frs.historyFixes = true;
@@ -1198,6 +1200,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         else if (a == L"--grid-color") opt.gridColor = (int)wcstol(next().c_str(), nullptr, 16);
         else if (a == L"--grid-alpha") opt.gridAlpha = (float)_wtof(next().c_str());
         else if (a == L"--soft-gi") opt.softGI = _wtoi(next().c_str());
+        else if (a == L"--gi-strength") opt.giStrength = (float)_wtof(next().c_str());
         else if (a == L"--soft-gi-probes") opt.softGIProbes = _wtoi(next().c_str());
         else if (a == L"--gi-edit") { opt.giEditBrick = _wtoi(next().c_str()); opt.giEditOff = _wtoi(next().c_str()); opt.giEditOn = _wtoi(next().c_str()); }
         else if (a == L"--write-house") opt.writeHouse = next();

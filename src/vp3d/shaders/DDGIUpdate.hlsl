@@ -24,7 +24,7 @@ void main(uint3 id : SV_DispatchThreadID) {
         float3 albedo = DiffuseAlbedo(s);
         float3 rad = s.emission;
         rad += albedo / PI * (DirectIrradiance(h.P, h.N, h.Ng, rng) + EnvDirectIrradiance(h.P, h.N, h.Ng, rng));
-        if (G.frame > 0) rad += albedo * SampleIrradiance(h.P, h.N, -d);
+        if (G.frame > 0) rad += albedo * SampleIrradiance(h.P, h.N, -d) / max(G.energy, 1e-3);   // (the bounce without the read scale)
         result = float4(rad, h.t);
     }
     gRays[int2(ray, p)] = result;
