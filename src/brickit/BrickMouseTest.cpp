@@ -67,6 +67,22 @@ void BrickApp::mouseTestFrame() {
             m_mtScroll0 = m_cardsScroll;
             if (t == "swipe") dragScript(m_mouseScript, 12, ImVec2(cx, cy), ImVec2(cx - 400 * m_ui, cy + 10 * m_ui));
             else dragScript(m_mouseScript, 12, ImVec2(cx, cy), ImVec2(cx + 10 * m_ui, m_stage.y + sh * 0.45f));
+        } else if (t == "snap") {
+            // a brick taken from the library (drag up out of the tray), then the mouse over the floor (frames 27-30)
+            // and over the top of a placed brick (frames 31-33): the target and the snapped connector are recorded
+            const ImVec4 tr = m_uiRects.size() > 1 ? m_uiRects[1] : ImVec4(0, sh, sw, sh);
+            const float cy = tr.w - 60 * m_ui, cx = sw * 0.5f;
+            dragScript(m_mouseScript, 12, ImVec2(cx, cy), ImVec2(cx + 10 * m_ui, m_stage.y + sh * 0.45f));
+            // the release in the stage must not drop it: the hand follows the mouse until a click
+            const ImVec2 fl(m_stage.x + sw * 0.22f, m_stage.y + sh * 0.82f);
+            for (int k = 0; k < 4; ++k) m_mouseScript.push_back({27 + k, fl.x, fl.y, -1});
+            int top = 0;
+            for (int i = 0; i < (int)m_bricks.size(); ++i) if (m_lib.parts[m_bricks[i].part].name == "3001") { top = i; break; }
+            const Box bb = m_build.aabbOf(m_bricks[top].part, m_bricks[top].rot, m_bricks[top].pos);
+            float ax = 0, ay = 0;
+            v.project(float3((bb.mn.x + bb.mx.x) * 0.5f, bb.mx.y, (bb.mn.z + bb.mx.z) * 0.5f), ax, ay);
+            m_mtBrick = top;
+            for (int k = 0; k < 3; ++k) m_mouseScript.push_back({31 + k, ax, ay, -1});
         } else if (t == "mech") {
             mechEnter();
             m_mtQ = m_mm.q;
@@ -86,6 +102,17 @@ void BrickApp::mouseTestFrame() {
         }
     }
     if (m_frame == 26) m_mtScrollRel = m_cardsScroll;   // the release frame
+    if (t == "snap" && m_frame == 26 && !m_holding) {   // the drag missed a card (tray laid out otherwise): a brick in hand
+        const ImVec2 mp = ImGui::GetIO().MousePos;
+        spawn(m_lib.find("3001"), mp.x, mp.y);
+        m_mtDiag += " (drag missed a card: spawned)";
+    }
+    if (t == "snap" && m_frame == 30) {
+        char b[256];
+        snprintf(b, sizeof(b), "floor: holding=%d hasTarget=%d target=(%.2f %.2f %.2f) snap=(%.2f %.2f %.2f) blocked=%d", m_holding, m_held.hasTarget,
+                 m_held.target.x, m_held.target.y, m_held.target.z, m_held.snapVoxel.x, m_held.snapVoxel.y, m_held.snapVoxel.z, m_held.blocked);
+        m_mtDiag = std::string(b) + "\n  mid-drag: " + m_mtDiag;
+    }
     if (m_frame == 16) {   // state in the middle of the drag (diagnostic)
         m_mtDiag = "dragging=" + std::to_string(m_gizmoDragging) + " kind=" + std::to_string(m_gz.h.kind) + " axis=" + std::to_string(m_gz.h.axis) +
                    " steps=" + std::to_string(m_gz.steps) + " hasV0=" + std::to_string(m_gz.hasV0) + " mechDragging=" + std::to_string(m_mechDragging) +
@@ -109,6 +136,11 @@ void BrickApp::mouseTestFrame() {
             double mx = 0;
             for (size_t i = 0; i < m_mm.q.size() && i < m_mtQ.size(); ++i) mx = std::max(mx, std::fabs(m_mm.q[i] - m_mtQ[i]));
             fprintf(f, "mech drag: brick=%d joints=%zu max joint change=%.1f deg (expected > 0)\n", m_mtBrick, m_mm.q.size(), mx * 57.2958);
+        } else if (t == "snap") {
+            const Box bb = m_build.aabbOf(m_bricks[m_mtBrick].part, m_bricks[m_mtBrick].rot, m_bricks[m_mtBrick].pos);
+            fprintf(f, "snap: brick: holding=%d target=(%.2f %.2f %.2f) snap=(%.2f %.2f %.2f) blocked=%d, top of brick %d at y=%.2f\n"
+                       "  (expected: floor y 0 on the stud grid x,z = 0.4 + 0.8k; brick: snap y = its top)\n",
+                    m_holding, m_held.target.x, m_held.target.y, m_held.target.z, m_held.snapVoxel.x, m_held.snapVoxel.y, m_held.snapVoxel.z, m_held.blocked, m_mtBrick, bb.mx.y);
         }
         fprintf(f, "  %s\n", m_mtDiag.c_str());
         fclose(f);
