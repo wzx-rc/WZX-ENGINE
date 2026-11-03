@@ -832,7 +832,7 @@ void BrickApp::frame() {
     // HQ closer to the path tracing (Wzx): every light shadowed by rays, the environment occluded by rays (1.2 cm), the
     // parts and the HDRI reflected by traced rays on the glossy plastic (inline ray queries on the TLAS of the bevel)
     m_rs.rasterRT = m_rs.raster && m_quality == 1;
-    m_rs.rasterAO = m_opt.hqAO >= 0 ? m_opt.hqAO : 1.2f;
+    m_rs.rasterAO = m_opt.hqAO >= 0 ? m_opt.hqAO : (m_ssaoOn ? 1.2f : 0.0f);   // Réglages > Occlusion HDRI (HQ), on by default
     m_rs.reflSamples = m_opt.hqRefl >= 0 ? m_opt.hqRefl : 1;
     if (m_opt.hqRefl == 0) m_rs.rtReflections = false;
     m_rs.reflMaxRough = 0.35f;

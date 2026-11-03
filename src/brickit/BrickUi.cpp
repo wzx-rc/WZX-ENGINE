@@ -1,4 +1,4 @@
-﻿// BrickIt - the interface of the web builder v26 (docs/brickit/web/BrickIt_Builder.html), element by element: the CSS
+// BrickIt - the interface of the web builder v26 (docs/brickit/web/BrickIt_Builder.html), element by element: the CSS
 // colours (--bg, --panel, --card, --line, --accent ...), the compact sizes (top bar 24 px buttons, tray, 84 px cards),
 // the SVG icons (Svg.cpp), the French texts. Everything is drawn with ImDrawList in one window behind the ImGui popups;
 // clicks are hit-tested here. m_ui scales the whole interface (4K: 2).
@@ -1864,7 +1864,7 @@ void BrickApp::uiSettings() {
         {"Rendu", {{"Rapide", m_rs.raster && m_quality == 0}, {"HQ", m_rs.raster && m_quality == 1}, {"PT", pathTraced()}, {"RC", m_rcMode}}, 2},
         {"Anti-aliasing (Radiance Cascades)", {{"MSAA 4x", m_rs.aaQuality == 0}, {"MSAA 8x", m_rs.aaQuality == 1}, {"AAA", m_rs.aaQuality == 2}}, 9},
         {"Ombres (Radiance Cascades)", {{"Basse", m_rs.shadowQuality <= 1}, {"Moyenne", m_rs.shadowQuality == 2}, {"Haute", m_rs.shadowQuality == 3}, {"AAA", m_rs.shadowQuality == 4}}, 10},
-        {"Occlusion ambiante (HQ)", {{"Oui", m_ssaoOn}, {"Non", !m_ssaoOn}}, 3},
+        {"Occlusion HDRI (HQ)", {{"Oui", m_ssaoOn}, {"Non", !m_ssaoOn}}, 3},   // the traced occlusion of the environment (about 1.2 ms)
         {"Transformation de vue", {{"ACES", m_rs.tonemapper == 0}, {"AgX", m_rs.tonemapper == 1}, {"Std", m_rs.tonemapper == 3}}, 4},
         {"Voxels", {{"Affichés", m_showVox}, {"Masqués", !m_showVox}}, 6},
         {"Animations", {{"Oui", m_animOn}, {"Non", !m_animOn}}, 7},
