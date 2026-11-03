@@ -96,8 +96,8 @@ Texture2D<float4> gScreenGI : register(t11);
 #endif
 // Bevel of the raster view (DirectX 12 only, shader model 6.5): rounded edges on every edge of every part, as the
 // bevel of the path tracer (PathTrace.hlsl, BevelNormal), from inline ray queries against the same TLAS restricted to
-// the instance itself. Real time version: 8 short rays along the surface (4 from just inside it: convex edges, 4 from
-// just outside: concave edges) find the neighbouring face within the radius and its distance; the normal turns towards
+// the instance itself. Real time version: 16 short rays along the surface (8 from just inside it: convex edges, 8 from
+// just outside: concave edges) find the neighbouring surface within the radius and its distance; the normal turns towards
 // the bisector of the two faces as on a fillet (half way at the edge, unchanged at the radius). Deterministic (no
 // noise, no accumulation needed); skipped when the radius is under half a pixel.
 #ifndef VP3D_ATTRIB_SEMANTICS
@@ -114,47 +114,87 @@ void BvBasis(float3 n, out float3 t, out float3 b) {
     b = float3(c, s + n.y * n.y * a, -n.y);
 }
 
-// geometric normal of a triangle of an instance, in world space
-float3 BvFaceNormal(uint inst, uint prim, float3x4 o2w) {
+// smooth (interpolated) normal of a triangle of an instance at the barycentrics bc, and its geometric normal, in world
+// space (the normal of the shading, so that a curved surface is the same one across its facets)
+float3 BvSmoothNormal(uint inst, uint prim, float2 bc, float3x4 w2o, out float3 ng) {
     GpuInstance gi = gBvInst[inst];
     uint b = gi.indexOffset + prim * 3;
-    float3 p0 = gBvVerts[gBvIdx[b + 0] + gi.vertexOffset].pos, p1 = gBvVerts[gBvIdx[b + 1] + gi.vertexOffset].pos, p2 = gBvVerts[gBvIdx[b + 2] + gi.vertexOffset].pos;
-    float3 a = mul((float3x3)o2w, p1 - p0), c = mul((float3x3)o2w, p2 - p0);
-    return normalize(cross(a, c));
+    GpuVertex v0 = gBvVerts[gBvIdx[b + 0] + gi.vertexOffset], v1 = gBvVerts[gBvIdx[b + 1] + gi.vertexOffset], v2 = gBvVerts[gBvIdx[b + 2] + gi.vertexOffset];
+    float3 ns = v0.nrm * (1.0 - bc.x - bc.y) + v1.nrm * bc.x + v2.nrm * bc.y;
+    ng = normalize(mul(cross(v1.pos - v0.pos, v2.pos - v0.pos), (float3x3)w2o));
+    ns = normalize(mul(ns, (float3x3)w2o));
+    if (dot(ns, ng) < 0) ns = -ns;
+    return ns;
 }
 
-float3 RasterBevel(float3 P, float3 Ng, float3 N, uint inst, float radius) {
+// One bevel ray along the surface from P (inside: from just under it, the ray leaves the part through the next face,
+// a convex edge; else from just above it, the ray meets the next face, a concave edge). Its hit, if it is another
+// surface within tmax, joins the neighbours (grouped by smooth normal, each with its shortest distance). True when
+// it found one.
+bool BvRay(float3 P, float3 Ng, float3 N, uint inst, float3 dir, bool inside, float eps, float tmax,
+           inout float3 nb[4], inout float db[4], inout uint nbN) {
+    RayQuery<RAY_FLAG_FORCE_NON_OPAQUE | RAY_FLAG_SKIP_PROCEDURAL_PRIMITIVES> q;
+    RayDesc r;
+    // (also eps back along the ray: a point closer than eps to the edge still starts inside the part)
+    r.Origin = P + Ng * (inside ? -eps : eps) - dir * eps; r.Direction = dir; r.TMin = 0.0; r.TMax = tmax + eps;
+    q.TraceRayInline(gBvScene, RAY_FLAG_NONE, MASK_OPAQUE | MASK_GLASS, r);
+    while (q.Proceed()) {
+        if (q.CandidateType() == CANDIDATE_NON_OPAQUE_TRIANGLE && q.CandidateInstanceID() == inst)
+            q.CommitNonOpaqueTriangleHit();
+    }
+    if (q.CommittedStatus() != COMMITTED_TRIANGLE_HIT) return false;
+    float3 ng;
+    float3 nh = BvSmoothNormal(inst, q.CommittedPrimitiveIndex(), q.CommittedTriangleBarycentrics(), q.CommittedWorldToObject3x4(), ng);
+    if (dot(ng, dir) < 0) { ng = -ng; nh = -nh; }   // outward: the ray from inside leaves along it, the ray from outside meets it
+    if (!inside) nh = -nh;
+    if (dot(nh, N) > 0.9 || abs(dot(ng, Ng)) > 0.98) return false;   // the same (curved) surface, or a coplanar triangle
+    const float d = max(q.CommittedRayT() - eps, 0.0);
+    bool merged = false;
+    [unroll] for (uint s = 0; s < 4; ++s) {
+        if (s < nbN && !merged && dot(nb[s], nh) > 0.9) {
+            if (d < db[s]) { db[s] = d; nb[s] = nh; }
+            merged = true;
+        }
+    }
+    if (!merged && nbN < 4) { nb[nbN] = nh; db[nbN] = d; ++nbN; }
+    return true;
+}
+
+// 8 directions along the surface (every 45 degrees), from just inside it and from just outside. The distance to an
+// edge is the shortest ray to that neighbouring surface (continuous across the facets of a curved neighbour, as the
+// bottom of a Technic hole or a gear tooth: no spikes, no facets), its normal the smooth normal there. First the 4
+// axis directions with a reach of radius * sqrt(2) (one of them meets any edge within the radius): no neighbour, no
+// edge, done (most pixels); else the 4 diagonals as well.
+float3 RasterBevel(float3 P, float3 Ng, float3 N, uint inst, float radius, float radiusPx) {
     float3 T, B;
     BvBasis(Ng, T, B);
     const float eps = radius * 0.06;
-    float3 sum = N;
-    float3 seen[4];
-    uint nSeen = 0;
+    float3 nb[4];
+    float db[4];
+    uint nbN = 0;
+    bool convex = false, concave = false;
     [unroll] for (uint k = 0; k < 8; ++k) {
-        const bool inside = k < 4;   // inside: the ray leaves the part through the next face (convex edge)
-        float3 dir = (k & 1) ? ((k & 2) ? -B : B) : ((k & 2) ? -T : T);
-        RayQuery<RAY_FLAG_FORCE_NON_OPAQUE | RAY_FLAG_SKIP_PROCEDURAL_PRIMITIVES> q;
-        RayDesc r;
-        r.Origin = P + Ng * (inside ? -eps : eps); r.Direction = dir; r.TMin = 0.0; r.TMax = radius * 1.5;
-        q.TraceRayInline(gBvScene, RAY_FLAG_NONE, MASK_OPAQUE | MASK_GLASS, r);
-        while (q.Proceed()) {
-            if (q.CandidateType() == CANDIDATE_NON_OPAQUE_TRIANGLE && q.CandidateInstanceID() == inst)
-                q.CommitNonOpaqueTriangleHit();
+        const float3 dir = (k & 1) ? ((k & 2) ? -B : B) : ((k & 2) ? -T : T);
+        const bool hit = BvRay(P, Ng, N, inst, dir, k < 4, eps, radius * 1.415, nb, db, nbN);
+        if (k < 4) convex = convex || hit; else concave = concave || hit;
+    }
+    // the diagonals: on the side that found an edge, and only when the bevel is over 3 pixels wide (further away the
+    // 4 axis directions are finer than a pixel already)
+    if ((!convex && !concave) || radiusPx < 3.0) {
+        if (nbN == 0) return N;
+    } else {
+        const float3 D1 = (T + B) * 0.70710678, D2 = (T - B) * 0.70710678;
+        [unroll] for (uint k2 = 0; k2 < 8; ++k2) {
+            if (k2 < 4 ? !convex : !concave) continue;
+            const float3 dir = (k2 & 1) ? ((k2 & 2) ? -D2 : D2) : ((k2 & 2) ? -D1 : D1);
+            BvRay(P, Ng, N, inst, dir, k2 < 4, eps, radius, nb, db, nbN);
         }
-        if (q.CommittedStatus() != COMMITTED_TRIANGLE_HIT) continue;
-        float3 nh = BvFaceNormal(inst, q.CommittedPrimitiveIndex(), q.CommittedObjectToWorld3x4());
-        if (dot(nh, dir) < 0) nh = -nh;   // outward: the ray from inside leaves along it, the ray from outside meets it
-        if (!inside) nh = -nh;
-        if (dot(nh, Ng) > 0.9) continue;   // the same (curved) surface
-        float3 hp = r.Origin + dir * q.CommittedRayT();
-        float d = abs(dot(hp - P, nh));   // distance to the plane of the next face = to the edge
-        if (d >= radius) continue;
-        bool dup = false;
-        [unroll] for (uint s2 = 0; s2 < 4; ++s2) if (s2 < nSeen && dot(seen[s2], nh) > 0.98) dup = true;
-        if (dup || nSeen >= 4) continue;
-        seen[nSeen++] = nh;
-        float t = 1.0 - d / radius;
-        sum += nh * (t * t * (3.0 - 2.0 * t));   // smooth: the bisector (N + nh) at the edge
+    }
+    float3 sum = N;
+    [unroll] for (uint s3 = 0; s3 < 4; ++s3) {
+        if (s3 >= nbN) break;
+        float t = 1.0 - min(db[s3] / radius, 1.0);
+        sum += nb[s3] * (t * t * (3.0 - 2.0 * t));   // smooth: the bisector (N + nh) at the edge
     }
     return normalize(sum);
 }
@@ -246,6 +286,8 @@ struct VSOut {
     float3 onrm : OBJNRM;
 #ifndef VP3D_ATTRIB_SEMANTICS
     nointerpolation uint inst : INSTIDX;   // index in gDraws
+    // the position inside the triangle under MSAA (the pixel centre can be past an edge): where the bevel rays start
+    centroid float3 cwpos : CWORLDPOS;
 #endif
 };
 
@@ -261,6 +303,9 @@ VSOut VSMain(VSIn i) {
     o.inst = gDrawBase + i.iid;
 #endif
     o.wpos = ToWorld(i.pos);
+#ifndef VP3D_ATTRIB_SEMANTICS
+    o.cwpos = o.wpos;
+#endif
     float3 n = float3(dot(D.row0.xyz, i.nrm), dot(D.row1.xyz, i.nrm), dot(D.row2.xyz, i.nrm));
     o.nrm = normalize(n);
     o.uv = i.uv;
@@ -470,8 +515,9 @@ float4 Shade(VSOut i, bool ghost, float shadowBias, bool capture) {
         float3 Ng = normalize(cross(ddx(i.wpos), ddy(i.wpos)));
         if (dot(Ng, N) < 0) Ng = -Ng;
         const float rad = m.bevelRadius * R.bevelOn;
-        if (rad > 0.5 * max(length(ddx(i.wpos)), length(ddy(i.wpos))))   // at least half a pixel wide
-            N = RasterBevel(i.wpos, Ng, N, D.id - 1, rad);
+        const float px = max(length(ddx(i.wpos)), length(ddy(i.wpos)));
+        if (rad > 0.5 * px)   // at least half a pixel wide
+            N = RasterBevel(i.cwpos, Ng, N, D.id - 1, rad, rad / max(px, 1e-8));
     }
 #endif
     float3 base = m.baseColor;
@@ -753,6 +799,9 @@ VSOut VSProbe(VSIn i) {
     o.inst = gDrawBase + i.iid;
 #endif
     o.wpos = ToWorld(i.pos);
+#ifndef VP3D_ATTRIB_SEMANTICS
+    o.cwpos = o.wpos;
+#endif
     float3 n = float3(dot(D.row0.xyz, i.nrm), dot(D.row1.xyz, i.nrm), dot(D.row2.xyz, i.nrm));
     o.nrm = normalize(n);
     o.uv = i.uv;
