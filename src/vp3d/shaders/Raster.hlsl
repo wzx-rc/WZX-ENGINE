@@ -23,7 +23,9 @@ struct RasterConstants {
     float3 hemiSky; float hemiOn;        // hemisphere fill (three.js HemisphereLight): irradiance from the sky / the ground, x intensity
     float3 hemiGround; float bevelOn;    // bevelOn: scale of the material bevel radius in the raster view (0 = off, needs the TLAS)
     float rtShadow; float sunTanRadius; float rtShadowSamples; float rtRefl;   // ray traced sun shadow (t12), reflections (t13)
-    float centreValid; float3 rcPad;     // centreValid: t14 is this frame's
+    float centreValid; float rtLights; float rtAO; float rtProbes;   // centreValid: t14 is this frame's; rtLights: area
+                                         // lights shadowed by rays (TLAS, space2); rtAO: ambient occluded by rays; rtProbes:
+                                         // the reflection pass had probes (else the traced reflections carry no bounce)
 };
 ConstantBuffer<RasterConstants> R : register(b0);
 
@@ -153,6 +155,49 @@ float3 RasterBevel(float3 P, float3 Ng, float3 N, uint inst, float radius) {
         sum += nh * (t * t * (3.0 - 2.0 * t));   // smooth: the bisector (N + nh) at the edge
     }
     return normalize(sum);
+}
+
+// Visibility from P towards T (the TLAS of the frame, opaque parts only; the light quads are not opaque).
+float BvVisible(float3 P, float3 Ng, float3 T) {
+    float3 o = P + Ng * (2e-3 * (1.0 + max(abs(P.x), max(abs(P.y), abs(P.z)))));
+    float3 d = T - o;
+    float len = length(d);
+    RayQuery<RAY_FLAG_FORCE_OPAQUE | RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH | RAY_FLAG_SKIP_PROCEDURAL_PRIMITIVES> q;
+    RayDesc r;
+    r.Origin = o; r.Direction = d / max(len, 1e-6); r.TMin = 0.0; r.TMax = len * 0.999;
+    q.TraceRayInline(gBvScene, RAY_FLAG_NONE, MASK_OPAQUE, r);
+    q.Proceed();
+    return q.CommittedStatus() == COMMITTED_TRIANGLE_HIT ? 0.0 : 1.0;
+}
+
+float BvIGN(float2 pix) { return frac(52.9829189 * frac(dot(pix, float2(0.06711056, 0.00583715)))); }
+
+// Shadow of a rectangle light: two rays to stratified points of the rectangle (turned per pixel).
+float BvAreaShadow(float3 P, float3 Ng, GpuLight l, float2 pix) {
+    float r = BvIGN(pix);
+    float2 a = frac(float2(0.25, 0.25) + r * float2(0.7548777, 0.5698403)), b = frac(a + 0.5);
+    return 0.5 * (BvVisible(P, Ng, l.corner + l.edgeU * a.x + l.edgeV * a.y) + BvVisible(P, Ng, l.corner + l.edgeU * b.x + l.edgeV * b.y));
+}
+
+// Ambient occlusion of the environment: 2 cosine rays up to `range` (a hit at distance t occludes 1 - t / range).
+float BvAO(float3 P, float3 Ng, float range, float2 pix) {
+    float3 T, B;
+    BvBasis(Ng, T, B);
+    float rot = BvIGN(pix);
+    float occ = 0;
+    [unroll] for (uint k = 0; k < 2; ++k) {
+        float2 u = frac(float2((k + 0.5) / 2.0, k * 0.618034 + rot));
+        float rr = sqrt(u.x), ph = 6.2831853 * (u.y + rot);
+        float3 d = normalize(T * (rr * cos(ph)) + B * (rr * sin(ph)) + Ng * sqrt(max(0.0, 1.0 - u.x)));
+        float3 o = P + Ng * (2e-3 * (1.0 + max(abs(P.x), max(abs(P.y), abs(P.z)))));
+        RayQuery<RAY_FLAG_FORCE_OPAQUE | RAY_FLAG_SKIP_PROCEDURAL_PRIMITIVES> q;
+        RayDesc r;
+        r.Origin = o; r.Direction = d; r.TMin = 0.0; r.TMax = range;
+        q.TraceRayInline(gBvScene, RAY_FLAG_NONE, MASK_OPAQUE, r);
+        q.Proceed();
+        if (q.CommittedStatus() == COMMITTED_TRIANGLE_HIT) occ += 1.0 - q.CommittedRayT() / range;
+    }
+    return 1.0 - occ / 2.0;
 }
 #endif
 #define DRAW_GHOST 1u
@@ -472,6 +517,13 @@ float4 Shade(VSOut i, bool ghost, float shadowBias, bool capture) {
 #endif
             shadow = Shadow(i.wpos, N, shadowBias);
         }
+#ifndef VP3D_ATTRIB_SEMANTICS
+        else if (R.rtLights > 0 && !capture) {   // the other area lights shadowed by rays too (HQ)
+            float3 Ngs = normalize(i.nrm);   // (the interpolated normal: the screen derivatives are unstable at grazing angles)
+            if (dot(Ngs, V) < 0) Ngs = -Ngs;
+            shadow = BvAreaShadow(i.wpos, Ngs, l, i.pos.xy);
+        }
+#endif
         float3 H = normalize(V + L);
         float NoH = saturate(dot(N, H));
         float aL = saturate(a + size / (3.0 * sqrt(d2)));   // widen the lobe for the light's size
@@ -535,6 +587,15 @@ float4 Shade(VSOut i, bool ghost, float shadowBias, bool capture) {
         kSpec = EnvBRDFApprox(f0, rough, NoV);   // the split-sum fit: a rough surface seen at grazing angle reflects little
     }
     if (R.hemiOn > 0) ambDiffuse += diffuseCol / PI * lerp(R.hemiGround, R.hemiSky, 0.5 + 0.5 * N.y);
+#ifndef VP3D_ATTRIB_SEMANTICS
+    if (R.rtAO > 0 && !capture) {   // the environment occluded by the parts, as the path tracer sees it (HQ)
+        float3 Nga = normalize(i.nrm);
+        if (dot(Nga, V) < 0) Nga = -Nga;
+        float ao = BvAO(i.wpos, Nga, R.rtAO, i.pos.xy);
+        ambDiffuse *= ao;
+        ambGlossy *= lerp(1.0, ao, 0.6);
+    }
+#endif
 #ifdef VP3D_DDGI_PROBES
     if (R.giMode > 0) {
         // Diffuse GI from the probes instead of the ambient (view 1: indirect only, 2: direct only, as GIShade.hlsl).
@@ -568,7 +629,15 @@ float4 Shade(VSOut i, bool ghost, float shadowBias, bool capture) {
         }
     } else
 #endif
-    color += ambDiffuse + ambGlossy;
+    {
+#if defined(VP3D_RT_SHADOWS) && !defined(VP3D_ATTRIB_SEMANTICS)
+        if (R.rtRefl > 0 && !capture) {   // ray traced reflection without probes (HQ): the parts around, then the HDRI
+            float4 rr = gRefl.Load(int3(TracedPixel(i.pos.xy, i.wpos, N), 0));
+            if (rr.a > 0.5) ambGlossy = kSpec * rr.rgb;
+        }
+#endif
+        color += ambDiffuse + ambGlossy;
+    }
     color += emission;
     float alpha = 1;
     if (trans > 0.5) alpha = 0.55 + 0.4 * Fresnel(0.04, NoV).x;

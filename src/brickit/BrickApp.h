@@ -34,6 +34,8 @@ struct Options {
     int bevelSpp = -1;
     bool rc = false;          // --rc: Radiance Cascades mode
     bool noGiBounds = false;  // --no-gi-bounds
+    float hqAO = -1;          // --hq-ao cm
+    int hqRefl = -1;          // --hq-refl rays
     int aa = -1, shadows = -1;   // --aa 0..2 (MSAA 4x / 8x / AAA), --shadows 0..4 (ray traced shadows of the RC mode)        // --bevel-spp N (0 = bevel off)
     bool opaque = false;      // --opaque: benchmark bricks in standard colours only
     int denoise = -1;         // --denoise 0|1

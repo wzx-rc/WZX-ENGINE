@@ -7,7 +7,7 @@
 // reflection of the raster pass. No temporal accumulation.
 #include "DDGICommon.hlsli"
 
-struct ReflPass { uint samples; float maxRough; uint pad0; uint pad1; };
+struct ReflPass { uint samples; float maxRough; uint probes; uint pad1; };   // probes: 0 = no probe volume (HQ raster)
 ConstantBuffer<ReflPass> RP : register(b1);
 RWTexture2D<float4> gReflRaw : register(u20);   // rgb radiance, a roughness (-1: not traced)
 
@@ -19,7 +19,9 @@ float3 ShadeReflHit(Hit h, float3 d, uint rng) {   // rng by value: every hit us
     float3 e = 0;
     for (uint k = 0; k < 4; ++k) e += DirectIrradiance(h.P, h.N, h.Ng, rng) + EnvDirectIrradiance(h.P, h.N, h.Ng, rng);
     e *= 0.25;
-    return s.emission + albedo / PI * e + albedo * SampleIrradiance(h.P, h.N, -d);
+    // the rest of the light: the probes, or without probes the environment irradiance (no bounce)
+    float3 rest = RP.probes != 0 ? SampleIrradiance(h.P, h.N, -d) : 0.0;
+    return s.emission + albedo / PI * e + albedo * rest;
 }
 
 [numthreads(8, 8, 1)]
@@ -34,7 +36,9 @@ void main(uint3 id : SV_DispatchThreadID) {
         return;
     }
     Surf s = MakeSurf(gMats[gInst[h.inst].materialId], h);
-    if (s.trans > 0.5 || (s.metal < 0.5 && s.rough > RP.maxRough)) {
+    // a clear coat (lacquered plastic) reflects as its coat: nearly a mirror (one exact ray, no noise)
+    const float er = s.coat > 0 ? min(s.rough, s.coatRough) : s.rough;
+    if (s.trans > 0.5 || (s.metal < 0.5 && er > RP.maxRough)) {
         gReflRaw[id.xy] = float4(0, 0, 0, -1);
         return;
     }
@@ -43,7 +47,7 @@ void main(uint3 id : SV_DispatchThreadID) {
     uint rng0 = Hash(26699u);   // light samples of the hits: the same set for all pixels and frames (see ShadeReflHit)
     float3 sum = 0;
     float n = 0;
-    if (s.rough < 0.04) {   // mirror: one exact ray
+    if (er < 0.06) {   // mirror: one exact ray
         float3 L = reflect(-V, N);
         Hit r;
         sum = TraceClosest(o, L, 1e30, MASK_OPAQUE, r) ? (r.front ? ShadeReflHit(r, L, rng0) : 0) : Environment(L);
@@ -53,7 +57,7 @@ void main(uint3 id : SV_DispatchThreadID) {
         uint count = max(RP.samples, 1u);
         for (uint k = 0; k < count; ++k) {
             float2 u = frac(float2(k * 0.7548777 + rot, k * 0.5698403 + rot * 0.618034));   // R2 set, turned per pixel
-            float3 H = SampleGGXHalf(N, V, Alpha(s.rough), u);
+            float3 H = SampleGGXHalf(N, V, Alpha(er), u);
             float3 L = reflect(-V, H);
             if (dot(L, h.Ng) <= 0) continue;
             Hit r;
@@ -65,5 +69,5 @@ void main(uint3 id : SV_DispatchThreadID) {
     if (any(isnan(c)) || any(isinf(c))) c = 0;
     float lum = Luminance(c);
     if (lum > F.fireflyClamp) c *= F.fireflyClamp / lum;
-    gReflRaw[id.xy] = float4(c, s.rough);
+    gReflRaw[id.xy] = float4(c, er);
 }

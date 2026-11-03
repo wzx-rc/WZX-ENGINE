@@ -1905,15 +1905,16 @@ void Renderer::recordScreenTrace(const float3& sunDir, const RenderSettings& rs,
     m_cmd->Dispatch(gx, gy, 1);
     if (refl) {
         const float maxRough = std::max(0.0f, rs.reflMaxRough);
-        uint32_t r[4] = {(uint32_t)std::max(1, std::min(rs.reflSamples, 32)), 0, 0, 0};
+        uint32_t r[4] = {(uint32_t)std::max(1, std::min(rs.reflSamples, 32)), 0, (m_lastProbes && m_giTex[0] && m_giTex[1] && m_giTex[3]) ? 1u : 0u, 0};
         memcpy(&r[1], &maxRough, 4);
         m_cmd->SetComputeRoot32BitConstants(1, 4, r, 0);
         // the raster pass reads the probe atlases as SRVs at this point: back to UAV for the compute pass meanwhile
         ID3D12Resource* atlases[3] = {m_giTex[0].Get(), m_giTex[1].Get(), m_giTex[3].Get()};
-        for (ID3D12Resource* a : atlases) transition(a, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+        const bool withProbes = m_lastProbes && atlases[0] && atlases[1] && atlases[2];   // (HQ raster: no probe volume)
+        if (withProbes) for (ID3D12Resource* a : atlases) transition(a, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
         m_cmd->SetPipelineState(m_psoReflTrace.Get());
         m_cmd->Dispatch(gx, gy, 1);
-        for (ID3D12Resource* a : atlases) transition(a, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+        if (withProbes) for (ID3D12Resource* a : atlases) transition(a, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
     }
     uavBarrier();
     if (shadow) {
@@ -2148,7 +2149,7 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
     const bool bakedView = rs.raster && rs.bakedProbes && m_bakeValid && !baking;
     const bool giRaster = liveProbes || baking || bakedView;
     const bool useHistory = rs.ddgi && !rs.raster && !giRaster;
-    const bool needAS = (!rs.raster && !(liveProbes && rs.ddgiRaster)) || baking || (rs.raster && rs.bevel && rs.rasterBevel);
+    const bool needAS = (!rs.raster && !(liveProbes && rs.ddgiRaster)) || baking || (rs.raster && ((rs.bevel && rs.rasterBevel) || rs.rasterRT));
 
     // AA quality of the GI raster modes: the sample count of the viewport (Lit and the others keep 4x)
     const uint32_t msaa = (!rs.raster && giRaster && rs.aaQuality >= 1 && m_msaa8) ? 8u : 4u;

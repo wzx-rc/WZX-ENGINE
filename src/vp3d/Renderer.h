@@ -44,6 +44,11 @@ struct RenderSettings {
     float denoiseEdgeLuma = 0.5f;   // luminance edge sensitivity: lower = the filter stops at shadow edges
     bool bevel = true;
     bool rasterBevel = false;       // the bevel in the raster view too (inline ray queries: builds the TLAS in raster)
+    // Raster view closer to the path tracer (BrickIt HQ; builds the TLAS): every area light shadowed by rays, the
+    // environment occluded by rays over rasterAO (scene units, 0 = off), reflections traced (reflSamples rays) without
+    // probes. Off by default (Viewport3D unchanged).
+    bool rasterRT = false;
+    float rasterAO = 0.0f;
     float bevelScale = 1.0f;
     int bevelSamples = 4;
     float fireflyClamp = 25.0f;

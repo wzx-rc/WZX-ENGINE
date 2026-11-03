@@ -1,0 +1,1 @@
+bricks=58 mode=raster gpu_ms=19.34 cpu_ms=3.49 frame_ms=20.64 tris_drawn=0.06M spp=4096 pick_ms=0.007

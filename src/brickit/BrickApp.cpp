@@ -829,7 +829,14 @@ void BrickApp::frame() {
         }
         m_rs.samplesPerFrame = m_adaptiveSpp;
     }
-    m_rs.ssao = m_rs.raster && m_quality == 1 && m_ssaoOn;   // HQ of the web: SSAOPass (kernel radius 0.6)
+    // HQ closer to the path tracing (Wzx): every light shadowed by rays, the environment occluded by rays (1.2 cm), the
+    // parts and the HDRI reflected by traced rays on the glossy plastic (inline ray queries on the TLAS of the bevel)
+    m_rs.rasterRT = m_rs.raster && m_quality == 1;
+    m_rs.rasterAO = m_opt.hqAO >= 0 ? m_opt.hqAO : 1.2f;
+    m_rs.reflSamples = m_opt.hqRefl >= 0 ? m_opt.hqRefl : 1;
+    if (m_opt.hqRefl == 0) m_rs.rtReflections = false;
+    m_rs.reflMaxRough = 0.35f;
+    m_rs.ssao = m_rs.raster && m_quality == 1 && m_ssaoOn && !m_rs.rasterRT;   // (the traced occlusion replaces the SSAOPass of the web)
     m_rs.ssaoRadius = 0.6f;
     m_rs.rasterBevel = m_quality == 1 || m_rcMode;
     // Radiance Cascades: GI bounds = the bricks + a margin, fading out over the same distance; the ground beyond gets
@@ -948,7 +955,9 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         else if (a == L"--bench") opt.bench = _wtoi(next().c_str());
         else if (a == L"--pt") opt.pathTrace = true;
         else if (a == L"--rc") opt.rc = true;   // Radiance Cascades mode
-        else if (a == L"--no-gi-bounds") opt.noGiBounds = true;   // (comparison: the GI over the whole visible ground)
+        else if (a == L"--no-gi-bounds") opt.noGiBounds = true;
+        else if (a == L"--hq-ao") opt.hqAO = (float)_wtof(next().c_str());   // (measures: traced occlusion range, 0 = off)
+        else if (a == L"--hq-refl") opt.hqRefl = _wtoi(next().c_str());   // (measures: traced reflection rays, 0 = off)   // (comparison: the GI over the whole visible ground)
         else if (a == L"--aa") opt.aa = _wtoi(next().c_str());
         else if (a == L"--shadows") opt.shadows = _wtoi(next().c_str());
         else if (a == L"--zoom") opt.zoom = (float)_wtof(next().c_str());

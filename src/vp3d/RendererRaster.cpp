@@ -33,7 +33,7 @@ struct RasterConstants {
     float3 hemiSky; float hemiOn;
     float3 hemiGround; float bevelOn;
     float rtShadow, sunTanRadius, rtShadowSamples, rtRefl;   // ray traced sun shadow (mask in t12), reflections (t13)
-    float centreValid; float rcPad[3];                       // centreValid: t14 holds this frame's pixel-centre depth
+    float centreValid, rtLights, rtAO, rtProbes;             // centreValid: t14 holds this frame's pixel-centre depth
 };
 
 struct DrawConstants {
@@ -718,7 +718,10 @@ void Renderer::recordRaster(const Scene& scene, const RenderSettings& rs, const 
     rc.hemiSky = scene.env.hemiSky * scene.env.hemiIntensity;
     rc.hemiGround = scene.env.hemiGround * scene.env.hemiIntensity;
     rc.hemiOn = scene.env.hemiIntensity > 0 ? 1.0f : 0.0f;
-    rc.bevelOn = (rs.bevel && rs.rasterBevel && m_tlas.res && m_tlasVersion == m_buildVersion) ? rs.bevelScale : 0.0f;   // raster bevel (TLAS built for it)
+    const bool tlasOk = m_tlas.res && m_tlasVersion == m_buildVersion;
+    rc.bevelOn = (rs.bevel && rs.rasterBevel && tlasOk) ? rs.bevelScale : 0.0f;   // raster bevel (TLAS built for it)
+    rc.rtLights = (rs.rasterRT && tlasOk && !probeCapture) ? 1.0f : 0.0f;
+    rc.rtAO = (rs.rasterRT && tlasOk && !probeCapture) ? std::max(0.0f, rs.rasterAO) : 0.0f;
     rc.shadowTexel = 1.0f / kShadowSize;
     rc.keyPos = keyCenter;
     rc.lightScale = rs.lightScale;
@@ -740,7 +743,7 @@ void Renderer::recordRaster(const Scene& scene, const RenderSettings& rs, const 
     rc.sunTanRadius = std::tan(radians(std::max(rs.sunAngle, 0.0f)) * 0.5f);
     rc.rtShadowSamples = (float)std::max(1, std::min(rs.rtShadowSamples, 32));
     // reflections traced per pixel on glossy surfaces: GI modes (the hits read the probes), not the probe captures
-    const bool reflOn = rs.rtReflections && probes && !probeCapture && !xv && m_asThisFrame && m_tlas.res;   // (main view only)
+    const bool reflOn = rs.rtReflections && (probes || rs.rasterRT) && !probeCapture && !xv && m_asThisFrame && m_tlas.res;   // (main view only)
     rc.rtRefl = reflOn ? 1.0f : 0.0f;
     // ray traced sun shadow and reflections: computed now (compute passes), read by the main pass (t8, t9)
     // the mask is the sun's, or without a sun the key area light's (a lamp in a room: the Cornell box)
@@ -769,7 +772,7 @@ void Renderer::recordRaster(const Scene& scene, const RenderSettings& rs, const 
         // rc.bevelOn = 0, the table then points at whatever the slots hold)
         D3D12_CPU_DESCRIPTOR_HANDLE h = m_heap->GetCPUDescriptorHandleForHeapStart();
         h.ptr += (SIZE_T)kBevelSrvSlot * m_descSize;
-        if (rc.bevelOn > 0) {
+        if (rc.bevelOn > 0 || rc.rtLights > 0) {
             D3D12_SHADER_RESOURCE_VIEW_DESC sv = {};
             sv.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
             sv.ViewDimension = D3D12_SRV_DIMENSION_RAYTRACING_ACCELERATION_STRUCTURE;
