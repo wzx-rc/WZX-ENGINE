@@ -928,7 +928,7 @@ void BrickApp::uiPopups() {
     else if (m_popup == 2) items = {{"ACES", m_rs.tonemapper == 0, 0}, {"AgX", m_rs.tonemapper == 1, 1}, {"Std", m_rs.tonemapper == 3, 3}};
     else if (m_popup == 3) items = {{"Bibliothèque", m_pTray.visible, 0}, {"Manuel d'instructions", m_pManual.visible, 4}, {"Infos (pièces, fps)", m_pHud.visible, 3},
                                     {"Couleurs", m_pColors.visible, 2}, {"Actions de la brique", m_pOpts.visible, 1}, {"Réinitialiser la disposition", false, 5}};
-    else items = {{"Nouvelle scène", false, 0}, {"Ouvrir… (.v3d.json)", false, 1}, {"Enregistrer… (.v3d.json)", false, 2}};
+    else items = {{"Nouvelle scène", false, 0}, {"Ouvrir… (.v3d.json)", false, 1}, {"Enregistrer… (.v3d.json)", false, 2}, {"Ouvrir la maison test (GI)", false, 3}};
     const bool checks = m_popup == 3;
     float w = 0;
     for (const Item& it : items) w = std::max(w, u.textW(12.5f, it.label));
@@ -971,6 +971,7 @@ void BrickApp::uiPopups() {
             } else {
                 if (it.id == 0) { pushUndo(); m_bricks.clear(); m_selected = -1; m_multi.clear(); rebuildScene(); toast("Nouvelle scène"); }
                 else if (it.id == 1) openDialog();
+                else if (it.id == 3) openTestHouse();
                 else saveDialog();
             }
         }
@@ -1922,6 +1923,22 @@ void BrickApp::uiSettings() {
                 const float tw = u.textW(12, lab, on);
                 u.text(ImVec2((a.x + b.x) * 0.5f - tw * 0.5f, a.y + (rowH - u.fs(12)) * 0.5f), 12, on ? C_INK : C_TEXT, lab, on);
                 if (h && u.pressed && !on) { m_softGI = k == 0; m_renderer.resetAccumulation(); savePrefs(); }
+            }
+            ly += rowH + gap;
+        }
+        {   // Lookdev GI: one light grey for every brick, no reflection (the lighting alone); not saved
+            u.text(ImVec2(x0 + pad, ly), 11, C_DIM, "Lookdev GI (gris uni)");
+            ly += 16 * s;
+            const float bw2 = (W - 2 * pad - 4 * s) / 2;
+            for (int k = 0; k < 2; ++k) {
+                const bool on = (k == 0) == m_giLookdev;
+                ImVec2 a(x0 + pad + k * (bw2 + 4 * s), ly), b(a.x + bw2, ly + rowH);
+                const bool h = u.hover(a, b);
+                u.dl->AddRectFilled(a, b, on ? C_ACCENT : (h ? C_CARD_HI : C_CARD), 7 * s);
+                const char* lab = k == 0 ? "Oui" : "Non";
+                const float tw = u.textW(12, lab, on);
+                u.text(ImVec2((a.x + b.x) * 0.5f - tw * 0.5f, a.y + (rowH - u.fs(12)) * 0.5f), 12, on ? C_INK : C_TEXT, lab, on);
+                if (h && u.pressed && !on) setLookdev(k == 0);
             }
             ly += rowH + gap;
         }

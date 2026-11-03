@@ -373,18 +373,8 @@ void BrickApp::setupStage() {
         }
         m_colorMaterial.push_back(m_scene.addMaterial(m));
     }
-    if (m_opt.giLookdev)   // GI look development: every colour the same light grey, rough, no specular, a light SSS
-        for (int ci : m_colorMaterial) {
-            Material& m = m_scene.materials[ci];
-            m.baseColor = float3(srgbToLinear(0.78f), srgbToLinear(0.79f), srgbToLinear(0.80f));
-            m.roughness = 0.9f;
-            m.specular = 0.0f;
-            m.coat = 0.0f;
-            m.metallic = 0.0f;
-            m.transmission = 0.0f;
-            m.subsurface = 0.12f;
-            m.sssRadius = float3(0.06f, 0.06f, 0.06f);
-        }
+    m_colorMaterialOrig.clear();
+    for (int ci : m_colorMaterial) m_colorMaterialOrig.push_back(m_scene.materials[ci]);
     // focus mode: the same materials at 50 % for the bricks that are not the focus
     m_dimMaterial.clear();
     for (int ci : m_colorMaterial) {
@@ -395,6 +385,7 @@ void BrickApp::setupStage() {
         d.coat *= 0.5f;
         m_dimMaterial.push_back(m_scene.addMaterial(d));
     }
+    if (m_opt.giLookdev) setLookdev(true);
     {
         Material gm;   // ghostMat of the web: 0xffe08a, emissive 0x6b5a1a
         gm.name = "Ghost";
@@ -554,6 +545,47 @@ void BrickApp::buildHouse() {
     const std::string text = m_build.toJson(m_scene.camera);
     FILE* f = nullptr;
     if (_wfopen_s(&f, m_opt.writeHouse.c_str(), L"wb") == 0 && f) { fwrite(text.data(), 1, text.size(), f); fclose(f); }
+}
+
+// GI look development (--gi-lookdev, Réglages › Lumière › Lookdev GI): every colour the same light grey, rough, no
+// specular and no coat, a light SSS (the lighting alone, in HQ, RC and PT); off: the palette materials back. The
+// dimmed copies (focus mode) follow.
+void BrickApp::setLookdev(bool on) {
+    m_giLookdev = on;
+    for (size_t i = 0; i < m_colorMaterial.size() && i < m_colorMaterialOrig.size(); ++i) {
+        Material m = m_colorMaterialOrig[i];
+        if (on) {
+            m.baseColor = float3(srgbToLinear(0.78f), srgbToLinear(0.79f), srgbToLinear(0.80f));
+            m.roughness = 0.9f;
+            m.specular = 0.0f;
+            m.coat = 0.0f;
+            m.metallic = 0.0f;
+            m.transmission = 0.0f;
+            m.subsurface = 0.12f;
+            m.sssRadius = float3(0.06f, 0.06f, 0.06f);
+        }
+        m_scene.materials[m_colorMaterial[i]] = m;
+        if (i < m_dimMaterial.size()) {
+            Material d = m;
+            d.name += " (dim)";
+            d.baseColor = d.baseColor * 0.5f;
+            d.specular *= 0.5f;
+            d.coat *= 0.5f;
+            m_scene.materials[m_dimMaterial[i]] = d;
+        }
+    }
+    ++m_scene.objectsVersion;   // (the materials are uploaded again, the accumulations restart)
+    m_renderer.resetAccumulation();
+}
+
+void BrickApp::openTestHouse() {
+    wchar_t exe[MAX_PATH] = {};
+    GetModuleFileNameW(nullptr, exe, MAX_PATH);
+    std::wstring dir(exe);
+    dir = dir.substr(0, dir.find_last_of(L"\\/"));   // build\bin
+    const std::wstring path = dir + L"\\..\\..\\docs\\brickit\\tests\\maison_gi.v3d.json";
+    if (GetFileAttributesW(path.c_str()) == INVALID_FILE_ATTRIBUTES) { toast("Maison test introuvable (docs\\brickit\\tests\\maison_gi.v3d.json)"); return; }
+    openScene(path);
 }
 
 void BrickApp::buildHdriList() {

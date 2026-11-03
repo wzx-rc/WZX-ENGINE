@@ -115,6 +115,8 @@ private:
     int colorIndex(int ldrawId) const;   // palette index of an LDraw colour code
     void setupStage();        // ground, HDRI, materials of the palette
     void buildHouse();        // the GI reference house (--write-house)
+    void setLookdev(bool on); // GI look development: every colour the same light grey (live, Réglages › Lumière)
+    void openTestHouse();     // Dossier › Ouvrir la maison test (docs/brickit/tests/maison_gi.v3d.json)
     // Réglages > Lumière (native addition): environment image, its rotation and intensity, colour of the ground grid;
     // the same scene for every renderer (Rapide, HQ, RC, path tracing), saved in brickit_prefs.json ("light")
     void buildHdriList();     // L"" (procedural sky), assets\hdri\*.hdr | *.exr, then the user's HDRI
@@ -423,6 +425,8 @@ private:
     // bounded to the bricks): soft bounces and occlusion, stable, no ray per pixel for the GI
     bool m_softGI = true;
     float m_softGIStrength = 1.0f;
+    bool m_giLookdev = false;                 // (not saved: a test view, off at the next launch)
+    std::vector<Material> m_colorMaterialOrig;   // the palette materials as made, restored when the lookdev ends
     uint64_t m_giBoundsVersionSoft = ~0ull;
     float3 m_softLo{0, 0, 0}, m_softHi{0, 0, 0};
     float m_softMargin = 4.0f;
