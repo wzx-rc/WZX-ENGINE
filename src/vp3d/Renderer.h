@@ -146,6 +146,10 @@ struct RenderSettings {
     // Ray traced shadows (sun and lamp) of the raster GI modes: 0 low ... 2 medium (8 sun / 16 lamp rays, the former
     // default) ... 4 AAA (32 / 64 rays, wider filter)
     int shadowQuality = 2;
+    // Split RC: GI bounds (an app with a huge ground: BrickIt), probes only in the box grown by giBoundsFade, the GI
+    // fading out across it. giBoundsFade 0 = off (the whole visible scene).
+    float3 giBoundsMin{0, 0, 0}, giBoundsMax{0, 0, 0};
+    float giBoundsFade = 0.0f;
 };
 
 // What the Radiance Cascades of the last frame looked like (viewer statistics).

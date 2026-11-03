@@ -115,5 +115,6 @@ void main(uint3 id : SV_DispatchThreadID) {
         float4 e1 = LodIrradiance(P, N, lod1);
         if (e1.a > 0) e = e.a > 0 ? lerp(e, e1, w1) : e1;
     }
+    e.a *= GIBoundsWeight(P);   // fades to the analytic ambient beyond the GI bounds
     gScreenGI[id.xy] = e;
 }

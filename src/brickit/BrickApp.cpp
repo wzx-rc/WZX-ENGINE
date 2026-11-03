@@ -842,7 +842,30 @@ void BrickApp::frame() {
     }
     m_rs.ssao = m_rs.raster && m_quality == 1 && m_ssaoOn;   // HQ of the web: SSAOPass (kernel radius 0.6)
     m_rs.ssaoRadius = 0.6f;
-    m_rs.rasterBevel = m_quality == 1 || m_rcMode;   // rounded edges in the real time views: HQ and RC (inline ray queries, about 1 ms)
+    m_rs.rasterBevel = m_quality == 1 || m_rcMode;
+    // Radiance Cascades: GI bounds = the bricks + a margin, fading out over the same distance; the ground beyond gets
+    // the analytic sky ambient (else its probe cells reached the horizon and overflowed the hash tables when the camera
+    // tilts: light and dark squares). Recomputed when the scene changes.
+    if (m_rcMode && m_giBoundsVersion != m_scene.objectsVersion) {
+        m_giBoundsVersion = m_scene.objectsVersion;
+        float3 lo(1e30f), hi(-1e30f);
+        for (const Brick& b : m_bricks) {
+            const Part& p = m_lib.parts[b.part];
+            for (int c = 0; c < 8; ++c) {
+                const float3 v((c & 1) ? p.bmax.x : p.bmin.x, (c & 2) ? p.bmax.y : p.bmin.y, (c & 4) ? p.bmax.z : p.bmin.z);
+                const float3 wv = qRot(b.rot, v) + b.pos;
+                lo = float3(std::min(lo.x, wv.x), std::min(lo.y, wv.y), std::min(lo.z, wv.z));
+                hi = float3(std::max(hi.x, wv.x), std::max(hi.y, wv.y), std::max(hi.z, wv.z));
+            }
+        }
+        if (m_bricks.empty()) { lo = float3(-8, 0, -8); hi = float3(8, 8, 8); }
+        const float size = std::max(hi.x - lo.x, std::max(hi.y - lo.y, hi.z - lo.z));
+        const float margin = std::max(6.0f, size * 0.35f);
+        m_rs.giBoundsMin = lo - float3(margin);
+        m_rs.giBoundsMax = hi + float3(margin);
+        m_rs.giBoundsFade = margin;
+    }
+    if (!m_rcMode || m_opt.noGiBounds) m_rs.giBoundsFade = 0.0f;   // rounded edges in the real time views: HQ and RC (inline ray queries, about 1 ms)
     std::vector<int> extra;
     for (int i : m_multi) extra.push_back(m_firstBrickObject + i);
     m_renderer.setExtraSelection(extra);
@@ -936,6 +959,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         else if (a == L"--bench") opt.bench = _wtoi(next().c_str());
         else if (a == L"--pt") opt.pathTrace = true;
         else if (a == L"--rc") opt.rc = true;   // Radiance Cascades mode
+        else if (a == L"--no-gi-bounds") opt.noGiBounds = true;   // (comparison: the GI over the whole visible ground)
         else if (a == L"--aa") opt.aa = _wtoi(next().c_str());
         else if (a == L"--shadows") opt.shadows = _wtoi(next().c_str());
         else if (a == L"--zoom") opt.zoom = (float)_wtof(next().c_str());

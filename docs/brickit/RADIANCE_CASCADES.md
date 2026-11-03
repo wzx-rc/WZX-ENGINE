@@ -46,3 +46,30 @@ transparentes (axes gris translucides) sont plus claires ; le reste (ombres de c
 - Signature racine compute : les paramètres RC (p16..p22) et la table de sélection en p23 (24 paramètres, 42 DWORD).
 - MSAA : `createMsaaPipelines` (main) appelé par `createRasterPipelines(error, msaaOnly)` (RC, changement 4x / 8x).
 - Ombres / reflets tracés à l'écran et résolution AAA limités à la vue principale (leurs textures ont sa taille).
+
+## Sol infini : les « paquets » (03/11/2026, retour de Wzx)
+
+Symptôme : caméra inclinée, le sol se couvre de carrés clairs / foncés jusqu'à l'horizon, plus gros au loin.
+Cause : le Split RC insère une sonde de cascade 0 pour chaque pixel visible ; le sol de BrickIt va jusqu'à l'horizon,
+les cellules (de plus en plus grosses avec la distance, LOD) se comptent par dizaines de milliers. Les tables de
+hachage sont dimensionnées sur l'image précédente et plafonnées (pixels / 24, 65 536) : quand la caméra s'incline, les
+cellules en trop n'ont pas de sonde, leurs pixels retombent sur l'ambiance de Lit (confiance 0) — un damier de
+cellules. Pas une question de précision : la même scène vue de haut est propre.
+
+Correction (astuce, sans couper le sol) : **bornes de la GI** (`RenderSettings::giBoundsMin / Max / Fade`, constantes
+`SplitRCConstants::giMin / giMax`). BrickIt les règle sur la boîte des briques + une marge (35 % de la taille, 6 cm au
+moins), recalculées quand la scène change. Hors de la boîte agrandie de la marge : aucune sonde insérée (SRCInsert) ;
+la confiance de la GI s'estompe en douceur (smoothstep) sur la marge (SRCGather) : au-delà, le sol reçoit l'éclairage
+analytique du ciel (irradiance SH de la HDRI + hémisphère), sans motif et sans bord visible. Près des pièces, la GI
+(ombres de contact, rebonds colorés) reste. Viewport3D n'est pas concerné (bornes désactivées par défaut).
+Comparaison dans le même binaire : `--no-gi-bounds`.
+
+| Cadrage | avant | après |
+|---|---|---|
+| Scène d'exemple, cadrage de Wzx (tangage 14°, zoom 0,45) | 17,6 ms | 15,3 ms |
+| Scène d'exemple, tangage 8° | 11,9 ms | 10,6 ms |
+| 10 000 briques, tangage 10° | — | 11,3 ms |
+
+Captures : 38a / 38a2 / 38a5 avant (38a5 = cadrage de Wzx), 38b (bas), 38c (haut), 38d / 38e (10k briques), 38g
+(avant / après côte à côte), 38h (Viewport3D, boîte de Cornell, inchangée). Path tracing (38a3) et HQ (38a4) n'ont pas
+le problème (pas de sondes).

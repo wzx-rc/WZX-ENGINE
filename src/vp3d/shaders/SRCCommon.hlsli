@@ -14,6 +14,13 @@ RWByteAddressBuffer gPrev : register(u22);       // previous frame: cascade-0 sl
 #define SRC_NONE 0xFFFFFFFFu
 
 uint SLoad(uint w) { return gS.Load(w * 4); }
+
+// Weight of the GI bounds at P: 1 inside the box, down to 0 at the fade distance outside it (always 1 when off).
+float GIBoundsWeight(float3 P) {
+    if (S.giMax.w <= 0) return 1.0;
+    float3 d = max(max(S.giMin.xyz - P, P - S.giMax.xyz), 0.0);
+    return 1.0 - smoothstep(0.0, max(S.giMin.w, 1e-3), length(d));
+}
 void SStore(uint w, uint v) { gS.Store(w * 4, v); }
 uint SAdd(uint w, uint v) { uint o; gS.InterlockedAdd(w * 4, v, o); return o; }
 

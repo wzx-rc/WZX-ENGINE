@@ -33,6 +33,7 @@ struct Options {
     int bounces = -1;         // --bounces N (path tracing, 0 = primary rays only)
     int bevelSpp = -1;
     bool rc = false;          // --rc: Radiance Cascades mode
+    bool noGiBounds = false;  // --no-gi-bounds
     int aa = -1, shadows = -1;   // --aa 0..2 (MSAA 4x / 8x / AAA), --shadows 0..4 (ray traced shadows of the RC mode)        // --bevel-spp N (0 = bevel off)
     bool opaque = false;      // --opaque: benchmark bricks in standard colours only
     int denoise = -1;         // --denoise 0|1
@@ -391,6 +392,7 @@ private:
     // Radiance Cascades (native addition, Réglages): the Split Radiance Cascades of WZX Engine (real time GI, ray
     // traced, no history: sparse world probes around the visible surfaces), with the path tracing look
     bool m_rcMode = false;
+    uint64_t m_giBoundsVersion = ~0ull;   // scene version of the GI bounds (Radiance Cascades)
     void setRC(bool on);
     bool userSession() const;   // not a test / demo / capture run: the preferences and the autosave may be written
     bool pathTraced() const { return !m_rs.raster && !m_rcMode; }

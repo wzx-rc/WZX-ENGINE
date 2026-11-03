@@ -203,6 +203,10 @@ struct SplitRCConstants {
     uint hist; uint prevValid; uint frame; uint irrF;             // history lengths of this frame, filtered irradiance
                                                                   // (word offsets in u16; irrF = irr without the filter)
     float4 movedMin[SRC_MAX_MOVED]; float4 movedMax[SRC_MAX_MOVED];
+    // GI bounds (RenderSettings::giBounds*): probes only inside the box grown by the fade distance (giMin.w), the GI
+    // confidence fading to 0 across it (the raster ambient, analytic sky, takes over: no probe cells to the horizon on
+    // a huge ground). giMax.w = 1 when on.
+    float4 giMin; float4 giMax;
 };
 
 #define SRC_FLAG_ANIMATE 1u      // the ray set and the light samples change every frame

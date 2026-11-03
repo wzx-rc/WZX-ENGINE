@@ -1685,6 +1685,10 @@ void Renderer::recordSplitRC(const RenderSettings& rs, UINT gx, UINT gy) {
         words += caps[i];
     }
     sc.clearWords = words;
+    if (rs.giBoundsFade > 0) {
+        sc.giMin = float4(rs.giBoundsMin.x, rs.giBoundsMin.y, rs.giBoundsMin.z, rs.giBoundsFade);
+        sc.giMax = float4(rs.giBoundsMax.x, rs.giBoundsMax.y, rs.giBoundsMax.z, 1.0f);
+    }
     m_rcStats.splitCascades = (int)count;
     for (uint32_t i = 0; i < count; ++i) {
         gpu::SRCCascade& c = sc.c[i];

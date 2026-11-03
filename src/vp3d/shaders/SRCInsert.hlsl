@@ -21,6 +21,7 @@ void main(uint3 id : SV_DispatchThreadID) {
     float lodF = LodCoord(P);
     gS.Store4(w * 4, uint4(asuint(P), asuint(lodF)));
     gS.Store4((w + 4) * 4, uint4(PackNormal(h.N), SRC_NONE, 0, 0));
+    if (GIBoundsWeight(P) <= 0) return;   // beyond the GI bounds: no probe (the pixel record stays, without a probe)
     uint lod0, lod1;
     float w1;
     PixelLods(lodF, lod0, lod1, w1);
