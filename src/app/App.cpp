@@ -118,6 +118,7 @@ bool App::init(HINSTANCE inst, const Options& opt) {
     m_rs.ddgiView = opt.ddgiView;
     m_rs.temporalCap = opt.temporalCap;
     m_rs.ddgiProgressive = opt.progressive != 0;
+    m_rs.giRasterWhileMoving = opt.rasterMoving != 0;
     m_rs.ddgiHysteresis = opt.hysteresis >= 0 ? opt.hysteresis : (m_rs.ddgiProgressive ? 0.995f : 0.97f);
     if (opt.splitPx > 0) m_rs.rcSplitProbePx = opt.splitPx;
     if (opt.splitHistory >= 0) m_rs.rcSplitHistory = opt.splitHistory;
@@ -640,7 +641,8 @@ void App::frame() {
                 m_animLightTarget = m_scene.lights[0].target;
             }
         }
-        const int frame = m_opt.animAt >= 0 ? m_opt.animAt : m_frameCounter;
+        const bool stopped = m_opt.animStop >= 0 && m_frameCounter > m_opt.animStop;
+        const int frame = m_opt.animAt >= 0 ? m_opt.animAt : (stopped ? m_opt.animStop : m_frameCounter);
         const float k = std::sin((float)frame * 2.0f * kPi / (float)std::max(2, m_opt.animPeriod));
         if (m_opt.animObject >= 0 && m_opt.animObject < (int)m_scene.objects.size())
             m_scene.objects[m_opt.animObject].position = m_animObjBase + m_opt.animMove * k;
@@ -648,7 +650,7 @@ void App::frame() {
             m_scene.lights[0].position = m_animLightBase + m_opt.animMove * k;
             m_scene.lights[0].target = m_animLightTarget + m_opt.animMove * k;
         }
-        if (m_opt.animAt < 0 || m_frameCounter <= 1) markDirty();
+        if ((m_opt.animAt < 0 && !stopped) || m_frameCounter <= 1) markDirty();
     }
     if (!m_opt.statPath.empty() && m_frameCounter >= m_opt.statFrom) {
         std::vector<uint8_t> img;
@@ -1286,6 +1288,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         else if (a == L"--anim-light") opt.animLight = _wtoi(next().c_str()) != 0;
         else if (a == L"--anim-period") opt.animPeriod = _wtoi(next().c_str());
         else if (a == L"--anim-at") opt.animAt = _wtoi(next().c_str());
+        else if (a == L"--anim-stop") opt.animStop = _wtoi(next().c_str());
         else if (a == L"--anim-move") swscanf_s(next().c_str(), L"%f,%f,%f", &opt.animMove.x, &opt.animMove.y, &opt.animMove.z);
         else if (a == L"--split-interval") opt.splitInterval = (float)_wtof(next().c_str());
         else if (a == L"--split-cascades") opt.splitCascades = _wtoi(next().c_str());
@@ -1301,6 +1304,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         else if (a == L"--temporal-cap") opt.temporalCap = _wtoi(next().c_str());
         else if (a == L"--hysteresis") opt.hysteresis = (float)_wtof(next().c_str());
         else if (a == L"--progressive") opt.progressive = _wtoi(next().c_str());
+        else if (a == L"--raster-moving") opt.rasterMoving = _wtoi(next().c_str());
         else if (a == L"--size") {
             std::wstring s = next();
             swscanf_s(s.c_str(), L"%dx%d", &opt.width, &opt.height);

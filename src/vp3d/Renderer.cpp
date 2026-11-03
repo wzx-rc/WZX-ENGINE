@@ -353,7 +353,7 @@ bool Renderer::createPipelines(std::string* error) {
         if (!make(L"SSAO.cso", m_psoSSAO) || !make(L"SSAO_MS.cso", m_psoSSAOMS) || !make(L"SSAOBlur.cso", m_psoSSAOBlur)) { m_psoSSAO.Reset(); m_psoSSAOMS.Reset(); m_psoSSAOBlur.Reset(); }
         error = keep;
     }
-    return make(L"PathTrace.cso", m_psoTrace) && make(L"Denoise.cso", m_psoDenoise) && make(L"Tonemap.cso", m_psoTonemap) &&
+    return make(L"PathTrace.cso", m_psoTrace) && make(L"Denoise.cso", m_psoDenoise) && make(L"Tonemap.cso", m_psoTonemap) && make(L"GIFade.cso", m_psoGIFade) &&
            make(L"DDGIUpdate.cso", m_psoGIUpdate) && make(L"DDGIRaster.cso", m_psoGIRaster) &&
            make(L"DDGIBlend.cso", m_psoGIBlend) && make(L"GIShade.cso", m_psoGIShade) &&
            make(L"RCVisibility.cso", m_psoRCVisibility) && make(L"RCTrace.cso", m_psoRCTrace) &&
@@ -2183,6 +2183,37 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
     vp.w = std::max(1, std::min(vp.w, (int)m_width - vp.x));
     vp.h = std::max(1, std::min(vp.h, (int)m_height - vp.y));
     setMsaa((uint32_t)std::max(1, rs.msaaSamples));   // viewport anti-aliasing (rebuilds the MSAA passes when it changes)
+    // GI mode, raster while moving: the camera, the objects or the lighting changed -> the raster view of the probes
+    // (the probes keep updating), until giSettleFrames still frames; then the ray traced image, faded in from the last
+    // raster image over giFadeFrames (no jump)
+    if (!m_giInMoveSwitch) {   // (the raster frame drawn below for the switch keeps them)
+        m_giKeepRaster = false;
+        m_giFadeT = 1.0f;
+    }
+    const bool giTracedMode = rs.ddgi && !rs.raster && !rs.ddgiRaster && !rs.ddgiRasterView && rs.giMethod == 0 && !rs.bakedProbes;
+    if (rs.giRasterWhileMoving && giTracedMode && !m_giInMoveSwitch) {
+        uint32_t k = sceneSig(scene) ^ (transformSig(scene) * 2654435761u) ^ (renderSignature(rs) * 40503u);
+        auto mixc = [&](const void* p, size_t n) { const unsigned char* c = (const unsigned char*)p; for (size_t i = 0; i < n; ++i) { k ^= c[i]; k *= 16777619u; } };
+        const Camera& cam = scene.camera;
+        mixc(&cam.target, sizeof(cam.target)); mixc(&cam.yaw, sizeof(float)); mixc(&cam.pitch, sizeof(float));
+        mixc(&cam.distance, sizeof(float)); mixc(&cam.fovY, sizeof(float)); mixc(&cam.ortho, sizeof(bool)); mixc(&cam.orthoHeight, sizeof(float));
+        mixc(&vp, sizeof(vp));
+        if (k != m_giMoveKey) { m_giMoveKey = k; m_giMoveStill = 0; }
+        else if (m_giMoveStill < (1 << 20)) ++m_giMoveStill;
+        if (m_giMoveStill < std::max(0, rs.giSettleFrames)) {
+            RenderSettings r2 = rs;
+            r2.ddgiRasterView = true;
+            r2.aaQuality = 0;   // (the same MSAA as the traced view: no rebuild of the targets at each switch)
+            m_giInMoveSwitch = true;
+            m_giKeepRaster = !rs.denoise && m_psoGIFade;   // its image is where the fade starts
+            render(scene, r2, vpIn, selectedObject, toBackBuffer);
+            m_giInMoveSwitch = false;
+            return;
+        }
+        const int f = m_giMoveStill - std::max(0, rs.giSettleFrames);
+        if (!rs.denoise && m_psoGIFade && f < rs.giFadeFrames && m_giMoveStill < (1 << 20))
+            m_giFadeT = (f + 1.0f) / (float)std::max(1, rs.giFadeFrames);
+    }
     auto selCovTable = [&]() {   // t8 of the tonemapper: coverage of the selection
         D3D12_GPU_DESCRIPTOR_HANDLE g = m_heap->GetGPUDescriptorHandleForHeapStart();
         g.ptr += (UINT64)kSelCovSlot * m_descSize;
@@ -2466,6 +2497,13 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
         uint32_t rc[4] = {TEX_DENOISE_A, 1u, (uint32_t)rs.tonemapper, 0};
         m_cmd->SetComputeRoot32BitConstants(1, 4, rc, 0);
         m_cmd->Dispatch(gx, gy, 1);
+        if (m_giKeepRaster) {   // GI mode, raster while moving: this image is kept for the fade to the traced one
+            uavBarrier();
+            m_cmd->SetPipelineState(m_psoGIFade.Get());
+            uint32_t fk[4] = {0u, 0u, 0u, 0u};
+            m_cmd->SetComputeRoot32BitConstants(1, 4, fk, 0);
+            m_cmd->Dispatch(gx, gy, 1);
+        }
     } else {
     m_cmd->SetComputeRootSignature(m_rootSig.Get());
     m_cmd->SetComputeRootConstantBufferView(0, m_constants.va());
@@ -2532,6 +2570,14 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
     uint32_t tc[4] = {rs.denoise ? denoisedSlot : 0xFFFFFFFFu, 0, (uint32_t)rs.tonemapper, overlay};
     m_cmd->SetComputeRoot32BitConstants(1, 4, tc, 0);
     m_cmd->Dispatch(gx, gy, 1);
+    if (m_giFadeT < 1.0f) {   // GI mode, raster while moving: from the last raster image to the traced one
+        uavBarrier();
+        m_cmd->SetPipelineState(m_psoGIFade.Get());
+        uint32_t fk[4] = {1u, 0u, 0u, 0u};
+        memcpy(&fk[1], &m_giFadeT, sizeof(float));
+        m_cmd->SetComputeRoot32BitConstants(1, 4, fk, 0);
+        m_cmd->Dispatch(gx, gy, 1);
+    }
     }
     if (useHistory) {
         copyHistory();

@@ -28,7 +28,7 @@ if not exist build\lib mkdir build\lib
 
 echo [1/6] Shaders
 set "DXC=%WindowsSdkVerBinPath%x64\dxc.exe"
-for %%S in (PathTrace Denoise Tonemap DDGIUpdate DDGIRaster DDGIBlend GIShade RCVisibility RCTrace RCGather RCSProbes RCSTrace RCSProbeSH RCSGather SunShadowTrace SunShadowFilter ReflectTrace ReflectFilter SRCClear SRCInsert SRCAlloc SRCCount SRCTrace SRCMerge SRCIrradiance SRCFilter SRCGather ResolveTM) do (
+for %%S in (PathTrace Denoise Tonemap DDGIUpdate DDGIRaster DDGIBlend GIShade GIFade RCVisibility RCTrace RCGather RCSProbes RCSTrace RCSProbeSH RCSGather SunShadowTrace SunShadowFilter ReflectTrace ReflectFilter SRCClear SRCInsert SRCAlloc SRCCount SRCTrace SRCMerge SRCIrradiance SRCFilter SRCGather ResolveTM) do (
     "%DXC%" -nologo -T cs_6_5 -E main -HV 2021 -O3 -I src\vp3d\shaders src\vp3d\shaders\%%S.hlsl -Fo "%OUT%\shaders\%%S.cso" || exit /b 1
 )
 rem screen-space ambient occlusion of the raster viewport (depth multisampled or not) and its blur

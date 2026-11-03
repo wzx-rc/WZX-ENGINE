@@ -130,7 +130,7 @@ struct Options {
     float splitInterval = 0;              // its first interval in probe cells (--split-interval)
     // Ghosting test: object index and / or light 0 swinging by animMove (--anim-object N, --anim-light 1,
     // --anim-move x,y,z, --anim-period frames, --anim-at F = frozen at the pose of frame F)
-    int animObject = -1, animPeriod = 120, animAt = -1;
+    int animObject = -1, animPeriod = 120, animAt = -1, animStop = -1;   // --anim-stop F: moving until frame F, then still
     bool animLight = false;
     vp3d::float3 animMove = vp3d::float3(10, 0, 0);
     bool showProbes = false;       // draw the probes as spheres shaded with their irradiance (--show-probes 1)
@@ -146,6 +146,8 @@ struct Options {
     int ddgiView = 0;           // 0 full, 1 indirect only, 2 direct only
     int temporalCap = 1024;      // history length in frames (converges; the history is dropped on lighting changes)
     float hysteresis = -1.0f;   // < 0: 0.995 with the progressive probes, 0.97 without
+    int rasterMoving = 1;       // GI mode: the raster view of the probes while something moves, then a fade to the traced
+                                // image (--raster-moving 0: always traced)
     int progressive = 1;        // GI mode: progressive probes (running average while still, restart around what changed,
                                 // a quarter of the probes per frame once still); --progressive 0 = the former blend
     int light = -1;             // test: 1 light mode, 0 dark mode

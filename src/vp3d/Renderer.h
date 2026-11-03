@@ -88,6 +88,11 @@ struct RenderSettings {
     // progressive probes: the hysteresis grows from 0.85 to ddgiHysteresis while nothing changes (a running average:
     // converged and still), back to 0.85 when the lights, the environment or an object change; no fast path per texel
     bool ddgiProgressive = false;
+    // GI mode (ray traced probes and visibility): while the camera or an object moves, and giSettleFrames after, the
+    // raster view of the probes (no per-pixel noise), then a fade of giFadeFrames to the ray traced image
+    bool giRasterWhileMoving = false;
+    int giSettleFrames = 8;
+    int giFadeFrames = 24;
     float ddgiViewBias = -1.0f;   // >= 0: the view bias of the probe lookup (spacings) instead of the default 0.24
     float ddgiEnergy = 1.0f;   // scale of the probe light where it is read (not in the bounces): no probe restart
     int temporalCap = 1024;        // history length in frames (exponential average window): 256 converges, 64 stays noisier
@@ -369,7 +374,12 @@ private:
     std::wstring m_shaderDir;
 
     ComPtr<ID3D12RootSignature> m_rootSig;
-    ComPtr<ID3D12PipelineState> m_psoTrace, m_psoDenoise, m_psoTonemap;
+    ComPtr<ID3D12PipelineState> m_psoTrace, m_psoDenoise, m_psoTonemap, m_psoGIFade;
+    // raster while moving (RenderSettings::giRasterWhileMoving): still frames, motion key, image kept, fade weight
+    int m_giMoveStill = 1 << 20;
+    uint32_t m_giMoveKey = 0;
+    bool m_giKeepRaster = false, m_giInMoveSwitch = false;
+    float m_giFadeT = 1.0f;
     ComPtr<ID3D12PipelineState> m_psoGIUpdate, m_psoGIBlend, m_psoGIShade, m_psoGIRaster;
     ComPtr<ID3D12PipelineState> m_psoRCVisibility, m_psoRCTrace, m_psoRCGather;
     ComPtr<ID3D12PipelineState> m_psoRCSProbes, m_psoRCSTrace, m_psoRCSProbeSH, m_psoRCSGather;
