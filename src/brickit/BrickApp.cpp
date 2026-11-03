@@ -1085,6 +1085,9 @@ void BrickApp::frame() {
             frs.ddgiHysteresis = 0.997f;   // (reached after ~300 still frames, 0.85 right after a change)
             frs.ddgiProgressive = true;
             frs.ddgiEnergy = m_softGIStrength;
+            // a small view bias: under a roof overhang the lookup no longer reaches the probes out in the open
+            // (maison_gi: gap to the PT 12.8 -> 10.9 %, under the overhang of the door view +55 -> +31 %)
+            frs.ddgiViewBias = 0.10f;
             frs.ddgiProbeBudget = m_opt.softGIProbes;
             frs.samplesPerFrame = 1;
             frs.historyFixes = true;
@@ -1102,7 +1105,7 @@ void BrickApp::frame() {
                 }
                 if (m_bricks.empty()) { lo = float3(-8, 0, -8); hi = float3(8, 8, 8); }
                 const float size = std::max(hi.x - lo.x, std::max(hi.y - lo.y, hi.z - lo.z));
-                m_softMargin = std::max(4.0f, size * 0.25f);
+                m_softMargin = std::max(4.0f, size * 0.25f) * m_opt.softGIMargin;
                 m_softLo = lo - float3(m_softMargin * 0.5f, 0.0f, m_softMargin * 0.5f);
                 m_softLo.y = std::min(lo.y, -0.5f);   // the probes start just under the ground
                 m_softHi = hi + float3(m_softMargin * 0.5f);
@@ -1201,6 +1204,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         else if (a == L"--grid-alpha") opt.gridAlpha = (float)_wtof(next().c_str());
         else if (a == L"--soft-gi") opt.softGI = _wtoi(next().c_str());
         else if (a == L"--gi-strength") opt.giStrength = (float)_wtof(next().c_str());
+        else if (a == L"--soft-gi-margin") opt.softGIMargin = (float)_wtof(next().c_str());
         else if (a == L"--soft-gi-probes") opt.softGIProbes = _wtoi(next().c_str());
         else if (a == L"--gi-edit") { opt.giEditBrick = _wtoi(next().c_str()); opt.giEditOff = _wtoi(next().c_str()); opt.giEditOn = _wtoi(next().c_str()); }
         else if (a == L"--write-house") opt.writeHouse = next();
