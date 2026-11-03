@@ -1873,7 +1873,7 @@ void BrickApp::uiSettings() {
     const float H = pad + 20 * s + gap + rows.size() * (16 * s + rowH + gap) - gap + pad;
     // second column: Lumière (HDRI, rotation, intensity, custom HDRI, colour of the grid)
     const float hdriRowsN = (float)((m_hdriPaths.size() + 1) / 2);
-    const float H2 = pad + 20 * s + gap + 16 * s + hdriRowsN * (rowH + 4 * s) + gap + rowH + gap + 2 * (16 * s + rowH + gap) + 16 * s + rowH + gap + 16 * s + rowH + gap + 18 * s + pad;
+    const float H2 = (16 * s + rowH + gap) + pad + 20 * s + gap + 16 * s + hdriRowsN * (rowH + 4 * s) + gap + rowH + gap + 2 * (16 * s + rowH + gap) + 16 * s + rowH + gap + 16 * s + rowH + gap + 18 * s + pad;
     const float W2 = 2 * W;
     ImVec2 p0(std::min(m_popupAt.x, d.x - W2 - 10 * s), m_popupAt.y), p1(p0.x + W2, std::min(p0.y + std::max(H, H2), d.y - 8 * s));
     u.dl->AddRectFilled(ImVec2(p0.x, p0.y + 10 * s), ImVec2(p1.x, p1.y + 10 * s), IM_COL32(0, 0, 0, 60), 12 * s);
@@ -1909,6 +1909,22 @@ void BrickApp::uiSettings() {
         u.text(ImVec2(x0 + pad, ly), 14, C_TEXT, "Lumière", true);
         ly += 20 * s + gap;
         bool lookChanged = false;
+        {   // GI douce (HQ): on / off (off = the HQ as before, no probe computed)
+            u.text(ImVec2(x0 + pad, ly), 11, C_DIM, "GI douce (HQ)");
+            ly += 16 * s;
+            const float bw2 = (W - 2 * pad - 4 * s) / 2;
+            for (int k = 0; k < 2; ++k) {
+                const bool on = (k == 0) == m_softGI;
+                ImVec2 a(x0 + pad + k * (bw2 + 4 * s), ly), b(a.x + bw2, ly + rowH);
+                const bool h = u.hover(a, b);
+                u.dl->AddRectFilled(a, b, on ? C_ACCENT : (h ? C_CARD_HI : C_CARD), 7 * s);
+                const char* lab = k == 0 ? "Oui" : "Non";
+                const float tw = u.textW(12, lab, on);
+                u.text(ImVec2((a.x + b.x) * 0.5f - tw * 0.5f, a.y + (rowH - u.fs(12)) * 0.5f), 12, on ? C_INK : C_TEXT, lab, on);
+                if (h && u.pressed && !on) { m_softGI = k == 0; m_renderer.resetAccumulation(); savePrefs(); }
+            }
+            ly += rowH + gap;
+        }
         // HDRI: the list, two per line
         u.text(ImVec2(x0 + pad, ly), 11, C_DIM, "HDRI");
         ly += 16 * s;

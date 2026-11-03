@@ -167,6 +167,7 @@ bool BrickApp::init(HINSTANCE inst, const Options& opt) {
     if (opt.hdriInt >= 0) m_hdriInt = opt.hdriInt;
     if (opt.gridColor >= 0) { m_gridRgb = float3(((opt.gridColor >> 16) & 255) / 255.0f, ((opt.gridColor >> 8) & 255) / 255.0f, (opt.gridColor & 255) / 255.0f); if (m_gridAlpha <= 0) m_gridAlpha = 0.6f; }
     if (opt.gridAlpha >= 0) m_gridAlpha = opt.gridAlpha;
+    if (opt.softGI >= 0) m_softGI = opt.softGI != 0;
     if (!opt.mouseTest.empty()) m_gui.beforeNewFrame = [this] { mouseTestInput(); };
     if (opt.floatTray) { m_pTray.floating = true; m_pTray.x = opt.floatX; m_pTray.y = opt.floatY; }
     if (opt.optsRight) m_optsRight = true;
@@ -961,7 +962,45 @@ void BrickApp::frame() {
         ImGui::GetBackgroundDrawList()->AddImage(m_frozenTex, ImVec2(m_stage.x, m_stage.y), ImVec2(m_stage.z, m_stage.w));
     } else {
         renderSteps();   // images of the manual asked by the UI this frame
-        m_renderer.renderToTexture(m_scene, m_rs, m_vp, selObj);
+        RenderSettings frs = m_rs;
+        if (m_rs.raster && m_quality == 1 && m_softGI && !m_rcMode) {
+            // HQ + GI douce: the raster view of the HQ reads the probes (DDGI, ray traced in the volume of the bricks,
+            // long temporal average in world space: stable, converged while nothing moves)
+            frs.raster = false;
+            frs.ddgi = true;
+            frs.ddgiRaster = false;
+            frs.ddgiRasterView = true;
+            frs.giMethod = 0;
+            frs.rcSplit = false;
+            frs.rcScreen = false;
+            frs.ddgiHysteresis = 0.985f;
+            frs.ddgiProbeBudget = 4096;
+            frs.samplesPerFrame = 1;
+            frs.historyFixes = true;
+            if (m_giBoundsVersionSoft != m_scene.objectsVersion || frs.giBoundsFade <= 0) {
+                m_giBoundsVersionSoft = m_scene.objectsVersion;
+                float3 lo(1e30f), hi(-1e30f);
+                for (const Brick& b : m_bricks) {
+                    const Part& p = m_lib.parts[b.part];
+                    for (int c = 0; c < 8; ++c) {
+                        const float3 v((c & 1) ? p.bmax.x : p.bmin.x, (c & 2) ? p.bmax.y : p.bmin.y, (c & 4) ? p.bmax.z : p.bmin.z);
+                        const float3 wv = qRot(b.rot, v) + b.pos;
+                        lo = float3(std::min(lo.x, wv.x), std::min(lo.y, wv.y), std::min(lo.z, wv.z));
+                        hi = float3(std::max(hi.x, wv.x), std::max(hi.y, wv.y), std::max(hi.z, wv.z));
+                    }
+                }
+                if (m_bricks.empty()) { lo = float3(-8, 0, -8); hi = float3(8, 8, 8); }
+                const float size = std::max(hi.x - lo.x, std::max(hi.y - lo.y, hi.z - lo.z));
+                m_softMargin = std::max(4.0f, size * 0.25f);
+                m_softLo = lo - float3(m_softMargin * 0.5f, 0.0f, m_softMargin * 0.5f);
+                m_softLo.y = std::min(lo.y, -0.5f);   // the probes start just under the ground
+                m_softHi = hi + float3(m_softMargin * 0.5f);
+            }
+            frs.giBoundsMin = m_softLo;
+            frs.giBoundsMax = m_softHi;
+            frs.giBoundsFade = m_softMargin * 0.5f;
+        }
+        m_renderer.renderToTexture(m_scene, frs, m_vp, selObj);
         ImGui::GetBackgroundDrawList()->AddImage(m_gui.viewportTexture(), ImVec2(m_stage.x, m_stage.y), ImVec2(m_stage.z, m_stage.w));
         drawVoxels();          // over the 3D view, under the panels
         drawHoldOverlay();
@@ -1037,6 +1076,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         else if (a == L"--hdri-int") opt.hdriInt = (float)_wtof(next().c_str());
         else if (a == L"--grid-color") opt.gridColor = (int)wcstol(next().c_str(), nullptr, 16);
         else if (a == L"--grid-alpha") opt.gridAlpha = (float)_wtof(next().c_str());
+        else if (a == L"--soft-gi") opt.softGI = _wtoi(next().c_str());
         else if (a == L"--hq-ao") opt.hqAO = (float)_wtof(next().c_str());   // (measures: traced occlusion range, 0 = off)
         else if (a == L"--hq-refl") opt.hqRefl = _wtoi(next().c_str());   // (measures: traced reflection rays, 0 = off)   // (comparison: the GI over the whole visible ground)
         else if (a == L"--aa") opt.aa = _wtoi(next().c_str());

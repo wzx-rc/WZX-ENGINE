@@ -38,6 +38,7 @@ struct Options {
     float hdriRot = -1, hdriInt = -1;   // --hdri-rot degrees, --hdri-int
     int gridColor = -1;       // --grid-color RRGGBB (hex)
     float gridAlpha = -1;     // --grid-alpha 0..1
+    int softGI = -1;          // --soft-gi 0 / 1
     float hqAO = -1;          // --hq-ao cm
     int hqRefl = -1;          // --hq-refl rays
     int aa = -1, shadows = -1;   // --aa 0..2 (MSAA 4x / 8x / AAA), --shadows 0..4 (ray traced shadows of the RC mode)        // --bevel-spp N (0 = bevel off)
@@ -411,6 +412,13 @@ private:
     // Radiance Cascades (native addition, Réglages): the Split Radiance Cascades of WZX Engine (real time GI, ray
     // traced, no history: sparse world probes around the visible surfaces), with the path tracing look
     bool m_rcMode = false;
+    // HQ + GI douce (Tiny Glade like): the HQ view reads a world probe volume (DDGI, ray traced, long hysteresis,
+    // bounded to the bricks): soft bounces and occlusion, stable, no ray per pixel for the GI
+    bool m_softGI = true;
+    float m_softGIStrength = 1.0f;
+    uint64_t m_giBoundsVersionSoft = ~0ull;
+    float3 m_softLo{0, 0, 0}, m_softHi{0, 0, 0};
+    float m_softMargin = 4.0f;
     uint64_t m_giBoundsVersion = ~0ull;   // scene version of the GI bounds (Radiance Cascades)
     void setRC(bool on);
     bool userSession() const;   // not a test / demo / capture run: the preferences and the autosave may be written

@@ -301,6 +301,7 @@ private:
     D3D12_GPU_DESCRIPTOR_HANDLE textureTable() const;
     void setupProbeGrid(const RenderSettings& rs);
     void createProbeTextures(const lit::ProbeGrid& grid);
+    uint64_t m_giBoundsKey = 0;   // GI bounds the probe grid was placed on (0 = the scene bounds)
     void recordDDGI(const RenderSettings& rs, UINT gx, UINT gy, bool shade = true);   // shade: GIShade (ray traced visibility)
     void recordRC(const RenderSettings& rs);   // Radiance Cascades: trace + merge every cascade, then fill the probe atlases
     void recordRCScreen(const RenderSettings& rs, UINT gx, UINT gy);   // screen-space cascades + per-pixel gather

@@ -1219,9 +1219,20 @@ void Renderer::buildAccel() {
 // and (re)creates the DDGI textures. Probes restart from scratch when the grid changes.
 void Renderer::setupProbeGrid(const RenderSettings& rs) {
     int budget = std::max(8, rs.giMethod == 1 ? rs.rcProbeBudget : rs.ddgiProbeBudget);
-    if (m_giTex[0] && m_giGridVersion == m_sceneGeometryVersion && m_giBudget == budget) return;
+    // GI bounds (RenderSettings::giBounds*, BrickIt): the grid covers them (grown by the fade), not a huge ground;
+    // snapped to 4 units so that a small edit of the scene keeps the grid (and the converged probes)
+    const bool bounded = rs.giBoundsFade > 0;
+    float3 bmn = rs.giBoundsMin - float3(rs.giBoundsFade), bmx = rs.giBoundsMax + float3(rs.giBoundsFade);
+    if (bounded) {
+        bmn = float3(std::floor(bmn.x / 4) * 4, std::floor(bmn.y / 4) * 4, std::floor(bmn.z / 4) * 4);
+        bmx = float3(std::ceil(bmx.x / 4) * 4, std::ceil(bmx.y / 4) * 4, std::ceil(bmx.z / 4) * 4);
+    }
+    const uint64_t boundsKey = bounded ? std::hash<std::string>()(std::string((const char*)&bmn, sizeof(bmn)) + std::string((const char*)&bmx, sizeof(bmx))) : 0;
+    if (m_giTex[0] && m_giBudget == budget && (bounded ? m_giBoundsKey == boundsKey : (m_giBoundsKey == 0 && m_giGridVersion == m_sceneGeometryVersion))) return;
+    m_giBoundsKey = boundsKey;
     float3 mn(1e30f), mx(-1e30f);
-    for (const Draw& d : m_draws) {
+    if (bounded) { mn = bmn; mx = bmx; }
+    else for (const Draw& d : m_draws) {
         if (d.flags & 2u) continue;   // light quads
         const MeshGpu& g = m_meshes[d.mesh];
         for (int k = 0; k < 8; ++k) {
