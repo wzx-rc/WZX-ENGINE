@@ -98,6 +98,8 @@ struct RasterConstants {
     float3 hemiGround{0, 0, 0}; float hemiPad = 0;
     float rtShadow = 0, sunTanRadius = 0, rtShadowSamples = 0, rtRefl = 0;   // ray traced sun shadow, reflections (DirectX 12 viewport only)
     float centreValid = 0, rcPad0 = 0, rcPad1 = 0, rcPad2 = 0;
+    float3 envSun2Dir{0, 1, 0}; float envSun2On = 0;   // (DirectX 12 viewport only)
+    float3 envSun2E{0, 0, 0}; float envSun2Tan = 0;
 };
 
 struct DrawConstants {

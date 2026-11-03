@@ -1,4 +1,4 @@
-// BrickIt - native brick builder (PC, DirectX 12) on the vp3d renderer, with the WZX Engine Dear ImGui theme.
+﻿// BrickIt - native brick builder (PC, DirectX 12) on the vp3d renderer, with the WZX Engine Dear ImGui theme.
 //   BrickApp.cpp  window, loop, stage, scene sync, test scenes
 //   BrickEdit.cpp mouse and keys: brick in hand, selection, undo, files
 //   BrickUi.cpp   panels: toolbar, library (two rows at the bottom), colours (right), stats
@@ -39,6 +39,10 @@ struct Options {
     int gridColor = -1;       // --grid-color RRGGBB (hex)
     float gridAlpha = -1;     // --grid-alpha 0..1
     int softGI = -1;          // --soft-gi 0 / 1
+    int softGIProbes = 16384; 
+    int giEditBrick = -1, giEditOff = 0, giEditOn = 0;   // --gi-edit i f1 f2: brick i removed at frame f1, back at f2 (GI reactivity)  // --soft-gi-probes n (measures: probe budget of the soft GI)
+    std::wstring writeHouse;  // --write-house file: builds the GI reference house (light grey bricks) and saves it
+    bool giLookdev = false;   // --gi-lookdev: one light grey material, rough, no specular / coat, a light SSS
     float hqAO = -1;          // --hq-ao cm
     int hqRefl = -1;          // --hq-refl rays
     int aa = -1, shadows = -1;   // --aa 0..2 (MSAA 4x / 8x / AAA), --shadows 0..4 (ray traced shadows of the RC mode)        // --bevel-spp N (0 = bevel off)
@@ -108,6 +112,7 @@ private:
     void buildDemo();
     int colorIndex(int ldrawId) const;   // palette index of an LDraw colour code
     void setupStage();        // ground, HDRI, materials of the palette
+    void buildHouse();        // the GI reference house (--write-house)
     // Réglages > Lumière (native addition): environment image, its rotation and intensity, colour of the ground grid;
     // the same scene for every renderer (Rapide, HQ, RC, path tracing), saved in brickit_prefs.json ("light")
     void buildHdriList();     // L"" (procedural sky), assets\hdri\*.hdr | *.exr, then the user's HDRI

@@ -6,6 +6,7 @@
 void main(uint3 id : SV_DispatchThreadID) {
     uint ray = id.x, p = id.y;
     if (ray >= DDGI_RAYS || p >= G.counts.w) return;
+    if (ProbeSkipped(p)) return;   // (an old probe, not updated this frame)
     uint rng = Hash(ray * 7919u + p * 104729u + Hash(G.frame * 31u + 7u));
     float3 o = ProbePos(ProbeCoord(p));
     float3 d = ProbeRayDir(ray);

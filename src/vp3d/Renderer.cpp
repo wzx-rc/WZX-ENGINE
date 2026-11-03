@@ -1,4 +1,5 @@
 #include "Renderer.h"
+#include <algorithm>
 #include "shaders/Shared.h"
 #include <cstring>
 #include <fstream>
@@ -1436,6 +1437,16 @@ void Renderer::recordDDGI(const RenderSettings& rs, UINT gx, UINT gy, bool shade
     lit::DDGIFrame f;
     f.frame = m_giFrame++;
     f.hysteresis = rs.ddgiHysteresis;
+    // progressive: a running average while still (1 - 1 / n, from 0.85 up to ddgiHysteresis); after 64 still frames a
+    // quarter of the probes per frame (the average goes on at a quarter of the pace, a quarter of the cost)
+    uint32_t stride = 1;
+    if (rs.ddgiProgressive) {
+        if (m_giStill == 0) m_giStillUpdates = 0;
+        stride = m_giStill >= 64 && m_giFrame > 1 ? 4u : 1u;
+        f.hysteresis = std::min(rs.ddgiHysteresis, std::max(0.85f, 1.0f - 1.0f / (m_giStillUpdates + 7.0f)));
+        m_giStillUpdates += 1.0f / (float)stride;
+        ++m_giStill;
+    }
     f.temporalMax = (uint32_t)std::max(1, rs.temporalCap);
     f.view = rs.ddgiView;
     f.showProbes = rs.ddgiShowProbes;
@@ -1446,6 +1457,51 @@ void Renderer::recordDDGI(const RenderSettings& rs, UINT gx, UINT gy, bool shade
     f.captureSeen = rs.ddgiRaster ? std::min(total, m_capSeen + m_capSlots) : total;
     gpu::DDGIConstants c;
     lit::ddgiConstants(grid, f, m_giRng, c);
+    if (rs.ddgiProgressive) c.flags |= 16u;   // (DDGIBlend: no per-texel fast path, the noise would trigger it)
+    c.stride = rs.ddgiRaster ? 1u : stride;
+    if (rs.ddgiProgressive && !rs.ddgiRaster && (m_giDrawVersion != m_buildVersion || m_buildVersion == 0)) {
+        // the draws that appeared or went away since the last frame (a moved object: both): their box, grown by
+        // two probe spacings, is where the probes restart their average
+        m_giDrawVersion = m_buildVersion;
+        typedef std::pair<uint64_t, std::pair<float3, float3>> KeyBox;
+        std::vector<KeyBox> now;
+        now.reserve(m_draws.size());
+        for (const Draw& d : m_draws) {
+            if (d.flags & 2u) continue;   // light quads
+            uint64_t k = 1469598103934665603ull;
+            auto mixd = [&](const void* p, size_t n) { const unsigned char* c = (const unsigned char*)p; for (size_t i = 0; i < n; ++i) { k ^= c[i]; k *= 1099511628211ull; } };
+            mixd(&d.mesh, sizeof(d.mesh));
+            mixd(&d.xf, sizeof(d.xf));
+            mixd(&d.material, sizeof(d.material));
+            const MeshGpu& g = m_meshes[d.mesh];
+            float3 mn(1e30f), mx(-1e30f);
+            for (int q = 0; q < 8; ++q) {
+                const float3 v = d.xf.point(float3((q & 1) ? g.bmax.x : g.bmin.x, (q & 2) ? g.bmax.y : g.bmin.y, (q & 4) ? g.bmax.z : g.bmin.z));
+                mn = minv(mn, v);
+                mx = maxv(mx, v);
+            }
+            now.push_back({k, {mn, mx}});
+        }
+        std::sort(now.begin(), now.end(), [](const KeyBox& x, const KeyBox& y) { return x.first < y.first; });
+        float3 dmn(1e30f), dmx(-1e30f);
+        if (!m_giDrawBoxes.empty()) {
+            size_t i = 0, j = 0;   // sorted merge: what is in one list only changed
+            while (i < now.size() || j < m_giDrawBoxes.size()) {
+                if (j >= m_giDrawBoxes.size() || (i < now.size() && now[i].first < m_giDrawBoxes[j].first)) {
+                    dmn = minv(dmn, now[i].second.first); dmx = maxv(dmx, now[i].second.second); ++i;
+                } else if (i >= now.size() || m_giDrawBoxes[j].first < now[i].first) {
+                    dmn = minv(dmn, m_giDrawBoxes[j].second.first); dmx = maxv(dmx, m_giDrawBoxes[j].second.second); ++j;
+                } else { ++i; ++j; }
+            }
+        }
+        m_giDrawBoxes.swap(now);
+        if (dmn.x <= dmx.x) {
+            const float g = 2.0f * m_giSpacing;
+            const float3 a = dmn - float3(g), b = dmx + float3(g);
+            c.dirtyMin = float4(a.x, a.y, a.z, 1.0f);
+            c.dirtyMax = float4(b.x, b.y, b.z, 1.0f);
+        }
+    }
     // Screen-space or split cascades: only for the raster view (shade = false), which reads their screen GI texture.
     const bool screen = rs.giMethod == 1 && (rs.rcScreen || rs.rcSplit) && !rs.ddgiRaster && !shade;
     if (screen) c.flags |= 8u;
@@ -2149,6 +2205,29 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
         }
     }
     const uint32_t sig = sceneSig(scene) ^ (renderSignature(rs) * 16777619u);
+    // progressive probes: a change of the lights, the environment, the materials or the settings restarts them all
+    // (the objects added, removed or moved restart only the probes around them, recordDDGI)
+    if (rs.ddgiProgressive) {
+        uint32_t lk = renderSignature(rs);
+        auto mixk = [&](const void* p, size_t n) { const unsigned char* c = (const unsigned char*)p; for (size_t i = 0; i < n; ++i) { lk ^= c[i]; lk *= 16777619u; } };
+        for (const Material& m : scene.materials) {
+            mixk(&m.baseColor, sizeof(m.baseColor)); mixk(&m.roughness, sizeof(float)); mixk(&m.metallic, sizeof(float));
+            mixk(&m.transmission, sizeof(float)); mixk(&m.emission, sizeof(m.emission)); mixk(&m.emissionStrength, sizeof(float));
+        }
+        for (const AreaLight& l : scene.lights) {
+            mixk(&l.position, sizeof(l.position)); mixk(&l.target, sizeof(l.target)); mixk(&l.color, sizeof(l.color));
+            mixk(&l.intensity, sizeof(float)); mixk(&l.enabled, sizeof(bool));
+        }
+        const void* hdri = scene.env.hdri.get();
+        mixk(&hdri, sizeof(hdri));
+        mixk(&scene.env.hdriIntensity, sizeof(float));
+        mixk(&scene.env.hdriRotation, sizeof(float));
+        mixk(&scene.env.intensity, sizeof(float));
+        mixk(&scene.sun.direction, sizeof(scene.sun.direction));
+        mixk(&scene.sun.intensity, sizeof(float));
+        mixk(&scene.sun.enabled, sizeof(bool));
+        if (lk != m_giStillKey) { m_giStillKey = lk; m_giStill = 0; }
+    }
     if (sig != m_sceneSignature) {
         m_sceneSignature = sig;
         m_historyValid = false;

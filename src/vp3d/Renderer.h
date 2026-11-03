@@ -15,6 +15,7 @@
 #include <functional>
 #include <string>
 #include <vector>
+#include <utility>
 
 namespace vp3d {
 
@@ -84,6 +85,9 @@ struct RenderSettings {
     bool ddgi = false;
     int ddgiProbeBudget = 2048;   // target probe count over the scene bounds
     float ddgiHysteresis = 0.97f;
+    // progressive probes: the hysteresis grows from 0.85 to ddgiHysteresis while nothing changes (a running average:
+    // converged and still), back to 0.85 when the lights, the environment or an object change; no fast path per texel
+    bool ddgiProgressive = false;
     int temporalCap = 1024;        // history length in frames (exponential average window): 256 converges, 64 stays noisier
     int ddgiView = 0;             // 0 full, 1 indirect only, 2 direct only
     bool ddgiShowProbes = false;  // draw the probes as small spheres shaded with their irradiance
@@ -452,6 +456,12 @@ private:
     uint32_t m_giGridVersion = 0;
     int m_giBudget = 0;
     uint32_t m_giFrame = 0;
+    uint32_t m_giStill = 0, m_giStillKey = 0;   // frames since the lighting / the objects last changed (ddgiProgressive)
+    float m_giStillUpdates = 0;                 // updates of each probe since then (a quarter per frame once still)
+    // progressive probes: the draws of the last frame (key: mesh, transform, material) with their world box, to find
+    // the box of what was added, removed or moved (the probes there restart, the others stay converged)
+    std::vector<std::pair<uint64_t, std::pair<float3, float3>>> m_giDrawBoxes;
+    uint32_t m_giDrawVersion = 0;
     float m_giUpdateMs = 0.0f, m_giBlendMs = 0.0f;
     bool m_giTimed = false;
     Rng m_giRng;

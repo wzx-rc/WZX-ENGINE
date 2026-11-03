@@ -24,6 +24,7 @@ Cases : `[x]` porté et vérifié · `[~]` partiel (ce qui manque est dit) · `[
 - [x] La vue occupe la zone entre l'en-tête et la bibliothèque (même cadrage que le web), couleur courante Yellow 14 au départ
 - [x] Scène du web en temps réel : fond et brouillard 0x111214, sol 0x0e0f11, grille des tenons, axes X rouge / Z bleu, key chaude 3,4 + ombres, environnement 0,55, ACES 1, caméra fov 32 / yaw 38 / pitch 32
 - [x] Rim froide 0xc0d4ff 1,3 depuis (26, 22, −30) (lumière de surface lointaine, éclairement 1,3, sans ombre) et hémisphère 0x9aa3b8 / 0x1a1a1c 0,25 (nouveau terme du raster du moteur) — capture 20
+- Natif en plus : « GI douce (HQ) » Oui / Non (Réglages › Lumière) — sondes DDGI tracées bornées aux briques, moyenne progressive (convergée et immobile à l'arrêt, seules les sondes autour d'une brique ajoutée / retirée / déplacée repartent), 16 384 sondes, un quart mis à jour par image une fois stable ; scène de référence `tests/maison_gi.v3d.json` (`--gi-lookdev`) — captures 46, 47
 - [x] Toast (haut de la vue, bord jaune, fondu)
 - [x] HUD « Infos (pièces, fps) » (masqué par défaut, via Fenêtres)
 - [x] Écran « Chargement de la bibliothèque BrickIt… » (fond 0x131417, texte 14 px gris, pendant le chargement de la bibliothèque et des miniatures)

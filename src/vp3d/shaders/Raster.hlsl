@@ -23,7 +23,9 @@ struct RasterConstants {
     float3 hemiSky; float hemiOn;        // hemisphere fill (three.js HemisphereLight): irradiance from the sky / the ground, x intensity
     float3 hemiGround; float bevelOn;    // bevelOn: scale of the material bevel radius in the raster view (0 = off, needs the TLAS)
     float rtShadow; float sunTanRadius; float rtShadowSamples; float rtRefl;   // ray traced sun shadow (t12), reflections (t13)
-    float centreValid; float rtLights; float rtAO; uint gridLine;   // centreValid: t14 is this frame's; rtLights: area
+    float centreValid; float rtLights; float rtAO; uint gridLine;
+    float3 envSun2Dir; float envSun2On;  // HQ: the light of the HDRI (its brightest area) as a second, ray traced soft light
+    float3 envSun2E; float envSun2Tan;   // beside the scene sun (out of the SH and the probes); its cone (tan half angle)   // centreValid: t14 is this frame's; rtLights: area
                                          // lights shadowed by rays (TLAS, space2); rtAO: ambient occluded by rays; rtProbes:
                                          // gridLine: Scene::gridLine (RGBA8 colour of the ground grid lines, 0 = default)
 };
@@ -171,6 +173,19 @@ float BvVisible(float3 P, float3 Ng, float3 T) {
 }
 
 float BvIGN(float2 pix) { return frac(52.9829189 * frac(dot(pix, float2(0.06711056, 0.00583715)))); }
+
+// Visibility of a distant light of angular radius atan(tanR) around L: 4 rays in its cone (turned per pixel).
+float BvConeShadow(float3 P, float3 Ng, float3 L, float tanR, float2 pix) {
+    float3 T, B;
+    BvBasis(L, T, B);
+    float rot = BvIGN(pix) * 6.2831853, vis = 0;
+    [unroll] for (uint k = 0; k < 4; ++k) {
+        float r = sqrt((k + 0.5) / 4.0) * tanR, a = rot + k * 2.39996;
+        float3 d = normalize(L + T * (r * cos(a)) + B * (r * sin(a)));
+        vis += BvVisible(P, Ng, P + d * 1e4);
+    }
+    return vis * 0.25;
+}
 
 // Shadow of a rectangle light: two rays to stratified points of the rectangle (turned per pixel).
 float BvAreaShadow(float3 P, float3 Ng, GpuLight l, float2 pix) {
@@ -560,6 +575,19 @@ float4 Shade(VSOut i, bool ghost, float shadowBias, bool capture) {
             color += (diff + spec) * R.sunRadiance * R.lightScale * NoL * sunVis;
         }
     }
+    // HQ: the light of the HDRI (studio softbox...) beside the scene sun, its soft shadow traced (it is out of the SH)
+    float envSun2Vis = 0, envSun2NoL = 0;
+#ifndef VP3D_ATTRIB_SEMANTICS
+    if (R.envSun2On > 0 && !capture) {
+        envSun2NoL = saturate(dot(N, R.envSun2Dir));
+        if (envSun2NoL > 0) {
+            float3 Ngs = normalize(i.nrm);
+            if (dot(Ngs, V) < 0) Ngs = -Ngs;
+            envSun2Vis = BvConeShadow(i.wpos, Ngs, R.envSun2Dir, R.envSun2Tan, i.pos.xy);
+            color += diffuseCol / PI * R.envSun2E * envSun2NoL * envSun2Vis;   // (its highlight is in the reflections)
+        }
+    }
+#endif
     // Hemisphere ambient + reflection of the environment, darkened in cavities facing down.
     float cavity = lerp(0.55, 1.0, saturate(i.wpos.y * 0.6 + 0.5 + N.y * 0.3));
     // Ambient of Lit: diffuse and glossy parts kept apart (the DDGI probes replace the diffuse part only).
@@ -592,11 +620,13 @@ float4 Shade(VSOut i, bool ghost, float shadowBias, bool capture) {
     }
     if (R.hemiOn > 0) ambDiffuse += diffuseCol / PI * lerp(R.hemiGround, R.hemiSky, 0.5 + 0.5 * N.y);
 #ifndef VP3D_ATTRIB_SEMANTICS
+    float rtAOk = 1.0;   // the traced occlusion, also applied to the probe light (GI)
     if (R.rtAO > 0 && !capture) {   // the environment occluded by the parts, as the path tracer sees it (HQ)
         float3 Nga = normalize(i.nrm);
         if (dot(Nga, V) < 0) Nga = -Nga;
         float ao = BvAO(i.wpos, Nga, R.rtAO, i.pos.xy);
         ambDiffuse *= ao;
+        rtAOk = ao;
         ambGlossy *= lerp(1.0, ao, 0.6);
     }
 #endif
@@ -629,6 +659,8 @@ float4 Shade(VSOut i, bool ghost, float shadowBias, bool capture) {
                 if (rr.a > 0.5) glossyAmb = kSpec * rr.rgb;
             }
 #endif
+            // the HDRI light seen by the probes is drawn above with its traced shadow: out of their irradiance;
+            if (R.envSun2On > 0) irr = max(irr - R.envSun2E * (envSun2NoL * envSun2Vis / PI), 0.0);
             color += lerp(ambDiffuse, kdAmb * irr, conf) + glossyAmb;
         }
     } else

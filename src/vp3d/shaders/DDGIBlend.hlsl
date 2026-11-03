@@ -26,6 +26,8 @@ float3 TexelDir(int2 t, int n) {
 void main(uint3 gid : SV_GroupID, uint3 tid3 : SV_GroupThreadID) {
     uint p = gid.x;
     uint tid = tid3.x;
+    if (ProbeSkipped(p)) return;   // (an old probe, not updated this frame: keeps its tiles)
+    const float age = G.frame == 0 ? 0.0 : ProbeAge(p);
     if (tid == 0) sBackfaces = 0;
     GroupMemoryBarrierWithGroupSync();
     float4 r = gRays[int2(tid, p)];
@@ -35,6 +37,8 @@ void main(uint3 gid : SV_GroupID, uint3 tid3 : SV_GroupThreadID) {
     GroupMemoryBarrierWithGroupSync();
 
     float h = G.frame == 0 ? 0.0 : G.hysteresis;
+    // progressive: the running average of this probe (1 - 1 / n since the objects around it changed, from 0.85)
+    if ((G.flags & 16u) != 0u && G.frame > 0) h = min(h, max(0.85, 1.0 - 1.0 / (age + 7.0)));
     const uint irrTile = DDGI_IRR_N + 2, distTile = DDGI_DIST_N + 2;
     const uint irrCount = irrTile * irrTile, total = irrCount + distTile * distTile;
     for (uint t = tid; t < total; t += DDGI_RAYS) {
@@ -55,7 +59,7 @@ void main(uint3 gid : SV_GroupID, uint3 tid3 : SV_GroupThreadID) {
             float hh = h;
             // Large changes (light moved, object moved) converge faster.
             float lp = Luminance(prev), lv = Luminance(v);
-            if (abs(lv - lp) > 2.0 * max(min(lv, lp), 0.02)) hh = min(hh, 0.85);
+            if ((G.flags & 16u) == 0u && abs(lv - lp) > 2.0 * max(min(lv, lp), 0.02)) hh = min(hh, 0.85);
             gIrr[px] = float4(lerp(v, prev, hh), 1);
         } else {
             uint u = t - irrCount;
@@ -76,5 +80,5 @@ void main(uint3 gid : SV_GroupID, uint3 tid3 : SV_GroupThreadID) {
             }
         }
     }
-    if (tid == 0) gProbe[int2(p, 0)] = float4(sBackfaces > DDGI_RAYS / 4 ? 0.0 : 1.0, (float)sBackfaces, 0, 1);
+    if (tid == 0) gProbe[int2(p, 0)] = float4(sBackfaces > DDGI_RAYS / 4 ? 0.0 : 1.0, (float)sBackfaces, min(age + 1.0, 1000.0), 1);
 }

@@ -179,6 +179,7 @@ bool BrickApp::init(HINSTANCE inst, const Options& opt) {
     const bool test = opt.mechDemo || opt.demo || opt.grid || opt.bench > 0;
     bool keepCamera = false;
     if (!opt.openPath.empty()) { openScene(opt.openPath); keepCamera = true; }
+    else if (!opt.writeHouse.empty()) buildHouse();
     else if (opt.mechDemo) buildMechDemo();
     else if (opt.demo) buildDemo();
     else if (opt.grid) buildPartGrid();
@@ -371,6 +372,18 @@ void BrickApp::setupStage() {
         }
         m_colorMaterial.push_back(m_scene.addMaterial(m));
     }
+    if (m_opt.giLookdev)   // GI look development: every colour the same light grey, rough, no specular, a light SSS
+        for (int ci : m_colorMaterial) {
+            Material& m = m_scene.materials[ci];
+            m.baseColor = float3(srgbToLinear(0.78f), srgbToLinear(0.79f), srgbToLinear(0.80f));
+            m.roughness = 0.9f;
+            m.specular = 0.0f;
+            m.coat = 0.0f;
+            m.metallic = 0.0f;
+            m.transmission = 0.0f;
+            m.subsurface = 0.12f;
+            m.sssRadius = float3(0.06f, 0.06f, 0.06f);
+        }
     // focus mode: the same materials at 50 % for the bricks that are not the focus
     m_dimMaterial.clear();
     for (int ci : m_colorMaterial) {
@@ -446,6 +459,101 @@ void BrickApp::setRC(bool on) {
 }
 
 // --------------------------------------------------------------------------- Réglages > Lumière
+
+// GI reference house (Wzx): plain bricks only, one light grey; a floor of plates, four walls one stud thick (running
+// bond of 1 x 2 / 1 x 4), a door and two windows (light coming in, soft shadow inside), a roof of plates with an
+// overhang, a step in front. Saved as a BrickIt scene (--write-house file), opened with Dossier > Ouvrir.
+void BrickApp::buildHouse() {
+    m_bricks.clear();
+    int grey = 0;
+    for (size_t c = 0; c < m_lib.palette.size(); ++c) if (m_lib.palette[c].name == "Light Bluish Grey" || m_lib.palette[c].name == "Light Bluish Gray") { grey = (int)c; break; }
+    const float4 q0(0, 0, 0, 1), q90 = qAxisAngle(float3(0, 1, 0), kPi * 0.5f);
+    // a part with its box min at (x, y, z) (studs from the origin, y in cm), its long side along X (q0 asked) or Z
+    // (q90 asked), whatever the orientation of the LDraw file
+    auto put = [&](const char* name, const float4& want, float sx, float y, float sz) {
+        const int pi = m_lib.find(name);
+        if (pi < 0) return;
+        m_lib.get(name);
+        const Box bq = m_build.aabbOf(pi, q0, float3(0));
+        const bool longX = (bq.mx.x - bq.mn.x) >= (bq.mx.z - bq.mn.z);
+        const bool wantX = want.y == 0.0f;
+        const float4 rot = longX == wantX ? q0 : q90;
+        const Box b0 = m_build.aabbOf(pi, rot, float3(0));
+        Brick b;
+        b.part = pi;
+        b.color = grey;
+        b.rot = rot;
+        b.pos = float3(sx * kPitch, y, sz * kPitch) - b0.mn;
+        m_bricks.push_back(b);
+    };
+    const int W = 16, D = 12;          // outside of the walls, studs
+    const float plate = 0.32f, brick = 0.96f;
+    // floor: 2 x 4 plates over (W + 2) x (D + 2) studs, from (-1, -1)
+    for (int x = -1; x < W + 1; x += 2)
+        for (int z = -1; z < D + 1; z += 4) put(z + 4 <= D + 1 ? "3020" : "3022", q90, (float)x, 0.0f, (float)z);
+    const float y0 = plate;
+    const int rows = 8;
+    // a wall row along x (z fixed) or along z (x fixed), from a to b (studs, b excluded), skipping the openings
+    auto rowX = [&](int z, int a, int b, float y, int shift, const std::vector<std::pair<int, int>>& holes) {
+        int x = a + shift;
+        if (shift) put("3005", q0, (float)a, y, (float)z);   // (a 1 x 1 at the start: running bond)
+        while (x < b) {
+            bool hole = false;
+            for (auto& h : holes) hole |= x >= h.first && x < h.second;
+            if (hole) { ++x; continue; }
+            int len = 4;
+            for (auto& h : holes) if (x < h.first) len = std::min(len, h.first - x);
+            len = std::min(len, b - x);
+            const char* part = len >= 4 ? "3010" : (len >= 2 ? "3004" : "3005");
+            const int l = len >= 4 ? 4 : (len >= 2 ? 2 : 1);
+            put(part, q0, (float)x, y, (float)z);
+            x += l;
+        }
+    };
+    auto rowZ = [&](int x, int a, int b, float y, int shift, const std::vector<std::pair<int, int>>& holes) {
+        int z = a + shift;
+        if (shift) put("3005", q90, (float)x, y, (float)a);
+        while (z < b) {
+            bool hole = false;
+            for (auto& h : holes) hole |= z >= h.first && z < h.second;
+            if (hole) { ++z; continue; }
+            int len = 4;
+            for (auto& h : holes) if (z < h.first) len = std::min(len, h.first - z);
+            len = std::min(len, b - z);
+            const char* part = len >= 4 ? "3010" : (len >= 2 ? "3004" : "3005");
+            const int l = len >= 4 ? 4 : (len >= 2 ? 2 : 1);
+            put(part, q90, (float)x, y, (float)z);
+            z += l;
+        }
+    };
+    for (int r = 0; r < rows; ++r) {
+        const float y = y0 + r * brick;
+        const int s = r & 1;
+        // front (z = 0): a door of 3 studs, rows 0..4
+        std::vector<std::pair<int, int>> door, win, none;
+        if (r < 5) door.push_back({7, 10});
+        if (r >= 2 && r < 5) win.push_back({4, 7});
+        rowX(0, 0, W, y, s, door);
+        rowX(D - 1, 0, W, y, s, win);   // back: a window
+        std::vector<std::pair<int, int>> sideWin;
+        if (r >= 2 && r < 5) sideWin.push_back({4, 7});
+        rowZ(0, 1, D - 1, y, s, none);
+        rowZ(W - 1, 1, D - 1, y, s, sideWin);   // right side: a window
+    }
+    // roof: plates over (W + 2) x (D + 2) studs (one stud of overhang), two layers
+    const float yr = y0 + rows * brick;
+    for (int layer = 0; layer < 2; ++layer)
+        for (int x = -1; x < W + 1; x += 2)
+            for (int z = -1; z < D + 1; z += 4) put(z + 4 <= D + 1 ? "3020" : "3022", q90, (float)x, yr + layer * plate, (float)z);
+    // a step in front of the door
+    put("3010", q0, 6.0f, plate, -1.0f);
+    put("3010", q0, 6.0f, plate, -2.0f);
+    rebuildScene();
+    frameAll();
+    const std::string text = m_build.toJson(m_scene.camera);
+    FILE* f = nullptr;
+    if (_wfopen_s(&f, m_opt.writeHouse.c_str(), L"wb") == 0 && f) { fwrite(text.data(), 1, text.size(), f); fclose(f); }
+}
 
 void BrickApp::buildHdriList() {
     m_hdriPaths = {L""};   // the procedural sky
@@ -973,8 +1081,9 @@ void BrickApp::frame() {
             frs.giMethod = 0;
             frs.rcSplit = false;
             frs.rcScreen = false;
-            frs.ddgiHysteresis = 0.985f;
-            frs.ddgiProbeBudget = 4096;
+            frs.ddgiHysteresis = 0.997f;   // (reached after ~300 still frames, 0.85 right after a change)
+            frs.ddgiProgressive = true;
+            frs.ddgiProbeBudget = m_opt.softGIProbes;
             frs.samplesPerFrame = 1;
             frs.historyFixes = true;
             if (m_giBoundsVersionSoft != m_scene.objectsVersion || frs.giBoundsFade <= 0) {
@@ -1014,6 +1123,18 @@ void BrickApp::frame() {
     m_cpuMs = m_cpuMs * 0.9 + 0.1 * (t1.QuadPart - t0.QuadPart) * 1000.0 / m_qpf.QuadPart;
     m_gui.render(true);
     ++m_frame;
+    // GI reactivity test: a brick taken out, then put back (the frames the probes need to settle, in the captures)
+    if (m_opt.giEditBrick >= 0 && m_opt.giEditBrick < (int)m_bricks.size() + 1) {
+        static Brick removed;
+        if (m_frame == m_opt.giEditOff && m_opt.giEditBrick < (int)m_bricks.size()) {
+            removed = m_bricks[m_opt.giEditBrick];
+            m_bricks.erase(m_bricks.begin() + m_opt.giEditBrick);
+            rebuildScene();
+        } else if (m_frame == m_opt.giEditOn && m_opt.giEditOn > m_opt.giEditOff) {
+            m_bricks.insert(m_bricks.begin() + m_opt.giEditBrick, removed);
+            rebuildScene();
+        }
+    }
 
     if (!m_opt.shotPath.empty()) {
         bool ready = (m_rs.raster || m_rcMode) ? m_frame >= m_opt.shotFrames : (int)m_renderer.sampleCount() >= m_opt.shotSpp;
@@ -1077,6 +1198,10 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         else if (a == L"--grid-color") opt.gridColor = (int)wcstol(next().c_str(), nullptr, 16);
         else if (a == L"--grid-alpha") opt.gridAlpha = (float)_wtof(next().c_str());
         else if (a == L"--soft-gi") opt.softGI = _wtoi(next().c_str());
+        else if (a == L"--soft-gi-probes") opt.softGIProbes = _wtoi(next().c_str());
+        else if (a == L"--gi-edit") { opt.giEditBrick = _wtoi(next().c_str()); opt.giEditOff = _wtoi(next().c_str()); opt.giEditOn = _wtoi(next().c_str()); }
+        else if (a == L"--write-house") opt.writeHouse = next();
+        else if (a == L"--gi-lookdev") opt.giLookdev = true;
         else if (a == L"--hq-ao") opt.hqAO = (float)_wtof(next().c_str());   // (measures: traced occlusion range, 0 = off)
         else if (a == L"--hq-refl") opt.hqRefl = _wtoi(next().c_str());   // (measures: traced reflection rays, 0 = off)   // (comparison: the GI over the whole visible ground)
         else if (a == L"--aa") opt.aa = _wtoi(next().c_str());

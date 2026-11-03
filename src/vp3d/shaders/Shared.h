@@ -123,7 +123,11 @@ struct DDGIConstants {
     float normalBias; float viewBias; float energy; float pad;
     // Raster probe capture (flags bit 2): the probes of the batch starting at captureBase (mod total) were rendered
     // this frame into the cube captures; probes below captureSeen have been captured at least once.
-    uint captureBase; uint captureSeen; uint captureSlots; uint pad1;
+    uint captureBase; uint captureSeen; uint captureSlots;
+    uint stride;   // ray traced probes: only those with (p + frame) % stride == 0 are updated this frame (0, 1: all)
+    // progressive probes (flags bit 16): the box of the objects added, removed or moved this frame (w > 0: valid);
+    // the probes in it restart their running average (their age, gProbe.z, back to 0), the others keep theirs
+    float4 dirtyMin; float4 dirtyMax;
 };
 
 // Probe cube faces (raster capture): forward and up per face, right = cross(up, forward). Same order in C++.

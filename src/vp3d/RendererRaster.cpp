@@ -34,6 +34,8 @@ struct RasterConstants {
     float3 hemiGround; float bevelOn;
     float rtShadow, sunTanRadius, rtShadowSamples, rtRefl;   // ray traced sun shadow (mask in t12), reflections (t13)
     float centreValid, rtLights, rtAO; uint32_t gridLine;   // centreValid: t14 holds this frame's pixel-centre depth
+    float3 envSun2Dir; float envSun2On;                     // HQ: the light of the HDRI as a second soft light
+    float3 envSun2E; float envSun2Tan;
 };
 
 struct DrawConstants {
@@ -673,6 +675,9 @@ void Renderer::recordRaster(const Scene& scene, const RenderSettings& rs, const 
     // the SH ambient. Its highlight already is in the blurred reflections, so this key has no specular term.
     const bool envMap = scene.env.hdri && scene.env.hdri == m_envImage && m_envW > 0;
     const bool envSun = envMap && !sun && m_envSunValid && rs.rasterEnvSun;
+    // HQ (rasterRT): beside the scene sun, the light of the HDRI as a second light with a traced soft shadow (it is
+    // left out of the SH); its cone: the 6 degrees of its extraction (uploadEnvironment)
+    const bool envSun2 = envMap && sun && m_envSunValid && rs.rasterRT && !probeCapture && m_tlas.res && m_tlasVersion == m_buildVersion;
     float3 envSunDir = m_envSunDir;
     {
         float cr = std::cos(scene.env.hdriRotation), sr = std::sin(scene.env.hdriRotation);   // image space to world
@@ -723,6 +728,10 @@ void Renderer::recordRaster(const Scene& scene, const RenderSettings& rs, const 
     rc.bevelOn = (rs.bevel && rs.rasterBevel && tlasOk) ? rs.bevelScale : 0.0f;   // raster bevel (TLAS built for it)
     rc.rtLights = (rs.rasterRT && tlasOk && !probeCapture) ? 1.0f : 0.0f;
     rc.rtAO = (rs.rasterRT && tlasOk && !probeCapture) ? std::max(0.0f, rs.rasterAO) : 0.0f;
+    rc.envSun2On = envSun2 ? 1.0f : 0.0f;
+    rc.envSun2Dir = envSunDir;
+    rc.envSun2E = envSun2 ? m_envSunE * scene.env.hdriIntensity : float3(0.0f);
+    rc.envSun2Tan = std::tan(radians(6.0f));
     rc.shadowTexel = 1.0f / kShadowSize;
     rc.keyPos = keyCenter;
     rc.lightScale = rs.lightScale;
@@ -731,7 +740,7 @@ void Renderer::recordRaster(const Scene& scene, const RenderSettings& rs, const 
     rc.sunRadiance = envSun ? m_envSunE * scene.env.hdriIntensity : scene.sun.color * scene.sun.intensity;
     rc.sunFromEnv = envSun ? 1.0f : 0.0f;
     for (int k = 0; k < 9; ++k)
-        for (int ch = 0; ch < 3; ++ch) rc.shIrr[k][ch] = envSun ? m_envSH[k][ch] : m_envSHFull[k][ch];
+        for (int ch = 0; ch < 3; ++ch) rc.shIrr[k][ch] = (envSun || envSun2) ? m_envSH[k][ch] : m_envSHFull[k][ch];
     rc.envMapOn = envMap ? 1.0f : 0.0f;
     rc.envRotation = scene.env.hdriRotation;
     rc.envMapIntensity = scene.env.hdriIntensity;
