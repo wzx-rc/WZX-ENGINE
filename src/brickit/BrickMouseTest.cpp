@@ -101,6 +101,116 @@ void BrickApp::mouseTestFrame() {
             }
         }
     }
+    if (t == "snaplib" && m_frame == 12) {
+        // Every part of the library with holes (pin or axle) and studs / anti-studs, taken in hand by three points
+        // (the middle of a hole typed pin, a hole, a stud): over the studs on top of a 2 x 4 brick of the scene the
+        // target must be a stud (the part stacks), over the floor the stud grid (x, z = 0.4 + 0.8k)
+        FILE* f = nullptr;
+        if (_wfopen_s(&f, (m_exeDir + L"\\snap_lib.txt").c_str(), L"w") != 0 || !f) return;
+        View vv = view();
+        // a free 2 x 4 brick for the test, in front of the scene (its studs uncovered)
+        Box sb = m_build.aabbOf(m_bricks[0].part, m_bricks[0].rot, m_bricks[0].pos);
+        for (const Brick& bk : m_bricks) { Box bb = m_build.aabbOf(bk.part, bk.rot, bk.pos); sb.mn = float3(std::min(sb.mn.x, bb.mn.x), std::min(sb.mn.y, bb.mn.y), std::min(sb.mn.z, bb.mn.z)); sb.mx = float3(std::max(sb.mx.x, bb.mx.x), std::max(sb.mx.y, bb.mx.y), std::max(sb.mx.z, bb.mx.z)); }
+        Brick base;
+        base.part = m_lib.find("3001");
+        m_lib.get("3001");
+        base.color = 0;
+        base.rot = float4(0, 0, 0, 1);
+        base.pos = float3(std::floor((sb.mn.x + sb.mx.x) * 0.5f / kPitch) * kPitch, 0, std::floor((sb.mx.z + 4.0f) / kPitch) * kPitch);
+        m_bricks.push_back(base);
+        const int top = (int)m_bricks.size() - 1;
+        const Box tb = m_build.aabbOf(m_bricks[top].part, m_bricks[top].rot, m_bricks[top].pos);
+        float tx = 0, ty = 0, fx = 0, fy = 0;
+        vv.project(float3((tb.mn.x + tb.mx.x) * 0.5f, tb.mx.y, (tb.mn.z + tb.mx.z) * 0.5f), tx, ty);
+        vv.project(float3(tb.mn.x - 9.0f, 0, tb.mx.z + 6.0f), fx, fy);   // the floor away from the bricks
+        int parts = 0, cases = 0, okStud = 0, okFloor = 0;
+        std::string fails;
+        for (int pi = 0; pi < (int)m_lib.parts.size(); ++pi) {
+            Part* pp = m_lib.get(m_lib.parts[pi].name);
+            if (!pp || !pp->loaded) continue;
+            bool hole = false, studs = false, anti = false;
+            for (uint8_t c : pp->conn) { hole |= c == CONN_PINHOLE || c == CONN_AXLEHOLE; studs |= c == CONN_STUD || c == CONN_ANTISTUD; anti |= c == CONN_ANTISTUD; }
+            if (!hole || !studs) continue;
+            ++parts;
+            Brick nb;
+            nb.part = pi;
+            nb.color = 0;
+            nb.rot = float4(0, 0, 0, 1);
+            nb.pos = float3(tb.mx.x + 30.0f, 0, 0);   // out of the way
+            m_bricks.push_back(nb);
+            const int bi = (int)m_bricks.size() - 1;
+            const char* grabName[3] = {"pin (milieu du trou)", "trou", "tenon"};
+            const uint8_t grabType[3] = {CONN_PIN, CONN_PINHOLE, CONN_STUD};
+            for (int g = 0; g < 3; ++g) {
+                int gi = -1;
+                for (size_t i = 0; i < pp->voxels.size() && gi < 0; ++i)
+                    if (pp->conn[i] == grabType[g] || (g == 1 && pp->conn[i] == CONN_AXLEHOLE)) gi = (int)i;
+                if (gi < 0) continue;
+                ++cases;
+                Held H;
+                m_build.beginHold(H, bi, false);
+                H.grab = pp->voxels[gi];
+                float3 hit((tb.mn.x + tb.mx.x) * 0.5f, tb.mx.y, (tb.mn.z + tb.mx.z) * 0.5f);   // over the top of the test brick
+                m_build.computeTarget(H, vv, tx, ty, &hit);
+                int ct = -1;
+                for (size_t k = 0; k < H.vox.size(); ++k) if (length(H.vox[k] - H.snapVoxel) < 1e-4f) { ct = H.conn[k]; break; }
+                const bool sOk = !anti || ct == CONN_STUD;   // (a part without anti-studs cannot sit on studs)
+                m_build.computeTarget(H, vv, fx, fy, nullptr);
+                const float gxr = (H.snapVoxel.x - 0.4f) / kPitch, gzr = (H.snapVoxel.z - 0.4f) / kPitch;
+                const bool fOk = std::fabs(H.snapVoxel.y) < 1e-4f && std::fabs(gxr - std::round(gxr)) < 1e-3f && std::fabs(gzr - std::round(gzr)) < 1e-3f;
+                okStud += sOk;
+                okFloor += fOk;
+                if ((!sOk || !fOk) && fails.size() < 4000) {
+                    char b[200];
+                    snprintf(b, sizeof(b), "  %s (%s), prise %s : tenon %s, grille %s\n", m_lib.parts[pi].name.c_str(), m_lib.parts[pi].label.c_str(), grabName[g], sOk ? "ok" : "RATE", fOk ? "ok" : "RATE");
+                    fails += b;
+                }
+            }
+            m_bricks.pop_back();
+        }
+        m_bricks.pop_back();   // (the test brick)
+        fprintf(f, "snaplib: %d pieces a trous et tenons, %d prises : sur les tenons %d / %d, sur la grille %d / %d\n%s", parts, cases, okStud, cases, okFloor, cases, fails.c_str());
+        fclose(f);
+    }
+    if (t == "snapscan" && m_frame == 12) {
+        // Offline diagnostic of the snap (the scene opened with --open, its camera): every Technic brick 1 x 2 with
+        // holes (32000) is taken in hand in turn (grab = its default pivot), the cursor swept over a 24 x 16 grid of the
+        // view; per point: over a brick?, the connector type of the chosen voxel, floor or voxel, blocked by the safety
+        FILE* f = nullptr;
+        if (_wfopen_s(&f, (m_exeDir + L"\\snap_scan.txt").c_str(), L"w") != 0 || !f) return;
+        View vv = view();
+        const char* tn[] = {"none", "stud", "antistud", "pin", "pinhole", "axle", "axlehole"};
+        for (int bi = 0; bi < (int)m_bricks.size(); ++bi) {
+            if (m_lib.parts[m_bricks[bi].part].name != "32000") continue;
+            Held H;
+            m_build.beginHold(H, bi, false);
+            const Part& hp = m_lib.parts[m_bricks[bi].part];
+            int gi = -1;
+            float gd = 1e9f;
+            for (size_t i = 0; i < hp.voxels.size(); ++i) { float dd = length(hp.voxels[i] - H.grab); if (dd < gd) { gd = dd; gi = (int)i; } }
+            fprintf(f, "brick %d (32000) at (%.2f %.2f %.2f) grab (%.2f %.2f %.2f) pivot type %s\n", bi, m_bricks[bi].pos.x, m_bricks[bi].pos.y, m_bricks[bi].pos.z,
+                    H.grab.x, H.grab.y, H.grab.z, gi >= 0 && hp.conn[gi] <= 6 ? tn[hp.conn[gi]] : "?");
+            int nFloor = 0, nVox = 0, nBlocked = 0, nSugg = 0, nOver = 0;
+            std::map<std::string, int> kinds;
+            for (int gy = 0; gy < 16; ++gy)
+                for (int gx = 0; gx < 24; ++gx) {
+                    const float sx = m_stage.x + (m_stage.z - m_stage.x) * (gx + 0.5f) / 24, sy = m_stage.y + (m_stage.w - m_stage.y) * (gy + 0.5f) / 16;
+                    float3 hit;
+                    const bool over = pickBrick(sx, sy, &hit, bi) >= 0;
+                    m_build.computeTarget(H, vv, sx, sy, over ? &hit : nullptr);
+                    nOver += over;
+                    // the chosen voxel: one of the cache (snap) or the floor
+                    int ct = -1;
+                    for (size_t k = 0; k < H.vox.size(); ++k) if (length(H.vox[k] - H.snapVoxel) < 1e-4f) { ct = H.conn[k]; break; }
+                    if (ct < 0) ++nFloor; else { ++nVox; kinds[std::string(over ? "over " : "near ") + (ct <= 6 ? tn[ct] : "?")]++; }
+                    nBlocked += H.blocked;
+                    nSugg += H.suggested;
+                }
+            fprintf(f, "  384 points: over a brick %d, floor %d, voxel %d, blocked %d, other pivot %d\n", nOver, nFloor, nVox, nBlocked, nSugg);
+            for (auto& kv : kinds) fprintf(f, "    %s: %d\n", kv.first.c_str(), kv.second);
+        }
+        fclose(f);
+    }
     if (m_frame == 26) m_mtScrollRel = m_cardsScroll;   // the release frame
     if (t == "snap" && m_frame == 26 && !m_holding) {   // the drag missed a card (tray laid out otherwise): a brick in hand
         const ImVec2 mp = ImGui::GetIO().MousePos;

@@ -184,38 +184,71 @@ void Builder::computeTarget(Held& H, const View& view, float sx, float sy, const
     if (!H.cacheValid) buildCache(H);
     const Brick& hb = bricks[H.brick];
     const Part& hp = m_lib.parts[hb.part];
-    const float3 gW = qRot(H.rot, H.grab);
     // connector type of the pivot (voxel nearest to it)
-    int gi = -1;
-    float gd = 1e9f;
-    for (size_t i = 0; i < hp.voxels.size(); ++i) {
-        float d = length(hp.voxels[i] - H.grab);
-        if (d < gd) { gd = d; gi = (int)i; }
+    auto nearestOf = [&](int type, float3& v) {
+        float bd = 1e9f;
+        bool ok = false;
+        for (size_t i = 0; i < hp.voxels.size(); ++i) {
+            if (type >= 0 && hp.conn[i] != type) continue;
+            const float d = length(hp.voxels[i] - H.grab);
+            if (d < bd) { bd = d; v = hp.voxels[i]; ok = true; }
+        }
+        return ok;
+    };
+    float3 gv;
+    int gT = -1;
+    {
+        int gi = -1;
+        float gd = 1e9f;
+        for (size_t i = 0; i < hp.voxels.size(); ++i) {
+            float d = length(hp.voxels[i] - H.grab);
+            if (d < gd) { gd = d; gi = (int)i; }
+        }
+        gT = gi >= 0 ? hp.conn[gi] : -1;
+        (void)gv;
     }
-    const int gT = gi >= 0 ? hp.conn[gi] : -1;
     const bool studPivot = gT < 0 || gT == CONN_STUD || gT == CONN_ANTISTUD;
+    // Correction (Wzx, 03/11/2026): a part with studs / anti-studs taken by a hole or by the middle of a hole (typed pin
+    // by the converter: a Technic brick picked up by its side, its grab point saved there) only looked for pin holes
+    // and axles, so it no longer stacked nor followed the floor grid. Studs and anti-studs stay targets whatever the point
+    // taken: the pivot moves to the anti-stud (stud) of the part nearest to the grab point for a stud (anti-stud) target.
+    // The typed targets (holes, axles, pins) stay; the candidate nearest to the cursor wins, whatever its kind.
+    float3 pivStud, pivAnti;
+    const bool hasStud = nearestOf(CONN_STUD, pivStud), hasAnti = nearestOf(CONN_ANTISTUD, pivAnti);
+    auto pivotFor = [&](uint8_t target, float3& piv, int& pt) -> bool {
+        if (gT < 0 || snapCompatible((uint8_t)gT, target)) { piv = H.grab; pt = gT; return true; }
+        // (also a part taken by a stud: onto studs through its nearest anti-stud, under anti-studs through its nearest stud)
+        if (target == CONN_STUD && hasAnti) { piv = pivAnti; pt = CONN_ANTISTUD; return true; }
+        if (target == CONN_ANTISTUD && hasStud) { piv = pivStud; pt = CONN_STUD; return true; }
+        return false;
+    };
     // voxels attract strongly over a brick, only very close otherwise (free move on the floor)
     const float radius = overBrick ? 60.0f : 22.0f;
     float best = radius * radius;
     bool found = false;
-    float3 chosen;
+    float3 chosen, pivot = H.grab;
+    int pivotType = gT;
     float3 eye = view.cam.eye();
     if (hit) {   // over a brick: the free compatible voxel nearest to the point under the cursor (within 2 studs)
         float bw = 1.6f * 1.6f;
         for (size_t ci = 0; ci < H.vox.size(); ++ci) {
-            if (gT >= 0 && !snapCompatible((uint8_t)gT, H.conn[ci])) continue;
+            float3 pv;
+            int pt;
+            if (!pivotFor(H.conn[ci], pv, pt)) continue;
             float d = dot(H.vox[ci] - *hit, H.vox[ci] - *hit);
-            if (d < bw) { bw = d; chosen = H.vox[ci]; found = true; }
+            if (d < bw) { bw = d; chosen = H.vox[ci]; pivot = pv; pivotType = pt; found = true; }
         }
     }
     for (size_t ci = 0; ci < H.vox.size() && !found; ++ci) {
-        if (gT >= 0 ? !snapCompatible((uint8_t)gT, H.conn[ci]) : false) continue;
+        float3 pv;
+        int pt;
+        if (!pivotFor(H.conn[ci], pv, pt)) continue;
         float px, py;
         if (!view.project(H.vox[ci], px, py)) continue;
         float d = (px - sx) * (px - sx) + (py - sy) * (py - sy) + dot(H.vox[ci] - eye, H.vox[ci] - eye) * 1e-4f;
-        if (d < best) { best = d; chosen = H.vox[ci]; found = true; }
+        if (d < best) { best = d; chosen = H.vox[ci]; pivot = pv; pivotType = pt; found = true; }
     }
-    if (!found) {   // the floor: stud lattice (grid on, stud pivots), else under the cursor
+    if (!found) {   // the floor: stud lattice (grid on, stud pivots; a part taken by a hole: its nearest anti-stud), else under the cursor
         float3 o, d;
         view.ray(sx, sy, o, d);
         float3 p;
@@ -226,9 +259,13 @@ void Builder::computeTarget(Held& H, const View& view, float sx, float sy, const
             p = o + d * t;
             p.y = 0;
         }
-        chosen = gridSnap && studPivot ? float3(std::floor(p.x / kPitch) * kPitch + 0.4f, 0, std::floor(p.z / kPitch) * kPitch + 0.4f)
-                                       : float3(p.x, 0, p.z);
+        const bool onGrid = gridSnap && (studPivot || hasAnti || hasStud);
+        if (!studPivot && hasAnti) { pivot = pivAnti; pivotType = CONN_ANTISTUD; }
+        else if (!studPivot && hasStud) { pivot = pivStud; pivotType = CONN_STUD; }   // (studs only: aligned by a stud)
+        chosen = onGrid ? float3(std::floor(p.x / kPitch) * kPitch + 0.4f, 0, std::floor(p.z / kPitch) * kPitch + 0.4f)
+                        : float3(p.x, 0, p.z);
     }
+    const float3 gW = qRot(H.rot, pivot);
     const Box rel = aabbOf(hb.part, H.rot, float3(0));
     auto floorClamp = [&](float3 pos) {
         if (pos.y + rel.mn.y < 0) pos.y = -rel.mn.y;   // never below the floor
@@ -242,8 +279,8 @@ void Builder::computeTarget(Held& H, const View& view, float sx, float sy, const
         struct Cand { float3 v; float d; };
         std::vector<Cand> cands;
         for (size_t i = 0; i < hp.voxels.size(); ++i) {
-            float d = length(hp.voxels[i] - H.grab);
-            if (d > 1e-3f && d <= 3.6f && (gT < 0 || hp.conn[i] == gT)) cands.push_back({hp.voxels[i], d});
+            float d = length(hp.voxels[i] - pivot);
+            if (d > 1e-3f && d <= 3.6f && (pivotType < 0 || hp.conn[i] == pivotType)) cands.push_back({hp.voxels[i], d});
         }
         std::sort(cands.begin(), cands.end(), [](const Cand& a, const Cand& b) { return a.d < b.d; });
         bool ok = false;

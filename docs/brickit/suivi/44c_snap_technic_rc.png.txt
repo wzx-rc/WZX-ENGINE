@@ -1,0 +1,1 @@
+bricks=72 mode=radiance_cascades gpu_ms=11.79 cpu_ms=2.52 frame_ms=14.10 tris_drawn=0.09M spp=1 pick_ms=0.001

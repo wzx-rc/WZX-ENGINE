@@ -1,0 +1,40 @@
+brick 60 (32000) at (8.80 0.00 12.80) grab (1.20 0.00 0.40) pivot type stud
+  384 points: over a brick 58, floor 344, voxel 40, blocked 0, other pivot 0
+    over none: 40
+brick 61 (32000) at (8.80 0.96 12.80) grab (1.20 0.00 0.40) pivot type stud
+  384 points: over a brick 59, floor 342, voxel 42, blocked 0, other pivot 0
+    over none: 42
+brick 62 (32000) at (8.80 1.92 12.80) grab (1.20 0.00 0.40) pivot type stud
+  384 points: over a brick 58, floor 342, voxel 42, blocked 0, other pivot 1
+    near none: 1
+    over none: 40
+    over stud: 1
+brick 63 (32000) at (8.80 2.88 12.80) grab (1.20 0.00 0.40) pivot type stud
+  384 points: over a brick 58, floor 343, voxel 41, blocked 0, other pivot 1
+    over none: 40
+    over stud: 1
+brick 64 (32000) at (8.82 -0.00 14.94) grab (1.20 0.56 0.40) pivot type pin
+  384 points: over a brick 57, floor 325, voxel 59, blocked 0, other pivot 10
+    near pinhole: 4
+    near stud: 7
+    over none: 27
+    over pinhole: 4
+    over stud: 17
+brick 65 (32000) at (8.11 -0.00 10.93) grab (1.20 0.56 0.00) pivot type pin
+  384 points: over a brick 59, floor 324, voxel 60, blocked 0, other pivot 10
+    near pinhole: 3
+    near stud: 7
+    over none: 30
+    over pinhole: 4
+    over stud: 16
+brick 66 (32000) at (5.37 -0.00 12.89) grab (1.20 0.56 0.00) pivot type pin
+  384 points: over a brick 58, floor 325, voxel 59, blocked 0, other pivot 10
+    near pinhole: 3
+    near stud: 7
+    over none: 29
+    over pinhole: 4
+    over stud: 16
+brick 67 (32000) at (8.80 2.88 13.60) grab (1.20 0.00 0.40) pivot type stud
+  384 points: over a brick 57, floor 345, voxel 39, blocked 0, other pivot 0
+    over none: 38
+    over stud: 1
