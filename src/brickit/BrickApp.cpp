@@ -417,8 +417,8 @@ void BrickApp::setupStage() {
 }
 
 // Real time: the stage of the web builder (background and fog 0x111214, ground 0x0e0f11 with the stud grid, warm key
-// light 3.4 from (-28, 34, 30) with shadows, environment at 0.55, ACES exposure 1). Path tracing: the bright studio
-// (light floor and background, HDRI studio, exposure 1.3) validated by Wzx on the captures 03b.
+// light 3.4 from (-28, 34, 30) with shadows, environment at 0.55, ACES exposure 1), in every mode: the bright studio of
+// the path tracing (captures 03b) was replaced by this dark stage at Wzx's request (03/11/2026).
 // Radiance Cascades: the Split RC mode of WZX Engine (App::setRenderMode(4)): DDGI volume + raster view of the probes,
 // probes computed by the Split Radiance Cascades (giMethod 1), rebuilt every frame, no temporal blend.
 void BrickApp::setRC(bool on) {
@@ -437,7 +437,7 @@ void BrickApp::applyLook() {
     if (m_cornell) { m_renderer.resetAccumulation(); return; }   // (the scene keeps its own look)
     auto lin = [](int hex) { return float3(srgbToLinear(((hex >> 16) & 255) / 255.0f), srgbToLinear(((hex >> 8) & 255) / 255.0f), srgbToLinear((hex & 255) / 255.0f)); };
     Material& g = m_scene.materials[0];
-    if (m_rs.raster) {
+    {   // every mode (Wzx: the dark floor of the Lit views in Radiance Cascades and path tracing too)
         m_scene.env.top = m_scene.env.horizon = m_scene.env.bottom = lin(0x111214);
         m_scene.env.hdriIntensity = 0.55f;
         g.baseColor = lin(0x0e0f11);
@@ -452,17 +452,6 @@ void BrickApp::applyLook() {
         if (m_rimLight >= 0) m_scene.lights[m_rimLight].enabled = true;
         m_rs.exposure = 1.0f;
         m_rs.tonemapper = 0;
-    } else {
-        m_scene.env.top = float3(0.82f, 0.83f, 0.86f);
-        m_scene.env.horizon = float3(0.90f, 0.90f, 0.91f);
-        m_scene.env.bottom = float3(0.6f, 0.6f, 0.62f);
-        m_scene.env.hdriIntensity = 1.0f;
-        g.baseColor = float3(0.70f, 0.71f, 0.73f);
-        g.roughness = 0.5f;
-        m_scene.sun.enabled = false;
-        m_scene.env.hemiIntensity = 0;
-        if (m_rimLight >= 0) m_scene.lights[m_rimLight].enabled = false;
-        m_rs.exposure = m_opt.exposure;
     }
     ++m_scene.objectsVersion;
     m_renderer.resetAccumulation();
