@@ -1125,7 +1125,9 @@ void BrickApp::frame() {
             // a brick carried (picked, duplicated, from the library), the gizmo or a mechanism dragged: the probes are
             // held, the scene does not refresh around the brick in the air; released, one restart around where it was
             // and where it is (Wzx)
-            frs.ddgiHold = m_opt.giHold != 0 && (m_holding || m_gizmoDragging || m_mechDragging || m_testCarry);
+            // converged probes are left alone: only those around what changed are computed again (Wzx)
+            frs.ddgiAgeCap = m_opt.giAgeCap;
+            frs.ddgiHold = m_softGIHold && m_opt.giHold != 0 && (m_holding || m_gizmoDragging || m_mechDragging || m_testCarry);
             frs.samplesPerFrame = 1;
             frs.historyFixes = true;
             // the bounds of the probe grid: a change recreates the probes (all of the GI restarts). Held while a brick is
@@ -1223,9 +1225,9 @@ void BrickApp::frame() {
             }
             FILE* f = nullptr;
             if (_wfopen_s(&f, (m_opt.shotPath + L".txt").c_str(), L"w") == 0 && f) {
-                fprintf(f, "bricks=%d mode=%s gpu_ms=%.2f cpu_ms=%.2f frame_ms=%.2f tris_drawn=%.2fM spp=%u pick_ms=%.3f\n", (int)m_bricks.size(),
+                fprintf(f, "bricks=%d mode=%s gpu_ms=%.2f cpu_ms=%.2f frame_ms=%.2f tris_drawn=%.2fM spp=%u pick_ms=%.3f gi_update_ms=%.3f gi_blend_ms=%.3f\n", (int)m_bricks.size(),
                         m_rcMode ? "radiance_cascades" : (m_rs.raster ? "raster" : "pathtrace"), m_renderer.gpuFrameMs(), m_cpuMs, m_frameMs,
-                        m_renderer.rasterTriangles() / 1e6, m_renderer.sampleCount(), pickMs);
+                        m_renderer.rasterTriangles() / 1e6, m_renderer.sampleCount(), pickMs, m_renderer.giUpdateMs(), m_renderer.giBlendMs());
                 fclose(f);
             }
             m_running = false;
@@ -1268,6 +1270,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         else if (a == L"--soft-gi-margin") opt.softGIMargin = (float)_wtof(next().c_str());
         else if (a == L"--soft-gi-probes") opt.softGIProbes = _wtoi(next().c_str());
         else if (a == L"--gi-hold") opt.giHold = _wtoi(next().c_str());
+        else if (a == L"--gi-age-cap") opt.giAgeCap = _wtoi(next().c_str());
         else if (a == L"--gi-carry") { opt.giCarryBrick = _wtoi(next().c_str()); opt.giCarryFrom = _wtoi(next().c_str()); opt.giCarryTo = _wtoi(next().c_str()); }
         else if (a == L"--gi-edit") { opt.giEditBrick = _wtoi(next().c_str()); opt.giEditOff = _wtoi(next().c_str()); opt.giEditOn = _wtoi(next().c_str()); }
         else if (a == L"--write-house") opt.writeHouse = next();

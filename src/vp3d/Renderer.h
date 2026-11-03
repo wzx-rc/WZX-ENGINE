@@ -91,6 +91,9 @@ struct RenderSettings {
     // progressive probes held as they are (a brick carried in the air): no probe update, no restart; the objects that
     // moved meanwhile restart the probes around them once it is released (their boxes before the hold and after)
     bool ddgiHold = false;
+    // progressive probes: updates of a probe after which it is converged and left alone until a change around it (or of
+    // the lights, the environment, the settings) restarts it; 0 = every probe always updated
+    int ddgiAgeCap = 0;
     // GI mode (ray traced probes and visibility): while the camera or an object moves, and giSettleFrames after, the
     // raster view of the probes (no per-pixel noise), then a fade of giFadeFrames to the ray traced image
     bool giRasterWhileMoving = false;

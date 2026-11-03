@@ -1463,6 +1463,7 @@ void Renderer::recordDDGI(const RenderSettings& rs, UINT gx, UINT gy, bool shade
     c.stride = rs.ddgiRaster ? 1u : stride;
     c.energy = std::max(0.0f, rs.ddgiEnergy);
     if (rs.ddgiViewBias >= 0) c.viewBias = rs.ddgiViewBias;
+    c.ageCap = progressive ? (float)std::max(0, rs.ddgiAgeCap) : 0.0f;
     if (progressive && !hold && (m_giDrawVersion != m_buildVersion || m_buildVersion == 0)) {
         // the draws that appeared or went away since the last frame (a moved object: both): their box, grown by
         // two probe spacings, is where the probes restart their average
@@ -1500,11 +1501,18 @@ void Renderer::recordDDGI(const RenderSettings& rs, UINT gx, UINT gy, bool shade
         }
         m_giDrawBoxes.swap(now);
         if (dmn.x <= dmx.x) {
-            const float g = 2.0f * m_giSpacing;
+            // grown by two probe spacings, and by half its size (a large change reaches further: shadow, bounce)
+            const float3 ext = dmx - dmn;
+            const float g = std::max(2.0f * m_giSpacing, 0.5f * std::max(ext.x, std::max(ext.y, ext.z)));
             const float3 a = dmn - float3(g), b = dmx + float3(g);
             c.dirtyMin = float4(a.x, a.y, a.z, 1.0f);
             c.dirtyMax = float4(b.x, b.y, b.z, 1.0f);
         }
+    }
+    if (progressive && !hold && m_giStill == 1 && c.ageCap > 0) {
+        // a change of the lights, the environment or the settings: every probe restarts (also those left alone)
+        c.dirtyMin = float4(-1e30f, -1e30f, -1e30f, 1.0f);
+        c.dirtyMax = float4(1e30f, 1e30f, 1e30f, 1.0f);
     }
     // Screen-space or split cascades: only for the raster view (shade = false), which reads their screen GI texture.
     const bool screen = rs.giMethod == 1 && (rs.rcScreen || rs.rcSplit) && !rs.ddgiRaster && !shade;

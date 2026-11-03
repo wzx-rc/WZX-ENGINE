@@ -120,7 +120,9 @@ struct DDGIConstants {
     float4 rot0, rot1, rot2;               // per-frame random rotation of the ray set (rows)
     uint frame; uint temporalMax; uint view; uint flags;  // view: 0 full, 1 indirect diffuse only, 2 direct only
                                                           // flags: 1 show probes, 2 raster capture, 4 warm-up (no hysteresis)
-    float normalBias; float viewBias; float energy; float pad;
+    float normalBias; float viewBias; float energy;
+    float ageCap;   // progressive probes: a probe updated ageCap times since its last restart is converged and no longer
+                    // updated until a change restarts it (0: always updated)
     // Raster probe capture (flags bit 2): the probes of the batch starting at captureBase (mod total) were rendered
     // this frame into the cube captures; probes below captureSeen have been captured at least once.
     uint captureBase; uint captureSeen; uint captureSlots;

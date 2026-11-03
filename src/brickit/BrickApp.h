@@ -42,6 +42,7 @@ struct Options {
     float giStrength = -1;    // --gi-strength 0..2
     int softGIProbes = 16384; 
     float softGIMargin = 1.0f;  // --soft-gi-margin k (measures: the margin of the probe volume around the bricks, x k)
+    int giAgeCap = 400;   // --gi-age-cap n: updates after which a probe is converged and left alone (0: always updated)
     int giHold = 1;   // --gi-hold 0: the probes go on updating while a brick is carried (comparison)
     int giCarryBrick = -1, giCarryFrom = 0, giCarryTo = 0;   // --gi-carry i f1 f2: brick i carried in the air from frame f1, put down 3.5 cm in front at f2 (GI hold)
     int giEditBrick = -1, giEditOff = 0, giEditOn = 0;   // --gi-edit i f1 f2: brick i removed at frame f1, back at f2 (GI reactivity)  // --soft-gi-probes n (measures: probe budget of the soft GI)
@@ -427,6 +428,7 @@ private:
     // bounded to the bricks): soft bounces and occlusion, stable, no ray per pixel for the GI
     bool m_softGI = true;
     float m_softGIStrength = 1.0f;
+    bool m_softGIHold = true;   // Réglages › Lumière › Figer la GI pendant le déplacement: the probes held while a brick is carried
     bool m_giLookdev = false;                 // (not saved: a test view, off at the next launch)
     std::vector<Material> m_colorMaterialOrig;   // the palette materials as made, restored when the lookdev ends
     uint64_t m_giBoundsVersionSoft = ~0ull;

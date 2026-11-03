@@ -1926,6 +1926,22 @@ void BrickApp::uiSettings() {
             }
             ly += rowH + gap;
         }
+        if (m_softGI) {   // Figer la GI pendant le déplacement: the probes held while a brick is carried (Non: they follow it live)
+            u.text(ImVec2(x0 + pad, ly), 11, C_DIM, "Figer la GI pendant le déplacement");
+            ly += 16 * s;
+            const float bw2 = (W - 2 * pad - 4 * s) / 2;
+            for (int k = 0; k < 2; ++k) {
+                const bool on = (k == 0) == m_softGIHold;
+                ImVec2 a(x0 + pad + k * (bw2 + 4 * s), ly), b(a.x + bw2, ly + rowH);
+                const bool h = u.hover(a, b);
+                u.dl->AddRectFilled(a, b, on ? C_ACCENT : (h ? C_CARD_HI : C_CARD), 7 * s);
+                const char* lab = k == 0 ? "Oui" : "Non";
+                const float tw = u.textW(12, lab, on);
+                u.text(ImVec2((a.x + b.x) * 0.5f - tw * 0.5f, a.y + (rowH - u.fs(12)) * 0.5f), 12, on ? C_INK : C_TEXT, lab, on);
+                if (h && u.pressed && !on) { m_softGIHold = k == 0; savePrefs(); }
+            }
+            ly += rowH + gap;
+        }
         {   // Lookdev GI: one light grey for every brick, no reflection (the lighting alone); not saved
             u.text(ImVec2(x0 + pad, ly), 11, C_DIM, "Lookdev GI (gris uni)");
             ly += 16 * s;

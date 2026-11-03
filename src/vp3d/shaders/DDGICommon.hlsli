@@ -70,8 +70,11 @@ float ProbeAge(uint p) {
 }
 
 bool ProbeSkipped(uint p) {
-    if (G.stride <= 1 || (G.flags & 16u) == 0u) return false;
-    return ProbeAge(p) >= 64.0 && (p + G.frame) % G.stride != 0;
+    if ((G.flags & 16u) == 0u) return false;
+    const float age = ProbeAge(p);
+    if (G.ageCap > 0 && age >= G.ageCap) return true;   // converged and nothing changed around it: not updated
+    if (G.stride <= 1) return false;
+    return age >= 64.0 && (p + G.frame) % G.stride != 0;
 }
 
 // Albedo used for the diffuse transport in the probes (metals and SSS approximated as diffuse).
