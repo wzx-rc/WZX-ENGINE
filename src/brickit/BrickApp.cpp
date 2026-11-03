@@ -924,6 +924,7 @@ void BrickApp::frameAll() {
 void BrickApp::cameraInput() {
     ImGuiIO& io = ImGui::GetIO();
     if (io.WantCaptureMouse || m_overUi) return;
+    if (!m_opt.shotPath.empty()) return;   // a capture (--shot): the camera of the command line, whatever the mouse does
     Camera& cam = m_scene.camera;
     bool changed = false;
     if (!ImGui::IsMouseDown(ImGuiMouseButton_Left)) m_leftOrbit = false;
@@ -1121,9 +1122,16 @@ void BrickApp::frame() {
             // (maison_gi: gap to the PT 12.8 -> 10.9 %, under the overhang of the door view +55 -> +31 %)
             frs.ddgiViewBias = 0.10f;
             frs.ddgiProbeBudget = m_opt.softGIProbes;
+            // a brick carried (picked, duplicated, from the library), the gizmo or a mechanism dragged: the probes are
+            // held, the scene does not refresh around the brick in the air; released, one restart around where it was
+            // and where it is (Wzx)
+            frs.ddgiHold = m_opt.giHold != 0 && (m_holding || m_gizmoDragging || m_mechDragging || m_testCarry);
             frs.samplesPerFrame = 1;
             frs.historyFixes = true;
-            if (m_giBoundsVersionSoft != m_scene.objectsVersion || frs.giBoundsFade <= 0) {
+            // the bounds of the probe grid: a change recreates the probes (all of the GI restarts). Held while a brick is
+            // carried (else a brick lifted over the roof grew them: the whole scene refreshed, Wzx), and kept while the
+            // bricks stay inside them (their margin included) with less than a margin of empty room on each axis
+            if ((m_giBoundsVersionSoft != m_scene.objectsVersion || frs.giBoundsFade <= 0) && !(frs.ddgiHold && m_softMargin > 0)) {
                 m_giBoundsVersionSoft = m_scene.objectsVersion;
                 float3 lo(1e30f), hi(-1e30f);
                 for (const Brick& b : m_bricks) {
@@ -1137,10 +1145,15 @@ void BrickApp::frame() {
                 }
                 if (m_bricks.empty()) { lo = float3(-8, 0, -8); hi = float3(8, 8, 8); }
                 const float size = std::max(hi.x - lo.x, std::max(hi.y - lo.y, hi.z - lo.z));
-                m_softMargin = std::max(4.0f, size * 0.25f) * m_opt.softGIMargin;
-                m_softLo = lo - float3(m_softMargin * 0.5f, 0.0f, m_softMargin * 0.5f);
-                m_softLo.y = std::min(lo.y, -0.5f);   // the probes start just under the ground
-                m_softHi = hi + float3(m_softMargin * 0.5f);
+                const float margin = std::max(4.0f, size * 0.25f) * m_opt.softGIMargin;
+                float3 nlo = lo - float3(margin * 0.5f, 0.0f, margin * 0.5f);
+                nlo.y = std::min(lo.y, -0.5f);   // the probes start just under the ground
+                const float3 nhi = hi + float3(margin * 0.5f);
+                const float3 a = m_softLo, z = m_softHi;
+                const bool fits = m_softMargin > 0 && lo.x >= a.x && lo.y >= a.y && lo.z >= a.z && hi.x <= z.x && hi.y <= z.y && hi.z <= z.z;
+                const bool tight = fits && (nlo.x - a.x) + (z.x - nhi.x) < margin && (nlo.y - a.y) + (z.y - nhi.y) < margin &&
+                                   (nlo.z - a.z) + (z.z - nhi.z) < margin;
+                if (!tight) { m_softMargin = margin; m_softLo = nlo; m_softHi = nhi; }
             }
             frs.giBoundsMin = m_softLo;
             frs.giBoundsMax = m_softHi;
@@ -1160,6 +1173,22 @@ void BrickApp::frame() {
     m_cpuMs = m_cpuMs * 0.9 + 0.1 * (t1.QuadPart - t0.QuadPart) * 1000.0 / m_qpf.QuadPart;
     m_gui.render(true);
     ++m_frame;
+    // GI hold test: a brick carried in the air (swinging), then put down on the ground 3.5 cm in front of where it was
+    if (m_opt.giCarryBrick >= 0 && m_opt.giCarryBrick < (int)m_bricks.size()) {
+        static float3 home;
+        Brick& b = m_bricks[m_opt.giCarryBrick];
+        if (m_frame == m_opt.giCarryFrom) home = b.pos;
+        if (m_frame >= m_opt.giCarryFrom && m_frame < m_opt.giCarryTo) {
+            const float t = (m_frame - m_opt.giCarryFrom) * 0.05f;
+            b.pos = home + float3(3.0f * std::sin(t), 2.5f + std::sin(t * 1.7f), -3.0f + 2.0f * std::cos(t));
+            m_testCarry = true;
+            rebuildScene();
+        } else if (m_frame == m_opt.giCarryTo) {
+            b.pos = float3(home.x, 0.0f, home.z - 3.5f);
+            m_testCarry = false;
+            rebuildScene();
+        }
+    }
     // GI reactivity test: a brick taken out, then put back (the frames the probes need to settle, in the captures)
     if (m_opt.giEditBrick >= 0 && m_opt.giEditBrick < (int)m_bricks.size() + 1) {
         static Brick removed;
@@ -1238,6 +1267,8 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         else if (a == L"--gi-strength") opt.giStrength = (float)_wtof(next().c_str());
         else if (a == L"--soft-gi-margin") opt.softGIMargin = (float)_wtof(next().c_str());
         else if (a == L"--soft-gi-probes") opt.softGIProbes = _wtoi(next().c_str());
+        else if (a == L"--gi-hold") opt.giHold = _wtoi(next().c_str());
+        else if (a == L"--gi-carry") { opt.giCarryBrick = _wtoi(next().c_str()); opt.giCarryFrom = _wtoi(next().c_str()); opt.giCarryTo = _wtoi(next().c_str()); }
         else if (a == L"--gi-edit") { opt.giEditBrick = _wtoi(next().c_str()); opt.giEditOff = _wtoi(next().c_str()); opt.giEditOn = _wtoi(next().c_str()); }
         else if (a == L"--write-house") opt.writeHouse = next();
         else if (a == L"--gi-lookdev") opt.giLookdev = true;

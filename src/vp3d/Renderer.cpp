@@ -1441,7 +1441,8 @@ void Renderer::recordDDGI(const RenderSettings& rs, UINT gx, UINT gy, bool shade
     // quarter of the probes per frame (the average goes on at a quarter of the pace, a quarter of the cost)
     uint32_t stride = 1;
     const bool progressive = rs.ddgiProgressive && !rs.ddgiRaster && rs.giMethod == 0;
-    if (progressive) {
+    const bool hold = progressive && rs.ddgiHold && m_giFrame > 1;   // (probes that exist already)
+    if (progressive && !hold) {
         if (m_giStill == 0) m_giStillUpdates = 0;
         stride = m_giStill >= 64 && m_giFrame > 1 ? 4u : 1u;
         f.hysteresis = std::min(rs.ddgiHysteresis, std::max(0.85f, 1.0f - 1.0f / (m_giStillUpdates + 7.0f)));
@@ -1462,7 +1463,7 @@ void Renderer::recordDDGI(const RenderSettings& rs, UINT gx, UINT gy, bool shade
     c.stride = rs.ddgiRaster ? 1u : stride;
     c.energy = std::max(0.0f, rs.ddgiEnergy);
     if (rs.ddgiViewBias >= 0) c.viewBias = rs.ddgiViewBias;
-    if (progressive && (m_giDrawVersion != m_buildVersion || m_buildVersion == 0)) {
+    if (progressive && !hold && (m_giDrawVersion != m_buildVersion || m_buildVersion == 0)) {
         // the draws that appeared or went away since the last frame (a moved object: both): their box, grown by
         // two probe spacings, is where the probes restart their average
         m_giDrawVersion = m_buildVersion;
@@ -1532,6 +1533,9 @@ void Renderer::recordDDGI(const RenderSettings& rs, UINT gx, UINT gy, bool shade
         m_cmd->SetPipelineState(m_psoGIRaster.Get());
         m_cmd->Dispatch(total, 1, 1);
         uavBarrier();
+        m_cmd->EndQuery(m_queryHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 2);
+        m_cmd->EndQuery(m_queryHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 3);
+    } else if (hold) {   // held: the probes as they are
         m_cmd->EndQuery(m_queryHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 2);
         m_cmd->EndQuery(m_queryHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 3);
     } else {
@@ -2241,7 +2245,7 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
     const uint32_t sig = sceneSig(scene) ^ (renderSignature(rs) * 16777619u);
     // progressive probes: a change of the lights, the environment, the materials or the settings restarts them all
     // (the objects added, removed or moved restart only the probes around them, recordDDGI)
-    if (rs.ddgiProgressive) {
+    if (rs.ddgiProgressive && !rs.ddgiHold) {   // (held: the red of a blocked brick or the dim focus restart nothing)
         uint32_t lk = renderSignature(rs);
         auto mixk = [&](const void* p, size_t n) { const unsigned char* c = (const unsigned char*)p; for (size_t i = 0; i < n; ++i) { lk ^= c[i]; lk *= 16777619u; } };
         for (const Material& m : scene.materials) {

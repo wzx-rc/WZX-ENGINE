@@ -88,6 +88,9 @@ struct RenderSettings {
     // progressive probes: the hysteresis grows from 0.85 to ddgiHysteresis while nothing changes (a running average:
     // converged and still), back to 0.85 when the lights, the environment or an object change; no fast path per texel
     bool ddgiProgressive = false;
+    // progressive probes held as they are (a brick carried in the air): no probe update, no restart; the objects that
+    // moved meanwhile restart the probes around them once it is released (their boxes before the hold and after)
+    bool ddgiHold = false;
     // GI mode (ray traced probes and visibility): while the camera or an object moves, and giSettleFrames after, the
     // raster view of the probes (no per-pixel noise), then a fade of giFadeFrames to the ray traced image
     bool giRasterWhileMoving = false;

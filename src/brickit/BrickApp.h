@@ -42,6 +42,8 @@ struct Options {
     float giStrength = -1;    // --gi-strength 0..2
     int softGIProbes = 16384; 
     float softGIMargin = 1.0f;  // --soft-gi-margin k (measures: the margin of the probe volume around the bricks, x k)
+    int giHold = 1;   // --gi-hold 0: the probes go on updating while a brick is carried (comparison)
+    int giCarryBrick = -1, giCarryFrom = 0, giCarryTo = 0;   // --gi-carry i f1 f2: brick i carried in the air from frame f1, put down 3.5 cm in front at f2 (GI hold)
     int giEditBrick = -1, giEditOff = 0, giEditOn = 0;   // --gi-edit i f1 f2: brick i removed at frame f1, back at f2 (GI reactivity)  // --soft-gi-probes n (measures: probe budget of the soft GI)
     std::wstring writeHouse;  // --write-house file: builds the GI reference house (light grey bricks) and saves it
     bool giLookdev = false;   // --gi-lookdev: one light grey material, rough, no specular / coat, a light SSS
@@ -467,6 +469,7 @@ private:
     Mech::Drag m_mechDrag;
     float3 m_mechDragPlaneN;
     bool m_mechDragging = false;
+    bool m_testCarry = false;   // --gi-carry: a brick carried by the test
     double m_mechFlashTime = -10;
 
     // thumbnails
