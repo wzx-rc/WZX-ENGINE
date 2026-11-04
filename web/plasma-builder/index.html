@@ -7,6 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/app.css">
+<link rel="stylesheet" href="css/atelier.css">
 <script type="importmap">
 {
   "imports": {
@@ -42,6 +43,17 @@
         <button type="button" id="undoBtn" class="icon" aria-label="Annuler (Ctrl+Z)" title="Annuler (Ctrl+Z)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14L4 9l5-5M4 9h11a5 5 0 0 1 0 10h-3"/></svg></button>
         <button type="button" id="redoBtn" class="icon" aria-label="Rétablir (Ctrl+Y)" title="Rétablir (Ctrl+Y)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 14l5-5-5-5M20 9H9a5 5 0 0 0 0 10h3"/></svg></button>
       </div>
+      <div class="settings">
+        <button type="button" id="settingsBtn" class="icon framed" aria-label="Réglages" title="Réglages" aria-expanded="false" aria-controls="settingsMenu"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>
+        <div id="settingsMenu" class="menu settings-menu" hidden>
+          <span class="menu-title">Interface</span>
+          <div class="seg" role="radiogroup" aria-label="Interface" id="themeSel">
+            <button type="button" role="radio" data-theme="classic">Classique</button>
+            <button type="button" role="radio" data-theme="atelier">Atelier</button>
+          </div>
+          <p class="muted">Classique : l'interface d'origine. Atelier : la vue d'abord, l'équipement à gauche, la bibliothèque en tiroir. Choix enregistré.</p>
+        </div>
+      </div>
       <div class="export">
         <button type="button" id="exportBtn" class="primary"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M4 20h16"/></svg>Exporter STL</button>
         <button type="button" id="exportMenuBtn" class="primary caret" aria-label="Options d'export" aria-expanded="false" aria-controls="exportMenu"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button>
@@ -55,6 +67,11 @@
   </header>
 
   <div class="body">
+    <nav class="equip" id="equip" aria-label="Équipement de l'ork" hidden>
+      <div class="equip-head"><h2>Équipement</h2><span class="muted" id="equipCount"></span></div>
+      <div class="equip-list" id="equipList"></div>
+      <p class="muted equip-hint">Clic : choisir le socket et ouvrir la bibliothèque. Les numéros sont ceux des pastilles sur l'ork.</p>
+    </nav>
     <nav class="rail" aria-label="Catégories">
       <div class="rail-head"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a8 8 0 0 0-8 8v3l2 2v4h12v-4l2-2v-3a8 8 0 0 0-8-8zM9 12h.01M15 12h.01M10 20v-3M14 20v-3"/></svg>Ork Builder</div>
       <div id="rail"></div>
@@ -66,6 +83,7 @@
           <div class="panel-head">
             <h2 id="libTitle">Têtes</h2><span class="count" id="libCount">0</span>
             <span class="grow"></span>
+            <button type="button" id="drawerClose" class="icon small drawer-only" aria-label="Fermer la bibliothèque" title="Fermer la bibliothèque"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg></button>
             <a id="importBtn" class="icon small btnlink" href="import.html" aria-label="Importer des briques" title="Importer des briques"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></a>
           </div>
           <div class="search">
@@ -96,8 +114,8 @@
                   <button type="button" id="socketsBtn" class="icon" aria-pressed="true" aria-label="Sockets" title="Sockets"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="8"/></svg></button>
                   <button type="button" id="rigBtn" class="icon" aria-pressed="false" aria-label="Squelette" title="Squelette"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="4" r="2"/><path d="M12 6v8M6 9h12M12 14l-4 7M12 14l4 7"/></svg></button>
                 </div>
-                <label class="select"><span class="sr">Qualité de rendu</span>
-                  <select id="qualitySel"><option value="rt">Temps réel</option><option value="hq">Haute qualité</option><option value="pt">Path tracing</option></select>
+                <label class="select" id="qualityBox"><span class="sr">Qualité de rendu</span>
+                  <select id="qualitySel"><option value="rt">Temps réel</option><option value="hq">Haute qualité</option><option value="bhq">HQ BrickIt</option><option value="pt">Path tracing</option></select>
                 </label>
               </div>
             </div>
@@ -106,6 +124,8 @@
                 <canvas id="vpCanvas"></canvas>
                 <div class="pins" id="pins"></div>
                 <div class="vp-info" id="vpInfo"></div>
+                <button type="button" id="drawerOpen" class="drawer-open" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>Bibliothèque</button>
+                <div class="floatbar" id="floatbar" role="toolbar" aria-label="Outils de la vue" hidden></div>
                 <div class="loading" id="loading"><span>Chargement de l'ork</span><i></i></div>
               </div>
               <div class="views" role="group" aria-label="Vues caméra" id="views"></div>
@@ -173,6 +193,14 @@
                 <label>Rotation <output data-o="envRotation"></output><input type="range" data-r="envRotation" min="0" max="6.2832" step="0.0175"></label>
                 <label class="check"><input type="checkbox" data-r="envVisible">Visible en fond</label>
                 <label class="check"><input type="checkbox" data-r="studioLights">Lumières studio (key, fill, rim)</label>
+                <div class="rset" id="bhqSet">
+                <h3>HQ BrickIt</h3>
+                <label>Intensité GI <output data-o="giStrength"></output><input type="range" data-r="giStrength" min="0" max="2" step="0.05"></label>
+                <label class="check"><input type="checkbox" data-r="giFreeze">Figer la GI pendant le déplacement</label>
+                <label>Occlusion (SSAO) <output data-o="aoStrength"></output><input type="range" data-r="aoStrength" min="0" max="1" step="0.05"></label>
+                <label>Rayon SSAO <output data-o="aoRadius"></output><input type="range" data-r="aoRadius" min="0.02" max="0.3" step="0.01"></label>
+                <p class="muted" id="giInfo"></p>
+                </div>
                 <div class="rset" id="ptSet">
                 <h3>Path tracing</h3>
                 <label>Rebonds <output data-o="bounces"></output><input type="range" data-r="bounces" min="1" max="12" step="1"></label>

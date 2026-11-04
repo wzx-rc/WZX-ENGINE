@@ -2,6 +2,8 @@
 // - Temps réel : PBR raster, ombres Poisson, MSAA 4x, rendu HDR puis passe Tonemap (exposition, vignettage,
 //   ACES / AgX / AgX Punchy / Standard, contour de sélection) ;
 // - Haute qualité : même chose en plus fin (résolution, carte d'ombre) ;
+// - HQ BrickIt : la haute qualité plus l'imitation WebGL du mode HQ de BrickIt natif (hqgi.js) : GI douce par sondes,
+//   occlusion HDRI des reflets, SSAO ;
 // - Path tracing : rendu progressif (pathtrace.js), le raster sert d'aperçu pendant les changements.
 // Les aides (gizmo, grille, visor de la pièce en main) sont dessinées après le tonemapping, testées contre la
 // profondeur de la scène.
@@ -10,6 +12,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
 import { Post, Studio } from './render.js';
 import { PathTrace } from './pathtrace.js';
+import { SoftGI, SSAO, HQ_UNIFORMS, hookMaterial } from './hqgi.js';
 
 const RESIN = { color: 0x8f9297, roughness: 0.56, metalness: 0, clearcoat: 0.12, clearcoatRoughness: 0.55 };
 const PAINT = {
@@ -28,6 +31,7 @@ export const RENDER_DEFAULTS = {
   tonemapper: 0, ev: 0, vignette: 0.12,
   env: 'studio', envIntensity: 1, envRotation: 0, envVisible: false, studioLights: true,
   bounces: 6, filterGlossy: 0, denoise: true, dof: false, fStop: 11,
+  giStrength: 1, giFreeze: true, aoStrength: 0.6, aoRadius: 0.08,
 };
 
 const BLACK = new THREE.MeshBasicMaterial({ color: 0x000000 });
@@ -95,6 +99,8 @@ export class Viewport {
     this.onFrame = null;
     this.camAnim = null;
     this.pt = null;
+    this.gi = null;
+    this.ssao = null;
     this.ptState = { sig: 0, changedAt: 0, dirty: true, studio: -1, spp: 0 };
     this.unitsPerMeter = 61;
 
@@ -149,6 +155,11 @@ export class Viewport {
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio * (hq ? 1.5 : 1), hq ? 3 : 2));
     this.studio.setShadowSize(hq ? 4096 : 2048);
     this.resize();
+    if (q === 'bhq' && !this.gi) {
+      this.gi = new SoftGI(this.renderer);
+      this.ssao = new SSAO();
+      this.resize();
+    }
     if (q === 'pt' && !this.pt) {
       this.ptLoading = true;
       try { this.pt = await PathTrace.create(this.renderer); }
@@ -171,6 +182,7 @@ export class Viewport {
     this.hdr.setSize(b.x, b.y);
     this.mask.setSize(b.x, b.y);
     this.maskTexel.set(1 / b.x, 1 / b.y);
+    if (this.ssao) this.ssao.setSize(b.x, b.y);
     if (this.pt) this.pt.pt.renderScale = this.quality === 'pt' ? Math.min(1, 1.25 / this.renderer.getPixelRatio()) : 1;
   }
 
@@ -188,10 +200,11 @@ export class Viewport {
   }
 
   // Signature de ce que voit le path tracer : si elle change, la scène est reconstruite quand elle se stabilise.
-  signature() {
+  // skipHelpers : sans les aides (anneaux de sockets animés…), pour la GI des sondes.
+  signature(skipHelpers = false) {
     let s = 0, n = 0;
     this.scene.traverseVisible(o => {
-      if (!o.isMesh) return;
+      if (!o.isMesh || (skipHelpers && (o.userData.helper || o.userData.rasterOnly))) return;
       n++;
       const e = o.matrixWorld.elements;
       let k = 0;
@@ -262,6 +275,47 @@ export class Viewport {
     return any;
   }
 
+  // Prépare la scène pour les captures des sondes : sol réel (comme le path tracer), aides masquées, maillages low à
+  // la place des high (1,7 M triangles inutiles dans un cube de 16 px), ombres déjà calculées, environnement en fond.
+  giCapture(fn) {
+    const r = this.renderer, sc = this.scene, saved = [];
+    const byName = new Map();
+    sc.traverse(o => { if (o.isMesh && o.name) byName.set(o.name, o); });
+    sc.traverse(o => {
+      if (!o.isMesh || !o.visible) return;
+      if (o.userData.helper || o.userData.rasterOnly) { saved.push([o, true]); o.visible = false; return; }
+      const low = /_high$/.test(o.name) && byName.get(o.name.replace(/_high$/, '_low'));
+      if (low && !low.visible) { saved.push([o, true], [low, false]); o.visible = false; low.visible = true; }
+    });
+    const bg = [sc.background, sc.backgroundIntensity, sc.backgroundBlurriness, sc.backgroundRotation.clone()];
+    sc.background = sc.environment;
+    sc.backgroundIntensity = sc.environmentIntensity;
+    sc.backgroundBlurriness = 0.35;
+    sc.backgroundRotation.copy(sc.environmentRotation);
+    this.ptFloor.visible = true;
+    const au = r.shadowMap.autoUpdate;
+    r.shadowMap.autoUpdate = false;
+    try { fn(); }
+    finally {
+      r.shadowMap.autoUpdate = au;
+      this.ptFloor.visible = false;
+      [sc.background, sc.backgroundIntensity, sc.backgroundBlurriness] = bg;
+      sc.backgroundRotation.copy(bg[3]);
+      for (const [o, v] of saved) o.visible = v;
+    }
+  }
+
+  stepGI() {
+    const s = this.settings;
+    this.scene.traverse(o => {
+      if (!o.isMesh) return;
+      if (Array.isArray(o.material)) o.material.forEach(hookMaterial); else hookMaterial(o.material);
+    });
+    HQ_UNIFORMS.uHqStrength.value = s.giStrength;
+    this.gi.freeze = !!s.giFreeze;
+    this.gi.update(this.scene, this.signature(true) + this.studio.version * 0.5, fn => this.giCapture(fn));
+  }
+
   frame() {
     const dt = Math.min(this.clock.getDelta(), 0.1);
     if (this.camAnim) {
@@ -277,9 +331,14 @@ export class Viewport {
     const r = this.renderer, s = this.settings;
     this.scene.updateMatrixWorld();
 
+    const bhq = this.quality === 'bhq' && this.gi;
+    HQ_UNIFORMS.uHqOn.value = bhq ? 1 : 0;
+    if (bhq) this.stepGI();
+
     r.setRenderTarget(this.hdr);
     r.render(this.scene, this.camera);
     const sel = this.renderMask();
+    const ao = bhq && s.aoStrength > 0 ? this.ssao.render(r, this.hdr.depthTexture, this.camera, s.aoRadius) : null;
 
     let out = null;
     if (this.quality === 'pt' && this.pt) out = this.stepPT();
@@ -294,6 +353,7 @@ export class Viewport {
       raster: out ? this.hdr.texture : null,
       ptMix: out ? Math.min(Math.max((out.spp - 2) / 14, 0), 1) : 1,
       depth: this.hdr.depthTexture,
+      ao, aoStrength: s.aoStrength,
       mask: sel ? this.mask.texture : null,
       maskTexel: this.maskTexel,
       exposure: Math.pow(2, s.ev),
