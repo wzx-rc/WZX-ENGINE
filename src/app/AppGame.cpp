@@ -1,6 +1,7 @@
 // Game layer: Play mode, node graph editor hookup, builds, player mode and the local command API.
 #include "App.h"
 #include "GameHost.h"
+#include "designer/Designer.h"
 #include "atelier/atelier_style.h"
 #include "atelier/ui_icons.h"
 #include <set>
@@ -164,6 +165,15 @@ void GameHost::init() {
     fs::path root = exe.parent_path().parent_path();
     if (!fs::exists(root / "src")) root = exe;
     m_projectDir = root.wstring();
+    // UI Designer (F8): documents in ui/*.wzui.json; their buttons call these actions by name
+    {
+        wzui::Bindings& b = wzui::designer().bindings;
+        b.actions["play"] = [this] { if (!m_playing) play(); };
+        b.actions["stop"] = [this] { if (m_playing) stop(); };
+        b.actions["build"] = [this] { openBuildWindow(); };
+        b.actions["graph"] = [this] { setGraphOpen(!showGraph()); };
+        wzui::designer().setFolder(root / "ui");
+    }
     m_gameDir = (root / "game").wstring();
     fs::create_directories(m_gameDir, ec);
     m_graphPath = (fs::path(m_gameDir) / "main.graph.json").wstring();   // the graph of the Village scene (RTS)
@@ -563,7 +573,7 @@ void GameHost::playInput() {
 bool GameHost::beginFrame() {
     handleRequests();
     ImGuiIO& io = ImGui::GetIO();
-    if (!io.WantTextInput) {
+    if (!io.WantTextInput && !wzui::designer().visible()) {
         if (!m_player) {
             if (ImGui::IsKeyPressed(ImGuiKey_F3, false)) {
                 setGraphOpen(!showGraph());
@@ -1214,7 +1224,8 @@ static const char* kHelp =
     "\"graph.disconnect\": \"{id, pin, output}\", \"graph.setInput\": \"{id, pin, value}\", "
     "\"graph.save\": \"{}\", \"graph.load\": \"{}\", \"graph.show\": \"{open: true|false, output?: 0|1|2}\", \"graph.compile\": \"{} -> diagnostics\", \"graph.arrange\": \"{} -> nodes deplaces\", "
     "\"build\": \"{profile?, run?} -> dossier\", \"build.profiles\": \"{}\", "
-    "\"graph.execute\": \"{} -> Execute du Graph (essai a blanc, chemin anime)\", \"screenshot\": \"{window?: true = fenetre entiere} -> fichier PNG\", \"log\": \"{} -> journal du graphe\"}}";
+    "\"graph.execute\": \"{} -> Execute du Graph (essai a blanc, chemin anime)\", \"screenshot\": \"{window?: true = fenetre entiere} -> fichier PNG\", \"log\": \"{} -> journal du graphe\", "
+    "\"designer\": \"{show?: true|false, file?: nom.wzui.json} -> UI Designer (F8) : fichier ouvert et element selectionne (les interfaces sont dans ui/*.wzui.json)\"}}";
 
 void GameHost::handleRequests() {
     for (int guard = 0; guard < 16; ++guard) {
@@ -1261,6 +1272,17 @@ std::string GameHost::command(const Json& j, int& status) {
     };
 
     if (cmd == "help") return kHelp;
+    if (cmd == "designer") {   // UI Designer: {show?: true|false, file?: "nom.wzui.json"} -> état et élément sélectionné
+        wzui::Designer& d = wzui::designer();
+        if (j["show"].type == Json::Bool && j["show"].b != d.visible()) d.toggle();
+        if (j["file"].type == Json::String) {
+            fs::path f = d.file().empty() ? fs::path(m_projectDir) / "ui" / fromUtf8(j["file"].s) : d.file().parent_path() / fromUtf8(j["file"].s);
+            if (!d.open(f)) return fail("ouverture impossible : " + toUtf8(f.wstring()));
+        }
+        wzui::Node* n = d.doc().find(d.selected());
+        return ok(", \"visible\": " + std::string(d.visible() ? "true" : "false") + ", \"file\": " + jstr(toUtf8(d.file().wstring())) +
+                  ", \"selected\": " + (n ? "{\"id\": " + jstr(n->id) + ", \"type\": " + jstr(wzui::kindName(n->kind)) + ", \"text\": " + jstr(n->text) + ", \"bind\": " + jstr(n->bind) + "}" : std::string("null")));
+    }
     if (cmd == "state")
         return ok(", \"playing\": " + std::string(m_playing ? "true" : "false") + ", \"graphOpen\": " + (showGraph() ? "true" : "false") +
                   ", \"selected\": " + std::to_string(a.m_selected) + ", \"objects\": " + std::to_string(s.objects.size()) +

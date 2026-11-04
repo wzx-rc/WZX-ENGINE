@@ -56,6 +56,32 @@ ACES (fit de Hill, RRT+ODT), AgX, AgX Punchy, Standard. Espace de travail : lin�
 - Ctrl+Z / Ctrl+Y / Ctrl+D / Suppr · F : recadrer · T : rotation auto · F12 : capture PNG · F1 / F2 : scènes
 - P : path tracing / viewport · L : GI sondes temps réel (DDGI)
 
+## UI Designer (F8)
+
+**F8** ouvre le UI Designer, un constructeur d'interfaces à la Qt Designer, dessiné en Dear ImGui dans l'éditeur.
+
+- **Palette** (à gauche) : Window, Panel, Row, Column, Button, Label, Checkbox, Slider, Input, Combo, Color, Progress, Separator, Spacer, Component. Un clic ajoute le widget dans la sélection, un glisser le pose sur le canevas.
+- **Canevas** : clic pour sélectionner, glisser pour déplacer. Lâcher un élément sur un autre conteneur le déplace dedans, et dans une Row ou une Column, la position d'insertion s'affiche. Le coin vert redimensionne, le clic molette fait défiler et Ctrl+molette zoome. Raccourcis : flèches, Suppr, Ctrl+D, Ctrl+Z / Ctrl+Y. « Aperçu » rend les widgets utilisables.
+- **Arborescence** : glisser pour changer de parent, clic droit pour dupliquer, supprimer, monter ou descendre, ou mettre dans une Row ou une Column.
+- **Propriétés** (à droite) : id, texte, liaison, info-bulle, position, taille, espacement, couleurs, visibilité.
+
+Les interfaces sont des fichiers `ui/*.wzui.json`. Ils sont enregistrés automatiquement après chaque modification et rechargés quand un autre outil les modifie, par exemple Claude ou git. Le format est décrit dans `src/app/designer/UiDoc.h`.
+Un document coché « Dans l'éditeur » s'affiche dans WZX en vraies fenêtres. Ses widgets sont reliés au code par nom avec `wzui::designer().bindings` : par exemple, `actions["play"]` est appelé par un bouton dont la liaison est `play`. `play`, `stop`, `build` et `graph` sont déjà reliés dans `GameHost::init`. Une valeur sans code garde sa propre valeur, ce qui permet de construire l'interface avant d'écrire la logique.
+API : `POST /cmd {"cmd": "designer", "show"?: true, "file"?: "nom.wzui.json"}` renvoie le fichier ouvert et l'élément sélectionné. Claude sait ainsi quel élément est désigné.
+
+### Création Item
+
+L'onglet **Création Item** du Designer dessine des composants comme dans Figma : un bouton, un badge, une carte…
+- **Outils** : Sélection (V), Rectangle (R), Ellipse (O), Texte (T), Ligne (L). On dessine en glissant dans le cadre (Maj : proportions fixes). Un clic sélectionne, un glisser déplace, les 8 poignées redimensionnent, le coin orange change la taille du composant (Alt : sans étirer les calques). Ctrl+molette zoome.
+- **Calques** : visibilité, ordre (glisser ou Monter / Descendre), dupliquer, supprimer.
+- **Propriétés** : position, taille, arrondi, texte (`{text}` = le texte donné par l'interface), taille et alignement du texte, puis l'apparence : remplissage uni ou dégradé, contour, ombre douce, couleur du texte, opacité, décalage.
+- **États** : Normal, Survol, Appuyé, Désactivé. Un état reprend le style Normal jusqu'à sa première modification. « Tester » rend le composant survolable et cliquable, et la bande du bas montre les quatre états à 100 %.
+
+Les composants sont des fichiers `ui/components/<nom>.wzcomp.json` (format dans `src/app/designer/Component.h`), enregistrés et rechargés comme les interfaces. `bouton_ambre` est créé au premier lancement. Dans une interface, le widget **Component** affiche un composant (propriété « Composant ») étiré à sa taille : son texte remplace `{text}`, et un clic appelle l'action de sa liaison.
+
+Test sans GPU : `tools/ui_designer_test/designer_test.cpp` (Linux), qui produit aussi des captures.
+Template : `ui/wzx_engine.wzui.json` reproduit l'éditeur WZX (espace Scene, disposition Atelier en 1600 × 900 : barre du haut, Scene Manager, viewport, Content Browser, Inspector) comme point de départ à modifier dans le Designer. Ses boutons portent les liaisons de l'éditeur (`play`, `stop`, `build`, `graph`…).
+
 ## Structure
 
 - `src/vp3d/` : **module réutilisable** (lib statique `build/lib/vp3d.lib`)
@@ -68,6 +94,7 @@ ACES (fit de Hill, RRT+ODT), AgX, AgX Punchy, Standard. Espace de travail : lin�
   - `App` : fenêtre, boucle, édition (annuler, sélection, ajout…) · `ImGuiLayer` : backends Win32 + DX12, polices, textures · `Theme` : couleurs et réglages
   - `AtelierUI` : espace Scene et barre du haut · `atelier/` : Material Studio, Attribute Editor, palette partagée (`atelier_style.h`)
   - `game/` : éditeur nodal du jeu (onglet Graph : `NodeEditor`, bibliothèque `NodeLib`, exécution `Runtime`, graphe `Graph`) et bases RTS : grille `Grid`, caméra `RtsCamera`, maisons `Placement` (placées et animées dans `src/app/AppRts.cpp`, mode village dans la vue Scene, ou pendant Play ; le village est sauvegardé dans la scène, clé `village`). Les nœuds RTS (placer, supprimer, tourner une maison, « House Clicked ») exécutent la logique des maisons ; les boutons du HUD en Play sont déclarés par des nœuds « HUD Button ». Le nœud C++ « Caméra RTS » ne fait que la caméra RTS et le cadran solaire : il reste inactif tant qu'un lien ne l'active pas. Le nœud « Set Sun » règle le soleil et l'allume pendant le Play
+  - `designer/` : UI Designer (F8) : `UiDoc` (format `.wzui.json`), `UiRuntime` (dessin ImGui et liaisons), `Designer` (éditeur), `Component` et `ComponentEditor` (Création Item)
   - `Editor` : fenêtres Settings, Controls, About et vignettes du Content Browser
   - `Viewport` : image 3D (texture du renderer), caméra, sélection, gizmo, glisser-déposer
   - `Content` : palette, matériaux, primitives, scènes · `SceneIO` : fichiers de scène
