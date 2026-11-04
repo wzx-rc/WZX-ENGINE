@@ -2324,13 +2324,11 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
     const bool useHistory = rs.ddgi && !rs.raster && !giRaster;
     const bool needAS = (!rs.raster && !(liveProbes && rs.ddgiRaster)) || baking || (rs.raster && ((rs.bevel && rs.rasterBevel) || rs.rasterRT));
 
-    // AA quality of the GI raster modes: the sample count of the viewport (Lit and the others keep 4x)
-    const uint32_t msaa = (!rs.raster && giRaster && rs.aaQuality >= 1 && m_msaa8) ? 8u : 4u;
-    if (msaa != m_msaa) {
-        waitIdle();
-        m_msaa = msaa;
-        createRasterPipelines(nullptr, true);
-        createRasterTargets(m_rtW, m_rtH);
+    // AA quality of the GI raster modes: the sample count of the viewport (Lit and the others keep the MSAA of the
+    // Display menu, rs.msaaSamples, set by setMsaa in render())
+    if (!rs.raster && giRaster) {
+        const uint32_t msaa = (rs.aaQuality >= 1 && m_msaa8) ? 8u : 4u;
+        if (msaa != m_msaa || m_msaaTemporal) setMsaa(msaa);
     }
 
     beginCommands();
