@@ -2565,6 +2565,19 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
         // The raster pass reads the irradiance, distance and state atlases (SRVs t4..t6).
         ID3D12Resource* atlases[4] = {m_giTex[0].Get(), m_giTex[1].Get(), m_giTex[3].Get(), m_screenGI.Get()};   // + screen GI (t7)
         for (ID3D12Resource* r : atlases) transition(r, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+        if (rs.stillAA) {   // still image supersampling: the frames of an unchanged view accumulate, jittered
+            uint32_t k = sig ^ (transformSig(scene) * 2654435761u);
+            auto mixs = [&](const void* p, size_t n) { const unsigned char* c = (const unsigned char*)p; for (size_t i = 0; i < n; ++i) { k ^= c[i]; k *= 16777619u; } };
+            const Camera& cam = scene.camera;
+            mixs(&cam.target, sizeof(cam.target)); mixs(&cam.yaw, sizeof(float)); mixs(&cam.pitch, sizeof(float));
+            mixs(&cam.distance, sizeof(float)); mixs(&cam.fovY, sizeof(float)); mixs(&vp, sizeof(vp));
+            m_stillN = k == m_stillKey ? std::min(m_stillN + 1, 1 << 20) : 0;
+            m_stillKey = k;
+            auto halton = [](uint32_t i, uint32_t b) { float f = 1, r = 0; while (i) { f /= (float)b; r += f * (float)(i % b); i /= b; } return r; };
+            const uint32_t hi = (uint32_t)(m_stillN % 16) + 1;
+            m_stillJx = halton(hi, 2) - 0.5f;
+            m_stillJy = halton(hi, 3) - 0.5f;
+        } else m_stillN = 0;
         recordRaster(scene, rs, vp, false, true, !(liveProbes && rs.ddgiRaster));   // the capture pass already drew the shadow map
         for (ID3D12Resource* r : atlases) transition(r, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
         m_denoisedSlot = 0xFFFFFFFF;
@@ -2572,6 +2585,15 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
         m_cmd->SetComputeRootSignature(m_rootSig.Get());
         m_cmd->SetComputeRootConstantBufferView(0, m_constants.va());
         m_cmd->SetComputeRootDescriptorTable(8, m_heap->GetGPUDescriptorHandleForHeapStart());
+        if (rs.stillAA && m_psoGIFade) {   // (the average over the last 16 frames at most: the probes still converging show)
+            m_cmd->SetPipelineState(m_psoGIFade.Get());
+            const float tw = 1.0f / (float)(std::min(m_stillN, 15) + 1);
+            uint32_t fk[4] = {2u, 0u, 0u, 0u};
+            memcpy(&fk[1], &tw, sizeof(float));
+            m_cmd->SetComputeRoot32BitConstants(1, 4, fk, 0);
+            m_cmd->Dispatch(gx, gy, 1);
+            uavBarrier();
+        }
         m_cmd->SetPipelineState(m_psoTonemap.Get());
         m_cmd->SetComputeRootDescriptorTable(23, selCovTable());
         uint32_t rc[4] = {TEX_DENOISE_A, 1u, (uint32_t)rs.tonemapper, 0};

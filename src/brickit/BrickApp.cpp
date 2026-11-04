@@ -1119,6 +1119,7 @@ void BrickApp::frame() {
     // Réglages › Lumière: depth of field (HQ, RC) and bloom (the raster views); the path tracer has its own lens
     m_rs.dof = (m_quality == 1 || m_rcMode) ? (m_opt.dof >= 0 ? m_opt.dof : m_dof) : 0.0f;
     m_rs.bloom = m_opt.bloom >= 0 ? m_opt.bloom : m_bloom;
+    m_rs.stillAA = m_opt.stillAA >= 0 ? m_opt.stillAA != 0 : m_stillAA;   // Réglages › Anti-aliasing au repos
     // part sheet open: the main view keeps its last image, the renderer draws the 3D viewer of the part
     const bool sheet = m_infoPart >= 0 && !m_dev;
     if (sheet && !m_frozenTex && m_frame > 0) {
@@ -1323,6 +1324,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         else if (a == L"--read-step") opt.readStep = _wtoi(next().c_str());
         else if (a == L"--import-report") opt.importReport = next();
         else if (a == L"--group-test") opt.groupTest = next();
+        else if (a == L"--still-aa") opt.stillAA = _wtoi(next().c_str());
         else if (a == L"--dof") opt.dof = (float)_wtof(next().c_str());
         else if (a == L"--bloom") opt.bloom = (float)_wtof(next().c_str());
         else if (a == L"--render-scale") opt.renderScale = (float)_wtof(next().c_str());

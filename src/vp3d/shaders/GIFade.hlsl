@@ -10,5 +10,11 @@ void main(uint3 id : SV_DispatchThreadID) {
     if (id.x >= F.resolution.x || id.y >= F.resolution.y) return;
     int2 p = int2(id.xy);
     if (C.mode == 0) gTex[4][p] = gTex[SLOT_OUTPUT][p];
-    else gTex[SLOT_OUTPUT][p] = lerp(gTex[4][p], gTex[SLOT_OUTPUT][p], saturate(C.t));
+    else if (C.mode == 1) gTex[SLOT_OUTPUT][p] = lerp(gTex[4][p], gTex[SLOT_OUTPUT][p], saturate(C.t));
+    else {   // mode 2: still image supersampling (RenderSettings::stillAA): the HDR image (slot 3) averaged with the
+             // jittered frames before it (slot 0), t = 1 / (n + 1); the average goes back to slot 3 for the tone mapper
+        const float4 a = C.t >= 0.999 ? gTex[3][p] : lerp(gTex[0][p], gTex[3][p], saturate(C.t));
+        gTex[0][p] = a;
+        gTex[3][p] = a;
+    }
 }

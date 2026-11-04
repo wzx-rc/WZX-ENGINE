@@ -1,5 +1,5 @@
 // Depth of field and bloom of the raster views (RenderSettings::dof, bloom), after the tone mapper.
-// mode 0: the depth of each pixel centre, one camera ray against the TLAS (slot 0 .x, 1e30 when it sees nothing)
+// mode 0: the depth of each pixel centre, one camera ray against the TLAS (slot 1 .x, 1e30 when it sees nothing)
 // mode 1: depth of field: a disc of 24 samples whose radius grows with the distance to the focus (circle of
 //         confusion), the sharper samples in front kept out of a blurred background; output -> slot 4
 // mode 2: bloom: the bright parts of slot 4 gathered over 3 rings (up to ~3 % of the height), added; slot 4 -> output
@@ -27,12 +27,12 @@ void main(uint3 id : SV_DispatchThreadID) {
         r.Origin = o; r.Direction = d; r.TMin = 0.0; r.TMax = 1e30;
         q.TraceRayInline(gScene, RAY_FLAG_NONE, MASK_OPAQUE | MASK_GLASS, r);
         q.Proceed();
-        gTex[0][p] = float4(q.CommittedStatus() == COMMITTED_TRIANGLE_HIT ? q.CommittedRayT() : 1e30, 0, 0, 0);
+        gTex[1][p] = float4(q.CommittedStatus() == COMMITTED_TRIANGLE_HIT ? q.CommittedRayT() : 1e30, 0, 0, 0);
         return;
     }
     if (P.mode == 1) {
         const float4 c0 = gTex[SLOT_OUTPUT][p];
-        const float r0 = P.dofPx > 0 ? CocPx(gTex[0][p].x) : 0;
+        const float r0 = P.dofPx > 0 ? CocPx(gTex[1][p].x) : 0;
         if (r0 < 0.5) { gTex[4][p] = c0; return; }
         float3 acc = c0.rgb;
         float wsum = 1;
@@ -41,7 +41,7 @@ void main(uint3 id : SV_DispatchThreadID) {
             const float a = k * 2.39996323;
             const float2 off = float2(cos(a), sin(a)) * sqrt(t) * r0;
             const int2 q = clamp(p + int2(round(off)), int2(0, 0), mx);
-            const float rq = CocPx(gTex[0][q].x);
+            const float rq = CocPx(gTex[1][q].x);
             // a sample counts when its own blur reaches this pixel (no sharp foreground smeared over the background)
             const float w = saturate(rq - length(off) + 1.0);
             acc += gTex[SLOT_OUTPUT][q].rgb * w;

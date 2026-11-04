@@ -72,7 +72,8 @@ struct RenderSettings {
     float selectionFill = 0.15f;
     float sharpen = 0.0f;
     float dof = 0.0f;     // raster views: depth of field (0 = off, 1 = a blur of 24 px at twice the focus distance)
-    float bloom = 0.0f;   // raster views: the glow of the bright parts (0 = off)           // tone mapper: contrast adaptive sharpening (an image rendered below the window size)    // selection style 2 (BrickIt): the white veil over the selected objects (post, after the lighting)
+    float bloom = 0.0f;   // raster views: the glow of the bright parts (0 = off)
+    bool stillAA = false; // raster view of the probes (HQ): a still image accumulates jittered frames (supersampling), MSAA while it moves           // tone mapper: contrast adaptive sharpening (an image rendered below the window size)    // selection style 2 (BrickIt): the white veil over the selected objects (post, after the lighting)
     float pixelScale = 1.0f;        // render pixels per screen pixel (viewport supersampling): lines and the glow keep their size
     // raster: screen-space ambient occlusion (radius in scene units), multiplied into the image before the tone mapping
     bool ssao = false;
@@ -400,6 +401,10 @@ private:
     uint32_t m_giMoveKey = 0;
     bool m_giKeepRaster = false, m_giInMoveSwitch = false;
     float m_giFadeT = 1.0f;
+    // still image supersampling (RenderSettings::stillAA): key of the view, frames accumulated, jitter of this frame (px)
+    uint32_t m_stillKey = 0;
+    int m_stillN = 0;
+    float m_stillJx = 0, m_stillJy = 0;
     ComPtr<ID3D12PipelineState> m_psoGIUpdate, m_psoGIBlend, m_psoGIShade, m_psoGIRaster;
     ComPtr<ID3D12PipelineState> m_psoRCVisibility, m_psoRCTrace, m_psoRCGather;
     ComPtr<ID3D12PipelineState> m_psoRCSProbes, m_psoRCSTrace, m_psoRCSProbeSH, m_psoRCSGather;

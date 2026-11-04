@@ -769,9 +769,12 @@ void Renderer::recordRaster(const Scene& scene, const RenderSettings& rs, const 
     // two frames while nothing moves (16 different samples per pixel).
     static_assert(sizeof(RasterConstants) <= 768, "two copies in m_rasterCB (768 + size <= 1536: the frame constants of an extra view)");
     memcpy((uint8_t*)rcb.mapped + 768, &rc, sizeof(rc));
-    if (m_msaaTemporal && !overlay && !probeCapture && !probes && !xv) {
+    const bool stillJitter = rs.stillAA && probes && !overlay && !probeCapture && !xv && m_stillN > 0;
+    if ((m_msaaTemporal && !overlay && !probeCapture && !probes && !xv) || stillJitter) {
         const float o = (m_taaFrame & 1) ? 1.0f / 32.0f : -1.0f / 32.0f;   // pixels: the two frames are 1/16 px apart
-        const float jx = 2.0f * o / (float)vp.w, jy = -2.0f * o / (float)vp.h;
+        // (still image supersampling: a Halton (2, 3) offset within the pixel, a new one per frame)
+        const float jx = stillJitter ? 2.0f * m_stillJx / (float)vp.w : 2.0f * o / (float)vp.w;
+        const float jy = stillJitter ? -2.0f * m_stillJy / (float)vp.h : -2.0f * o / (float)vp.h;
         for (int k = 0; k < 4; ++k) {
             rc.viewProj[k] += jx * rc.viewProj[12 + k];
             rc.viewProj[4 + k] += jy * rc.viewProj[12 + k];
