@@ -82,6 +82,7 @@ void Designer::setFolder(const fs::path& folder) {
     }
     if (!m_files.empty()) open(m_files.front());
     refreshLive();
+    m_items.setFolder(m_folder / "components");
 }
 
 void Designer::refreshFiles() {
@@ -132,6 +133,7 @@ bool Designer::saveNow() {
 void Designer::pollDisk() {
     double t = ImGui::GetTime();
     if (t >= m_nextLive) { m_nextLive = t + 2.0; refreshFiles(); refreshLive(); }
+    if (t >= m_nextComponents) { m_nextComponents = t + 1.0; components().refresh(); }
     if (t < m_nextPoll || m_file.empty()) return;
     m_nextPoll = t + 0.5;
     std::error_code ec;
@@ -390,14 +392,12 @@ void Designer::toolbar() {
     ImGui::SetNextItemWidth(110 * m_scale);
     int z = (int)std::round(m_zoom * 100);
     if (ImGui::SliderInt("##zoom", &z, 50, 200, "Zoom %d%%")) m_zoom = z / 100.0f;
-    ImGui::SameLine(ImGui::GetWindowWidth() - 130 * m_scale);
-    if (ImGui::Button("Fermer (F8)")) toggle();
 }
 
 void Designer::palette() {
     ImGui::SeparatorText("Widgets");
     static const Kind kinds[] = {Kind::Window, Kind::Panel, Kind::Row, Kind::Column, Kind::Button, Kind::Label, Kind::Checkbox,
-                                 Kind::Slider, Kind::Input, Kind::Combo, Kind::Color, Kind::Progress, Kind::Separator, Kind::Spacer};
+                                 Kind::Slider, Kind::Input, Kind::Combo, Kind::Color, Kind::Progress, Kind::Separator, Kind::Spacer, Kind::Component};
     float w = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) / 2;
     for (int i = 0; i < (int)(sizeof kinds / sizeof kinds[0]); ++i) {
         Kind k = kinds[i];
@@ -503,10 +503,20 @@ void Designer::properties() {
     if (n->kind != Kind::Row && n->kind != Kind::Column && n->kind != Kind::Spacer && n->kind != Kind::Separator)
         track(inputStr(n->kind == Kind::Window ? "Titre" : "Texte", n->text));
     if (n->kind != Kind::Window && isContainer(n->kind) == false && n->kind != Kind::Separator && n->kind != Kind::Spacer) {
-        track(inputStr("Liaison", n->bind, n->kind == Kind::Button ? "action (ex. play)" : "valeur (ex. lightIntensity)"));
+        const bool action = n->kind == Kind::Button || n->kind == Kind::Component;
+        track(inputStr("Liaison", n->bind, action ? "action (ex. play)" : "valeur (ex. lightIntensity)"));
         if (ImGui::IsItemHovered())
-            ImGui::SetTooltip(n->kind == Kind::Button ? "Nom de l'action appelée au clic (Bindings::actions)" : "Nom de la valeur du programme liée au widget (Bindings)");
+            ImGui::SetTooltip(action ? "Nom de l'action appelée au clic (Bindings::actions)" : "Nom de la valeur du programme liée au widget (Bindings)");
         track(inputStr("Info-bulle", n->tooltip));
+    }
+    if (n->kind == Kind::Component) {
+        if (ImGui::BeginCombo("Composant", n->component.empty() ? "(aucun)" : n->component.c_str())) {
+            for (auto& [name, comp] : components().items)
+                if (ImGui::Selectable(name.c_str(), name == n->component)) { pushUndo(); n->component = name; changed(); }
+            ImGui::EndCombo();
+        }
+        if (!components().find(n->component)) ImGui::TextColored(ImVec4(1, 0.45f, 0.4f, 1), "Composant introuvable dans ui/components");
+        if (ImGui::Button("Modifier dans Création Item") && m_items.openByName(n->component)) setMode(1);
     }
     ImGui::SeparatorText("Disposition");
     bool freePos = n->kind == Kind::Window || (parent && isFreeLayout(parent->kind));
@@ -773,6 +783,7 @@ void Designer::draw(float uiScale) {
     if (!bindings.onUnboundAction) bindings.onUnboundAction = [this](const std::string& a) { m_lastAction = a + " (pas encore reliée au code)"; };
     if (m_saveAt >= 0 && ImGui::GetTime() >= m_saveAt && !ImGui::IsAnyItemActive()) saveNow();
     if (ImGui::IsKeyPressed(ImGuiKey_F8, false)) toggle();
+    m_items.tick();
     if (!m_visible) return;
 
     m_scale = uiScale * m_zoom;
@@ -781,6 +792,26 @@ void Designer::draw(float uiScale) {
     ImGui::SetNextWindowSize(io.DisplaySize);
     if (m_focusOnShow) { ImGui::SetNextWindowFocus(); m_focusOnShow = false; }
     ImGui::Begin("UI Designer##wzui", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings);
+    int shown = -1;
+    if (ImGui::BeginTabBar("##modes")) {
+        const char* names[] = {"Interfaces", "Création Item"};
+        for (int i = 0; i < 2; ++i) {
+            ImGuiTabItemFlags fl = m_modeRequest && m_mode == i ? ImGuiTabItemFlags_SetSelected : 0;
+            if (ImGui::BeginTabItem(names[i], nullptr, fl)) { shown = i; ImGui::EndTabItem(); }
+        }
+        if (ImGui::TabItemButton("Fermer (F8)", ImGuiTabItemFlags_Trailing | ImGuiTabItemFlags_NoTooltip)) toggle();
+        ImGui::EndTabBar();
+    }
+    if (shown >= 0 && !m_modeRequest) m_mode = shown;
+    m_modeRequest = false;
+    if (m_mode == 1) {
+        m_items.toolbar(uiScale);
+        ImGui::Separator();
+        m_items.draw(uiScale);
+        if (ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows)) m_items.handleKeys();
+        ImGui::End();
+        return;
+    }
     toolbar();
     ImGui::Separator();
     const float left = 260 * uiScale, right = 320 * uiScale;

@@ -6,10 +6,14 @@
 //           the corner handle resizes, middle mouse pans, Ctrl+wheel zooms
 //   right : properties of the selection (id, text, binding, position, size, colours...) or of the document
 //
+// A second tab, "Création Item" (ComponentEditor.h), designs components (a button, a badge...) like Figma; the
+// Component widget draws them in interfaces.
+//
 // Documents are ui/*.wzui.json (see UiDoc.h), saved automatically after each change and reloaded when another tool
 // (Claude, git, a text editor) changes them. Documents marked "showInEditor" are drawn live in the editor with
 // drawLiveDocs(), their widgets tied to the program through `bindings`.
 #pragma once
+#include "ComponentEditor.h"
 #include "UiDoc.h"
 #include "UiRuntime.h"
 #include <filesystem>
@@ -40,6 +44,9 @@ public:
     void setPreview(bool on) { m_preview = on; }
     void setZoom(float z) { m_zoom = z; }
     void setPan(ImVec2 p) { m_pan = p; }
+    int mode() const { return m_mode; }  // 0 Interfaces, 1 Création Item
+    void setMode(int m) { m_mode = m; m_modeRequest = true; }
+    ComponentEditor& items() { return m_items; }
 
 private:
     enum class Drag { None, Pending, Move, Resize, Pan, Palette };
@@ -103,6 +110,11 @@ private:
     std::string m_toast, m_lastAction;
     double m_toastUntil = 0;
     char m_newName[64] = "";
+
+    ComponentEditor m_items;             // "Création Item"
+    int m_mode = 0;
+    bool m_modeRequest = false;
+    double m_nextComponents = 0;
 };
 
 Designer& designer();   // the editor's instance

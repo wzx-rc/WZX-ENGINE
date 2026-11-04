@@ -10,7 +10,7 @@ using app::Json;
 namespace wzui {
 
 static const char* kNames[] = {"Window", "Panel", "Row", "Column", "Button", "Label", "Checkbox", "Slider", "Input",
-                               "Combo", "Color", "Progress", "Separator", "Spacer"};
+                               "Combo", "Color", "Progress", "Separator", "Spacer", "Component"};
 static_assert(sizeof(kNames) / sizeof(kNames[0]) == (int)Kind::Count, "kind names");
 
 const char* kindName(Kind k) { return (int)k >= 0 && k < Kind::Count ? kNames[(int)k] : "?"; }
@@ -64,6 +64,7 @@ Node Doc::makeNode(Kind k) {
     case Kind::Progress: n.w = 180; break;
     case Kind::Separator: n.w = 180; break;
     case Kind::Spacer: n.w = 16; n.h = 16; break;
+    case Kind::Component: n.text = "Bouton"; n.component = "bouton_ambre"; break;
     default: break;
     }
     return n;
@@ -116,6 +117,7 @@ static void writeNode(std::string& o, const Node& n, int depth) {
     if (n.x || n.y) o += ", \"x\": " + num(n.x) + ", \"y\": " + num(n.y);
     if (n.w || n.h) o += ", \"w\": " + num(n.w) + ", \"h\": " + num(n.h);
     if (!n.bind.empty()) o += ", \"bind\": " + q(n.bind);
+    if (!n.component.empty()) o += ", \"component\": " + q(n.component);
     if (!n.tooltip.empty()) o += ", \"tooltip\": " + q(n.tooltip);
     if (n.kind == Kind::Slider || n.kind == Kind::Progress) o += ", \"min\": " + num(n.minV) + ", \"max\": " + num(n.maxV);
     if (!n.items.empty()) {
@@ -166,6 +168,7 @@ static bool readNode(const Json& j, Node& n, std::string* err) {
     n.text = j["text"].str();
     n.tooltip = j["tooltip"].str();
     n.bind = j["bind"].str();
+    n.component = j["component"].str();
     n.x = (float)j["x"].num(); n.y = (float)j["y"].num();
     n.w = (float)j["w"].num(); n.h = (float)j["h"].num();
     n.minV = (float)j["min"].num(0); n.maxV = (float)j["max"].num(1);

@@ -173,7 +173,7 @@ int main(int argc, char** argv) {
     printf("inspecteur pos: %.0f,%.0f\n", wzui::designer().doc().windows[0].x, wzui::designer().doc().windows[0].y);
     frames(30); // autosave
     std::string saved = readFile(out + "/ui/exemple.wzui.json");
-    printf("saved has bouton between play/stop: %d, x moved: %d\n", (int)(saved.find("\"id\": \"bouton\"") != std::string::npos), (int)(saved.find("\"x\": 40") != std::string::npos));
+    printf("saved has bouton between play/stop: %d, x moved: %d\n", (int)(saved.find("\"id\": \"button\"") != std::string::npos), (int)(saved.find("\"x\": 40") != std::string::npos));
 
     // 4. Claude edits the file on disk -> hot reload
     std::string edited = saved; size_t p = edited.find("\"text\": \"Appliquer\""); edited.replace(p, 19, "\"text\": \"Valider (Claude)\"");
@@ -191,5 +191,73 @@ int main(int argc, char** argv) {
     frames(3);
     frame((out + "/4_dans_editeur").c_str());
     std::system(("cp " + out + "/ui/exemple.wzui.json " + out + "/exemple.wzui.json").c_str());
+
+    // 6. "Création Item": the default amber button, an ellipse drawn with the tool, a hover look, the Tester mode
+    g_editorBg = false;
+    wzui::designer().toggle();
+    wzui::designer().setMode(1);
+    frames(4);
+    auto& ce = wzui::designer().items();
+    printf("component: %s, %zu layers\n", ce.component().name.c_str(), ce.component().layers.size());
+    ce.select(ce.component().layers[0].uid);
+    frames(2);
+    frame((out + "/5_creation_item").c_str());
+    ce.setTool(wzui::Tool::Ellipse);
+    ImVec2 a = ce.toScreen(ImVec2(12, 12)), b = ce.toScreen(ImVec2(28, 28));
+    drag(a.x, a.y, b.x, b.y);
+    auto& ly = ce.component().layers;
+    printf("after draw: %zu layers, last=%s %.0f,%.0f %.0fx%.0f tool=%d undo=%zu\n", ly.size(), wzui::shapeName(ly.back().shape), ly.back().x, ly.back().y, ly.back().w, ly.back().h, (int)ce.tool(), ce.undoCount());
+    ly.back().look[wzui::StNormal].fill.a = ImVec4(1, 0.95f, 0.85f, 1);
+    ly.back().look[wzui::StNormal].shadow = true;
+    ly.back().look[wzui::StNormal].shadowBlur = 3;
+    // move the text to make room for the icon (drag on the canvas)
+    ImVec2 t0 = ce.toScreen(ImVec2(70, 20));
+    ce.select(0); frame();
+    ImVec2 t1 = ce.toScreen(ImVec2(78, 20));
+    drag(t0.x, t0.y, t1.x, t1.y);
+    printf("text layer x after drag: %.0f (selected %d)\n", ly[1].x, ce.selected());
+    ce.setState(wzui::StHover);
+    ce.select(ly.back().uid);
+    frames(3);
+    frame((out + "/6_etat_survol").c_str());
+    ce.setTest(true);
+    ImVec2 c = ce.toScreen(ImVec2(100, 20));
+    moveTo(c.x, c.y, 4);
+    frames(2);
+    frame((out + "/7_tester_survol").c_str());
+    click(c.x, c.y);
+    printf("test click: %s\n", ce.lastClick().c_str());
+    ce.setTest(false);
+    frames(40);   // autosave
+    std::string comp = readFile(out + "/ui/components/bouton_ambre.wzcomp.json");
+    printf("saved component has ellipse: %d\n", (int)(comp.find("\"ellipse\"") != std::string::npos));
+
+    // 7. the component used in an interface, then live in the editor
+    wzui::designer().setMode(0);
+    frames(2);
+    auto& doc = wzui::designer().doc();
+    wzui::Node cn = doc.makeNode(wzui::Kind::Component);
+    cn.id = "valider"; cn.text = "Valider"; cn.bind = "validate"; cn.x = 0; cn.y = 0; cn.w = 160; cn.h = 44;
+    doc.windows[1].children.insert(doc.windows[1].children.begin(), cn);
+    doc.windows[1].children[1].y = 56;
+    doc.windows[1].h = 150;
+    wzui::designer().saveNow();
+    wzui::designer().select(doc.windows[1].children[0].uid);
+    frames(3);
+    frame((out + "/8_composant_dans_interface").c_str());
+    int validated = 0;
+    wzui::designer().bindings.actions["validate"] = [&] { ++validated; };
+    wzui::designer().toggle(); g_editorBg = true;
+    frames(3);
+    // find the live window and hover / click the component
+    ImGuiWindow* lw = nullptr;
+    for (ImGuiWindow* w : GImGui->Windows) if (std::string(w->Name).find("barre") != std::string::npos) lw = w;
+    if (lw) {
+        ImVec2 pc(lw->ContentRegionRect.Min.x + 80, lw->ContentRegionRect.Min.y + 22);
+        moveTo(pc.x, pc.y, 4);
+        frame((out + "/9_editeur_survol").c_str());
+        click(pc.x, pc.y);
+    }
+    printf("live window: %d, validate called: %d\n", lw != nullptr, validated);
     return 0;
 }

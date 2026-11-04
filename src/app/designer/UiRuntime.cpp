@@ -1,4 +1,5 @@
 #include "UiRuntime.h"
+#include "Component.h"
 #include <algorithm>
 
 namespace wzui {
@@ -170,6 +171,25 @@ ImVec2 drawNode(Node& n, ImVec2 pos, DrawCtx& c) {
         ImGui::Dummy(ImVec2(W > 0 ? W : 16 * s, H > 0 ? H : 16 * s));
         if (c.design) ImGui::GetWindowDrawList()->AddRect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax(), IM_COL32(150, 150, 150, 60));
         break;
+    case Kind::Component: {
+        ImGui::SetCursorScreenPos(pos);
+        const Component* comp = components().find(n.component);
+        ImVec2 z(W > 0 ? W : (comp ? comp->w : 140) * s, H > 0 ? H : (comp ? comp->h : 40) * s);
+        bool pressed = ImGui::InvisibleButton("##comp", z);
+        int st = StNormal;
+        if (!c.design) st = ImGui::IsItemActive() ? StActive : ImGui::IsItemHovered() ? StHover : StNormal;
+        if (comp) drawComponent(dl, *comp, pos, z, s, st, n.text);
+        else {
+            dl->AddRect(pos, ImVec2(pos.x + z.x, pos.y + z.y), IM_COL32(230, 90, 90, 200), 4 * s, 0, 1.0f);
+            dl->AddText(ImVec2(pos.x + 6 * s, pos.y + 4 * s), IM_COL32(230, 90, 90, 255), ("? " + n.component).c_str());
+        }
+        if (pressed && !c.design) {
+            auto it = B.actions.find(key(n));
+            if (it != B.actions.end() && it->second) it->second();
+            else if (B.onUnboundAction) B.onUnboundAction(key(n));
+        }
+        break;
+    }
     default:
         break;
     }
