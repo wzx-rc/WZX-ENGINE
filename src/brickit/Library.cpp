@@ -1,6 +1,7 @@
 #include "Library.h"
 #include "app/Json.h"
 #include "vp3d/EnvImage.h"
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -89,8 +90,56 @@ static void finishMesh(Part& p) {
     p.loaded = !p.mesh.indices.empty();
 }
 
+// The real colours of each part (tools/brickit/part_colors.py): "name code code ..." per line
+static void loadPartColors(const std::wstring& path, std::unordered_map<std::string, std::vector<int>>& out) {
+    std::vector<uint8_t> t;
+    out.clear();
+    if (!readFile(path, t)) return;
+    size_t i = 0;
+    while (i < t.size()) {
+        size_t e = i;
+        while (e < t.size() && t[e] != '\n') ++e;
+        if (e > i && t[i] != '#') {
+            size_t sp = i;
+            while (sp < e && t[sp] != ' ') ++sp;
+            std::string name((const char*)&t[i], sp - i);
+            std::vector<int>& v = out[name];
+            int x = 0;
+            bool any = false;
+            for (size_t k = sp; k <= e; ++k) {
+                if (k < e && t[k] >= '0' && t[k] <= '9') { x = x * 10 + (t[k] - '0'); any = true; }
+                else { if (any) v.push_back(x); x = 0; any = false; }
+            }
+        }
+        i = e + 1;
+    }
+}
+
+const std::vector<int>* Library::colorsOf(int part) const {
+    if (part < 0 || part >= (int)parts.size() || m_partColors.empty()) return nullptr;
+    std::string n = parts[part].name;
+    for (auto& c : n) c = (char)tolower((unsigned char)c);
+    auto it = m_partColors.find(n);
+    if (it == m_partColors.end()) {   // a mould letter the table does not know (3062 for 3062b...)
+        std::string base = n;
+        while (!base.empty() && base.back() >= 'a' && base.back() <= 'z') base.pop_back();
+        if (base != n) it = m_partColors.find(base);
+        if (it == m_partColors.end()) for (char m : std::string("abcd")) { it = m_partColors.find(base + m); if (it != m_partColors.end()) break; }
+    }
+    return it == m_partColors.end() ? nullptr : &it->second;
+}
+
+bool Library::hasColorTable(int part) const { return colorsOf(part) != nullptr; }
+
+bool Library::colorExists(int part, int paletteIndex) const {
+    const std::vector<int>* v = colorsOf(part);
+    if (!v || paletteIndex < 0 || paletteIndex >= (int)palette.size()) return true;
+    return std::binary_search(v->begin(), v->end(), palette[paletteIndex].id);
+}
+
 bool Library::load(const std::wstring& dir, std::string* error) {
     m_dir = dir;
+    loadPartColors(dir + L"\\part_colors.txt", m_partColors);
     parts.clear();
     palette.clear();
     m_byName.clear();

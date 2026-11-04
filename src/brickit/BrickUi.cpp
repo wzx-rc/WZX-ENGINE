@@ -384,7 +384,11 @@ void BrickApp::uiColors() {
     auto rows = [](int n) { return (n + 2) / 3; };
     const float h6 = 16 * s;
     float H = pad + 14 * s + 6 * s;
-    if (!m_pColors.collapsed) H += 14 * s + 6 * s + 3 * h6 + (rows(nStd) + rows(nTr) + rows(nMe)) * (sw + gap) + pad;
+    if (!m_pColors.collapsed) H += 14 * s + 6 * s + 18 * s + 3 * h6 + (rows(nStd) + rows(nTr) + rows(nMe)) * (sw + gap) + pad;
+    // the colours that exist for real for the part selected or in hand (Rebrickable data); the others greyed out
+    const int fbp = focusBrick();
+    const int fpart = fbp >= 0 && fbp < (int)m_bricks.size() ? m_bricks[fbp].part : -1;
+    const bool filter = !m_allColors && fpart >= 0 && m_lib.hasColorTable(fpart);
     const float headerH = 30 * s, trayTop = m_uiRects.size() > 1 ? m_uiRects[1].y : d.y;
     float y = std::max(headerH + 12 * s, headerH + (trayTop - headerH - H) * 0.5f);
     ImVec2 p0(d.x - 10 * s - W, y), p1(d.x - 10 * s, y + H);
@@ -404,6 +408,18 @@ void BrickApp::uiColors() {
     u.text(ImVec2(p0.x + pad + 18 * s, cy), 10.5f, C_DIM, buf);
     u.dl->PopClipRect();
     cy += 14 * s + 6 * s;
+    {   // toggle: every colour (bypass the real colours of the part)
+        ImVec2 ca(p0.x + pad + 2 * s, cy + 1 * s), cb(ca.x + 12 * s, ca.y + 12 * s);
+        const bool h = u.hover(ImVec2(p0.x, cy), ImVec2(p1.x, cy + 16 * s));
+        if (m_allColors) {
+            u.dl->AddRectFilled(ca, cb, C_ACCENT, 3 * s);
+            u.dl->AddPolyline(std::vector<ImVec2>{ImVec2(ca.x + 3 * s, ca.y + 6 * s), ImVec2(ca.x + 5 * s, ca.y + 9 * s), ImVec2(ca.x + 9.5f * s, ca.y + 3 * s)}.data(), 3, C_INK, 0, 1.6f * s);
+        } else u.dl->AddRect(ca, cb, h ? C_TEXT : C_FAINT, 3 * s, 0, 1.3f * s);
+        u.text(ImVec2(cb.x + 5 * s, cy), 9.5f, h ? C_TEXT : C_DIM, "Toutes les couleurs");
+        if (h) ImGui::SetTooltip("Non coché : seules les couleurs qui existent pour cette pièce (données Rebrickable)");
+        if (h && u.pressed) m_allColors = !m_allColors;
+        cy += 18 * s;
+    }
     auto group = [&](const char* title, const char* key) {
         u.text(ImVec2(p0.x + pad + 2 * s, cy + 3 * s), 9.5f, C_FAINT, title, true);
         cy += h6;
@@ -419,10 +435,16 @@ void BrickApp::uiColors() {
             if (c.group == "metallic")   // .sw.metal::after: vertical sheen
                 u.dl->AddRectFilledMultiColor(a, ImVec2(b.x, (a.y + b.y) * 0.5f), IM_COL32(255, 255, 255, 115), IM_COL32(255, 255, 255, 115), IM_COL32(255, 255, 255, 0), IM_COL32(255, 255, 255, 0));
             u.dl->AddRect(a, b, IM_COL32(255, 255, 255, 26), 7 * s);
+            const bool exists = !filter || m_lib.colorExists(fpart, i);
+            if (!exists) {   // does not exist for this part: veiled and struck through
+                u.dl->AddRectFilled(a, b, IM_COL32(0x13, 0x14, 0x17, 190), 7 * s);
+                u.dl->AddLine(ImVec2(a.x + 5 * s, b.y - 5 * s), ImVec2(b.x - 5 * s, a.y + 5 * s), IM_COL32(255, 255, 255, 70), 1.5f * s);
+            }
             if (i == m_color) u.dl->AddRect(ImVec2(a.x - 3 * s, a.y - 3 * s), ImVec2(b.x + 3 * s, b.y + 3 * s), C_ACCENT, 9 * s, 0, 2 * s);
             if (u.hover(a, b)) {
-                ImGui::SetTooltip("%s · %d", c.name.c_str(), c.id);
-                if (u.pressed) applyColor(i);
+                if (exists) ImGui::SetTooltip("%s · %d", c.name.c_str(), c.id);
+                else ImGui::SetTooltip("%s · %d : n'existe pas pour cette pièce (coche « Toutes les couleurs »)", c.name.c_str(), c.id);
+                if (u.pressed && exists) applyColor(i);
             }
             ++k;
         }
@@ -1454,7 +1476,7 @@ void BrickApp::uiDevSheet() {
     float rowsH = 0;
     std::vector<float> rh;
     for (auto& r : rows) { float h = wrapText(u, ImVec2(0, 0), 13, C_TEXT, r.second.c_str(), ddW, false); rh.push_back(h); rowsH += h + 6 * s; }
-    const char* credit = "Géométrie : bibliothèque LDraw (ldraw.org). Connexions : LDraw + LDCad shadow library, converties automatiquement.";
+    const char* credit = "Géométrie : bibliothèque LDraw (ldraw.org, CC BY). Connexions : LDraw + LDCad shadow library, converties automatiquement. Couleurs réelles : données Rebrickable (rebrickable.com).";
     const float creditH = wrapText(u, ImVec2(0, 0), 11, C_FAINT, credit, inner, false) * 1.1f;
     auto ov = m_devOverrides.find(id);
     std::string note;

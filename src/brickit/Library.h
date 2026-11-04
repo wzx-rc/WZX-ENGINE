@@ -66,11 +66,17 @@ public:
 
     std::vector<Part> parts;
     std::vector<Color> palette;
+    // colours that exist for real per part (assets/brickit/part_colors.txt, Rebrickable data, LDraw colour codes):
+    // true when the palette colour exists for the part, or when the part is not in the table
+    bool colorExists(int part, int paletteIndex) const;
+    bool hasColorTable(int part) const;
     int packCount = 0;
 
 private:
     std::wstring m_dir;
     std::unordered_map<std::string, int> m_byName;
+    std::unordered_map<std::string, std::vector<int>> m_partColors;   // LDraw part name -> LDraw colour codes (sorted)
+    const std::vector<int>* colorsOf(int part) const;
     std::vector<bool> m_packLoaded;
 };
 

@@ -460,6 +460,7 @@ private:
     float m_softGIStrength = 1.0f;
     int m_softGIProbes = 16384;       // Réglages › Lumière › Sondes GI: probe budget of the soft GI
     bool m_showProbes = false;        // Réglages › Lumière › Afficher les sondes
+    bool m_allColors = false;         // Couleurs: every colour offered, even those that do not exist for the part
     float m_lumColumnH = 0.0f;        // Réglages: height of the Lumière column drawn last frame
     float m_hqSSSStrength = 1.0f;     // Réglages › Lumière › SSS (HQ): strength 0..2 (0 = off)
     bool m_softGIHold = true;   // Réglages › Lumière › Figer la GI pendant le déplacement: the probes held while a brick is carried
