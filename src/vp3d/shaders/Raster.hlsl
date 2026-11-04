@@ -553,7 +553,7 @@ float4 Shade(VSOut i, bool ghost, float shadowBias, bool capture) {
     float trans = m.transmission;
     float3 f0 = lerp(0.08 * specular.xxx, base, metal);
     float3 diffuseCol = base * (1 - metal);
-    if (trans > 0.5) { diffuseCol = base * 0.18; f0 = 0.05; }
+    if (trans > 0.5) { diffuseCol = base * 0.3; f0 = 0.05; }
     float NoV = saturate(dot(N, V)) + 1e-4;
     // Subsurface (HQ): the light wraps past the terminator (the plastic scatters it under its surface), the wrapped part
     // tinted by the colour of the brick, as the path tracer's random walk does at a millimetre scale; no ray, no noise.
@@ -763,7 +763,9 @@ float4 Shade(VSOut i, bool ghost, float shadowBias, bool capture) {
     }
     color += emission;
     float alpha = 1;
-    if (trans > 0.5) alpha = 0.55 + 0.4 * Fresnel(0.04, NoV).x;
+    // glass: clear seen face on (the room behind shows, as the path tracer), the reflection takes over at grazing
+    // angles; the tinted parts keep their colour through the diffuse tint
+    if (trans > 0.5) alpha = 0.22 + 0.6 * Fresnel(0.04, NoV).x;
     if (ghost) {
         float rim = pow(1 - NoV, 2);
         color = lerp(color, float3(1.0, 0.92, 0.6), 0.35) + rim * float3(1.0, 0.85, 0.3);
