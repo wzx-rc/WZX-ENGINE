@@ -9,7 +9,7 @@ name: iOS build
 on:
   workflow_dispatch:
   push:
-    branches: [claude/project-thread-bzoypd, build-wzx]
+    branches: [main]
     paths: [player/**, src/vp3d/**, src/lit/**, src/game/**, src/app/Content.*, src/app/WzxRead.*, src/app/Json.h, game/**, assets/HOUSE/**, third_party/imgui/**, .github/workflows/ios-build.yml]
 
 env:

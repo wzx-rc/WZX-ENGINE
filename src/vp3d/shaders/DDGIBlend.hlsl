@@ -26,7 +26,9 @@ float3 TexelDir(int2 t, int n) {
 void main(uint3 gid : SV_GroupID, uint3 tid3 : SV_GroupThreadID) {
     uint p = gid.x;
     uint tid = tid3.x;
-    if (ProbeSkipped(p)) return;   // (an old probe, not updated this frame: keeps its tiles)
+    // an old probe, not updated this frame, keeps its tiles (no early return before the barriers: the FXC compiler of
+    // the Lit renderer rejects them in varying flow control)
+    const bool skip = ProbeSkipped(p);
     const float age = G.frame == 0 ? 0.0 : ProbeAge(p);
     if (tid == 0) sBackfaces = 0;
     GroupMemoryBarrierWithGroupSync();
@@ -41,7 +43,7 @@ void main(uint3 gid : SV_GroupID, uint3 tid3 : SV_GroupThreadID) {
     if ((G.flags & 16u) != 0u && G.frame > 0) h = min(h, max(0.85, 1.0 - 1.0 / (age + 7.0)));
     const uint irrTile = DDGI_IRR_N + 2, distTile = DDGI_DIST_N + 2;
     const uint irrCount = irrTile * irrTile, total = irrCount + distTile * distTile;
-    for (uint t = tid; t < total; t += DDGI_RAYS) {
+    for (uint t = skip ? total : tid; t < total; t += DDGI_RAYS) {
         if (t < irrCount) {
             int2 tc = int2(t % irrTile, t / irrTile);
             float3 n = TexelDir(tc, DDGI_IRR_N);
@@ -80,5 +82,5 @@ void main(uint3 gid : SV_GroupID, uint3 tid3 : SV_GroupThreadID) {
             }
         }
     }
-    if (tid == 0) gProbe[int2(p, 0)] = float4(sBackfaces > DDGI_RAYS / 4 ? 0.0 : 1.0, (float)sBackfaces, min(age + 1.0, 1000.0), 1);
+    if (tid == 0 && !skip) gProbe[int2(p, 0)] = float4(sBackfaces > DDGI_RAYS / 4 ? 0.0 : 1.0, (float)sBackfaces, min(age + 1.0, 1000.0), 1);
 }

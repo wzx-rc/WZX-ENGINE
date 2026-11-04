@@ -31,6 +31,23 @@ float3 ProbeRayDir(uint i) {
     return normalize(float3(dot(G.rot0.xyz, d), dot(G.rot1.xyz, d), dot(G.rot2.xyz, d)));
 }
 
+// Progressive probes (G.flags bit 16): the age of probe p, i.e. its updates since the objects around it last changed
+// (0 when it lies in this frame's dirty box), and whether it is skipped this frame (an old probe: one frame in stride).
+// Also in the passes without ray tracing (DDGIBlend.hlsl of the Lit renderer).
+float ProbeAge(uint p) {
+    float3 pp = ProbePos(ProbeCoord(p));
+    if (G.dirtyMax.w > 0 && all(pp >= G.dirtyMin.xyz) && all(pp <= G.dirtyMax.xyz)) return 0;
+    return gProbe[int2(p, 0)].z;
+}
+
+bool ProbeSkipped(uint p) {
+    if ((G.flags & 16u) == 0u) return false;
+    const float age = ProbeAge(p);
+    if (G.ageCap > 0 && age >= G.ageCap) return true;   // converged and nothing changed around it: not updated
+    if (G.stride <= 1) return false;
+    return age >= 64.0 && (p + G.frame) % G.stride != 0;
+}
+
 #ifndef DDGI_NO_RT
 // Lambert-only next-event estimation (one light sample), returns radiance leaving towards any direction
 // divided by albedo / pi, i.e. the direct irradiance term E.
@@ -59,22 +76,6 @@ float3 EnvDirectIrradiance(float3 P, float3 N, float3 Ng, inout uint rng) {
     float3 T = ShadowTransmittance(OffsetRay(P, Ng), L, 1e30);
     if (all(T <= 0)) return 0;
     return EnvMap(L, 0) * T * c / pdf;
-}
-
-// Progressive probes (G.flags bit 16): the age of probe p, i.e. its updates since the objects around it last changed
-// (0 when it lies in this frame's dirty box), and whether it is skipped this frame (an old probe: one frame in stride).
-float ProbeAge(uint p) {
-    float3 pp = ProbePos(ProbeCoord(p));
-    if (G.dirtyMax.w > 0 && all(pp >= G.dirtyMin.xyz) && all(pp <= G.dirtyMax.xyz)) return 0;
-    return gProbe[int2(p, 0)].z;
-}
-
-bool ProbeSkipped(uint p) {
-    if ((G.flags & 16u) == 0u) return false;
-    const float age = ProbeAge(p);
-    if (G.ageCap > 0 && age >= G.ageCap) return true;   // converged and nothing changed around it: not updated
-    if (G.stride <= 1) return false;
-    return age >= 64.0 && (p + G.frame) % G.stride != 0;
 }
 
 // Albedo used for the diffuse transport in the probes (metals and SSS approximated as diffuse).
