@@ -196,7 +196,7 @@ Surf MakeSurf(GpuMaterial m, Hit h) {
     s.flags = m.flags;
     if (m.flags & MAT_FLAG_GRID) {
         float g = F.gridScale;
-        float dist = length(h.P - F.camPos);
+        float dist = ViewDistance(h.P);
         float lw = max(0.02, 0.0009 * dist / g);
         float2 p = h.P.xz / g;
         float2 d = abs(frac(p + 0.5) - 0.5);
@@ -771,9 +771,9 @@ void main(uint3 id : SV_DispatchThreadID) {
         float2 jitter = (F.sampleIndex == 0 && sIdx == 0) ? float2(0.5, 0.5) : Rnd2(rng);
         float2 uv = (float2(id.xy) + jitter) / float2(F.resolution);
         float2 ndc = float2(2.0 * uv.x - 1.0, 1.0 - 2.0 * uv.y);
-        float3 dir = normalize(F.camFwd + F.camRight * (ndc.x * F.aspect * F.tanHalfFovY) + F.camUp * (ndc.y * F.tanHalfFovY));
-        float3 org = F.camPos;
-        if ((F.flags & FRAME_FLAG_DOF) && F.aperture > 0) {
+        float3 org, dir;
+        CameraRay(ndc, org, dir);
+        if ((F.flags & FRAME_FLAG_DOF) && F.aperture > 0 && F.orthoHalfH <= 0) {
             float3 focal = org + dir * (F.focusDist / dot(dir, F.camFwd));
             float2 lens = ConcentricDisk(Rnd2(rng)) * F.aperture;
             org += F.camRight * lens.x + F.camUp * lens.y;

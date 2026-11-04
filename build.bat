@@ -34,9 +34,12 @@ for %%S in (PathTrace Denoise Tonemap DDGIUpdate DDGIRaster DDGIBlend GIShade) d
 for %%E in (VSMain VSWire VSShadow VSBackground VSProbe) do (
     "%DXC%" -nologo -T vs_6_0 -E %%E -HV 2021 -O3 -DVP3D_DDGI_PROBES -I src\vp3d\shaders src\vp3d\shaders\Raster.hlsl -Fo "%OUT%\shaders\Raster_%%E.cso" || exit /b 1
 )
-for %%E in (PSMain PSGhost PSId PSWire PSBackground PSProbe PSProbeBackground) do (
+for %%E in (PSMain PSGhost PSId PSSelect PSWire PSBackground PSProbe PSProbeBackground) do (
     "%DXC%" -nologo -T ps_6_0 -E %%E -HV 2021 -O3 -DVP3D_DDGI_PROBES -I src\vp3d\shaders src\vp3d\shaders\Raster.hlsl -Fo "%OUT%\shaders\Raster_%%E.cso" || exit /b 1
 )
+rem editor ground grid of the raster viewport
+"%DXC%" -nologo -T vs_6_0 -E VSGrid -HV 2021 -O3 src\vp3d\shaders\EditorGrid.hlsl -Fo "%OUT%\shaders\EditorGrid_VSGrid.cso" || exit /b 1
+"%DXC%" -nologo -T ps_6_0 -E PSGrid -HV 2021 -O3 src\vp3d\shaders\EditorGrid.hlsl -Fo "%OUT%\shaders\EditorGrid_PSGrid.cso" || exit /b 1
 if exist assets xcopy /E /I /Y /Q assets "%OUT%\assets" >nul
 
 set "CFLAGS=/nologo /std:c++17 /EHsc /W3 /utf-8 /DUNICODE /D_UNICODE /DNOMINMAX /DWIN32_LEAN_AND_MEAN /DIMGUI_DEFINE_MATH_OPERATORS %CFG% /Isrc /Ithird_party\imgui"
@@ -49,10 +52,13 @@ cl %CFLAGS% /c src\vp3d\*.cpp /Fo:build\obj\vp3d\ || exit /b 1
 lib /nologo /OUT:build\lib\vp3d.lib build\obj\vp3d\*.obj || exit /b 1
 
 echo [3/5] Dear ImGui (third_party\imgui, built once)
+rem IMGUI_ENABLE_TEST_ENGINE: the item hooks the editor self-test uses to find and click the widgets (SelfTest.cpp);
+rem they cost nothing until the self-test turns them on
 if not exist build\obj\imgui mkdir build\obj\imgui
-if not exist build\lib\imgui_mt.lib (
-    cl %CFLAGS% /c third_party\imgui\imgui*.cpp third_party\imgui\backends\imgui_impl_win32.cpp third_party\imgui\backends\imgui_impl_dx12.cpp /Fo:build\obj\imgui\ || exit /b 1
-    lib /nologo /OUT:build\lib\imgui_mt.lib build\obj\imgui\*.obj || exit /b 1
+if not exist build\lib\imgui_te_mt.lib (
+    del /q build\obj\imgui\*.obj 2>nul
+    cl %CFLAGS% /DIMGUI_ENABLE_TEST_ENGINE /c third_party\imgui\imgui*.cpp third_party\imgui\backends\imgui_impl_win32.cpp third_party\imgui\backends\imgui_impl_dx12.cpp /Fo:build\obj\imgui\ || exit /b 1
+    lib /nologo /OUT:build\lib\imgui_te_mt.lib build\obj\imgui\*.obj || exit /b 1
 )
 
 echo [4/5] Game layer (node graph, Play, builds)
@@ -63,6 +69,6 @@ cl %CFLAGS% /c src\game\*.cpp /Fo:build\obj\game\ || exit /b 1
 echo [5/5] WZX Engine editor
 cl %CFLAGS% /Isrc\app\atelier /c src\app\*.cpp src\app\atelier\*.cpp /Fo:build\obj\app\ || exit /b 1
 rc /nologo /fo build\obj\app\wzx.res src\app\res\wzx.rc || exit /b 1
-link /nologo /OUT:%OUT%\Viewport3D.exe build\obj\app\*.obj build\obj\app\wzx.res build\obj\game\*.obj build\lib\vp3d.lib build\lib\imgui_mt.lib ws2_32.lib d3d12.lib dxgi.lib d3dcompiler.lib windowscodecs.lib user32.lib gdi32.lib ole32.lib shell32.lib shcore.lib comdlg32.lib dwmapi.lib /SUBSYSTEM:WINDOWS || exit /b 1
+link /nologo /OUT:%OUT%\Viewport3D.exe build\obj\app\*.obj build\obj\app\wzx.res build\obj\game\*.obj build\lib\vp3d.lib build\lib\imgui_te_mt.lib ws2_32.lib d3d12.lib dxgi.lib d3dcompiler.lib windowscodecs.lib user32.lib gdi32.lib ole32.lib shell32.lib shcore.lib comdlg32.lib dwmapi.lib /SUBSYSTEM:WINDOWS || exit /b 1
 
 echo Build OK: %OUT%\Viewport3D.exe

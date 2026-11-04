@@ -75,6 +75,12 @@ void drawAssetThumb(ImDrawList* dl, int kind, int index, ImVec2 p0, ImVec2 p1, f
             const ImU32 cols[5] = {IM_COL32(150, 150, 150, 255), IM_COL32(215, 220, 228, 255), IM_COL32(150, 200, 230, 170),
                                    IM_COL32(255, 200, 110, 255), IM_COL32(236, 214, 170, 255)};
             for (int k = 0; k < 5; ++k) dl->AddCircleFilled(ImVec2(c.x + (k - 2) * s * 0.5f, c.y), s * 0.22f, cols[k]);
+        } else if (index == SCENE_CONCEPT) {   // sphere, glowing cube, cylinder on a dark floor
+            dl->AddRectFilled(ImVec2(c.x - s * 1.3f, c.y + s * 0.2f), ImVec2(c.x + s * 1.3f, c.y + s), IM_COL32(24, 28, 36, 255), 3 * d);
+            dl->AddCircleFilled(ImVec2(c.x - s * 0.8f, c.y + s * 0.05f), s * 0.3f, IM_COL32(120, 124, 132, 255));
+            dl->AddRectFilled(ImVec2(c.x - s * 0.25f, c.y - s * 0.2f), ImVec2(c.x + s * 0.25f, c.y + s * 0.3f), IM_COL32(110, 116, 128, 255));
+            dl->AddRect(ImVec2(c.x - s * 0.27f, c.y - s * 0.22f), ImVec2(c.x + s * 0.27f, c.y + s * 0.32f), IM_COL32(90, 160, 255, 255), 0, 0, 1.2f * d);
+            dl->AddRectFilled(ImVec2(c.x + s * 0.6f, c.y - s * 0.3f), ImVec2(c.x + s * 1.0f, c.y + s * 0.2f), IM_COL32(110, 114, 122, 255));
         } else {
             for (int k = -2; k <= 2; ++k) dl->AddLine(ImVec2(c.x + k * s * 0.5f, c.y - s), ImVec2(c.x + k * s * 0.5f, c.y + s), IM_COL32(90, 96, 108, 255));
             for (int k = -1; k <= 1; ++k) dl->AddLine(ImVec2(c.x - s * 1.3f, c.y + k * s * 0.5f), ImVec2(c.x + s * 1.3f, c.y + k * s * 0.5f), IM_COL32(90, 96, 108, 255));
@@ -97,19 +103,264 @@ void App::drawEditor() {
     ImGui::PopFont();
     st.FontScaleMain = savedScale;
     if (m_showSettings) drawSettingsWindow();
+    if (m_showGridOptions) drawGridOptionsWindow();
+    if (m_showSnapOptions) drawSnapOptionsWindow();
+    if (m_showAdvSettings) drawAdvScaleSettings();
     if (m_showShortcuts) drawShortcutsWindow();
     if (m_showAbout) drawAboutWindow();
 }
 // --------------------------------------------------------------------------- dialogs
+
+// Grid button (viewport and its header): shows / hides the editor grid; with Shift, opens the Grid Options window.
+void App::toggleGrid() {
+    if (ImGui::GetIO().KeyShift) {
+        m_showGridOptions = true;
+        return;
+    }
+    GridOptions& g = th::settings().grid;
+    g.visible = !g.visible;
+    if (!m_themeTestOnly) th::saveSettings(m_exeDir + L"\\wzx_settings.ini");
+    markDirty();
+}
+
+// Advanced Scale Settings: colours of the frame and of the handles, sizes in pixels, vertex snapping, flat mode, menu.
+void App::drawAdvScaleSettings() {
+    const float d = m_dpi;
+    ImGui::SetNextWindowSize(ImVec2(440 * d, 0), ImGuiCond_Appearing);
+    ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+    if (!ImGui::Begin("Advanced Scale Settings###advScaleSettings", &m_showAdvSettings, ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoCollapse)) {
+        ImGui::End();
+        return;
+    }
+    AdvScaleOptions& a = th::settings().advScale;
+    bool changed = false;
+    const float labelW = 200 * d, fieldW = 190 * d;
+    auto section = [&](const char* title) {
+        ImGui::Spacing();
+        ImGui::TextColored(th::accentTextV(), "%s", title);
+        ImGui::Separator();
+    };
+    auto color = [&](const char* label, const char* id, ImVec4* v) {
+        propLabel(label, labelW);
+        changed |= ImGui::ColorEdit3(id, &v->x);
+    };
+    auto slider = [&](const char* label, const char* id, float* v, float lo, float hi, const char* fmt) {
+        propLabel(label, labelW);
+        ImGui::SetNextItemWidth(fieldW);
+        changed |= ImGui::SliderFloat(id, v, lo, hi, fmt);
+    };
+    section("Appearance");
+    color("Edge color", "##aEdge", &a.colorEdge);
+    color("Face handle color", "##aFace", &a.colorFace);
+    color("Edge handle color", "##aEdgeH", &a.colorEdgeHandle);
+    color("Corner handle color", "##aCorner", &a.colorCorner);
+    section("Viewport menu");
+    slider("Bottom offset", "##aOffset", &a.menuOffset, 0.0f, 300.0f, "%.0f px");
+    propLabel("Show modifier hints", labelW);
+    changed |= ImGui::Checkbox("##aHints", &a.showHints);
+    section("Point handles");
+    slider("Handle size", "##aSize", &a.handleSize, 3.0f, 20.0f, "%.1f px");
+    slider("Interaction distance", "##aDist", &a.interactDist, 3.0f, 40.0f, "%.0f px");
+    section("Vertex snapping");
+    slider("Screen snap radius", "##aSnap", &a.snapRadius, 5.0f, 200.0f, "%.0f px");
+    section("Flat mode");
+    slider("Flat mode threshold", "##aFlat", &a.flatThreshold, 0.0f, 0.5f, "%.2f");
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
+    if (ImGui::Button("Reset", ImVec2(120 * d, 0))) { a = AdvScaleOptions(); changed = true; }
+    ImGui::SameLine();
+    if (ImGui::Button("Close", ImVec2(120 * d, 0))) m_showAdvSettings = false;
+    ImGui::End();
+    static bool unsaved = false;   // saved once the edit is over
+    if (changed) unsaved = true;
+    if (unsaved && !ImGui::IsAnyItemActive()) {
+        if (!m_themeTestOnly) th::saveSettings(m_exeDir + L"\\wzx_settings.ini");
+        unsaved = false;
+    }
+}
+
+// Snapping Options (Shift + the Snapping button): when it applies, the grid points of the absolute snapping, the
+// steps, the vertex snapping (V), the placement on the surfaces, the pivot. Saved with the UI settings.
+void App::drawSnapOptionsWindow() {
+    const float d = m_dpi;
+    ImGui::SetNextWindowSize(ImVec2(470 * d, 0), ImGuiCond_Appearing);
+    ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+    if (!ImGui::Begin("Snapping Options###snapOptions", &m_showSnapOptions, ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoCollapse)) {
+        ImGui::End();
+        return;
+    }
+    SnapOptions& o = th::settings().snap;
+    bool changed = false;
+    const float labelW = 210 * d, fieldW = 200 * d;
+    auto section = [&](const char* title) {
+        ImGui::Spacing();
+        ImGui::TextColored(th::accentTextV(), "%s", title);
+        ImGui::Separator();
+    };
+    auto check = [&](const char* label, const char* id, bool* v) {
+        propLabel(label, labelW);
+        changed |= ImGui::Checkbox(id, v);
+    };
+    section("Snapping");
+    check("Always on (else hold Shift)", "##snAlways", &m_magnet);
+    check("Snap to the grid (absolute)", "##snAbs", &m_snapAbsolute);
+    section("Grid points");
+    static const char* points[3] = {"Intersections", "Centres of the cells", "Middles of the edges"};
+    for (int k = 0; k < 3; ++k) {
+        propLabel(k == 0 ? "Snap to the" : "", labelW);
+        char id[24];
+        snprintf(id, sizeof id, "%s##snPt%d", points[k], k);
+        if (ImGui::RadioButton(id, o.gridPoint == k)) { o.gridPoint = k; changed = true; }
+    }
+    check("On the cells of the editor grid", "##snGridStep", &o.gridStep);
+    propLabel("Else every (move step)", labelW);
+    ImGui::SetNextItemWidth(fieldW);
+    changed |= ImGui::SliderFloat("##snStep", &m_stepMove, 0.05f, 10.0f, "%.2f", ImGuiSliderFlags_Logarithmic);
+    check("Show the snap points", "##snPoints", &o.showPoints);
+    ImGui::TextDisabled("Cells of the snapping now: %.3g units", snapCell());
+    section("Steps");
+    propLabel("Rotate step", labelW);
+    ImGui::SetNextItemWidth(fieldW);
+    ImGui::SliderFloat("##snRot", &m_stepRotate, 1.0f, 90.0f, "%.0f deg");
+    propLabel("Scale step", labelW);
+    ImGui::SetNextItemWidth(fieldW);
+    ImGui::SliderFloat("##snScale", &m_stepScale, 0.01f, 1.0f, "%.2f");
+    section("Vertex snapping (hold V while moving)");
+    propLabel("Screen radius", labelW);
+    ImGui::SetNextItemWidth(fieldW);
+    changed |= ImGui::SliderFloat("##snVtx", &o.vertexRadius, 5.0f, 200.0f, "%.0f px");
+    section("Placement on the surfaces");
+    check("Place (drag over the surfaces)", "##snPlace", &m_surfacePlace);
+    check("Turn to the surface", "##snAlign", &o.alignToSurface);
+    section("Pivot");
+    ImGui::TextDisabled("Edit Pivot: C (or Insert) in and out, V snaps it to a vertex  ·  Center Pivot: Alt+Y");
+    if (ImGui::Button("Center Pivot", ImVec2(150 * d, 0))) centerPivot();
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
+    if (ImGui::Button("Reset", ImVec2(120 * d, 0))) { o = SnapOptions(); changed = true; }
+    ImGui::SameLine();
+    if (ImGui::Button("Close", ImVec2(120 * d, 0))) m_showSnapOptions = false;
+    ImGui::End();
+    static bool unsaved = false;   // saved once the edit is over
+    if (changed) unsaved = true;
+    if (unsaved && !ImGui::IsAnyItemActive()) {
+        if (!m_themeTestOnly) th::saveSettings(m_exeDir + L"\\wzx_settings.ini");
+        unsaved = false;
+    }
+}
+
+// Grid Options (Maya's option box of the grid): size, display, line thickness in pixels, colours. Changes apply live
+// and are saved with the UI settings.
+void App::drawGridOptionsWindow() {
+    const float d = m_dpi;
+    ImGui::SetNextWindowSize(ImVec2(470 * d, 0), ImGuiCond_Appearing);
+    ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+    if (!ImGui::Begin("Grid Options###gridOptions", &m_showGridOptions, ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoCollapse)) {
+        ImGui::End();
+        return;
+    }
+    GridOptions& g = th::settings().grid;
+    bool changed = false;
+    const float labelW = 190 * d, fieldW = 220 * d;
+    auto section = [&](const char* title) {
+        ImGui::Spacing();
+        ImGui::TextColored(th::accentTextV(), "%s", title);
+        ImGui::Separator();
+    };
+    auto check = [&](const char* label, const char* id, bool* v) {
+        propLabel(label, labelW);
+        changed |= ImGui::Checkbox(id, v);
+    };
+    auto width = [&](const char* label, const char* id, float* v) {
+        propLabel(label, labelW);
+        ImGui::SetNextItemWidth(fieldW);
+        changed |= ImGui::SliderFloat(id, v, 0.25f, 6.0f, "%.2f px");
+    };
+    auto color = [&](const char* label, const char* id, ImVec4* v) {
+        propLabel(label, labelW);
+        changed |= ImGui::ColorEdit4(id, &v->x, ImGuiColorEditFlags_AlphaBar | ImGuiColorEditFlags_AlphaPreviewHalf);
+    };
+
+    section("Size");
+    check("Use the scene spacing", "##sceneSpacing", &g.sceneSpacing);
+    propLabel("Grid lines every", labelW);
+    ImGui::SetNextItemWidth(fieldW);
+    ImGui::BeginDisabled(g.sceneSpacing);
+    changed |= ImGui::DragFloat("##every", g.sceneSpacing ? &m_scene.gridScale : &g.every, 0.05f, 0.01f, 10000.0f, "%.2f units",
+                                ImGuiSliderFlags_Logarithmic);
+    ImGui::EndDisabled();
+    propLabel("Subdivisions", labelW);
+    ImGui::SetNextItemWidth(fieldW);
+    changed |= ImGui::SliderInt("##subdiv", &g.subdivisions, 1, 20);
+    propLabel("Length and width", labelW);
+    ImGui::SetNextItemWidth(fieldW);
+    changed |= ImGui::DragFloat("##extent", &g.extent, 0.5f, 0.0f, 100000.0f, g.extent > 0 ? "%.1f units" : "infinite");
+
+    section("Display");
+    check("Grid lines", "##lines", &g.lines);
+    check("Subdivision lines", "##subdivLines", &g.subdivLines);
+    check("Axes", "##axes", &g.axes);
+    check("Thicker line for axes", "##thickAxes", &g.thickAxes);
+    check("Axis arrows and letters", "##arrows", &g.arrows);
+    check("Grid numbers on axes", "##numbers", &g.numbers);
+    check("Fade with distance", "##fade", &g.fade);
+
+    section("Line thickness (pixels)");
+    width("Grid lines", "##wGrid", &g.widthGrid);
+    width("Subdivision lines", "##wSub", &g.widthSub);
+    ImGui::BeginDisabled(!g.thickAxes);
+    width("Axes", "##wAxis", &g.widthAxis);
+    ImGui::EndDisabled();
+
+    section("Color");
+    color("Grid lines", "##cGrid", &g.colorGrid);
+    color("Subdivision lines", "##cSub", &g.colorSub);
+    color("X axis", "##cX", &g.colorX);
+    color("Y axis", "##cY", &g.colorY);
+    color("Z axis", "##cZ", &g.colorZ);
+    propLabel("Opacity", labelW);
+    ImGui::SetNextItemWidth(fieldW);
+    changed |= ImGui::SliderFloat("##opacity", &g.opacity, 0.0f, 1.0f, "%.2f");
+
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
+    const float bw = 120 * d;
+    if (ImGui::Button(g.visible ? "Hide Grid" : "Show Grid", ImVec2(bw, 0))) { g.visible = !g.visible; changed = true; }
+    ImGui::SameLine();
+    if (ImGui::Button("Reset", ImVec2(bw, 0))) {
+        const bool visible = g.visible;
+        g = GridOptions();
+        g.visible = visible;
+        changed = true;
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Close", ImVec2(bw, 0))) m_showGridOptions = false;
+    ImGui::End();
+    // saved once the edit is over (not every frame of a slider drag)
+    static bool unsaved = false;
+    if (changed) {
+        markDirty();
+        unsaved = true;
+    }
+    if (unsaved && !ImGui::IsAnyItemActive()) {
+        if (!m_themeTestOnly) th::saveSettings(m_exeDir + L"\\wzx_settings.ini");
+        unsaved = false;
+    }
+}
 
 void App::drawShortcutsWindow() {
     ImGui::SetNextWindowSize(ImVec2(520 * m_dpi, 0), ImGuiCond_Appearing);
     ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
     if (ImGui::Begin("Controls & Shortcuts", &m_showShortcuts, ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoCollapse)) {
         static const char* rows[][2] = {
-            {"Right click (or Alt+left click)", "Orbit"}, {"Middle click / Shift+right click", "Pan the view"}, {"Wheel", "Zoom"},
-            {"Double-click", "Pivot + focus"}, {"Click / rectangle (Select tool)", "Select"}, {"Shift+click", "Add to selection"},
-            {"Q / W / E", "Select / move / rotate / scale"}, {"Arrows, PgUp / PgDn", "Move by 1 cm"}, {"F", "Frame Selection"},
+            {"Right click (or Alt+left click)", "Orbit"}, {"Alt+middle / Shift+right click", "Pan the view"}, {"Wheel", "Zoom"},
+            {"Double-click", "Pivot + focus"}, {"Click / rectangle", "Select"}, {"Shift / Ctrl / Ctrl+Shift+click", "Toggle / remove / add"},
+            {"Q / W / E / R", "Select / move / rotate / scale"}, {"Q W E R + left click (hold)", "Marking menu"},
+            {"Shift while dragging", "Increments"}, {"Middle drag", "Manipulator: handle under the mouse, else the last one"},
+            {"Arrows, PgUp / PgDn", "Move by 1 cm"}, {"F", "Frame Selection"},
             {"T", "Auto rotate"}, {"P", "Real time / path tracing"}, {"Ctrl+Z / Ctrl+Y", "Undo / redo"},
             {"Ctrl+D / Del", "Duplicate / delete"}, {"Ctrl+S / Ctrl+O", "Save / open a scene"}, {"F1 / F2", "Cornell Box / Village scenes"},
             {"F12", "Viewport Capture"}, {"Drag an asset", "Add to the view / apply a material"}};
@@ -283,7 +534,7 @@ void App::drawSettingsWindow() {
             ImGui::Checkbox("##stats", &m_showStats);
             propLabel("Gizmo", labelW);
             ImGui::Checkbox("##gizmo", &m_showGizmo);
-            propLabel("Snapping 1 cm", labelW);
+            propLabel("Snapping always", labelW);
             ImGui::Checkbox("##magnet", &m_magnet);
             propLabel("Auto focus", labelW);
             ImGui::Checkbox("##af", &m_autoFocus);

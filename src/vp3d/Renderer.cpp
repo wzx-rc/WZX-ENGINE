@@ -75,8 +75,10 @@ bool Renderer::init(HWND hwnd, uint32_t width, uint32_t height, const std::wstri
     char dbg[8] = {};
     if (GetEnvironmentVariableA("VP3D_DEBUG", dbg, sizeof(dbg)) > 0) {
         ComPtr<ID3D12Debug> d;
-        if (SUCCEEDED(D3D12GetDebugInterface(IID_PPV_ARGS(&d)))) d->EnableDebugLayer();
-        factoryFlags = DXGI_CREATE_FACTORY_DEBUG;
+        if (SUCCEEDED(D3D12GetDebugInterface(IID_PPV_ARGS(&d)))) {   // (fails without the Windows "Graphics Tools")
+            d->EnableDebugLayer();
+            factoryFlags = DXGI_CREATE_FACTORY_DEBUG;
+        }
     }
     if (FAILED(CreateDXGIFactory2(factoryFlags, IID_PPV_ARGS(&m_factory)))) {
         if (error) *error = "CreateDXGIFactory2 failed";
@@ -101,6 +103,7 @@ bool Renderer::init(HWND hwnd, uint32_t width, uint32_t height, const std::wstri
         if (error) *error = "No GPU with DirectX Raytracing tier 1.1 found";
         return false;
     }
+    if (factoryFlags) m_device.As(&m_infoQueue);   // validation layer running: its messages are kept for the self-test
 
     D3D12_COMMAND_QUEUE_DESC qd = {};
     qd.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
@@ -132,7 +135,7 @@ bool Renderer::init(HWND hwnd, uint32_t width, uint32_t height, const std::wstri
 
     D3D12_DESCRIPTOR_HEAP_DESC hd = {};
     hd.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-    hd.NumDescriptors = kProbeSrvSlot + 3;  // + shadow map SRV + material textures + DDGI UAVs + history UAVs + HDRI SRV + capture UAVs + probe SRVs
+    hd.NumDescriptors = kViewHeapBase + kMaxViews * kViewHeapStride;  // (extra views last) + shadow map SRV + material textures + DDGI UAVs + history UAVs + HDRI SRV + capture UAVs + probe SRVs
     hd.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
     m_device->CreateDescriptorHeap(&hd, IID_PPV_ARGS(&m_heap));
     m_descSize = m_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
@@ -146,6 +149,13 @@ bool Renderer::init(HWND hwnd, uint32_t width, uint32_t height, const std::wstri
         D3D12_CPU_DESCRIPTOR_HANDLE h = m_heap->GetCPUDescriptorHandleForHeapStart();
         h.ptr += (SIZE_T)kEnvHeapSlot * m_descSize;
         m_device->CreateShaderResourceView(nullptr, &sv, h);
+        {   // no selection coverage yet (created with the viewport targets)
+            D3D12_SHADER_RESOURCE_VIEW_DESC cv = sv;
+            cv.Format = DXGI_FORMAT_R8_UNORM;
+            D3D12_CPU_DESCRIPTOR_HANDLE ch = m_heap->GetCPUDescriptorHandleForHeapStart();
+            ch.ptr += (SIZE_T)kSelCovSlot * m_descSize;
+            m_device->CreateShaderResourceView(nullptr, &cv, ch);
+        }
         // no probe grid yet: null views in the probe SRV slots of the raster pass
         for (uint32_t k = 0; k < 3; ++k) {
             D3D12_CPU_DESCRIPTOR_HANDLE ph = m_heap->GetCPUDescriptorHandleForHeapStart();
@@ -205,7 +215,12 @@ bool Renderer::createPipelines(std::string* error) {
     capRange.NumDescriptors = 3;
     capRange.BaseShaderRegister = 12;
 
-    D3D12_ROOT_PARAMETER p[16] = {};
+    D3D12_DESCRIPTOR_RANGE selRange = {};   // t8 coverage of the selection (tonemapper)
+    selRange.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+    selRange.NumDescriptors = 1;
+    selRange.BaseShaderRegister = 8;
+
+    D3D12_ROOT_PARAMETER p[17] = {};
     p[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
     p[0].Descriptor.ShaderRegister = 0;
     p[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
@@ -237,6 +252,9 @@ bool Renderer::createPipelines(std::string* error) {
     p[15].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;   // u12 probe captures (raster DDGI)
     p[15].DescriptorTable.NumDescriptorRanges = 1;
     p[15].DescriptorTable.pDescriptorRanges = &capRange;
+    p[16].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;   // t8 coverage of the selection
+    p[16].DescriptorTable.NumDescriptorRanges = 1;
+    p[16].DescriptorTable.pDescriptorRanges = &selRange;
 
     D3D12_STATIC_SAMPLER_DESC ss = {};   // gLinearWrap (s0) of the path tracer
     ss.Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
@@ -245,7 +263,7 @@ bool Renderer::createPipelines(std::string* error) {
     ss.ShaderRegister = 0;
 
     D3D12_ROOT_SIGNATURE_DESC rsd = {};
-    rsd.NumParameters = 16;
+    rsd.NumParameters = 17;
     rsd.pParameters = p;
     rsd.NumStaticSamplers = 1;
     rsd.pStaticSamplers = &ss;
@@ -1421,6 +1439,12 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
     vp.y = std::max(0, std::min(vp.y, (int)m_height - 1));
     vp.w = std::max(1, std::min(vp.w, (int)m_width - vp.x));
     vp.h = std::max(1, std::min(vp.h, (int)m_height - vp.y));
+    setMsaa((uint32_t)std::max(1, rs.msaaSamples));   // viewport anti-aliasing (rebuilds the MSAA passes when it changes)
+    auto selCovTable = [&]() {   // t8 of the tonemapper: coverage of the selection
+        D3D12_GPU_DESCRIPTOR_HANDLE g = m_heap->GetGPUDescriptorHandleForHeapStart();
+        g.ptr += (UINT64)kSelCovSlot * m_descSize;
+        return g;
+    };
     if ((uint32_t)vp.w != m_rtW || (uint32_t)vp.h != m_rtH) {
         waitIdle();
         createTargets(vp.w, vp.h);
@@ -1471,6 +1495,8 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
     fc.tanHalfFovY = std::tan(cam.fovY * 0.5f);
     fc.camFwd = fwd;
     fc.aspect = (float)vp.w / (float)vp.h;
+    fc.orthoHalfH = cam.ortho ? cam.orthoHeight * 0.5f : 0.0f;
+    fc.orthoBack = cam.ortho ? orthoBack(cam) : 0.0f;
     fc.resolution = {(uint32_t)vp.w, (uint32_t)vp.h};
     fc.frameIndex = m_frameIndex++;
     fc.sampleIndex = m_sampleIndex;
@@ -1490,10 +1516,21 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
     int selInst = (selectedObject >= 0 && selectedObject < (int)m_objectToInstance.size()) ? m_objectToInstance[selectedObject] : -1;
     fc.selectedInstance = (uint32_t)(selInst + 1);
     fc.selMoreCount = 0;
+    m_selIds.clear();
+    if (selInst >= 0) m_selIds.push_back((uint32_t)(selInst + 1));
+    fc.selAge = rs.selectionAge;
+    fc.selCenterX = rs.selectionCenter.x;
+    fc.selCenterY = rs.selectionCenter.y;
+    fc.selRadius = rs.selectionRadius;
+    fc.selStyle = (uint32_t)rs.selectionStyle;
+    fc.selPixelScale = rs.pixelScale;
     for (int o : m_extraSelection) {
         if (fc.selMoreCount >= 32 || o < 0 || o >= (int)m_objectToInstance.size() || m_objectToInstance[o] < 0) continue;
         reinterpret_cast<uint32_t*>(fc.selMore)[fc.selMoreCount++] = (uint32_t)(m_objectToInstance[o] + 1);
+        m_selIds.push_back((uint32_t)(m_objectToInstance[o] + 1));
     }
+    // the raster pass draws the coverage of the selection whenever there is one (the path traced view gets the overlay pass)
+    fc.selCovValid = (!m_selIds.empty() && m_psoSelect && m_psoDepth) ? 1u : 0u;
     fc.fireflyClamp = rs.fireflyClamp;
     fc.sssScale = rs.sssScale;
     fc.gridScale = scene.gridScale;
@@ -1517,6 +1554,8 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
     fc.prevCamFwd = m_prevCam.fwd;
     fc.prevTanHalfFovY = m_prevCam.tanHalf;
     fc.prevAspect = m_prevCam.aspect;
+    fc.prevOrthoHalfH = m_prevCam.orthoHalfH;
+    fc.prevOrthoBack = m_prevCam.orthoBack;
     fc.envW = envMap ? m_envW : 0;
     fc.envH = envMap ? m_envH : 0;
     fc.envRotation = scene.env.hdriRotation;
@@ -1526,11 +1565,30 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
     fc.filterGlossy = rs.filterGlossy;
     fc.indirectClamp = rs.indirectClamp;
     memcpy(m_constants.mapped, &fc, sizeof(fc));
+    static_assert(sizeof(fc) <= sizeof(m_lastFc), "m_lastFc holds the frame constants");
+    memcpy(m_lastFc, &fc, sizeof(fc));   // the extra views of this frame start from them (renderView)
+    m_lastProbes = giRaster;
 
     ID3D12DescriptorHeap* heaps[] = {m_heap.Get()};
     m_cmd->SetDescriptorHeaps(1, heaps);
     UINT gx = (vp.w + 7) / 8, gy = (vp.h + 7) / 8;
+    if (!(rs.raster && !giRaster)) m_taaValid = false;
     if (rs.raster && !giRaster) {
+        // MSAA x16 over two frames (m_msaaTemporal): the frames are averaged only while nothing that moves the image
+        // changes (camera, objects, view size, display)
+        uint64_t sig = 1469598103934665603ull;
+        if (m_msaaTemporal) {
+            const Camera& c = scene.camera;
+            const float k[] = {c.target.x, c.target.y, c.target.z, c.yaw, c.pitch, c.distance, c.fovY, (float)vp.w, (float)vp.h,
+                               (float)rs.wireframe, rs.editorGrid, c.ortho ? c.orthoHeight : 0.0f};
+            const uint32_t n[2] = {transformSignature(scene), scene.geometryVersion};
+            auto mix = [&](const void* p, size_t len) {
+                const unsigned char* b = static_cast<const unsigned char*>(p);
+                for (size_t i = 0; i < len; ++i) { sig ^= b[i]; sig *= 1099511628211ull; }
+            };
+            mix(k, sizeof(k));
+            mix(n, sizeof(n));
+        }
         m_cmd->EndQuery(m_queryHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 0);
         recordRaster(scene, rs, vp);
         m_denoisedSlot = 0xFFFFFFFF;
@@ -1539,9 +1597,23 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
         m_cmd->SetComputeRootConstantBufferView(0, m_constants.va());
         m_cmd->SetComputeRootDescriptorTable(8, m_heap->GetGPUDescriptorHandleForHeapStart());
         m_cmd->SetPipelineState(m_psoTonemap.Get());
-        uint32_t rc[4] = {TEX_DENOISE_A, 1u, (uint32_t)rs.tonemapper, 0};
+        m_cmd->SetComputeRootDescriptorTable(16, selCovTable());
+        const bool blend = m_msaaTemporal && m_taaValid && sig == m_taaSig;
+        uint32_t rc[4] = {TEX_DENOISE_A, 1u, (uint32_t)rs.tonemapper, blend ? (uint32_t)TEX_DENOISE_B + 1u : 0u};
         m_cmd->SetComputeRoot32BitConstants(1, 4, rc, 0);
         m_cmd->Dispatch(gx, gy, 1);
+        if (m_msaaTemporal) {   // this frame becomes the history of the next one
+            ID3D12Resource* cur = m_tex[TEX_DENOISE_A].Get();
+            ID3D12Resource* hist = m_tex[TEX_DENOISE_B].Get();
+            transition(cur, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_COPY_SOURCE);
+            transition(hist, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_COPY_DEST);
+            m_cmd->CopyResource(hist, cur);
+            transition(hist, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+            transition(cur, D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+            m_taaSig = sig;
+            m_taaValid = true;
+            ++m_taaFrame;
+        } else m_taaValid = false;
     } else if (giRaster) {
         // Probe captures (raster), probe rays + blend (compute), then the viewport lit by the raster pass reading the
         // probes, and the tonemapper. Nothing here needs ray tracing.
@@ -1609,6 +1681,7 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
         m_cmd->SetComputeRootConstantBufferView(0, m_constants.va());
         m_cmd->SetComputeRootDescriptorTable(8, m_heap->GetGPUDescriptorHandleForHeapStart());
         m_cmd->SetPipelineState(m_psoTonemap.Get());
+        m_cmd->SetComputeRootDescriptorTable(16, selCovTable());
         uint32_t rc[4] = {TEX_DENOISE_A, 1u, (uint32_t)rs.tonemapper, 0};
         m_cmd->SetComputeRoot32BitConstants(1, 4, rc, 0);
         m_cmd->Dispatch(gx, gy, 1);
@@ -1665,15 +1738,23 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
         denoisedSlot = 0xFFFFFFFF;
     }
 
+    // editor overlay (grid, wireframe) drawn by the raster pass into the denoise slot not holding the image
+    uint32_t overlay = 0;
+    if (m_psoDepth && (rs.editorGrid > 0 || rs.wireframe || !m_selIds.empty())) {   // (also draws the coverage of the selection)
+        const uint32_t slot = (rs.denoise && denoisedSlot == TEX_DENOISE_A) ? TEX_DENOISE_B : TEX_DENOISE_A;
+        recordRaster(scene, rs, vp, false, false, false, (int)slot);
+        overlay = slot + 1;
+    }
     m_cmd->SetPipelineState(m_psoTonemap.Get());
-    uint32_t tc[4] = {rs.denoise ? denoisedSlot : 0xFFFFFFFFu, 0, (uint32_t)rs.tonemapper, 0};
+    m_cmd->SetComputeRootDescriptorTable(16, selCovTable());
+    uint32_t tc[4] = {rs.denoise ? denoisedSlot : 0xFFFFFFFFu, 0, (uint32_t)rs.tonemapper, overlay};
     m_cmd->SetComputeRoot32BitConstants(1, 4, tc, 0);
     m_cmd->Dispatch(gx, gy, 1);
     }
     if (useHistory) {
         copyHistory();
         m_historyValid = true;
-        m_prevCam = {fc.camPos, fc.camRight, fc.camUp, fc.camFwd, fc.tanHalfFovY, fc.aspect};
+        m_prevCam = {fc.camPos, fc.camRight, fc.camUp, fc.camFwd, fc.tanHalfFovY, fc.aspect, fc.orthoHalfH, fc.orthoBack};
     }
     m_cmd->EndQuery(m_queryHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 1);
     m_cmd->ResolveQueryData(m_queryHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 0, m_giTimed ? 4 : 2, m_queryReadback.res.Get(), 0);
@@ -1708,6 +1789,14 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
     m_cmd->Close();
     ID3D12CommandList* l[] = {m_cmd.Get()};
     m_queue->ExecuteCommandLists(1, l);
+}
+
+float Renderer::orthoBack(const Camera& cam) const {
+    float3 r, u, f;
+    cam.basis(r, u, f);
+    // the nearest point of the bounding sphere of the scene along the view, from the eye (negative: behind it)
+    const float nearest = dot(m_sceneCenter - cam.eye(), f) - m_sceneRadius;
+    return std::max(0.0f, -nearest) + m_sceneRadius * 0.05f + 1.0f;
 }
 
 void Renderer::renderToTexture(const Scene& scene, const RenderSettings& rs, const ViewRect& vp, int selectedObject) {
@@ -1763,6 +1852,58 @@ bool Renderer::readBackBuffer(std::vector<uint8_t>& rgba, uint32_t& w, uint32_t&
         memcpy(&rgba[(size_t)y * w * 4], (uint8_t*)p + fp.Offset + (size_t)y * fp.Footprint.RowPitch, (size_t)w * 4);
     D3D12_RANGE wr = {0, 0};
     m_readback.res->Unmap(0, &wr);
+    return true;
+}
+
+bool Renderer::readSelectionCoverage(std::vector<uint8_t>& r8, uint32_t& w, uint32_t& h) {
+    if (!m_selCov) return false;
+    waitIdle();
+    D3D12_RESOURCE_DESC d = m_selCov->GetDesc();
+    w = (uint32_t)d.Width;
+    h = d.Height;
+    D3D12_PLACED_SUBRESOURCE_FOOTPRINT fp = {};
+    UINT64 total = 0;
+    m_device->GetCopyableFootprints(&d, 0, 1, 0, &fp, nullptr, nullptr, &total);
+    if (!m_readback.res || m_readback.size < total)
+        m_readback = createBuffer(total, D3D12_HEAP_TYPE_READBACK, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST);
+    beginCommands();
+    transition(m_selCov.Get(), D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_COPY_SOURCE);
+    D3D12_TEXTURE_COPY_LOCATION dl = {}, sl = {};
+    dl.pResource = m_readback.res.Get();
+    dl.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
+    dl.PlacedFootprint = fp;
+    sl.pResource = m_selCov.Get();
+    sl.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+    m_cmd->CopyTextureRegion(&dl, 0, 0, 0, &sl, nullptr);
+    transition(m_selCov.Get(), D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+    executeAndWait();
+    void* p = nullptr;
+    D3D12_RANGE r = {0, (SIZE_T)total};
+    if (FAILED(m_readback.res->Map(0, &r, &p))) return false;
+    r8.resize((size_t)w * h);
+    for (uint32_t y = 0; y < h; ++y) memcpy(&r8[(size_t)y * w], (uint8_t*)p + fp.Offset + (size_t)y * fp.Footprint.RowPitch, w);
+    D3D12_RANGE wr = {0, 0};
+    m_readback.res->Unmap(0, &wr);
+    return true;
+}
+
+bool Renderer::takeDebugMessages(std::vector<std::string>& messages, int& errors, int& warnings) {
+    errors = warnings = 0;
+    if (!m_infoQueue) return false;
+    const UINT64 n = m_infoQueue->GetNumStoredMessages();
+    for (UINT64 i = 0; i < n; ++i) {
+        SIZE_T len = 0;
+        if (FAILED(m_infoQueue->GetMessage(i, nullptr, &len)) || len == 0) continue;
+        std::vector<char> buf(len);
+        D3D12_MESSAGE* m = reinterpret_cast<D3D12_MESSAGE*>(buf.data());
+        if (FAILED(m_infoQueue->GetMessage(i, m, &len))) continue;
+        const bool err = m->Severity == D3D12_MESSAGE_SEVERITY_ERROR || m->Severity == D3D12_MESSAGE_SEVERITY_CORRUPTION;
+        if (err) ++errors;
+        else if (m->Severity == D3D12_MESSAGE_SEVERITY_WARNING) ++warnings;
+        else continue;
+        messages.push_back(std::string(err ? "error: " : "warning: ") + std::string(m->pDescription, m->DescriptionByteLength ? m->DescriptionByteLength - 1 : 0));
+    }
+    m_infoQueue->ClearStoredMessages();
     return true;
 }
 

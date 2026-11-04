@@ -1,7 +1,9 @@
 // Light raster viewport of vp3d::Renderer (no ray tracing): shadow map + forward PBR.
 #include "Renderer.h"
 #include "shaders/Shared.h"
+#include <algorithm>
 #include <cstring>
+#include <functional>
 #include <fstream>
 
 namespace vp3d {
@@ -27,7 +29,7 @@ struct RasterConstants {
     float3 sunRadiance; float sunFromEnv;
     float shIrr[9][4];
     float envMapOn; float envRotation; float envMapIntensity; float envMips;
-    float envVisible; uint32_t sunLight; float giMode, pad3;   // giMode: DDGI probes read by Shade (Raster.hlsl)
+    float envVisible; uint32_t sunLight; float giMode, orthoHalfH;   // giMode: DDGI probes read by Shade (Raster.hlsl); orthoHalfH: orthographic camera
 };
 
 struct DrawConstants {
@@ -63,6 +65,47 @@ void setRows(float* m, int row, const float3& v, float w) {
 // Cube faces of a probe capture (+X -X +Y -Y +Z -Z): forward and up, right = cross(up, forward). Same as DDGIRaster.hlsl.
 const float3 kProbeFwd[6] = {float3(1, 0, 0), float3(-1, 0, 0), float3(0, 1, 0), float3(0, -1, 0), float3(0, 0, 1), float3(0, 0, -1)};
 const float3 kProbeUp[6] = {float3(0, 1, 0), float3(0, 1, 0), float3(0, 0, -1), float3(0, 0, 1), float3(0, 1, 0), float3(0, 1, 0)};
+
+// vertex layout of the raster passes (gpu::GpuVertex)
+const D3D12_INPUT_ELEMENT_DESC kRasterLayout[] = {
+    {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+    {"NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+    {"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 24, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+};
+
+// common state of the raster pipelines: solid triangles, no culling, depth test, single sample
+D3D12_GRAPHICS_PIPELINE_STATE_DESC rasterDesc(ID3D12RootSignature* root) {
+    D3D12_GRAPHICS_PIPELINE_STATE_DESC d = {};
+    d.pRootSignature = root;
+    d.InputLayout = {kRasterLayout, 3};
+    d.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+    d.RasterizerState.FillMode = D3D12_FILL_MODE_SOLID;
+    d.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
+    d.RasterizerState.DepthClipEnable = TRUE;
+    d.RasterizerState.MultisampleEnable = TRUE;
+    d.RasterizerState.AntialiasedLineEnable = FALSE;
+    d.BlendState.RenderTarget[0].RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
+    d.DepthStencilState.DepthEnable = TRUE;
+    d.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
+    d.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
+    d.DSVFormat = DXGI_FORMAT_D32_FLOAT;
+    d.SampleMask = UINT_MAX;
+    d.SampleDesc.Count = 1;
+    return d;
+}
+
+// alpha blending, no depth writes
+void blendOn(D3D12_GRAPHICS_PIPELINE_STATE_DESC& d) {
+    auto& b = d.BlendState.RenderTarget[0];
+    b.BlendEnable = TRUE;
+    b.SrcBlend = D3D12_BLEND_SRC_ALPHA;
+    b.DestBlend = D3D12_BLEND_INV_SRC_ALPHA;
+    b.BlendOp = D3D12_BLEND_OP_ADD;
+    b.SrcBlendAlpha = D3D12_BLEND_ONE;
+    b.DestBlendAlpha = D3D12_BLEND_INV_SRC_ALPHA;
+    b.BlendOpAlpha = D3D12_BLEND_OP_ADD;
+    d.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
+}
 
 } // namespace
 
@@ -112,7 +155,7 @@ bool Renderer::createRasterPipelines(std::string* error) {
     p[6].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
     p[7].ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;   // b3 probe face (DDGI capture), vertex + pixel
     p[7].Constants.ShaderRegister = 3;
-    p[7].Constants.Num32BitValues = 20;
+    p[7].Constants.Num32BitValues = 32;   // probe face (20 values) or editor grid (32)
     p[8].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;   // t4..t6 probe atlases, pixel
     p[8].DescriptorTable.NumDescriptorRanges = 1;
     p[8].DescriptorTable.pDescriptorRanges = &probeRange;
@@ -159,48 +202,33 @@ bool Renderer::createRasterPipelines(std::string* error) {
         }
         return false;
     };
-    std::vector<char> vsMain, vsWire, vsShadow, vsBg, vsProbe, psMain, psGhost, psId, psWire, psBg, psProbe, psProbeBg;
-    if (!load(L"Raster_VSMain.cso", vsMain) || !load(L"Raster_VSWire.cso", vsWire) || !load(L"Raster_VSShadow.cso", vsShadow) || !load(L"Raster_VSBackground.cso", vsBg) ||
-        !load(L"Raster_VSProbe.cso", vsProbe) || !load(L"Raster_PSMain.cso", psMain) || !load(L"Raster_PSGhost.cso", psGhost) ||
-        !load(L"Raster_PSId.cso", psId) || !load(L"Raster_PSWire.cso", psWire) || !load(L"Raster_PSBackground.cso", psBg) || !load(L"Raster_PSProbe.cso", psProbe) ||
-        !load(L"Raster_PSProbeBackground.cso", psProbeBg))
+    RasterShaders& shaders = m_rasterShaders;
+    std::vector<char> vsShadow, vsProbe, psId, psProbe, psProbeBg;
+    if (!load(L"Raster_VSMain.cso", shaders.vsMain) || !load(L"Raster_VSWire.cso", shaders.vsWire) || !load(L"Raster_VSShadow.cso", vsShadow) ||
+        !load(L"Raster_VSBackground.cso", shaders.vsBg) || !load(L"Raster_VSProbe.cso", vsProbe) || !load(L"Raster_PSMain.cso", shaders.psMain) ||
+        !load(L"Raster_PSGhost.cso", shaders.psGhost) || !load(L"Raster_PSId.cso", psId) || !load(L"Raster_PSWire.cso", shaders.psWire) ||
+        !load(L"Raster_PSBackground.cso", shaders.psBg) || !load(L"Raster_PSProbe.cso", psProbe) || !load(L"Raster_PSProbeBackground.cso", psProbeBg) ||
+        !load(L"Raster_PSSelect.cso", shaders.psSelect))
         return false;
+    // editor ground grid (EditorGrid.hlsl): optional
+    if (!readBlob(m_shaderDir + L"\\EditorGrid_VSGrid.cso", shaders.vsGrid) || !readBlob(m_shaderDir + L"\\EditorGrid_PSGrid.cso", shaders.psGrid)) {
+        shaders.vsGrid.clear();
+        shaders.psGrid.clear();
+    }
 
-    D3D12_INPUT_ELEMENT_DESC layout[] = {
-        {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-        {"NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-        {"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 24, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-    };
-    auto base = [&]() {
-        D3D12_GRAPHICS_PIPELINE_STATE_DESC d = {};
-        d.pRootSignature = m_rasterRoot.Get();
-        d.InputLayout = {layout, 3};
-        d.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-        d.RasterizerState.FillMode = D3D12_FILL_MODE_SOLID;
-        d.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
-        d.RasterizerState.DepthClipEnable = TRUE;
-        d.RasterizerState.MultisampleEnable = TRUE;
-        d.RasterizerState.AntialiasedLineEnable = FALSE;
-        d.BlendState.RenderTarget[0].RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
-        d.DepthStencilState.DepthEnable = TRUE;
-        d.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
-        d.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
-        d.DSVFormat = DXGI_FORMAT_D32_FLOAT;
-        d.SampleMask = UINT_MAX;
-        d.SampleDesc.Count = 1;
-        return d;
-    };
-    auto blendOn = [](D3D12_GRAPHICS_PIPELINE_STATE_DESC& d) {
-        auto& b = d.BlendState.RenderTarget[0];
-        b.BlendEnable = TRUE;
-        b.SrcBlend = D3D12_BLEND_SRC_ALPHA;
-        b.DestBlend = D3D12_BLEND_INV_SRC_ALPHA;
-        b.BlendOp = D3D12_BLEND_OP_ADD;
-        b.SrcBlendAlpha = D3D12_BLEND_ONE;
-        b.DestBlendAlpha = D3D12_BLEND_INV_SRC_ALPHA;
-        b.BlendOpAlpha = D3D12_BLEND_OP_ADD;
-        d.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
-    };
+    // sample counts of the viewport anti-aliasing (MSAA) supported for the colour and depth formats
+    m_msaaMask = 1u << 1;
+    for (uint32_t n = 2; n <= 16; n *= 2) {
+        bool ok = true;
+        for (DXGI_FORMAT fmt : {DXGI_FORMAT_R16G16B16A16_FLOAT, DXGI_FORMAT_D32_FLOAT}) {
+            D3D12_FEATURE_DATA_MULTISAMPLE_QUALITY_LEVELS q = {};
+            q.Format = fmt;
+            q.SampleCount = n;
+            if (FAILED(m_device->CheckFeatureSupport(D3D12_FEATURE_MULTISAMPLE_QUALITY_LEVELS, &q, sizeof(q))) || q.NumQualityLevels == 0) ok = false;
+        }
+        if (ok) m_msaaMask |= 1u << n;
+    }
+
     auto make = [&](D3D12_GRAPHICS_PIPELINE_STATE_DESC& d, ComPtr<ID3D12PipelineState>& pso, const char* what) {
         if (FAILED(m_device->CreateGraphicsPipelineState(&d, IID_PPV_ARGS(&pso)))) {
             if (error) *error = std::string("CreateGraphicsPipelineState failed: ") + what;
@@ -210,7 +238,7 @@ bool Renderer::createRasterPipelines(std::string* error) {
     };
 
     // Shadow (depth only)
-    auto d = base();
+    auto d = rasterDesc(m_rasterRoot.Get());
     d.VS = {vsShadow.data(), vsShadow.size()};
     d.RasterizerState.DepthBias = 200;
     d.RasterizerState.SlopeScaledDepthBias = 2.0f;
@@ -218,40 +246,12 @@ bool Renderer::createRasterPipelines(std::string* error) {
     d.NumRenderTargets = 0;
     if (!make(d, m_psoShadow, "shadow")) return false;
 
-    // Main MSAA passes
-    auto ms = [&]() {
-        auto x = base();
-        x.NumRenderTargets = 1;
-        x.RTVFormats[0] = DXGI_FORMAT_R16G16B16A16_FLOAT;
-        x.SampleDesc.Count = kMsaa;
-        return x;
-    };
-    d = ms();
-    d.VS = {vsBg.data(), vsBg.size()};
-    d.PS = {psBg.data(), psBg.size()};
-    d.InputLayout = {nullptr, 0};
-    d.DepthStencilState.DepthEnable = FALSE;
-    d.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
-    if (!make(d, m_psoBg, "background")) return false;
-    d = ms();
-    d.VS = {vsMain.data(), vsMain.size()};
-    d.PS = {psMain.data(), psMain.size()};
-    if (!make(d, m_psoMain, "main")) return false;
-    blendOn(d);
-    if (!make(d, m_psoTrans, "transparent")) return false;
-    d.PS = {psGhost.data(), psGhost.size()};
-    if (!make(d, m_psoGhost, "ghost")) return false;
-    // Wireframe display: polygon edges as lines blended over the view; VSWire pulls them slightly towards the camera
-    // so that they win over their own faces (a depth bias also let the hidden back edges through)
-    d.VS = {vsWire.data(), vsWire.size()};
-    d.PS = {psWire.data(), psWire.size()};
-    d.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_LINE;
-    d.RasterizerState.AntialiasedLineEnable = TRUE;
-    if (!make(d, m_psoWire, "wireframe")) return false;
+    // Viewport passes (multisampled, m_msaa samples)
+    if (!createMsaaPipelines(error)) return false;
 
     // Object id pass (single sample) into the albedo texture (w = id)
-    d = base();
-    d.VS = {vsMain.data(), vsMain.size()};
+    d = rasterDesc(m_rasterRoot.Get());
+    d.VS = {shaders.vsMain.data(), shaders.vsMain.size()};
     d.PS = {psId.data(), psId.size()};
     d.NumRenderTargets = 1;
     d.RTVFormats[0] = DXGI_FORMAT_R32G32B32A32_FLOAT;
@@ -259,7 +259,7 @@ bool Renderer::createRasterPipelines(std::string* error) {
     if (!make(d, m_psoId, "id")) return false;
 
     // DDGI probe capture: cube faces (single sample), lit like the main pass, distance in alpha
-    d = base();
+    d = rasterDesc(m_rasterRoot.Get());
     d.VS = {vsProbe.data(), vsProbe.size()};
     d.PS = {psProbe.data(), psProbe.size()};
     d.NumRenderTargets = 3;   // radiance + distance, albedo, normal
@@ -267,23 +267,34 @@ bool Renderer::createRasterPipelines(std::string* error) {
     d.RasterizerState.MultisampleEnable = FALSE;
     if (!make(d, m_psoProbe, "probe")) return false;
     // Background of the probe faces: the environment where no geometry is drawn (misses of the ray pass)
-    d.VS = {vsBg.data(), vsBg.size()};
+    d.VS = {shaders.vsBg.data(), shaders.vsBg.size()};
     d.PS = {psProbeBg.data(), psProbeBg.size()};
     d.InputLayout = {nullptr, 0};
     d.DepthStencilState.DepthEnable = FALSE;
     d.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
     if (!make(d, m_psoProbeBg, "probe background")) return false;
 
-    // Heaps and the shadow map (RTV 0-1 viewport and id, 2-4 probe capture; DSV 0-1 as before, 2 shadow, 3 capture)
+    // Heaps and the shadow map (RTV 0-1 viewport and id, 2-4 probe capture, 5 selection mask; DSV 0-1 as before, 2 shadow,
+    // 3 capture)
     D3D12_DESCRIPTOR_HEAP_DESC hd = {};
     hd.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
-    hd.NumDescriptors = 5;
+    hd.NumDescriptors = 6;
     m_device->CreateDescriptorHeap(&hd, IID_PPV_ARGS(&m_rtvHeap));
     hd.Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
     hd.NumDescriptors = 4;
     m_device->CreateDescriptorHeap(&hd, IID_PPV_ARGS(&m_dsvHeap));
     m_rtvSize = m_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
     m_dsvSize = m_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_DSV);
+    // extra views (renderView): 3 RTVs and 2 DSVs each, and their own command list
+    hd.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
+    hd.NumDescriptors = kMaxViews * 3;
+    m_device->CreateDescriptorHeap(&hd, IID_PPV_ARGS(&m_viewRtvHeap));
+    hd.Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
+    hd.NumDescriptors = kMaxViews * 2;
+    m_device->CreateDescriptorHeap(&hd, IID_PPV_ARGS(&m_viewDsvHeap));
+    m_device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&m_viewAlloc));
+    m_device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, m_viewAlloc.Get(), nullptr, IID_PPV_ARGS(&m_viewCmd));
+    m_viewCmd->Close();
 
     D3D12_RESOURCE_DESC sd = {};
     sd.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
@@ -316,6 +327,106 @@ bool Renderer::createRasterPipelines(std::string* error) {
 
     m_rasterCB = createBuffer(1024, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ);
     return true;
+}
+
+// Passes drawn into the multisampled viewport target, with m_msaa samples (viewport anti-aliasing): background, objects,
+// depth only (overlay over the path traced view), transparent, ghost, wireframe lines and the editor grid. Rebuilt when
+// the sample count changes (setMsaa).
+bool Renderer::createMsaaPipelines(std::string* error) {
+    const RasterShaders& sh = m_rasterShaders;
+    auto make = [&](D3D12_GRAPHICS_PIPELINE_STATE_DESC& d, ComPtr<ID3D12PipelineState>& pso, const char* what) {
+        pso.Reset();
+        if (FAILED(m_device->CreateGraphicsPipelineState(&d, IID_PPV_ARGS(&pso)))) {
+            if (error) *error = std::string("CreateGraphicsPipelineState failed: ") + what;
+            return false;
+        }
+        return true;
+    };
+    auto ms = [&]() {
+        auto x = rasterDesc(m_rasterRoot.Get());
+        x.NumRenderTargets = 1;
+        x.RTVFormats[0] = DXGI_FORMAT_R16G16B16A16_FLOAT;
+        x.SampleDesc.Count = m_msaa;
+        return x;
+    };
+    auto d = ms();
+    d.VS = {sh.vsBg.data(), sh.vsBg.size()};
+    d.PS = {sh.psBg.data(), sh.psBg.size()};
+    d.InputLayout = {nullptr, 0};
+    d.DepthStencilState.DepthEnable = FALSE;
+    d.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
+    if (!make(d, m_psoBg, "background")) return false;
+    d = ms();
+    d.VS = {sh.vsMain.data(), sh.vsMain.size()};
+    d.PS = {sh.psMain.data(), sh.psMain.size()};
+    if (!make(d, m_psoMain, "main")) return false;
+    {   // depth only (editor overlay over the path traced image: the objects hide the grid and the back lines)
+        auto z = d;
+        z.BlendState.RenderTarget[0].RenderTargetWriteMask = 0;
+        z.PS = {nullptr, 0};
+        if (!make(z, m_psoDepth, "depth")) return false;
+    }
+    blendOn(d);
+    if (!make(d, m_psoTrans, "transparent")) return false;
+    d.PS = {sh.psGhost.data(), sh.psGhost.size()};
+    if (!make(d, m_psoGhost, "ghost")) return false;
+    // Wireframe display: polygon edges as lines blended over the view; VSWire pulls them slightly towards the camera
+    // so that they win over their own faces (a depth bias also let the hidden back edges through)
+    d.VS = {sh.vsWire.data(), sh.vsWire.size()};
+    d.PS = {sh.psWire.data(), sh.psWire.size()};
+    d.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_LINE;
+    d.RasterizerState.AntialiasedLineEnable = TRUE;
+    if (!make(d, m_psoWire, "wireframe")) return false;
+    // Selection mask: the selected objects, 1 in their visible samples (depth test against the viewport depth, no write)
+    d = ms();
+    d.VS = {sh.vsMain.data(), sh.vsMain.size()};
+    d.PS = {sh.psSelect.data(), sh.psSelect.size()};
+    d.RTVFormats[0] = DXGI_FORMAT_R8_UNORM;
+    d.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
+    if (!make(d, m_psoSelect, "selection mask")) return false;
+    // Editor ground grid: full screen, blended, at the depth of its lines
+    m_psoGrid.Reset();
+    if (!sh.vsGrid.empty()) {
+        d = ms();
+        d.VS = {sh.vsGrid.data(), sh.vsGrid.size()};
+        d.PS = {sh.psGrid.data(), sh.psGrid.size()};
+        d.InputLayout = {nullptr, 0};
+        blendOn(d);
+        if (!make(d, m_psoGrid, "editor grid")) return false;
+    }
+    return true;
+}
+
+// The viewport colour into a texture slot (UAV): a resolve of its samples, a plain copy when the anti-aliasing is off
+// (ResolveSubresource needs a multisampled source).
+void Renderer::resolveViewport(ID3D12Resource* color, ID3D12Resource* dst) {
+    const bool ms = m_msaa > 1;
+    const D3D12_RESOURCE_STATES src = ms ? D3D12_RESOURCE_STATE_RESOLVE_SOURCE : D3D12_RESOURCE_STATE_COPY_SOURCE;
+    const D3D12_RESOURCE_STATES dstState = ms ? D3D12_RESOURCE_STATE_RESOLVE_DEST : D3D12_RESOURCE_STATE_COPY_DEST;
+    transition(color, D3D12_RESOURCE_STATE_RENDER_TARGET, src);
+    transition(dst, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, dstState);
+    if (ms) m_cmd->ResolveSubresource(dst, 0, color, 0, DXGI_FORMAT_R16G16B16A16_FLOAT);
+    else m_cmd->CopyResource(dst, color);
+    transition(dst, dstState, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+    transition(color, src, D3D12_RESOURCE_STATE_RENDER_TARGET);
+}
+
+// Samples per pixel of the viewport anti-aliasing (1 = off). The GPU draws the largest supported count up to n; twice
+// that count is reached over two frames (temporal, see recordRaster), e.g. x16 as 8 samples x 2 frames. Waits for the
+// GPU, then rebuilds the multisampled pipelines and targets when the hardware count changes.
+void Renderer::setMsaa(uint32_t n) {
+    n = std::max(1u, std::min(n, 16u));
+    uint32_t hw = n;
+    while (hw > 1 && !msaaSupported(hw)) hw /= 2;
+    const bool temporal = hw > 1 && hw * 2 == n;
+    if (temporal != m_msaaTemporal) m_taaValid = false;
+    m_msaaTemporal = temporal;
+    if (hw == m_msaa) return;
+    waitIdle();
+    m_taaValid = false;
+    m_msaa = hw;
+    createMsaaPipelines(nullptr);
+    if (m_rtW && m_rtH) createRasterTargets(m_rtW, m_rtH);
 }
 
 // Cube captures of the DDGI probes (see recordRaster): slots probes of kProbeFace texels per face, six faces wide.
@@ -372,7 +483,7 @@ void Renderer::createRasterTargets(uint32_t w, uint32_t h) {
 
     // MSAA colour
     d.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
-    d.SampleDesc.Count = kMsaa;
+    d.SampleDesc.Count = m_msaa;
     d.Flags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
     D3D12_CLEAR_VALUE cc = {};
     cc.Format = d.Format;
@@ -399,23 +510,92 @@ void Renderer::createRasterTargets(uint32_t w, uint32_t h) {
     m_device->CreateDepthStencilView(m_msaaDepth.Get(), nullptr, dsv);
     dsv.ptr += m_dsvSize;
     m_device->CreateDepthStencilView(m_idDepth.Get(), nullptr, dsv);
+
+    // selection mask (samples of the viewport) and its coverage per pixel, read by the tonemapper (SRV t8)
+    d.Format = DXGI_FORMAT_R8_UNORM;
+    d.SampleDesc.Count = m_msaa;
+    d.Flags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
+    D3D12_CLEAR_VALUE mc = {};
+    mc.Format = DXGI_FORMAT_R8_UNORM;
+    m_selMask.Reset();
+    m_device->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &d, D3D12_RESOURCE_STATE_RENDER_TARGET, &mc, IID_PPV_ARGS(&m_selMask));
+    d.SampleDesc.Count = 1;
+    d.Flags = D3D12_RESOURCE_FLAG_NONE;
+    m_selCov.Reset();
+    m_device->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &d, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, nullptr,
+                                      IID_PPV_ARGS(&m_selCov));
+    rtv = m_rtvHeap->GetCPUDescriptorHandleForHeapStart();
+    rtv.ptr += 5 * (SIZE_T)m_rtvSize;
+    m_device->CreateRenderTargetView(m_selMask.Get(), nullptr, rtv);
+    D3D12_SHADER_RESOURCE_VIEW_DESC sv = {};
+    sv.Format = DXGI_FORMAT_R8_UNORM;
+    sv.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+    sv.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+    sv.Texture2D.MipLevels = 1;
+    D3D12_CPU_DESCRIPTOR_HANDLE sh = m_heap->GetCPUDescriptorHandleForHeapStart();
+    sh.ptr += (SIZE_T)kSelCovSlot * m_descSize;
+    m_device->CreateShaderResourceView(m_selCov.Get(), &sv, sh);
+}
+
+// Coverage of the selection: the selected objects drawn into the mask with the samples (and depth) of the viewport,
+// then resolved (the average of the samples) into m_selCov for the tonemapper. Its outline is then as smooth as the
+// edges of the image (Tonemap.hlsl).
+void Renderer::recordSelectionMask(const std::function<void(const Draw&)>& drawOne) {
+    if (m_selIds.empty() || !m_psoSelect) return;
+    const ExtraView* xv = m_rtView;
+    ID3D12Resource* selMask = xv ? xv->selMask.Get() : m_selMask.Get();
+    ID3D12Resource* selCov = xv ? xv->selCov.Get() : m_selCov.Get();
+    D3D12_CPU_DESCRIPTOR_HANDLE rtv = xv ? m_viewRtvHeap->GetCPUDescriptorHandleForHeapStart() : m_rtvHeap->GetCPUDescriptorHandleForHeapStart();
+    rtv.ptr += (xv ? xv->index * 3 + 2 : 5) * (SIZE_T)m_rtvSize;
+    D3D12_CPU_DESCRIPTOR_HANDLE dsv = xv ? m_viewDsvHeap->GetCPUDescriptorHandleForHeapStart() : m_dsvHeap->GetCPUDescriptorHandleForHeapStart();
+    if (xv) dsv.ptr += (SIZE_T)(xv->index * 2) * m_dsvSize;
+    m_cmd->OMSetRenderTargets(1, &rtv, FALSE, &dsv);
+    const float zero[4] = {0, 0, 0, 0};
+    m_cmd->ClearRenderTargetView(rtv, zero, 0, nullptr);
+    m_cmd->SetPipelineState(m_psoSelect.Get());
+    m_cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+    for (const Draw& d : m_draws)
+        if (!(d.flags & 5u) && std::find(m_selIds.begin(), m_selIds.end(), d.id) != m_selIds.end()) drawOne(d);
+    const bool ms = m_msaa > 1;
+    const D3D12_RESOURCE_STATES src = ms ? D3D12_RESOURCE_STATE_RESOLVE_SOURCE : D3D12_RESOURCE_STATE_COPY_SOURCE;
+    const D3D12_RESOURCE_STATES dst = ms ? D3D12_RESOURCE_STATE_RESOLVE_DEST : D3D12_RESOURCE_STATE_COPY_DEST;
+    transition(selMask, D3D12_RESOURCE_STATE_RENDER_TARGET, src);
+    transition(selCov, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, dst);
+    if (ms) m_cmd->ResolveSubresource(selCov, 0, selMask, 0, DXGI_FORMAT_R8_UNORM);
+    else m_cmd->CopyResource(selCov, selMask);
+    transition(selCov, dst, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+    transition(selMask, src, D3D12_RESOURCE_STATE_RENDER_TARGET);
 }
 
 void Renderer::recordRaster(const Scene& scene, const RenderSettings& rs, const ViewRect& vp, bool probeCapture, bool probes,
-                            bool shadow) {
-    const Camera& cam = scene.camera;
+                            bool shadow, int overlaySlot) {
+    const bool overlay = overlaySlot >= 0;   // editor overlay only: grid and wireframe lines, for the path traced view
+    if (overlay) shadow = false;
+    const ExtraView* xv = m_rtView;   // an extra view (renderView): its camera, targets and constants
+    const Camera& cam = (xv && m_rtCam) ? *m_rtCam : scene.camera;
+    Buffer& rcb = xv ? const_cast<Buffer&>(xv->cb) : m_rasterCB;
     float3 r, u, f;
     cam.basis(r, u, f);
     float3 eye = cam.eye();
     float t = std::tan(cam.fovY * 0.5f), a = (float)vp.w / vp.h;
-    float zn = std::max(cam.distance * 0.005f, 0.02f), zf = cam.distance * 40.0f + 2000.0f;
-    float A = zf / (zf - zn), B = -zf * zn / (zf - zn);
-
     RasterConstants rc = {};
-    setRows(rc.viewProj, 0, r / (t * a), -dot(r, eye) / (t * a));
-    setRows(rc.viewProj, 1, u / t, -dot(u, eye) / t);
-    setRows(rc.viewProj, 2, f * A, -dot(f, eye) * A + B);
-    setRows(rc.viewProj, 3, f, -dot(f, eye));
+    if (cam.ortho) {
+        // orthographic: x, y scaled by the view size, linear depth from orthoBack behind the eye (the whole scene in front)
+        const float hh = cam.orthoHeight * 0.5f, hw = hh * a;
+        const float zn = -orthoBack(cam), zf = std::max(dot(m_sceneCenter - eye, f) + m_sceneRadius * 2.0f, 1.0f) + cam.distance;
+        setRows(rc.viewProj, 0, r / hw, -dot(r, eye) / hw);
+        setRows(rc.viewProj, 1, u / hh, -dot(u, eye) / hh);
+        setRows(rc.viewProj, 2, f / (zf - zn), (-dot(f, eye) - zn) / (zf - zn));
+        setRows(rc.viewProj, 3, float3(0, 0, 0), 1);
+        rc.orthoHalfH = hh;
+    } else {
+        float zn = std::max(cam.distance * 0.005f, 0.02f), zf = cam.distance * 40.0f + 2000.0f;
+        float A = zf / (zf - zn), B = -zf * zn / (zf - zn);
+        setRows(rc.viewProj, 0, r / (t * a), -dot(r, eye) / (t * a));
+        setRows(rc.viewProj, 1, u / t, -dot(u, eye) / t);
+        setRows(rc.viewProj, 2, f * A, -dot(f, eye) * A + B);
+        setRows(rc.viewProj, 3, f, -dot(f, eye));
+    }
 
     // Key light = the sun when enabled, else the strongest enabled area light; it gets the shadow map.
     int key = -1;
@@ -487,10 +667,23 @@ void Renderer::recordRaster(const Scene& scene, const RenderSettings& rs, const 
     rc.envVisible = scene.env.visibleToCamera ? 1.0f : 0.0f;
     rc.sunLight = m_sunLight;
     rc.giMode = (probes || probeCapture) ? 1.0f : 0.0f;   // probes read by the main pass; the capture drops its ambient
-    memcpy(m_rasterCB.mapped, &rc, sizeof(rc));
+    // The id pass reads a copy without jitter (offset 512); the viewport passes may be jittered: MSAA x16 on a GPU with
+    // 8 samples alternates two sub-pixel offsets of its pattern, frame after frame, and the tonemapper averages the last
+    // two frames while nothing moves (16 different samples per pixel).
+    static_assert(sizeof(RasterConstants) <= 512, "two copies in m_rasterCB");
+    memcpy((uint8_t*)rcb.mapped + 512, &rc, sizeof(rc));
+    if (m_msaaTemporal && !overlay && !probeCapture && !probes && !xv) {
+        const float o = (m_taaFrame & 1) ? 1.0f / 32.0f : -1.0f / 32.0f;   // pixels: the two frames are 1/16 px apart
+        const float jx = 2.0f * o / (float)vp.w, jy = -2.0f * o / (float)vp.h;
+        for (int k = 0; k < 4; ++k) {
+            rc.viewProj[k] += jx * rc.viewProj[12 + k];
+            rc.viewProj[4 + k] += jy * rc.viewProj[12 + k];
+        }
+    }
+    memcpy(rcb.mapped, &rc, sizeof(rc));
 
     m_cmd->SetGraphicsRootSignature(m_rasterRoot.Get());
-    m_cmd->SetGraphicsRootConstantBufferView(0, m_rasterCB.va());
+    m_cmd->SetGraphicsRootConstantBufferView(0, rcb.va());
     m_cmd->SetGraphicsRootShaderResourceView(2, m_materials.va());
     m_cmd->SetGraphicsRootShaderResourceView(3, m_lights.va());
     D3D12_GPU_DESCRIPTOR_HANDLE shadowSrv = m_heap->GetGPUDescriptorHandleForHeapStart();
@@ -596,28 +789,64 @@ void Renderer::recordRaster(const Scene& scene, const RenderSettings& rs, const 
         return;
     }
 
-    // 2) main MSAA pass
+    // 2) main MSAA pass (an extra view: its own targets, 3 RTVs and 2 DSVs per view)
     D3D12_CPU_DESCRIPTOR_HANDLE rtvBase = m_rtvHeap->GetCPUDescriptorHandleForHeapStart();
+    if (xv) {
+        rtvBase = m_viewRtvHeap->GetCPUDescriptorHandleForHeapStart();
+        rtvBase.ptr += (SIZE_T)(xv->index * 3) * m_rtvSize;
+        dsvBase = m_viewDsvHeap->GetCPUDescriptorHandleForHeapStart();
+        dsvBase.ptr += (SIZE_T)(xv->index * 2) * m_dsvSize;
+    }
     m_cmd->OMSetRenderTargets(1, &rtvBase, FALSE, &dsvBase);
     m_cmd->ClearDepthStencilView(dsvBase, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
     D3D12_VIEWPORT mvp = {0, 0, (float)vp.w, (float)vp.h, 0, 1};
     D3D12_RECT msc = {0, 0, (LONG)vp.w, (LONG)vp.h};
     m_cmd->RSSetViewports(1, &mvp);
     m_cmd->RSSetScissorRects(1, &msc);
-    m_cmd->SetPipelineState(m_psoBg.Get());
-    m_cmd->DrawInstanced(3, 1, 0, 0);
+    if (overlay) {
+        const float clear0[4] = {0, 0, 0, 0};
+        m_cmd->ClearRenderTargetView(rtvBase, clear0, 0, nullptr);
+    } else {
+        m_cmd->SetPipelineState(m_psoBg.Get());
+        m_cmd->DrawInstanced(3, 1, 0, 0);
+    }
     // Wireframe only: the ground grid stays shaded, the other objects become lines with every edge visible.
     auto isGround = [&](const Draw& d) {
         return d.material < scene.materials.size() && (scene.materials[d.material].flags & MAT_FLAG_GRID);
     };
-    if (rs.wireframe == 1) {
+    // editor grid after the opaque objects (they hide it), before the transparent ones
+    auto drawGrid = [&]() {
+        if (!m_psoGrid || rs.editorGrid <= 0) return;
+        const EditorGridStyle& g = rs.grid;
+        // orthographic: the grid in the plane facing the view (Maya), a pixel of a fixed size
+        uint32_t plane = 0;
+        if (cam.ortho) plane = std::fabs(f.y) >= std::max(std::fabs(f.x), std::fabs(f.z)) ? 0u : (std::fabs(f.z) >= std::fabs(f.x) ? 1u : 2u);
+        const uint32_t flags = g.flags | (plane << 8);
+        float gc[32] = {rs.editorGrid, rs.editorGridAxis, g.opacity, cam.ortho ? cam.orthoHeight / std::max(1, vp.h) : 2.0f * t / std::max(1, vp.h),
+                        std::max(rs.pixelScale, 1.0f), (float)std::max(1, g.subdivisions), std::max(g.extent, 0.0f), 0.0f,
+                        g.widthGrid, g.widthSub, g.widthAxis, cam.ortho ? cam.orthoHeight * 0.5f : 0.0f};
+        memcpy(&gc[7], &flags, sizeof(uint32_t));   // GridConstants::flags (uint)
+        const float4* cols[5] = {&g.colorGrid, &g.colorSub, &g.colorX, &g.colorY, &g.colorZ};
+        for (int k = 0; k < 5; ++k) memcpy(&gc[12 + 4 * k], cols[k], sizeof(float4));
+        m_cmd->SetGraphicsRoot32BitConstants(7, 32, gc, 0);
+        m_cmd->SetPipelineState(m_psoGrid.Get());
+        m_cmd->DrawInstanced(3, 1, 0, 0);
+    };
+    if (overlay) {   // depth of the opaque objects, then the grid
+        m_cmd->SetPipelineState(m_psoDepth.Get());
+        for (const Draw& d : m_draws)
+            if (!(d.flags & 5u) && !isTransparent(d)) drawOne(d);
+        drawGrid();
+    } else if (rs.wireframe == 1) {
         m_cmd->SetPipelineState(m_psoMain.Get());
         for (const Draw& d : m_draws)
             if (!(d.flags & 5u) && isGround(d)) drawOne(d);
+        drawGrid();
     } else {
     m_cmd->SetPipelineState(m_psoMain.Get());
     for (const Draw& d : m_draws)
         if (!(d.flags & 5u) && !isTransparent(d)) drawOne(d);
+    drawGrid();
     m_cmd->SetPipelineState(m_psoTrans.Get());
     for (const Draw& d : m_draws)
         if (!(d.flags & 5u) && isTransparent(d)) drawOne(d);
@@ -635,35 +864,237 @@ void Renderer::recordRaster(const Scene& scene, const RenderSettings& rs, const 
             memcpy(dc.rows, d.xf.m, sizeof(dc.rows));
             dc.materialId = d.material;
             dc.id = d.id;
-            dc.alpha = rs.wireframe == 1 ? 0.75f : 0.02f;   // line grey level
-            dc.flags = d.flags;
+            dc.alpha = rs.wireframe == 1 ? 0.75f : 0.62f;   // line grey level
+            dc.flags = d.flags | (rs.wireframe == 2 ? 8u : 0u);   // over the shaded view: faint light lines (PSWire)
             m_cmd->SetGraphicsRoot32BitConstants(1, 16, &dc, 0);
             m_cmd->DrawIndexedInstanced(g.lineCount, 1, g.lineOffset, (INT)g.vertexOffset, 0);
         }
         m_cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
     }
 
+    recordSelectionMask(drawOne);   // coverage of the selection (smooth outline)
+    if (overlay) {   // the overlay (premultiplied alpha) goes to its slot, composited by the tonemapper
+        resolveViewport(m_msaaColor.Get(), m_tex[overlaySlot].Get());
+        return;
+    }
     // 3) resolve into the HDR slot read by the tonemapper
-    transition(m_msaaColor.Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_RESOLVE_SOURCE);
-    transition(m_tex[kTexDenoiseA].Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_RESOLVE_DEST);
-    m_cmd->ResolveSubresource(m_tex[kTexDenoiseA].Get(), 0, m_msaaColor.Get(), 0, DXGI_FORMAT_R16G16B16A16_FLOAT);
-    transition(m_tex[kTexDenoiseA].Get(), D3D12_RESOURCE_STATE_RESOLVE_DEST, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
-    transition(m_msaaColor.Get(), D3D12_RESOURCE_STATE_RESOLVE_SOURCE, D3D12_RESOURCE_STATE_RENDER_TARGET);
+    ID3D12Resource* idTex = xv ? xv->id.Get() : m_tex[kTexAlbedo].Get();
+    resolveViewport(xv ? xv->color.Get() : m_msaaColor.Get(), xv ? xv->hdr.Get() : m_tex[kTexDenoiseA].Get());
 
     // 4) object ids (selection outline)
     D3D12_CPU_DESCRIPTOR_HANDLE idRtv = rtvBase;
     idRtv.ptr += m_rtvSize;
     D3D12_CPU_DESCRIPTOR_HANDLE idDsv = dsvBase;
     idDsv.ptr += m_dsvSize;
-    transition(m_tex[kTexAlbedo].Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_RENDER_TARGET);
+    transition(idTex, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_RENDER_TARGET);
     const float zero[4] = {0, 0, 0, 0};
     m_cmd->OMSetRenderTargets(1, &idRtv, FALSE, &idDsv);
     m_cmd->ClearRenderTargetView(idRtv, zero, 0, nullptr);
     m_cmd->ClearDepthStencilView(idDsv, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
     m_cmd->SetPipelineState(m_psoId.Get());
+    m_cmd->SetGraphicsRootConstantBufferView(0, rcb.va() + 512);   // ids without the anti-aliasing jitter
     for (const Draw& d : m_draws)
         if (!(d.flags & 7u)) drawOne(d);
-    transition(m_tex[kTexAlbedo].Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+    transition(idTex, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+}
+
+// --------------------------------------------------------------------------- extra views
+
+// Targets of an extra view: the multisampled colour, depth and selection mask (m_msaa samples), the selection
+// coverage, the HDR image and the ids (single sample), the RGBA8 image of the UI; their RTVs, DSVs and the table of
+// the tonemapper (u0..u5 as the main view's slots, the ones it does not use left null, then t8).
+void Renderer::createViewTargets(ExtraView& v, uint32_t w, uint32_t h) {
+    v.w = w;
+    v.h = h;
+    v.samples = m_msaa;
+    v.outReadable = false;
+    auto hp = defaultHeap();
+    auto make = [&](ComPtr<ID3D12Resource>& r, DXGI_FORMAT fmt, uint32_t samples, D3D12_RESOURCE_FLAGS flags,
+                    D3D12_RESOURCE_STATES state, const D3D12_CLEAR_VALUE* clear) {
+        D3D12_RESOURCE_DESC d = {};
+        d.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+        d.Width = w;
+        d.Height = h;
+        d.DepthOrArraySize = 1;
+        d.MipLevels = 1;
+        d.Format = fmt;
+        d.SampleDesc.Count = samples;
+        d.Flags = flags;
+        r.Reset();
+        m_device->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &d, state, clear, IID_PPV_ARGS(&r));
+    };
+    D3D12_CLEAR_VALUE cc = {}, dc = {}, mc = {}, ic = {};
+    cc.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
+    dc.Format = DXGI_FORMAT_D32_FLOAT;
+    dc.DepthStencil.Depth = 1.0f;
+    mc.Format = DXGI_FORMAT_R8_UNORM;
+    ic.Format = DXGI_FORMAT_R32G32B32A32_FLOAT;
+    const auto rt = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET, ds = D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL, ua = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
+    make(v.color, DXGI_FORMAT_R16G16B16A16_FLOAT, m_msaa, rt, D3D12_RESOURCE_STATE_RENDER_TARGET, &cc);
+    make(v.depth, DXGI_FORMAT_D32_FLOAT, m_msaa, ds, D3D12_RESOURCE_STATE_DEPTH_WRITE, &dc);
+    make(v.selMask, DXGI_FORMAT_R8_UNORM, m_msaa, rt, D3D12_RESOURCE_STATE_RENDER_TARGET, &mc);
+    make(v.selCov, DXGI_FORMAT_R8_UNORM, 1, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, nullptr);
+    make(v.hdr, DXGI_FORMAT_R16G16B16A16_FLOAT, 1, ua, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, nullptr);
+    make(v.id, DXGI_FORMAT_R32G32B32A32_FLOAT, 1, rt | ua, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, &ic);
+    make(v.idDepth, DXGI_FORMAT_D32_FLOAT, 1, ds, D3D12_RESOURCE_STATE_DEPTH_WRITE, &dc);
+    make(v.out, DXGI_FORMAT_R8G8B8A8_UNORM, 1, ua, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, nullptr);
+
+    D3D12_CPU_DESCRIPTOR_HANDLE rtv = m_viewRtvHeap->GetCPUDescriptorHandleForHeapStart();
+    rtv.ptr += (SIZE_T)(v.index * 3) * m_rtvSize;
+    for (ID3D12Resource* r : {v.color.Get(), v.id.Get(), v.selMask.Get()}) {
+        m_device->CreateRenderTargetView(r, nullptr, rtv);
+        rtv.ptr += m_rtvSize;
+    }
+    D3D12_CPU_DESCRIPTOR_HANDLE dsv = m_viewDsvHeap->GetCPUDescriptorHandleForHeapStart();
+    dsv.ptr += (SIZE_T)(v.index * 2) * m_dsvSize;
+    m_device->CreateDepthStencilView(v.depth.Get(), nullptr, dsv);
+    dsv.ptr += m_dsvSize;
+    m_device->CreateDepthStencilView(v.idDepth.Get(), nullptr, dsv);
+
+    D3D12_CPU_DESCRIPTOR_HANDLE base = m_heap->GetCPUDescriptorHandleForHeapStart();
+    base.ptr += (SIZE_T)(kViewHeapBase + v.index * kViewHeapStride) * m_descSize;
+    const DXGI_FORMAT fmts[kTexCount] = {DXGI_FORMAT_R32G32B32A32_FLOAT, DXGI_FORMAT_R32G32B32A32_FLOAT, DXGI_FORMAT_R32G32B32A32_FLOAT,
+                                         DXGI_FORMAT_R16G16B16A16_FLOAT, DXGI_FORMAT_R16G16B16A16_FLOAT, DXGI_FORMAT_R8G8B8A8_UNORM};
+    ID3D12Resource* res[kTexCount] = {nullptr, v.id.Get(), nullptr, v.hdr.Get(), nullptr, v.out.Get()};
+    for (int k = 0; k < kTexCount; ++k) {
+        D3D12_UNORDERED_ACCESS_VIEW_DESC u = {};
+        u.Format = fmts[k];
+        u.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
+        D3D12_CPU_DESCRIPTOR_HANDLE hnd = base;
+        hnd.ptr += (SIZE_T)k * m_descSize;
+        m_device->CreateUnorderedAccessView(res[k], nullptr, &u, hnd);
+    }
+    D3D12_SHADER_RESOURCE_VIEW_DESC sv = {};
+    sv.Format = DXGI_FORMAT_R8_UNORM;
+    sv.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+    sv.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+    sv.Texture2D.MipLevels = 1;
+    D3D12_CPU_DESCRIPTOR_HANDLE ch = base;
+    ch.ptr += (SIZE_T)kTexCount * m_descSize;
+    m_device->CreateShaderResourceView(v.selCov.Get(), &sv, ch);
+    if (!v.cb.res) v.cb = createBuffer(2048, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ);
+}
+
+// The extra views of a frame are recorded into m_viewCmd (m_cmd points to it meanwhile: the raster helpers record
+// into m_cmd), sent after the main list. present() waits for the GPU at the end of each frame, so the allocator is free.
+void Renderer::beginViews() {
+    if (m_viewsOpen || !m_viewCmd) return;
+    m_viewAlloc->Reset();
+    m_viewCmd->Reset(m_viewAlloc.Get(), nullptr);
+    std::swap(m_cmd, m_viewCmd);
+    ID3D12DescriptorHeap* heaps[] = {m_heap.Get()};
+    m_cmd->SetDescriptorHeaps(1, heaps);
+    m_viewsOpen = true;
+    m_viewsShadow = true;   // (the main view may be path traced: no shadow map drawn this frame)
+}
+
+void Renderer::endViews() {
+    if (!m_viewsOpen) return;
+    m_cmd->Close();
+    ID3D12CommandList* l[] = {m_cmd.Get()};
+    m_queue->ExecuteCommandLists(1, l);
+    std::swap(m_cmd, m_viewCmd);
+    m_viewsOpen = false;
+}
+
+void Renderer::renderView(int slot, const Scene& scene, const Camera& cam, const RenderSettings& rs, uint32_t w, uint32_t h,
+                          float2 selectionCenter, float selectionRadius) {
+    if (!m_viewsOpen || slot < 0 || slot >= kMaxViews || !m_psoMain || !m_vb.res) return;
+    if (scene.geometryVersion != m_sceneGeometryVersion) return;   // (the main render of the frame takes the scene first)
+    w = std::max(16u, w);
+    h = std::max(16u, h);
+    if ((int)m_extra.size() <= slot) m_extra.resize(slot + 1);
+    ExtraView& v = m_extra[slot];
+    v.index = slot;
+    if (v.w != w || v.h != h || v.samples != m_msaa || !v.out) createViewTargets(v, w, h);
+    if (v.outReadable) {
+        transition(v.out.Get(), D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+        v.outReadable = false;
+    }
+    ViewRect vp;
+    vp.x = 0;
+    vp.y = 0;
+    vp.w = (int)w;
+    vp.h = (int)h;
+    m_rtView = &v;
+    m_rtCam = &cam;
+    recordRaster(scene, rs, vp, false, m_lastProbes, m_viewsShadow);
+    m_viewsShadow = false;
+    m_rtView = nullptr;
+    m_rtCam = nullptr;
+
+    // tonemapper: the frame constants of the main view with this camera, size and selection centre
+    gpu::FrameConstants fc;
+    memcpy(&fc, m_lastFc, sizeof(fc));
+    float3 r, u, f;
+    cam.basis(r, u, f);
+    fc.camPos = cam.eye();
+    fc.camRight = r;
+    fc.camUp = u;
+    fc.camFwd = f;
+    fc.tanHalfFovY = std::tan(cam.fovY * 0.5f);
+    fc.aspect = (float)w / (float)h;
+    fc.orthoHalfH = cam.ortho ? cam.orthoHeight * 0.5f : 0.0f;
+    fc.orthoBack = cam.ortho ? orthoBack(cam) : 0.0f;
+    fc.resolution = {w, h};
+    fc.selCenterX = selectionCenter.x;
+    fc.selCenterY = selectionCenter.y;
+    fc.selRadius = selectionRadius;
+    fc.selPixelScale = 1.0f;
+    fc.selCovValid = (!m_selIds.empty() && m_psoSelect) ? 1u : 0u;
+    memcpy((uint8_t*)v.cb.mapped + 1024, &fc, sizeof(fc));
+    m_cmd->SetComputeRootSignature(m_rootSig.Get());
+    m_cmd->SetComputeRootConstantBufferView(0, v.cb.va() + 1024);
+    D3D12_GPU_DESCRIPTOR_HANDLE table = m_heap->GetGPUDescriptorHandleForHeapStart();
+    table.ptr += (UINT64)(kViewHeapBase + slot * kViewHeapStride) * m_descSize;
+    m_cmd->SetComputeRootDescriptorTable(8, table);
+    D3D12_GPU_DESCRIPTOR_HANDLE cov = table;
+    cov.ptr += (UINT64)kTexCount * m_descSize;
+    m_cmd->SetComputeRootDescriptorTable(16, cov);
+    m_cmd->SetPipelineState(m_psoTonemap.Get());
+    uint32_t tc[4] = {(uint32_t)kTexDenoiseA, 1u, (uint32_t)rs.tonemapper, 0u};
+    m_cmd->SetComputeRoot32BitConstants(1, 4, tc, 0);
+    m_cmd->Dispatch((w + 7) / 8, (h + 7) / 8, 1);
+    transition(v.out.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+    v.outReadable = true;
+}
+
+ID3D12Resource* Renderer::viewOutput(int slot) const {
+    return slot >= 0 && slot < (int)m_extra.size() ? m_extra[slot].out.Get() : nullptr;
+}
+
+bool Renderer::readView(int slot, std::vector<uint8_t>& rgba, uint32_t& w, uint32_t& h) {
+    if (m_viewsOpen || slot < 0 || slot >= (int)m_extra.size() || !m_extra[slot].out) return false;
+    ExtraView& v = m_extra[slot];
+    waitIdle();
+    D3D12_RESOURCE_DESC d = v.out->GetDesc();
+    w = (uint32_t)d.Width;
+    h = d.Height;
+    D3D12_PLACED_SUBRESOURCE_FOOTPRINT fp = {};
+    UINT64 total = 0;
+    m_device->GetCopyableFootprints(&d, 0, 1, 0, &fp, nullptr, nullptr, &total);
+    if (!m_readback.res || m_readback.size < total)
+        m_readback = createBuffer(total, D3D12_HEAP_TYPE_READBACK, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST);
+    const D3D12_RESOURCE_STATES st = v.outReadable ? D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE : D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+    beginCommands();
+    transition(v.out.Get(), st, D3D12_RESOURCE_STATE_COPY_SOURCE);
+    D3D12_TEXTURE_COPY_LOCATION dl = {}, sl = {};
+    dl.pResource = m_readback.res.Get();
+    dl.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
+    dl.PlacedFootprint = fp;
+    sl.pResource = v.out.Get();
+    sl.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+    m_cmd->CopyTextureRegion(&dl, 0, 0, 0, &sl, nullptr);
+    transition(v.out.Get(), D3D12_RESOURCE_STATE_COPY_SOURCE, st);
+    executeAndWait();
+    void* p = nullptr;
+    D3D12_RANGE rr = {0, (SIZE_T)total};
+    if (FAILED(m_readback.res->Map(0, &rr, &p))) return false;
+    rgba.resize((size_t)w * h * 4);
+    for (uint32_t y = 0; y < h; ++y) memcpy(&rgba[(size_t)y * w * 4], (uint8_t*)p + fp.Offset + (size_t)y * fp.Footprint.RowPitch, (size_t)w * 4);
+    D3D12_RANGE wr = {0, 0};
+    m_readback.res->Unmap(0, &wr);
+    return true;
 }
 
 } // namespace vp3d

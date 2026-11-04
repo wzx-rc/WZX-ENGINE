@@ -63,6 +63,18 @@ void Box(R r, ImU32 color, float rounding = 3, bool border = false) {
     dl->AddRectFilled(r.min(), r.max(), color, rounding * s);
     if (border) dl->AddRect(r.min(), r.max(), P().border, rounding * s);
 }
+// glyph of a view layout: its cols x rows panes in a small rectangle
+void LayoutGlyph(ImDrawList* d, int cols, int rows, ImVec2 p, ImVec2 size, ImU32 col) {
+    d->AddRect(p, ImVec2(p.x + size.x, p.y + size.y), col, 1.5f * s, 0, 1.2f * s);
+    for (int c = 1; c < cols; ++c) {
+        const float x = std::floor(p.x + size.x * c / cols) + 0.5f;
+        d->AddLine(ImVec2(x, p.y), ImVec2(x, p.y + size.y), col, 1.0f * s);
+    }
+    for (int r = 1; r < rows; ++r) {
+        const float y = std::floor(p.y + size.y * r / rows) + 0.5f;
+        d->AddLine(ImVec2(p.x, y), ImVec2(p.x + size.x, y), col, 1.0f * s);
+    }
+}
 // icon size setting: scaled around the same centre
 void Glyph(Icon icon, float x, float y, float size, ImU32 color) {
     float k = P().iconScale, o = size * s * (k - 1) / 2;
@@ -375,6 +387,7 @@ std::vector<Asset> assetList() {
     a.push_back({2, SCENE_CORNELL, "Cornell Box", "Scene", "Scenes"});
     a.push_back({2, SCENE_STUDIO, "Village", "Scene", "Scenes"});
     a.push_back({2, SCENE_LOOKDEV, "LookDev", "Scene", "Scenes"});
+    a.push_back({2, SCENE_CONCEPT, "Concept", "Scene", "Scenes"});
     return a;
 }
 
@@ -551,6 +564,7 @@ void App::atlTopBar(float x0, float y0, float width) {
                 if (ImGui::MenuItem("Cornell Box Scene", "F1", m_sceneId == SCENE_CORNELL)) m_pendingScene = SCENE_CORNELL;
                 if (ImGui::MenuItem("Village Scene", "F2", m_sceneId == SCENE_STUDIO)) m_pendingScene = SCENE_STUDIO;
                 if (ImGui::MenuItem("LookDev Scene", "F3", m_sceneId == SCENE_LOOKDEV)) m_pendingScene = SCENE_LOOKDEV;
+                if (ImGui::MenuItem("Concept Scene", "F4", m_sceneId == SCENE_CONCEPT)) m_pendingScene = SCENE_CONCEPT;
                 ImGui::Separator();
                 if (ImGui::MenuItem("Build…", "F7") && m_game) m_game->openBuildWindow();
                 ImGui::Separator();
@@ -579,6 +593,10 @@ void App::atlTopBar(float x0, float y0, float width) {
                     if (ImGui::MenuItem(primitiveName(t))) addPrimitive(t);
                 ImGui::EndMenu();
             }
+            if (mi == 2) {   // a camera object where the view is (the first one is the render camera)
+                if (ImGui::MenuItem("Camera from View")) createCameraFromView(false);
+                if (ImGui::MenuItem("Render Camera from View")) createCameraFromView(true);
+            }
             if (mi == 3) {
                 if (ImGui::MenuItem("Frame Selection", "F")) frameSelection();
                 ImGui::MenuItem("Viewport Statistics", nullptr, &m_showStats);
@@ -605,8 +623,14 @@ void App::atlTopBar(float x0, float y0, float width) {
                 if (ImGui::MenuItem("Rotate", "E", m_tool == TOOL_ROTATE)) m_tool = TOOL_ROTATE;
                 if (ImGui::MenuItem("Scale", "R", m_tool == TOOL_SCALE)) m_tool = TOOL_SCALE;
                 ImGui::Separator();
-                ImGui::MenuItem("Snapping (1 cm / 90°)", nullptr, &m_magnet);
-                if (ImGui::MenuItem("Local Axes", nullptr, m_localSpace)) m_localSpace = !m_localSpace;
+                ImGui::MenuItem("Snapping always on (else Shift)", nullptr, &m_magnet);
+                if (ImGui::BeginMenu("Axes (Move / Rotate)")) {
+                    ImGui::SetWindowFontScale(menuScale);
+                    const char* modes[] = {"World", "Object", "Parent"};
+                    for (int i = 0; i < 3; ++i)
+                        if (ImGui::MenuItem(modes[i], nullptr, m_axisMode == i)) m_axisMode = i;
+                    ImGui::EndMenu();
+                }
                 ImGui::SetNextItemWidth(150 * s);
                 ImGui::SliderFloat("Camera speed", &m_camSpeed, 0.1f, 5.0f, "%.1f");
             }
@@ -666,8 +690,8 @@ void App::atlHierarchy(float x, float y, float w, float h) {
     g_labelRight = px + pw;
     Label(px, py, "SCENES");
     py += 21 * s;
-    const char* scenes[] = {"Cornell Box", "Village", "LookDev"};
-    for (int i = 0; i < 3; ++i) {
+    const char* scenes[] = {"Cornell Box", "Village", "LookDev", "Concept"};
+    for (int i = 0; i < 4; ++i) {
         char id[16];
         snprintf(id, sizeof(id), "scene%d", i);
         if (Button(id, {px, py, pw, 26 * s}, scenes[i], i == 0 ? Icon::Cube : Icon::Sun, m_sceneId == i) && m_sceneId != i) m_pendingScene = i;
@@ -857,6 +881,7 @@ void App::atlHierarchy(float x, float y, float w, float h) {
         } else if (n.kind == NODE_OBJECT) {
             const Object& o = m_scene.objects[n.index];
             if (o.group) { icon = Icon::Folder; icol = IM_COL32(150, 170, 200, 255); }
+            else if (o.camera) { icon = Icon::Camera; icol = o.camRender ? IM_COL32(255, 196, 92, 255) : IM_COL32(214, 220, 230, 255); }   // the render camera: orange, as its icon in the view
             else icol = IM_COL32(104, 160, 226, 255);   // every mesh: the same bluish icon
         } else if (n.kind == NODE_LIGHT) { icon = Icon::Light; icol = IM_COL32(242, 201, 76, 255); }
         else if (n.kind == NODE_SUN) { icon = Icon::Sun; icol = IM_COL32(242, 201, 76, 255); }
@@ -1105,31 +1130,15 @@ void App::atlViewport(float x, float y, float w, float h) {
     Text(hr.x + 34 * s, hr.y + 11 * s, Fit(name, 140 * s, 12), P().text, 12);
     float nx = hr.x + 34 * s + std::min(TextSize(name, 12).x, 140 * s) + 12 * s;
     Glyph(Icon::ChevronRight, nx, hr.y + 13 * s, 9, P().muted);
-    static const char* views[] = {"Perspective", "Front", "Back", "Left", "Right", "Top"};
-    Text(nx + 16 * s, hr.y + 12 * s, std::string("Viewport · ") + views[std::clamp(m_viewMode, 0, 5)], P().muted, 11);
-    // tools (right to left): shading, view | stats, grid, frame | snapping, axes, scale, rotate, move
+    Text(nx + 16 * s, hr.y + 12 * s, std::string("Viewport · ") + paneCameraName(m_activePane), P().muted, 11);
+    // tools (right to left): stats, grid, frame | snapping, scale, rotate, move. Camera, display, renderer and
+    // axes are menus inside the view (atlViewMenus).
     float bx = hr.x + hr.w - 8 * s, by = hr.y + 6 * s;
     auto right = [&](float bw) { bx -= bw; float r0 = bx; bx -= 6 * s; return r0; };
-    static const char* modes[] = {"Lit", "Metal iOS", "Progressive", "GI"};
-    int mode = renderMode();
-    if (Combo("atlShading", {right(118 * s), by, 118 * s, 24 * s}, mode, modes, 4, Icon::Sun)) setRenderMode(mode);
-    Tip("Lit: real-time raster · Metal iOS: Lit + GI probes without ray tracing, as the iOS build · Progressive: path tracing, exact, denoiser optional · GI: real-time probes (DDGI, ray traced)");
-    {
-        static const char* displays[] = {"Shaded", "Wireframe", "Wireframe Override"};
-        if (Combo("atlDisplay", {right(150 * s), by, 150 * s, 24 * s}, m_rs.wireframe, displays, 3, Icon::Cube)) markDirty();
-        Tip("Display: Shaded · Wireframe (edges only) · Wireframe Override (edges over the shaded view). Lit and Metal iOS modes");
-    }
-    if (Combo("atlView", {right(118 * s), by, 118 * s, 24 * s}, m_viewMode, views, 6, Icon::Camera)) setViewAxis(m_viewMode);
-    bx -= 6 * s;
     if (Button("atlStats", {right(28 * s), by, 28 * s, 24 * s}, "", Icon::Monitor, m_showStats, true)) m_showStats = !m_showStats;
     Tip("Viewport statistics");
-    {
-        bool gridOn = false;
-        for (const Object& o : m_scene.objects)
-            if (o.part == "GROUND" && o.material >= 0 && o.material < (int)m_scene.materials.size()) gridOn = (m_scene.materials[o.material].flags & 1u) != 0;
-        if (Button("atlGrid", {right(28 * s), by, 28 * s, 24 * s}, "", Icon::Grid, gridOn, true)) toggleGroundGrid();
-        Tip("Ground grid");
-    }
+    if (Button("atlGrid", {right(28 * s), by, 28 * s, 24 * s}, "", Icon::Grid, th::settings().grid.visible, true)) toggleGrid();
+    Tip("Grid: show / hide (Shift+click: Grid Options)");
     {
         const bool placing = m_game && m_game->placementMode();
         if (Button("atlVillage", {right(28 * s), by, 28 * s, 24 * s}, "", Icon::Cube, placing, true) && m_game) m_game->togglePlacement();
@@ -1137,27 +1146,114 @@ void App::atlViewport(float x, float y, float w, float h) {
     }
     if (Button("atlFrame", {right(28 * s), by, 28 * s, 24 * s}, "", Icon::Home, false, true)) frameSelection();
     Tip("Frame selection (F)");
-    bx -= 6 * s;
-    if (Button("atlSnap", {right(28 * s), by, 28 * s, 24 * s}, "", Icon::Magnet, m_magnet, true)) m_magnet = !m_magnet;
-    Tip("Snapping: 1 cm / 90° / x0.1");
-    {
-        float lx = right(76 * s);
-        if (Button("atlSpace", {lx, by, 76 * s, 24 * s}, m_localSpace ? "Local" : "World", Icon::World)) m_localSpace = !m_localSpace;
-        Tip("Gizmo axes: object (Local) or scene (World)");
+    {   // layout of the view (Panes.cpp): single, two, 2 x 2, 3 x 3, 4 x 4; Space: the pane under the mouse alone
+        const R lb = {right(28 * s), by, 28 * s, 24 * s};
+        const bool clicked = Hit("atlLayout", lb) || (m_frameCounter == 10 && m_opt.openMenu == "atlLayout");   // --open-menu: captures
+        const bool hov = ImGui::IsItemHovered();
+        const bool split = m_panes.size() > 1;
+        Box(lb, split ? P().select : (hov ? P().hover : P().raised), 3, true);
+        LayoutGlyph(dl, layoutCols(m_layout), layoutRows(m_layout), ImVec2(lb.x + 7 * s, lb.y + 5 * s), ImVec2(14 * s, 14 * s), split ? P().accent : P().text);
+        Tip("View layout: single, two, 2 x 2, 3 x 3, 4 x 4 (Space: the pane under the mouse alone, and back)");
+        if (clicked) ImGui::OpenPopup("atlLayoutMenu");
+        ImGui::SetNextWindowPos(ImVec2(lb.x + lb.w, lb.y + lb.h + 4 * s), ImGuiCond_Always, ImVec2(1, 0));
+        if (ImGui::BeginPopup("atlLayoutMenu")) {
+            ImGui::SetWindowFontScale(1.4f * ts());
+            ImDrawList* pd = ImGui::GetWindowDrawList();
+            for (int l = 0; l < kLayoutCount; ++l) {
+                ImGui::PushID(l);
+                if (ImGui::MenuItem((std::string("       ") + layoutName(l)).c_str(), nullptr, m_layout == l)) setLayout(l);
+                ImGui::PopID();
+                const ImVec2 a = ImGui::GetItemRectMin(), b = ImGui::GetItemRectMax();
+                const float gh = std::floor((b.y - a.y) * 0.62f);
+                LayoutGlyph(pd, layoutCols(l), layoutRows(l), ImVec2(a.x + 2 * s, std::floor(a.y + (b.y - a.y - gh) * 0.5f)), ImVec2(std::floor(gh * 1.45f), gh),
+                            m_layout == l ? P().accent : P().text);
+            }
+            ImGui::Separator();
+            if (ImGui::MenuItem("Maximize the Active Pane", "Space", m_paneMax, split)) togglePaneMax(false);
+            ImGui::EndPopup();
+        }
     }
-    if (Button("atlScale", {right(28 * s), by, 28 * s, 24 * s}, "", Icon::Scale, m_tool == TOOL_SCALE, true)) m_tool = TOOL_SCALE;
+    bx -= 6 * s;
+    if (Button("atlSnap", {right(28 * s), by, 28 * s, 24 * s}, "", Icon::Magnet, m_magnet, true)) toggleSnap();
+    Tip("Snapping always on (else hold Shift while dragging) · Shift+click: Snapping Options");
+    {   // Place: the selection dragged over the surfaces of the scene
+        const R pb = {right(28 * s), by, 28 * s, 24 * s};
+        const bool clicked = Hit("atlPlace", pb);
+        const bool hov = ImGui::IsItemHovered();
+        Box(pb, m_surfacePlace ? P().select : (hov ? P().hover : P().raised), 3, true);
+        const ImU32 c = m_surfacePlace ? P().accent : P().text;
+        const ImVec2 o(pb.x + pb.w * 0.5f, pb.y + pb.h * 0.5f);   // a box resting on a surface, an arrow down to it
+        dl->AddLine(ImVec2(o.x - 8 * s, o.y + 6 * s), ImVec2(o.x + 8 * s, o.y + 6 * s), c, 1.4f * s);
+        dl->AddRect(ImVec2(o.x - 1 * s, o.y - 1 * s), ImVec2(o.x + 6 * s, o.y + 6 * s), c, 0, 0, 1.2f * s);
+        dl->AddLine(ImVec2(o.x - 5 * s, o.y - 7 * s), ImVec2(o.x - 5 * s, o.y + 3 * s), c, 1.2f * s);
+        dl->AddTriangleFilled(ImVec2(o.x - 7.5f * s, o.y + 1 * s), ImVec2(o.x - 2.5f * s, o.y + 1 * s), ImVec2(o.x - 5 * s, o.y + 5 * s), c);
+        if (clicked) m_surfacePlace = !m_surfacePlace;
+        Tip("Place: drag a selected object over the surfaces of the scene (Snapping Options: turned to the surface)");
+    }
+    {   // the points of the grid the absolute snapping takes: intersections, centres of the cells, middles of the edges
+        static const char* ids[3] = {"atlSnapInter", "atlSnapCenter", "atlSnapEdge"};
+        static const char* tips[3] = {"Snap to the grid: intersections of the lines (click again: relative steps)",
+                                      "Snap to the grid: centres of the cells (click again: relative steps)",
+                                      "Snap to the grid: middles of the edges (click again: relative steps)"};
+        SnapOptions& so = th::settings().snap;
+        for (int k = 2; k >= 0; --k) {
+            const R sb = {right(26 * s), by, 26 * s, 24 * s};
+            const bool clicked = Hit(ids[k], sb);
+            const bool hov = ImGui::IsItemHovered();
+            const bool on = m_snapAbsolute && so.gridPoint == k;
+            Box(sb, on ? P().select : (hov ? P().hover : P().raised), 3, true);
+            const ImU32 c = on ? P().accent : Fade(P().text, 170);
+            // a cell of the grid and its snap point(s)
+            const float x0 = sb.x + 6 * s, y0 = sb.y + 5 * s, e = 14 * s;
+            dl->AddRect(ImVec2(x0, y0), ImVec2(x0 + e, y0 + e), Fade(c, 150), 0, 0, 1.0f * s);
+            auto pt = [&](float fx, float fy) { dl->AddCircleFilled(ImVec2(x0 + fx * e, y0 + fy * e), 2.2f * s, c, 8); };
+            if (k == 0) { pt(0, 0); pt(1, 0); pt(0, 1); pt(1, 1); }
+            else if (k == 1) pt(0.5f, 0.5f);
+            else { pt(0.5f, 0); pt(0, 0.5f); pt(1, 0.5f); pt(0.5f, 1); }
+            if (clicked) {
+                if (on) m_snapAbsolute = false;
+                else { so.gridPoint = k; m_snapAbsolute = true; }
+                if (!m_themeTestOnly) th::saveSettings(m_exeDir + L"\\wzx_settings.ini");
+            }
+            Tip(tips[k]);
+            if (k > 0) bx += 4 * s;   // (the three side by side)
+        }
+    }
+    bx -= 6 * s;
+    {   // Advanced Scale: the three-colour button (face, edge and corner handles)
+        const R ab = {right(28 * s), by, 28 * s, 24 * s};
+        const bool clicked = Hit("atlAdvScale", ab);
+        const bool hov = ImGui::IsItemHovered();
+        Box(ab, m_advScale ? P().select : (hov ? P().hover : P().raised), 3, true);
+        const AdvScaleOptions& ao = th::settings().advScale;
+        const ImVec4 cols[3] = {ao.colorFace, ao.colorEdgeHandle, ao.colorCorner};
+        for (int i = 0; i < 3; ++i) {
+            const ImVec2 c(ab.x + ab.w * 0.5f + (i - 1) * 6.0f * s, ab.y + ab.h * 0.5f + (1 - i) * 3.0f * s);
+            dl->AddRectFilled(ImVec2(c.x - 2.5f * s, c.y - 2.5f * s), ImVec2(c.x + 2.5f * s, c.y + 2.5f * s), ImGui::ColorConvertFloat4ToU32(cols[i]));
+        }
+        if (clicked) setAdvScale(!m_advScale);
+        Tip("Advanced Scale: bounding box scaling (Alt+T)");
+    }
+    if (Button("atlScale", {right(28 * s), by, 28 * s, 24 * s}, "", Icon::Scale, m_tool == TOOL_SCALE && !m_advScale, true)) { m_tool = TOOL_SCALE; setAdvScale(false); }
     Tip("Scale (R)");
-    if (Button("atlRotate", {right(28 * s), by, 28 * s, 24 * s}, "", Icon::Rotate, m_tool == TOOL_ROTATE, true)) m_tool = TOOL_ROTATE;
-    Tip("Rotate by 90° steps (E)");
-    if (Button("atlMove", {right(28 * s), by, 28 * s, 24 * s}, "", Icon::Move, m_tool == TOOL_MOVE, true)) m_tool = TOOL_MOVE;
+    if (Button("atlRotate", {right(28 * s), by, 28 * s, 24 * s}, "", Icon::Rotate, m_tool == TOOL_ROTATE && !m_advScale, true)) { m_tool = TOOL_ROTATE; setAdvScale(false); }
+    Tip("Rotate (E)");
+    if (Button("atlMove", {right(28 * s), by, 28 * s, 24 * s}, "", Icon::Move, m_tool == TOOL_MOVE && !m_advScale, true)) { m_tool = TOOL_MOVE; setAdvScale(false); }
     Tip("Move (W)");
 
-    // canvas
-    R r = {x, y + 40 * s, w, h - 40 * s - 27 * s};
+    // canvas: the panes of the layout (Panes.cpp). The active one is the renderer's image with the input, the tools and
+    // the overlays below; drawPanes shows the others (raster views of their camera).
+    const R area = {x, y + 40 * s, w, h - 40 * s - 27 * s};
+    const bool canvasHovered = ImGui::IsWindowHovered() && !(m_game && (m_game->graphOpen() || m_game->rtsCameraOn()));
+    splitInput({area.x, area.y, area.w, area.h}, canvasHovered);   // the lines between the panes first
+    if (!m_splitHot) paneInput(canvasHovered);
+    const ScreenRect ar = layoutPanes({area.x, area.y, area.w, area.h});
+    R r = {ar.x, ar.y, ar.w, ar.h};
+    drawPanes();
     Box(r, P().canvas, P().skin == 2 ? 8 : 3, P().skin != 2);   // Corail: borderless rounded viewport card
     viewportCanvas(ImVec2(r.x + 1, r.y + 1), ImVec2(r.w - 2, r.h - 2));   // image, input and gizmo; overlays below
     dl = ImGui::GetWindowDrawList();
-    dl->PushClipRect(r.min(), r.max(), true);
+    ImGui::PushClipRect(r.min(), r.max(), true);   // (ImGui's own: the overlay buttons of a small pane are not clickable outside it)
     ImGuiIO& io = ImGui::GetIO();
     if (m_marq.active && m_marq.moved) {
         ImVec2 a(std::min(m_marq.x0, io.MousePos.x), std::min(m_marq.y0, io.MousePos.y));
@@ -1173,39 +1269,134 @@ void App::atlViewport(float x, float y, float w, float h) {
     if (tris >= 1000000) snprintf(triText, sizeof(triText), "%.1f M", tris / 1e6);
     else if (tris >= 10000) snprintf(triText, sizeof(triText), "%.1f k", tris / 1e3);
     else snprintf(triText, sizeof(triText), "%zu", tris);
-    if (m_showStats) {
-        R st = {r.x + r.w - 165 * s, r.y + 12 * s, 151 * s, 113 * s};
+    const bool roomy = r.w > 330 * s && r.h > 210 * s;   // (a small pane of a layout: no view cube, no statistics)
+    if (m_showStats && roomy && r.h > 300 * s) {
+        // (text at 11, as the panels: 9 was too small to read)
+        R st = {r.x + r.w - 214 * s, r.y + 116 * s, 200 * s, 158 * s};   // under the view cube
         Box(st, P().minimap, 4, true);
-        Text(st.x + 10 * s, st.y + 10 * s, "VIEWPORT", P().accent, 9);
-        char v[5][32];
+        Text(st.x + 12 * s, st.y + 11 * s, "VIEWPORT", P().accent, 10);
+        char v[6][32];
         snprintf(v[0], 32, "%.0f FPS", 1000.0f / std::max(m_frameMs, 0.1f));
         snprintf(v[1], 32, "%.1f ms", m_frameMs);
         if (m_rs.raster) snprintf(v[2], 32, "%.2f ms", m_renderer.gpuFrameMs());
         else snprintf(v[2], 32, "%u / %u", std::min<uint32_t>(m_renderer.sampleCount(), m_rs.maxSamples), m_rs.maxSamples);
         snprintf(v[3], 32, "%s", triText);
         snprintf(v[4], 32, "%zu · %zu", objs, m_scene.lights.size());
-        const char* names[] = {"Frame rate", "Frame time", m_rs.raster ? "GPU" : "Samples", "Triangles", "Objects · lights"};
-        for (int i = 0; i < 5; ++i) {
-            Text(st.x + 10 * s, st.y + (30 + i * 16) * s, names[i], P().muted, 9);
-            Text(st.x + 92 * s, st.y + (30 + i * 16) * s, v[i], P().text, 9);
+        const uint32_t aa = m_renderer.msaaSamples();
+        if (aa > 1) snprintf(v[5], 32, m_renderer.msaaTemporal() ? "MSAA x%u (%ux2)" : "MSAA x%u", aa, aa / 2); else snprintf(v[5], 32, "Off");
+        const char* names[] = {"Frame rate", "Frame time", m_rs.raster ? "GPU" : "Samples", "Triangles", "Objects · lights", "Anti-aliasing"};
+        for (int i = 0; i < 6; ++i) {
+            Text(st.x + 12 * s, st.y + (34 + i * 19) * s, names[i], P().muted, 11);
+            Text(st.x + 112 * s, st.y + (34 + i * 19) * s, v[i], P().text, 11);
         }
     }
-    // orientation axes, turned with the camera (Y up)
-    {
+    // view cube (top right): turns with the camera, world axes X / Y / Z; a click on a face looks along it
+    if (roomy) {
         float3 cr, cu, cf;
         m_scene.camera.basis(cr, cu, cf);
-        ImVec2 o(r.x + 36 * s, r.y + r.h - 32 * s);
-        const ImU32 cols[] = {IM_COL32(222, 110, 121, 255), IM_COL32(136, 199, 150, 255), IM_COL32(113, 168, 233, 255)};
-        const char* names[] = {"X", "Y", "Z"};
-        for (int a = 0; a < 3; ++a) {
-            float3 av(a == 0 ? 1.0f : 0.0f, a == 1 ? 1.0f : 0.0f, a == 2 ? 1.0f : 0.0f);
-            ImVec2 e(o.x + dot(av, cr) * 24 * s, o.y - dot(av, cu) * 24 * s);
-            dl->AddLine(o, e, cols[a], 2 * s);
-            dl->AddCircleFilled(e, 3 * s, cols[a]);
-            Text(e.x + (e.x >= o.x ? 4 : -10) * s, e.y - 6 * s, names[a], cols[a], 9);
+        const float hs = 11 * s;   // half size of the cube; the axes reach 3 times further, their letter just after
+        ImVec2 c(r.x + r.w - 56 * s, r.y + 58 * s);
+        auto scr = [&](const float3& v) { return ImVec2(c.x + dot(v, cr) * hs, c.y - dot(v, cu) * hs); };
+        R cubeR = {c.x - 48 * s, c.y - 48 * s, 96 * s, 96 * s};
+        bool clicked = Hit("##viewCube", cubeR);
+        bool hov = ImGui::IsItemHovered();
+        ImVec2 m = ImGui::GetIO().MousePos;
+        const ImU32 axCol[3] = {IM_COL32(236, 110, 110, 255), IM_COL32(120, 214, 140, 255), IM_COL32(100, 156, 245, 255)};
+        const char* axName[3] = {"X", "Y", "Z"};
+        auto unit = [](int a) { return float3(a == 0 ? 1.0f : 0.0f, a == 1 ? 1.0f : 0.0f, a == 2 ? 1.0f : 0.0f); };
+        const float tip = 3.0f, label = 3.6f;   // end of an axis and its letter, in half sizes of the cube
+        int hotAxis = -1;
+        for (int a = 0; a < 3 && hov; ++a) {
+            ImVec2 e = scr(unit(a) * label);
+            if (std::hypot(m.x - e.x, m.y - e.y) < 8.0f * s) hotAxis = a;
         }
-        dl->AddCircleFilled(o, 2.5f * s, P().text);
+        auto axisCol = [&](int a, bool front) { return hotAxis == a ? IM_COL32(255, 255, 255, 255) : (front ? axCol[a] : Fade(axCol[a], 120)); };
+        auto drawLetter = [&](int a, bool front) {
+            ImVec2 e = scr(unit(a) * label), ts = TextSize(axName[a], 10);
+            TextBold(e.x - ts.x * 0.5f, e.y - ts.y * 0.5f, axName[a], axisCol(a, front), 10);
+        };
+        // seen through the translucent cube: the axes from its centre (whole when they go away), the edges behind
+        for (int a = 0; a < 3; ++a) {
+            const bool front = dot(unit(a), cf) <= 0;
+            dl->AddLine(scr(float3(0, 0, 0)), scr(unit(a) * (front ? 1.0f : tip)), axisCol(a, front), 1.3f * s);
+            if (!front) drawLetter(a, false);
+        }
+        auto corner = [](int i) { return float3((i & 1) ? 1.0f : -1.0f, (i & 2) ? 1.0f : -1.0f, (i & 4) ? 1.0f : -1.0f); };
+        for (int i = 0; i < 8; ++i)
+            for (int b = 1; b < 8; b <<= 1)
+                if (!(i & b)) dl->AddLine(scr(corner(i)), scr(corner(i | b)), IM_COL32(235, 240, 250, 55), 1.0f * s);
+        // faces turned to the camera (a convex cube: they do not overlap on screen)
+        int hotFace = -1;
+        for (int f = 0; f < 6; ++f) {
+            int a = f / 2;
+            float sg = (f & 1) ? -1.0f : 1.0f;
+            float3 n = unit(a) * sg;
+            if (dot(n, cf) > -0.02f) continue;
+            float3 u = unit((a + 1) % 3), v = unit((a + 2) % 3);
+            ImVec2 q[4] = {scr(n - u - v), scr(n + u - v), scr(n + u + v), scr(n - u + v)};
+            bool in = false;
+            if (hov) {
+                int pos = 0, neg = 0;
+                for (int i = 0; i < 4; ++i) {
+                    ImVec2 e0 = q[i], e1 = q[(i + 1) % 4];
+                    float cz = (e1.x - e0.x) * (m.y - e0.y) - (e1.y - e0.y) * (m.x - e0.x);
+                    if (cz > 0) ++pos; else if (cz < 0) ++neg;
+                }
+                in = pos == 0 || neg == 0;
+            }
+            if (in) hotFace = f;
+            float shade = 0.5f + 0.5f * -dot(n, cf);
+            dl->AddConvexPolyFilled(q, 4, in ? IM_COL32(90, 160, 255, 90) : IM_COL32(170, 190, 225, (int)(10 + 18 * shade)));   // translucent
+            dl->AddPolyline(q, 4, IM_COL32(245, 248, 255, in ? 245 : 200), ImDrawFlags_Closed, 1.0f * s);   // thin white edges
+        }
+        for (int a = 0; a < 3; ++a)   // axes coming towards the camera: out of the cube, over its faces
+            if (dot(unit(a), cf) <= 0) {
+                dl->AddLine(scr(unit(a)), scr(unit(a) * tip), axisCol(a, true), 1.3f * s);
+                drawLetter(a, true);
+            }
+        if (hotAxis >= 0) hotFace = hotAxis * 2;   // a letter: the view from that axis (as its face)
+        if (hov) Tip(hotFace >= 0 ? "Look along this axis" : "View cube");
+        if (clicked && hotFace >= 0 && !orbitLocked()) {   // (the orthographic cameras keep their direction)
+            // +X right, -X left, +Y top, -Y bottom, +Z front, -Z back (the camera sits on the face's side)
+            Camera& cam = m_scene.camera;
+            const float yaws[6] = {kPi * 0.5f, -kPi * 0.5f, cam.yaw, cam.yaw, 0.0f, kPi};
+            const float pitches[6] = {0, 0, radians(89.0f), radians(-89.0f), 0, 0};
+            cam.yaw = yaws[hotFace];
+            cam.pitch = pitches[hotFace];
+            cameraChanged();
+        }
     }
+    // grid numbers along the X and Z axes (Grid Options), one per grid line
+    if (m_rs.editorGrid > 0 && th::settings().grid.numbers && th::settings().grid.axes) {
+        const float every = m_rs.editorGrid, L = m_rs.editorGridAxis;
+        const int n = std::min(40, (int)std::floor(L / every * 0.92f));
+        for (int i = -n; i <= n; ++i) {
+            if (i == 0) continue;
+            char t[32];
+            snprintf(t, sizeof t, "%g", i * every);
+            for (int a = 0; a < 2; ++a) {
+                float2 sp;
+                const float3 w = a == 0 ? float3(i * every, 0, 0) : float3(0, 0, i * every);
+                if (!project(w, sp) || sp.x < r.x || sp.y < r.y || sp.x > r.x + r.w || sp.y > r.y + r.h) continue;
+                Text(sp.x + 3 * s, sp.y + 1 * s, t, IM_COL32(205, 210, 222, 150), 9);
+            }
+        }
+    }
+    // labels at the ends of the world axes of the editor grid
+    if (m_rs.editorGrid > 0 && th::settings().grid.axes && th::settings().grid.arrows) {
+        const float L = m_rs.editorGridAxis;
+        const float3 ends[3] = {float3(L * 1.04f, 0, 0), float3(0, L * 1.05f, 0), float3(0, 0, L * 1.04f)};   // past the arrows (EditorGrid.hlsl)
+        const ImU32 cols[3] = {IM_COL32(238, 96, 96, 235), IM_COL32(110, 220, 130, 235), IM_COL32(96, 146, 252, 235)};
+        const char* names[3] = {"X", "Y", "Z"};
+        for (int a = 0; a < 3; ++a) {
+            float2 sp;
+            if (!project(ends[a], sp) || sp.x < r.x || sp.y < r.y || sp.x > r.x + r.w || sp.y > r.y + r.h) continue;
+            ImVec2 ts = TextSize(names[a], 14);
+            Text(sp.x - ts.x * 0.5f, sp.y - ts.y * 0.5f, names[a], cols[a], 14);
+        }
+    }
+    atlViewMenus(r.x + 10 * s, r.y + 10 * s, r.w - (roomy ? 120 : 20) * s);   // (the view cube on their right)
+    drawAdvScaleMenu(r.x, r.y, r.w, r.h);   // Advanced Scale: menu (bottom left) and modifier hints
     // path tracing progress
     if (!m_rs.raster) {
         float prog = clampf((float)m_renderer.sampleCount() / m_rs.maxSamples, 0, 1);
@@ -1213,9 +1404,11 @@ void App::atlViewport(float x, float y, float w, float h) {
         dl->AddRectFilled(a, ImVec2(a.x + 240 * s, a.y + 3 * s), Fade(P().bg, 160), 2 * s);
         dl->AddRectFilled(a, ImVec2(a.x + 240 * s * prog, a.y + 3 * s), prog >= 1 ? kGreen : P().accent, 2 * s);
     }
-    dl->PopClipRect();
+    drawCameraPreview(r.x, r.y, r.w, r.h);   // the selected (or pinned) camera, bottom right
+    ImGui::PopClipRect();
+    drawViewMenu(ImGui::GetForegroundDrawList());   // Space held
     // footer (former Atelier graph Footer): state of the tools and of the renderer
-    R fr = {x, r.y + r.h + 3 * s, w, 24 * s};
+    R fr = {x, area.y + area.h + 3 * s, w, 24 * s};
     if (P().skin == 2) afx::FloatBar(dl, fr.min(), fr.max(), s);   // Corail: floating status bar
     else if (P().skin) { Box(fr, afx::col::footer, 0); dl->AddLine(ImVec2(fr.x, fr.y + 0.5f), ImVec2(fr.x + fr.w, fr.y + 0.5f), P().border); }
     else Box(fr, P().bg, 0);
@@ -1234,6 +1427,319 @@ void App::atlViewport(float x, float y, float w, float h) {
     Text(fr.x + fr.w - 290 * s, fr.y + 6 * s, info, P().muted, 9);
     static const char* modeNames[] = {"●  Real time", "●  Metal iOS", "●  Progressive PT", "●  GI probes"};
     Text(fr.x + fr.w - 116 * s, fr.y + 6 * s, modeNames[renderMode()], m_rs.raster ? kGreen : P().accent, 9);
+}
+
+// --------------------------------------------------------------------------- Advanced Scale menu
+
+// Menu of the Advanced Scale tool at the bottom left of the view (when an object is selected) and the modifier hints at
+// the bottom: Corner Handles, Show in Game View, the eyedropper of the box orientation (several objects) and its reset,
+// the settings.
+void App::drawAdvScaleMenu(float x, float y, float w, float h) {
+    if (!m_advScale) return;
+    const AdvScaleOptions& opt = th::settings().advScale;
+    if (opt.showHints) {
+        const char* keys[4] = {"Ctrl", "Shift", "Alt", "V"};
+        const char* what[4] = {"Edge Handles", "Uniform Scale", "2-Side Scale", "Vertex Snap"};
+        float total = 0;
+        for (int i = 0; i < 4; ++i) total += TextSize(keys[i], 10).x + TextSize(what[i], 10).x + 34 * s;
+        float hx = x + (w - total) * 0.5f, hy = y + h - 26 * s;
+        for (int i = 0; i < 4; ++i) {
+            const ImVec2 ks = TextSize(keys[i], 10);
+            Box({hx, hy, ks.x + 10 * s, 17 * s}, Fade(P().bg, 200), 3, true);
+            Text(hx + 5 * s, hy + 2 * s, keys[i], P().text, 10);
+            hx += ks.x + 16 * s;
+            Text(hx, hy + 2 * s, what[i], P().muted, 10);
+            hx += TextSize(what[i], 10).x + 18 * s;
+        }
+    }
+    if (m_selected < 0) return;
+    const float pw = 214 * s, ph = 96 * s;
+    const R pr = {x + 10 * s, y + h - opt.menuOffset * s - ph - (opt.showHints ? 26 * s : 0), pw, ph};
+    Box(pr, Fade(P().panel, 235), 4, true);
+    ImGui::SetNextItemAllowOverlap();   // (the widgets drawn over it stay clickable)
+    Hit("##advMenuBg", pr);             // the panel takes the clicks from the view
+    Text(pr.x + 10 * s, pr.y + 8 * s, "Advanced Scale", P().text, 11);
+    if (Button("advSettings", {pr.x + pw - 30 * s, pr.y + 5 * s, 22 * s, 20 * s}, "", Icon::Settings, m_showAdvSettings, true)) m_showAdvSettings = true;
+    Tip("Advanced Scale Settings");
+    auto check = [&](const char* id, const char* label, bool* v, float cy) {
+        ImGui::SetCursorScreenPos(ImVec2(pr.x + 9 * s, cy));
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(2 * s, 2 * s));
+        Check(id, v);
+        ImGui::PopStyleVar();
+        Text(pr.x + 32 * s, cy + 2 * s, label, P().text, 10.5f);
+    };
+    check("##advCorners", "Edge Handles", &m_advCorners, pr.y + 28 * s);
+    check("##advPlay", "Show in Game View", &m_advShowInPlay, pr.y + 48 * s);
+    // eyedropper: the orientation of the box of several objects; X: back to the world axes
+    std::string label = "Get Orientation";
+    if (m_advRefId) {
+        NodeRef n = findNode(m_advRefId);
+        if (n.kind == NODE_OBJECT) label = m_scene.objects[n.index].name;
+        else m_advRefId = 0;
+    }
+    const bool several = gizmoTargets().size() > 1 || (m_selected >= 0 && m_scene.objects[m_selected].group);
+    if (Button("advPick", {pr.x + 8 * s, pr.y + 70 * s, pw - 50 * s, 20 * s}, Fit(label, pw - 90 * s, 10).c_str(), Icon::Pin, m_advPicking, false, several)) m_advPicking = !m_advPicking;
+    Tip("Eyedropper: click an object, the box takes its orientation (several objects)");
+    if (Button("advWorld", {pr.x + pw - 38 * s, pr.y + 70 * s, 30 * s, 20 * s}, "x", Icon::World, false, true)) { m_advRefId = 0; m_advPicking = false; markDirty(); }
+    Tip("Box orientation: back to the world axes");
+}
+
+// --------------------------------------------------------------------------- menus inside the view
+
+// Floating drop-down menus at the top left of the view: camera, display, renderer and manipulator axes, the grid and
+// Persp / RenderCam. When the row does not fit in the room of the pane (a small pane of a layout), the display,
+// renderer and axes menus show their icon only (their value in the tooltip).
+void App::atlViewMenus(float x, float y, float room) {
+    const float menuScale = 1.4f * ts();
+    static const char* displays[] = {"Shaded", "Wireframe", "Wireframe Override"};
+    static const char* modes[] = {"Lit", "Metal iOS", "Progressive", "GI"};
+    static const char* axes[] = {"World", "Object", "Parent"};
+    const std::string camName = paneCameraName(m_activePane);
+    const char* display = displays[std::clamp(m_rs.wireframe, 0, 2)];
+    const char* mode = modes[std::clamp(renderMode(), 0, 3)];
+    const char* axis = axes[std::clamp(m_axisMode, 0, 2)];
+    auto pillW = [&](const std::string& l) { return TextSize(l, 12).x + 52 * s; };
+    const float rowW = pillW(camName) + pillW(display) + pillW(mode) + pillW(axis) + TextSize("Grid", 12).x + 38 * s +
+                       TextSize("Persp", 11).x + TextSize("RenderCam", 11).x + 40 * s + 36 * s;
+    const bool compact = rowW > room;
+    float px = x;
+    auto pill = [&](const char* id, const std::string& label, Icon icon, const char* tip, bool iconOnly = false) {
+        float w = iconOnly ? 46 * s : pillW(label);
+        R b = {px, y, w, 24 * s};
+        if (DropButton(id, b, iconOnly ? "" : label.c_str(), icon) || (m_frameCounter == 10 && m_opt.openMenu == id)) ImGui::OpenPopup(id);   // --open-menu: captures
+        if (iconOnly) Tip((label + "  ·  " + tip).c_str());
+        else Tip(tip);
+        ImGui::SetNextWindowPos(ImVec2(px, y + 28 * s));
+        px += w + 6 * s;
+        bool open = ImGui::BeginPopup(id);
+        if (open) ImGui::SetWindowFontScale(menuScale);
+        return open;
+    };
+    if (pill("vmCamera", camName, Icon::Camera, "Camera: what this view looks through")) {
+        cameraMenu(m_activePane);
+        if (ImGui::MenuItem("Look Through Selected", nullptr, false, m_selected >= 0 && m_scene.objects[m_selected].camera)) lookThroughSelected();
+        if (ImGui::MenuItem("New Camera from View")) createCameraFromView(false);
+        ImGui::Separator();
+        if (ImGui::MenuItem("Frame Selection", "F")) frameSelection();
+        ImGui::MenuItem("Turntable", "T", &m_turntable);
+        Camera& vc = m_scene.camera;
+        if (!orbitLocked() && ImGui::MenuItem("Orthographic", nullptr, vc.ortho)) {
+            // the same size of view at the pivot, in the other projection
+            const float tanH = std::tan(vc.fovY * 0.5f);
+            if (vc.ortho) vc.distance = clampf(vc.orthoHeight * 0.5f / std::max(tanH, 1e-3f), 0.5f, 2000.0f);
+            else vc.orthoHeight = 2.0f * vc.distance * tanH;
+            vc.ortho = !vc.ortho;
+            cameraChanged();
+        }
+        if (ImGui::MenuItem("Depth of Field", nullptr, vc.dof, !vc.ortho)) { vc.dof = !vc.dof; cameraChanged(); }
+        ImGui::SetNextItemWidth(170 * s);
+        if (vc.ortho) {
+            if (ImGui::SliderFloat("View size", &vc.orthoHeight, 0.1f, 1000.0f, "%.2f", ImGuiSliderFlags_Logarithmic)) cameraChanged();
+        } else {
+            float fov = degrees(vc.fovY);
+            if (ImGui::SliderFloat("Field of view", &fov, 10.0f, 100.0f, "%.0f°")) { vc.fovY = radians(fov); cameraChanged(); }
+        }
+        ImGui::SetNextItemWidth(170 * s);
+        ImGui::SliderFloat("Navigation speed", &m_camSpeed, 0.1f, 5.0f, "%.1f");
+        ImGui::EndPopup();
+    }
+    if (pill("vmDisplay", display, Icon::Cube, "Display", compact)) {
+        for (int i = 0; i < 3; ++i)
+            if (ImGui::MenuItem(displays[i], nullptr, m_rs.wireframe == i)) { m_rs.wireframe = i; markDirty(); }
+        ImGui::Separator();
+        if (ImGui::MenuItem("Grid", nullptr, th::settings().grid.visible)) {
+            toggleGrid();   // (Shift: the options)
+        }
+        if (ImGui::MenuItem("Grid Options...")) m_showGridOptions = true;
+        bool gridOn = false;
+        for (const Object& o : m_scene.objects)
+            if (o.part == "GROUND" && o.material >= 0 && o.material < (int)m_scene.materials.size()) gridOn = (m_scene.materials[o.material].flags & 1u) != 0;
+        if (ImGui::MenuItem("Ground Grid (scene)", nullptr, gridOn)) toggleGroundGrid();
+        ImGui::MenuItem("Manipulators", nullptr, &m_showGizmo);
+        ImGui::MenuItem("Statistics", nullptr, &m_showStats);
+        ImGui::Separator();
+        if (ImGui::MenuItem("Selection: Blue Glow", nullptr, m_rs.selectionStyle == 1)) { m_rs.selectionStyle = 1; markDirty(); }
+        if (ImGui::MenuItem("Selection: Outline", nullptr, m_rs.selectionStyle == 0)) { m_rs.selectionStyle = 0; markDirty(); }
+        ImGui::Separator();
+        if (ImGui::BeginMenu("Anti-aliasing")) {
+            ImGui::SetWindowFontScale(menuScale);
+            // hardware multisampling of the raster passes; x16 without 16 hardware samples: 8 samples over two frames
+            // (temporal, while the view does not move); a count out of reach is greyed out
+            const int counts[4] = {1, 4, 8, 16};
+            const char* names[4] = {"Off", "MSAA x4", "MSAA x8", "MSAA x16"};
+            for (int i = 0; i < 4; ++i) {
+                const uint32_t n = (uint32_t)counts[i];
+                const bool hw = m_renderer.msaaSupported(n), twoFrames = !hw && n > 2 && m_renderer.msaaSupported(n / 2);
+                char note[48];
+                snprintf(note, sizeof note, twoFrames ? "%u samples x 2 frames" : "not supported by this GPU", n / 2);
+                if (ImGui::MenuItem(names[i], hw ? nullptr : note, m_msaa == counts[i], hw || twoFrames)) { m_msaa = counts[i]; markDirty(); }
+            }
+            ImGui::EndMenu();
+        }
+        ImGui::EndPopup();
+    }
+    if (pill("vmRender", mode, Icon::Sun,
+             "Renderer: Lit (real-time raster) · Metal iOS (Lit + GI probes, as the iOS build) · Progressive (path tracing) · GI (ray traced probes)", compact)) {
+        for (int i = 0; i < 4; ++i)
+            if (ImGui::MenuItem(modes[i], nullptr, renderMode() == i)) setRenderMode(i);
+        ImGui::EndPopup();
+    }
+    if (pill("vmAxes", axis, Icon::World, "Manipulator axes and steps", compact)) {
+        for (int i = 0; i < 3; ++i)
+            if (ImGui::MenuItem(axes[i], nullptr, m_axisMode == i)) m_axisMode = i;
+        ImGui::Separator();
+        ImGui::MenuItem("Snapping always (else Shift)", nullptr, &m_magnet);
+        ImGui::MenuItem("Snap to grid (absolute)", nullptr, &m_snapAbsolute);
+        ImGui::MenuItem("Place on Surfaces", nullptr, &m_surfacePlace);
+        if (ImGui::MenuItem("Snapping Options...")) m_showSnapOptions = true;
+        ImGui::SetNextItemWidth(150 * s);
+        ImGui::SliderFloat("Move step", &m_stepMove, 0.05f, 10.0f, "%.2f", ImGuiSliderFlags_Logarithmic);
+        ImGui::SetNextItemWidth(150 * s);
+        ImGui::SliderFloat("Rotate step", &m_stepRotate, 1.0f, 90.0f, "%.0f°");
+        ImGui::SetNextItemWidth(150 * s);
+        ImGui::SliderFloat("Scale step", &m_stepScale, 0.01f, 1.0f, "%.2f");
+        ImGui::EndPopup();
+    }
+    // Grid: shows / hides the editor grid; Shift+click opens its options (the option box of Maya)
+    {
+        const char* label = "Grid";
+        const float w = compact ? 28 * s : TextSize(label, 12).x + 38 * s;
+        if (Button("vmGrid", {px, y, w, 24 * s}, label, Icon::Grid, th::settings().grid.visible, compact)) toggleGrid();
+        Tip("Grid: show / hide (Shift+click: Grid Options)");
+        px += w + 6 * s;
+    }
+    // Persp / RenderCam: the persp camera, or the render camera (made from the view when the scene has none)
+    {
+        const ViewPane& ap = m_panes[m_activePane];
+        const int rc = renderCamera();
+        const bool onPersp = ap.cam == VCAM_PERSP, onRender = rc >= 0 && ap.cam == VCAM_OBJECT && ap.object == m_scene.objects[rc].id;
+        auto seg = [&](const char* id, const char* label, R b, bool on, const char* tip) {
+            const bool q = Hit(id, b);
+            const bool hov = ImGui::IsItemHovered();
+            Box(b, on ? P().select : (hov ? P().hover : P().raised), 3, true);
+            const ImVec2 ts = TextSize(label, 11);
+            Text(b.x + (b.w - ts.x) * 0.5f, b.y + (b.h - ts.y) * 0.5f, label, on ? P().accent : P().text, 11);
+            Tip(tip);
+            return q;
+        };
+        const float w1 = TextSize("Persp", 11).x + 20 * s, w2 = TextSize("RenderCam", 11).x + 20 * s;
+        if (seg("vmPersp", "Persp", {px, y, w1, 24 * s}, onPersp, "Look through the persp camera")) setViewAxis(VCAM_PERSP);
+        if (seg("vmRenderCam", "RenderCam", {px + w1, y, w2, 24 * s}, onRender,
+                rc >= 0 ? "Look through the render camera" : "Look through the render camera (made from this view)")) lookThroughRenderCam();
+        px += w1 + w2 + 6 * s;
+    }
+    if (m_frameCounter == 10 && m_opt.openMenu == "gridOptions") m_showGridOptions = true;   // --open-menu gridOptions: captures
+    if (m_frameCounter == 10 && m_opt.openMenu == "snapOptions") m_showSnapOptions = true;   // --open-menu snapOptions: captures
+    if (m_frameCounter == 10 && m_opt.openMenu.rfind("advScale", 0) == 0) advScaleDemo(m_opt.openMenu);   // --open-menu advScale...: captures
+    if (m_frameCounter == 10 && m_opt.openMenu == "viewMenu") {   // --open-menu viewMenu: the menu of Space held, for captures
+        m_vm = ViewMenu();
+        m_vm.down = m_vm.shown = true;
+        m_vm.x = m_rcView.x + m_rcView.w * 0.5f;
+        m_vm.y = m_rcView.y + m_rcView.h * 0.5f;
+        m_vm.pane = m_activePane;
+    }
+}
+
+// The cameras a pane can look through: persp, the orthographic ones, the camera objects of the scene (the render camera
+// marked), and a render camera made from the view when the scene has none.
+void App::cameraMenu(int pane) {
+    const ViewPane p = m_panes[pane];
+    if (ImGui::MenuItem("Perspective", nullptr, p.cam == VCAM_PERSP)) setPaneCamera(pane, VCAM_PERSP);
+    ImGui::TextDisabled("Orthographic Views");
+    for (int k = VCAM_TOP; k < VCAM_COUNT; ++k)
+        if (ImGui::MenuItem(viewCamLabel(k), nullptr, p.cam == k)) setPaneCamera(pane, k);
+    ImGui::Separator();
+    for (size_t i = 0; i < m_scene.objects.size(); ++i) {
+        const Object& o = m_scene.objects[i];
+        if (!o.camera) continue;
+        const std::string label = o.name + (o.camRender ? "  (render camera)" : "");
+        if (ImGui::MenuItem(label.c_str(), nullptr, p.cam == VCAM_OBJECT && p.object == o.id)) setPaneCamera(pane, VCAM_OBJECT, o.id);
+    }
+    if (renderCamera() < 0 && ImGui::MenuItem("Render Camera (new, from the view)")) {
+        activatePane(pane);
+        lookThroughRenderCam();
+    }
+}
+
+// The panes of the layout other than the active one: their image (raster view of their camera), frame, camera name
+// and the camera icons they see; the active pane gets a thin accent frame.
+void App::drawPanes() {
+    if (m_panes.size() <= 1 || m_paneMax) return;
+    for (int i = 0; i < (int)m_panes.size(); ++i) {
+        if (i == m_activePane) continue;
+        const ScreenRect& rc = m_panes[i].rc;
+        if (rc.w < 2 || rc.h < 2) continue;
+        const R pr = {rc.x, rc.y, rc.w, rc.h};
+        const ScreenRect im = {rc.x + 1, rc.y + 1, rc.w - 2, rc.h - 2};   // its image: inside the frame, as the active pane's
+        Box(pr, P().canvas, 3, true);
+        if (ImTextureID t = m_gui.viewTexture(i)) dl->AddImage(t, ImVec2(im.x, im.y), ImVec2(im.x + im.w, im.y + im.h));
+        dl->PushClipRect(pr.min(), pr.max(), true);
+        // the camera icons seen in that pane (its camera and image rectangle for the projection)
+        const Camera saveCam = m_scene.camera;
+        const ScreenRect saveRc = m_rcView;
+        m_scene.camera = paneCamera(i);
+        m_rcView = im;
+        m_iconPane = i;
+        drawCameraIcons(dl);
+        m_iconPane = -1;
+        m_scene.camera = saveCam;
+        m_rcView = saveRc;
+        const std::string label = paneCameraName(i);
+        const ImVec2 ts = TextSize(label, 11);
+        Box({pr.x + 6 * s, pr.y + 6 * s, ts.x + 14 * s, ts.y + 6 * s}, Fade(P().bg, 190), 3, false);
+        Text(pr.x + 13 * s, pr.y + 9 * s, label, P().muted, 11);
+        dl->PopClipRect();
+        dl->AddRect(pr.min(), pr.max(), P().border, 3 * s, 0, 1.0f * s);
+    }
+    const ScreenRect& a = m_panes[m_activePane].rc;
+    dl->AddRect(ImVec2(a.x, a.y), ImVec2(a.x + a.w, a.y + a.h), P().accent, 3 * s, 0, 1.5f * s);
+    // the lines between the panes: a grip of three dots in the middle of each piece (dragged to resize the panes), the
+    // line under the mouse or dragged lit
+    const ScreenRect& ar = m_paneArea;
+    const int cols = layoutCols(m_layout), rows = layoutRows(m_layout);
+    const ImU32 grip = Fade(P().text, 120), lit = P().accent;
+    for (int k = 1; k < cols; ++k) {
+        const float lx = std::floor(ar.x + splitAt(false, k) * ar.w) + 0.5f;
+        if (m_splitCol == k) dl->AddLine(ImVec2(lx, ar.y), ImVec2(lx, ar.y + ar.h), lit, 2.0f * s);
+        for (int r = 0; r < rows; ++r) {
+            const float cy = ar.y + (splitAt(true, r) + splitAt(true, r + 1)) * 0.5f * ar.h;
+            for (int dd = -1; dd <= 1; ++dd) dl->AddCircleFilled(ImVec2(lx, cy + dd * 5.0f * s), 1.3f * s, m_splitCol == k ? lit : grip, 8);
+        }
+    }
+    for (int k = 1; k < rows; ++k) {
+        const float ly = std::floor(ar.y + splitAt(true, k) * ar.h) + 0.5f;
+        if (m_splitRow == k) dl->AddLine(ImVec2(ar.x, ly), ImVec2(ar.x + ar.w, ly), lit, 2.0f * s);
+        for (int c = 0; c < cols; ++c) {
+            const float cx = ar.x + (splitAt(false, c) + splitAt(false, c + 1)) * 0.5f * ar.w;
+            for (int dd = -1; dd <= 1; ++dd) dl->AddCircleFilled(ImVec2(cx + dd * 5.0f * s, ly), 1.3f * s, m_splitRow == k ? lit : grip, 8);
+        }
+    }
+}
+
+// Preview of the selected (or pinned) camera at the bottom right of the active pane, as in Unreal: its picture with the
+// shape of the camera's image, its name, a pin (kept when it is not selected) and Look Through.
+void App::drawCameraPreview(float x, float y, float w, float h) {
+    m_previewRc = {0, 0, 0, 0};
+    const int pc = previewCamera();
+    if (pc < 0 || (m_game && (m_game->playing() || m_game->playerMode()))) return;
+    const Object& o = m_scene.objects[pc];
+    const float pw = std::clamp(w * 0.28f, 150 * s, 440 * s), ph = pw / std::clamp(o.camAspect, 0.5f, 3.0f), th = 24 * s;
+    if (pw > w * 0.45f || ph + th > h * 0.5f) return;   // (a small pane of a layout: Space shows it alone)
+    const R box = {x + w - pw - 12 * s, y + h - ph - th - 12 * s, pw, ph + th};
+    Box(box, Fade(P().panel, 240), 4, true);
+    ImGui::SetNextItemAllowOverlap();   // (the buttons drawn over it stay clickable)
+    Hit("##camPreviewBg", box);         // the preview takes the clicks from the view
+    Text(box.x + 9 * s, box.y + 6 * s, Fit(o.name + (o.camRender ? "  ·  render camera" : ""), pw - 70 * s, 10), P().text, 10);
+    const bool pinned = m_previewPin == o.id;
+    if (Button("camPreviewPin", {box.x + pw - 54 * s, box.y + 3 * s, 24 * s, 18 * s}, "", Icon::Pin, pinned, true)) m_previewPin = pinned ? 0 : o.id;
+    Tip(pinned ? "Unpin: the preview follows the selection" : "Pin: keep this camera in the preview");
+    if (Button("camPreviewLook", {box.x + pw - 28 * s, box.y + 3 * s, 24 * s, 18 * s}, "", Icon::Camera, false, true))
+        setPaneCamera(m_activePane, VCAM_OBJECT, o.id);
+    Tip("Look through this camera");
+    m_previewRc = {std::floor(box.x + 1 * s), std::floor(box.y + th), std::floor(pw - 2 * s), std::floor(ph - 1 * s)};   // whole pixels: the size of its image
+    const R img = {m_previewRc.x, m_previewRc.y, m_previewRc.w, m_previewRc.h};
+    if (ImTextureID t = m_gui.viewTexture(kPreviewSlot)) dl->AddImage(t, img.min(), img.max());
+    dl->AddRect(img.min(), img.max(), IM_COL32(255, 255, 255, 40), 0, 0, 1.0f);
 }
 
 // --------------------------------------------------------------------------- bottom panel (former Atelier graph Output)
@@ -1457,7 +1963,7 @@ void App::atlContent(float x, float y, float w, float h) {
             if (v.thumb) dl->AddImageRounded(v.thumb, ImVec2(c.x + 1, c.y + 1), ImVec2(c.x + c.w - 1, c.y + c.h - 1), ImVec2(0, 0), ImVec2(1, 1), IM_COL32_WHITE, 4 * s);
             Text(c.x + 2 * s, c.y + c.h + 6 * s, std::to_string(i + 1) + "  " + toUtf8(v.name), (int)i == m_activeView ? P().text : P().muted, 10);
             dl->AddRect(c.min(), c.max(), (int)i == m_activeView ? P().accent : (hv ? P().muted : P().border), 4 * s, 0, (int)i == m_activeView ? 1.4f * s : 1.0f);
-            if (q) { m_scene.camera = v.cam; m_activeView = (int)i; markDirty(); }
+            if (q) { applyViewBookmark(v.cam); m_activeView = (int)i; }
             vx += cw + 10 * s;
         }
     } else {
@@ -1568,6 +2074,87 @@ void App::atlInspectorActor(float x, float y, float w, float) {
         float bw = (w - 6 * s) / 2;
         const uint32_t gid = o->id;
         if (Button("ungroup", {x, y, bw, 27 * s}, "Ungroup", Icon::Folder)) { ungroup(gid); return; }
+        if (Button("del", {x + bw + 6 * s, y, bw, 27 * s}, "Delete", Icon::Trash)) { deleteSelected(); return; }
+        ImGui::SetCursorScreenPos(ImVec2(x, y + 40 * s));
+        ImGui::Dummy(ImVec2(1, 1));
+        return;
+    }
+    if (o->camera) {   // camera object: its transform (no scale), its lens, render camera, Look Through
+        bool act = false;
+        Box({x, y, w, 56 * s}, Fade(P().accent, 30), 4, true);
+        Glyph(Icon::Camera, x + 12 * s, y + 15 * s, 24, o->camRender ? IM_COL32(255, 196, 92, 255) : IM_COL32(214, 220, 230, 255));
+        dl->PushClipRect(ImVec2(x, y), ImVec2(x + w - 8 * s, y + 56 * s), true);
+        Text(x + 48 * s, y + 11 * s, o->name, P().text, 14);
+        std::string type = std::string(o->camOrtho ? "Orthographic camera" : "Perspective camera") + (o->camRender ? " · render camera" : "");
+        if (!m_multi.empty()) type += "  (+" + std::to_string(m_multi.size()) + ")";
+        Text(x + 48 * s, y + 33 * s, type, P().accent, 10);
+        dl->PopClipRect();
+        y += 69 * s;
+        Label(x, y, "TRANSFORM");
+        y += 24 * s;
+        Text(x, y, "Position", P().muted, 11);
+        y += 19 * s;
+        if (AxisFields("cpos", x, y, w, &o->position.x, 0.1f, "%.3f", act)) markDirty();
+        y += 35 * s;
+        float3 e = eulerYXZ(objRot(*o));
+        Text(x, y, "Rotation", P().muted, 11);
+        y += 19 * s;
+        if (AxisFields("crot", x, y, w, &e.x, 0.5f, "%.1f", act)) { o->rot = quatYXZ(e); o->useRot = true; o->yaw = radians(e.y); markDirty(); }
+        y += 41 * s;
+        Label(x, y, "LENS");
+        y += 24 * s;
+        bool ortho = o->camOrtho;
+        ImGui::SetCursorScreenPos(ImVec2(x, y));
+        if (Check("Orthographic##cam", &ortho)) {
+            pushUndo();
+            // the same size of view at the centre of interest, in the other projection
+            if (ortho) o->camOrthoHeight = std::max(2.0f * o->camDistance * std::tan(o->camFovY * 0.5f), 0.01f);
+            o->camOrtho = ortho;
+            markDirty();
+        }
+        y += 32 * s;
+        if (o->camOrtho) {
+            if (SliderRow("##camOrthoH", "View Size (height)", x, y, w, &o->camOrthoHeight, 0.1f, 200.0f, "%.2f", act)) {
+                o->camOrthoHeight = std::max(o->camOrthoHeight, 0.01f);
+                markDirty();
+            }
+        } else {
+            // focal length on a 36 x 24 mm film (Maya's default aperture), the vertical angle below
+            float focal = 12.0f / std::tan(o->camFovY * 0.5f);
+            if (SliderRow("##camFocal", "Focal Length (mm)", x, y, w, &focal, 8.0f, 200.0f, "%.1f", act)) {
+                o->camFovY = 2.0f * std::atan(12.0f / std::max(focal, 1.0f));
+                markDirty();
+            }
+            char fov[64];
+            snprintf(fov, sizeof fov, "Vertical angle of view: %.1f°", degrees(o->camFovY));
+            Text(x, y - 2 * s, fov, P().muted, 9);
+            y += 16 * s;
+        }
+        if (SliderRow("##camAspect", "Aspect Ratio (preview)", x, y, w, &o->camAspect, 0.5f, 3.0f, "%.3f", act)) markDirty();
+        if (SliderRow("##camCoi", "Centre of Interest", x, y, w, &o->camDistance, 0.1f, 200.0f, "%.2f", act)) {
+            o->camDistance = std::max(o->camDistance, 0.01f);
+            markDirty();
+        }
+        Label(x, y, "CAMERA");
+        y += 24 * s;
+        bool render = o->camRender;
+        ImGui::SetCursorScreenPos(ImVec2(x, y));
+        if (Check("Render Camera", &render)) { pushUndo(); setRenderCamera(render ? m_selected : -1); }
+        Tip("The camera of RenderCam and of the renders (one per scene)");
+        y += 32 * s;
+        bool vis = o->visible;
+        ImGui::SetCursorScreenPos(ImVec2(x, y));
+        if (Check("Visible##cam", &vis)) { pushUndo(); o->visible = vis; markDirty(); }
+        y += 38 * s;
+        if (act) pushUndo();
+        dl->AddLine(ImVec2(x, y), ImVec2(x + w, y), P().border);
+        y += 14 * s;
+        const uint32_t cid = o->id;
+        if (Button("camLook", {x, y, w, 27 * s}, "Look Through", Icon::Camera)) setPaneCamera(m_activePane, VCAM_OBJECT, cid);
+        Tip("The active view looks through this camera");
+        y += 33 * s;
+        const float bw = (w - 6 * s) / 2;
+        if (Button("dup", {x, y, bw, 27 * s}, "Duplicate", Icon::Plus)) { duplicateSelected(); return; }
         if (Button("del", {x + bw + 6 * s, y, bw, 27 * s}, "Delete", Icon::Trash)) { deleteSelected(); return; }
         ImGui::SetCursorScreenPos(ImVec2(x, y + 40 * s));
         ImGui::Dummy(ImVec2(1, 1));
@@ -2018,7 +2605,7 @@ void App::atlInspectorWorld(float x, float y, float w, float) {
     Text(x, y, m_scene.name.empty() ? "Scene" : m_scene.name, P().text, 15);
     y += 25 * s;
     Text(x, y, !m_docPath.empty() ? "File · " + toUtf8(m_docName) + (m_docDirty ? " (modified)" : "")
-               : m_sceneId == SCENE_CORNELL ? "Test scene · Cornell Box" : m_sceneId == SCENE_LOOKDEV ? "Test scene · LookDev" : (m_sceneId == SCENE_STUDIO ? "Test scene · Village (RTS)" : "New scene"), P().muted, 11);
+               : m_sceneId == SCENE_CORNELL ? "Test scene · Cornell Box" : m_sceneId == SCENE_LOOKDEV ? "Test scene · LookDev" : m_sceneId == SCENE_CONCEPT ? "Test scene · Concept" : (m_sceneId == SCENE_STUDIO ? "Test scene · Village (RTS)" : "New scene"), P().muted, 11);
     y += 41 * s;
     Label(x, y, "SCENE PROPERTIES");
     y += 24 * s;

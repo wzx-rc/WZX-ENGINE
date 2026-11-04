@@ -116,6 +116,12 @@ void App::outlinerIds() {
 // Ids, then the children follow their parent: a node whose world transform changed since the last frame (gizmo,
 // inspector, game layer) moves its children by the same change unless they changed themselves (undo restores the
 // whole family at once, a multi-selection moves every node itself).
+// The children do not follow this move of their parent (Edit Pivot, Center Pivot: the object moves, not its geometry).
+void App::hierRebase(uint32_t id) {
+    for (const Object& o : m_scene.objects)
+        if (o.id == id) m_hierCache[id] = snap(o);
+}
+
 void App::outlinerSync() {
     outlinerIds();
     std::map<uint32_t, std::vector<int>> kids, lightKids;

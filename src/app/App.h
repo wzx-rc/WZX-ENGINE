@@ -8,6 +8,7 @@
 #include "atelier/material_host.h"
 #include "atelier/material_model.h"
 #include <map>
+#include <memory>
 #include "vp3d/Renderer.h"
 #include <string>
 #include <vector>
@@ -16,26 +17,39 @@
 namespace app {
 
 enum Tool { TOOL_SELECT, TOOL_MOVE, TOOL_ROTATE, TOOL_SCALE };
-enum SceneId { SCENE_CORNELL = 0, SCENE_STUDIO = 1, SCENE_LOOKDEV = 2 };
+enum SceneId { SCENE_CORNELL = 0, SCENE_STUDIO = 1, SCENE_LOOKDEV = 2, SCENE_CONCEPT = 3 };
 
-// Move / rotate manipulator drag on the selected object.
+// Maya-style manipulator handles (Manipulators.cpp): axes, plane squares (2 axes, named by their normal), centre
+// anchor, rotate view ring and trackball.
+enum ManipHandle { MH_NONE = -1, MH_X = 0, MH_Y, MH_Z, MH_YZ, MH_XZ, MH_XY, MH_CENTER, MH_VIEW, MH_FREE };
+// Built-in cameras of the viewports (Cameras.cpp): persp, then the orthographic ones; VCAM_OBJECT: a camera object.
+enum ViewCam { VCAM_PERSP = 0, VCAM_TOP, VCAM_FRONT, VCAM_SIDE, VCAM_BOTTOM, VCAM_BACK, VCAM_LEFT, VCAM_COUNT, VCAM_OBJECT = VCAM_COUNT };
+// Split layouts of the viewport (Panes.cpp): single, two side by side, two stacked, 2 x 2, 3 x 3, 4 x 4.
+constexpr int kLayoutCount = 6;
+constexpr int kPreviewSlot = 16;   // extra view of the camera preview (the panes use 0..15)
+
+// Manipulator drag on the selection.
 struct GizmoDrag {
     bool active = false;
-    int axis = 0;                // 0 X, 1 Y, 2 Z
-    bool rotate = false;
-    int mode = 0;                // 0 move, 1 rotate, 2 scale
-    float3 dir;                  // axis direction at the press (world or local)
-    float3 startScale;
-    float s0 = 1;                // gizmo size at the press
-    int obj = -1;
-    float3 startPos, pivot;
-    float4 startRot = qIdentity();
-    float t0 = 0;                // move: parameter along the axis at the press
-    float3 v0;                   // rotate: vector pivot -> press point in the ring plane
-    int steps = 0;
+    int handle = MH_NONE;
+    int tool = 0;
+    int button = 0;              // 0 left, 2 middle
+    int obj = -1;                // object carrying the manipulator
+    float3 pivot;                // manipulator position at the press
+    float3 ax[3];                // manipulator axes at the press
+    float size = 1;              // manipulator size (world) at the press
+    float3 n, hit0, v0;          // plane normal, press point on the plane, rotate: start direction in the ring plane
+    float t0 = 0;                // press parameter along the axis
+    float2 mouse0, prevMouse, tan2;
+    bool tangent = false;        // rotate: ring seen edge-on, dragged along its screen tangent
+    float angle = 0, lastAng = 0;
+    float4 free = qIdentity();   // trackball rotation
+    float3 value;                // shown next to the mouse: displacement, degrees (x) or scale factors
     bool moved = false;
-    struct Other { int obj; float3 pos; float4 rot; float3 scale; };
-    std::vector<Other> others;   // rest of a multi-selection moved / turned with the primary object
+    struct Item { int obj; float3 pos; float4 rot; float3 scale; float3 ax[3]; float3 pivot; float3 base; };   // base: contact point (object space)
+    std::vector<Item> items;     // objects driven (each on its own pivot and axes)
+    bool pivotEdit = false;      // Edit Pivot: the move moves the pivots, the geometry stays
+    bool placeAnchor = false;    // Place on: the scale holds the contact point (the bottom of the object) still, its pivot unchanged
 };
 
 struct ViewBookmark {
@@ -90,6 +104,18 @@ struct Options {
     int quality = 1;
     bool raster = true;         // light raster viewport by default, P toggles path tracing
     std::wstring openPath;      // scene file to open at startup
+    std::wstring gizmoTest;     // manipulator self-test: report written there, then exit (--gizmo-test)
+    std::wstring selfTest;      // editor self-test: report written there, then exit (--self-test, tools\selftest.bat)
+    std::string cam;            // camera of the view at startup: persp, top, front, side, bottom, back, left (--cam)
+    int layout = -1;            // layout of the view at startup: 0 single ... 3 four (2 x 2), 5 sixteen (--layout)
+    bool demoCameras = false;   // test: two camera objects around the view at startup, one of them the render camera (--demo-cameras)
+    int snap = -1;              // test: absolute snapping on, always, on these grid points (--snap 0 intersections, 1 centres, 2 edges)
+    bool pivotEdit = false;     // test: Edit Pivot on at startup (--pivot-edit)
+    int selStyle = -1;          // selection style at startup: 0 yellow outline, 1 blue glow (--sel-style)
+    std::wstring gizmoDemo;     // "tool handle dx dy menuDir": frozen drag or marking menu for a capture (--gizmo-demo)
+    std::string openMenu;       // test: view menu opened at startup for a capture (vmCamera, vmDisplay, vmRender, vmAxes)
+    int shotSeq = 0;            // test: --shot-seq N saves N images (name_00.png...) one every 8 frames
+    int aa = -1;                // viewport anti-aliasing at startup: MSAA samples (--aa 1, 4, 8 or 16)
     std::wstring hdri;          // HDRI to load at startup (file, or "sky" for the procedural sky)
     // DDGI probe GI (real-time mode)
     bool ddgi = false;          // start in the real-time probe GI mode
@@ -182,7 +208,7 @@ private:
     void setPreset(int preset);
     float4 objRot(const Object& o) const { return o.useRot ? o.rot : qAxisAngle(float3(0, 1, 0), o.yaw); }
     void ensureRot(Object& o) { if (!o.useRot) { o.rot = qSnap90(qAxisAngle(float3(0, 1, 0), o.yaw)); o.useRot = true; } }
-    void aabbOf(const Object& o, const float3& pos, const float4& rot, float3& mn, float3& mx);
+    void aabbOf(const Object& o, const float3& pos, const float4& rot, float3& mn, float3& mx) const;
     std::vector<int> selectionAll() const { std::vector<int> v; if (m_selected >= 0) v.push_back(m_selected); for (int i : m_multi) v.push_back(i); return v; }
 
     // Scene Manager (Outliner.cpp): ids, parent / child links, order, groups, collections, selection of the list.
@@ -319,6 +345,7 @@ private:
     void atlTopBar(float x0, float y0, float width);
     void atlHierarchy(float x, float y, float w, float h);
     void atlViewport(float x, float y, float w, float h);
+    void atlViewMenus(float x, float y, float w);   // camera, display, renderer and axes menus inside the view (w: the room)
     void atlContent(float x, float y, float w, float h);
     void atlInspector(float x, float y, float w, float h);
     void atlInspectorActor(float x, float y, float w, float h);
@@ -338,11 +365,134 @@ private:
     // viewport (Viewport.cpp)
     void viewportCanvas(ImVec2 p0, ImVec2 size);
     void viewportInput(bool hovered);
+    // manipulators (Manipulators.cpp)
+    bool gizmoShown() const;
     bool gizmoInput(bool inView);
+    void gizmoBegin(int handle, int button, float mx, float my);
+    void gizmoDrag(float mx, float my, bool snap);
     void drawGizmo(ImDrawList* dl);
-    bool gizmoHit(float mx, float my, int& axis, bool& rotate);
-    float gizmoScale(const float3& pivot) const;
-    float3 gizmoAxis(int a) const;
+    int gizmoHit(float mx, float my);
+    float gizmoSize(const float3& p) const;
+    void gizmoFrame(int obj, int tool, float3 ax[3]) const;
+    std::vector<int> gizmoTargets() const;
+    bool markingMenuInput(bool inView);
+    void drawMarkingMenu(ImDrawList* dl);
+    void markingSelect(int op);   // 0 all, 1 none, 2 invert, 3 hierarchy, 4 Advanced Scale on
+    void markingReset(int what);  // 0 position, 1 rotation, 2 scale
+    // Advanced Scale (AdvancedScale.cpp): bounding box scaling of the selection from its faces, edges and corners.
+    // A separate tool (Alt+T), the standard manipulators are unchanged. Handles: index (s0+1)*9 + (s1+1)*3 + (s2+1) of
+    // the side vector s in {-1, 0, 1}^3 of the box (one non-zero: face, two: edge, three: corner).
+    struct AdvBox { bool valid = false; float3 c, ax[3], h; int flatAxis = -1; };   // centre, axes, half sizes
+    struct AdvDrag {
+        bool active = false, moved = false;
+        int handle = -1;
+        int s[3] = {0, 0, 0};
+        AdvBox box0;
+        float3 p0, hit0, n;      // handle position at the press, press point on the drag plane, its normal
+        float t0 = 0;            // face handle: press parameter along the axis
+        bool snapped = false;    // vertex snapping (V) found a vertex this frame
+        float3 snapVertex;
+        struct Item { int obj; float3 pos; float4 rot; float3 scale; };
+        std::vector<Item> items;
+    };
+    bool m_advScale = false;             // the tool is on
+    bool m_advCorners = false;           // edge handles without holding Ctrl (menu "Edge Handles"; the corners are always shown)
+    bool m_advShowInPlay = true;         // the box stays drawn while playing (menu "Show in Game View")
+    bool m_advPicking = false;           // eyedropper: the next click picks the orientation object
+    uint32_t m_advRefId = 0;             // object giving the orientation of the box of several objects (0 = world)
+    int m_advHover = -1;
+    bool m_showAdvSettings = false;      // Advanced Scale Settings window
+    AdvDrag m_adv;
+    bool advScaleBox(AdvBox& b);         // the bounding box of the selection
+    bool advScaleInput(bool inView);     // hover and drag of the handles; true while it uses the mouse
+    void advScaleBegin(int handle, const AdvBox& b, float mx, float my);
+    void advScaleDrag(float mx, float my);
+    int m_advMods = -1;                  // self-test and captures: forced modifiers (1 Shift, 2 Alt, 4 V), -1 = the keyboard
+    void advScaleDemo(const std::string& mode);   // --open-menu advScale...: states of the tool for the captures
+    void drawAdvScale(ImDrawList* dl);
+    void drawAdvScaleMenu(float x, float y, float w, float h);   // menu and modifier hints of the viewport (AtelierUI.cpp)
+    void drawAdvScaleSettings();          // Advanced Scale Settings window (Editor.cpp)
+    void setAdvScale(bool on);
+    // cameras of the viewports (Cameras.cpp): built-in persp / top / front / side... and the camera objects
+    struct ViewPane {
+        int cam = VCAM_PERSP;          // the built-in camera it looks through (ViewCam), or VCAM_OBJECT
+        uint32_t object = 0;           // VCAM_OBJECT: id of the camera object
+        ScreenRect rc;                 // on screen, this frame
+    };
+    Camera m_viewCams[VCAM_COUNT];     // the built-in cameras (the active pane's is m_scene.camera meanwhile)
+    std::vector<ViewPane> m_panes = std::vector<ViewPane>(1);   // the panes of the layout (Panes.cpp)
+    int m_activePane = 0;              // looks through m_scene.camera, drawn by the full renderer
+    Camera m_objCamLoaded;             // the camera object's view as loaded this frame (written back when it moved)
+    static const char* viewCamName(int k);    // persp, top, front, side, bottom, back, left
+    static const char* viewCamLabel(int k);   // menu labels
+    void resetViewCams();
+    int cameraObject(uint32_t id) const;
+    Camera cameraOfObject(const Object& o) const;
+    void cameraToObject(Object& o, const Camera& c);
+    Camera paneCamera(int pane) const;
+    std::string paneCameraName(int pane) const;
+    const Camera& perspCamera() const;
+    void storeActiveCamera();
+    void loadActiveCamera();
+    void setPaneCamera(int pane, int cam, uint32_t object = 0);
+    void activatePane(int pane);
+    bool orbitLocked() const;
+    void applyViewBookmark(const Camera& c);
+    int renderCamera() const;          // the camera object that is the render camera, -1 for none
+    void setRenderCamera(int idx);
+    int createCameraFromView(bool render);
+    void lookThroughRenderCam();
+    void lookThroughSelected();
+    void demoCameras();                // --demo-cameras: a render camera and a camera around the view (the latter selected)
+    bool cameraIcon(int idx, std::vector<std::pair<float3, float3>>& lines) const;
+    void drawCameraIcons(ImDrawList* dl);
+    int pickCameraIcon(float mx, float my);
+    int m_iconPane = -1;               // drawCameraIcons for this pane (-1: the active one)
+    void cameraMenu(int pane);         // the cameras a pane can look through (AtelierUI.cpp)
+    // split layouts (Panes.cpp) and the camera preview
+    int m_layout = 0;                  // kLayoutCount layouts, see layoutName
+    bool m_paneMax = false;            // Space: the active pane alone in the view
+    bool m_paneClicked = false;        // a click made this pane the active one: the view takes that click too (Maya)
+    uint32_t m_previewPin = 0;         // camera object kept in the preview when it is not selected
+    ScreenRect m_previewRc;            // image of the preview on screen, this frame (0: none)
+    bool m_previewShown = false;
+    static const char* layoutName(int layout);
+    static int layoutCols(int layout);
+    static int layoutRows(int layout);
+    void setLayout(int layout);
+    ScreenRect layoutPanes(const ScreenRect& area);
+    void togglePaneMax(bool underMouse = true);   // (false: the active pane)
+    void paneInput(bool windowHovered);
+    // the lines between the panes, dragged to resize them: boundaries of the columns and rows of each layout (fractions
+    // of the area, 0: the equal split); the line under the mouse or dragged (0: none, else 1 + its index)
+    float m_splitX[kLayoutCount][3] = {}, m_splitY[kLayoutCount][3] = {};
+    int m_splitCol = 0, m_splitRow = 0;
+    bool m_splitDrag = false;
+    bool m_splitHot = false;           // a line under the mouse or dragged: the panes and the view leave the mouse to it
+    ScreenRect m_paneArea;             // the area of the panes this frame (layoutPanes)
+    float splitAt(bool rows, int k) const;   // boundary k (0..n) of the columns or rows of the layout, 0..1
+    void splitInput(const ScreenRect& area, bool windowHovered);
+    // Space, as Maya: a tap goes from one view to the four views, and shows the pane under the mouse alone (and back);
+    // held, the view menu at the mouse: top, side, front and persp around it, the cameras of the scene listed under
+    // it; a quick flick chooses without the menu (the choice shown for a moment). hover: index of the item
+    struct ViewMenu { bool down = false, shown = false; int pane = 0, hover = -1; float x = 0, y = 0; double t0 = 0; } m_vm;
+    struct ViewMenuItem { int dir; int cam; uint32_t object; std::string label; ImVec2 b0, b1; };   // dir -1: in the list of cameras
+    std::vector<ViewMenuItem> viewMenuItems() const;   // with their pill around the centre of the menu (m_vm.x, y)
+    int viewMenuHover(const std::vector<ViewMenuItem>& items, float mx, float my) const;
+    void spaceInput(bool allowed);   // after the editor of the frame (the view sees the menu open on the frame it closes)
+    void drawViewMenu(ImDrawList* dl);
+    bool selectionInView(const Camera& c, float w, float h, float2& centre, float& radius) const;
+    void renderPanes();
+    int previewCamera() const;
+    void drawPanes();                  // the other panes: images, frames, camera names (AtelierUI.cpp)
+    void drawCameraPreview(float x, float y, float w, float h);   // AtelierUI.cpp
+    // selection overlay (SelectionFx.cpp): white glow on the outline vertices, outline in the floor reflection
+    struct SilEdge { float3 a, b, n0, n1; bool open = true; };   // mesh edge (object space) and its two face normals
+    struct SilCache { bool built = false; uint32_t version = 0; size_t vertexCount = 0, indexCount = 0; float3 first; std::vector<SilEdge> edges; };
+    std::map<int, SilCache> m_silCache;   // per mesh
+    const std::vector<SilEdge>& silhouetteEdges(int mesh);
+    void drawSelectionFx(ImDrawList* dl);
+    struct FxStats { int glints = 0, creases = 0, mirrorLines = 0, mirrorGlints = 0; } m_fxStats;   // last frame (self-test)
     void toggleGroundGrid();
     void marqueeInput();
 
@@ -374,26 +524,77 @@ private:
 
     // interaction state
     Tool m_tool = TOOL_SELECT;
-    bool m_magnet = true;
+    bool m_magnet = false;       // Snapping always on (else hold Shift while dragging a manipulator)
     int m_selected = -1;
     std::vector<int> m_multi;
-    bool m_orbiting = false, m_panning = false, m_dragging = false;
+    bool m_orbiting = false, m_panning = false;
     float m_lastX = 0, m_lastY = 0;
-    float m_dragPlaneY = 0;
-    float3 m_dragOffset;
-    bool m_dragMoved = false;
     bool m_turntable = false;
     bool m_autoFocus = true;
     bool m_showGrid = true;
     bool m_showStats = true;
     bool m_showGizmo = true;
-    bool m_localSpace = false;   // gizmo axes: world (false) or the object's own axes
+    bool m_showGridOptions = false; // Grid Options window (Shift+click on the Grid button)
+    void drawGridOptionsWindow();     // Editor.cpp
+    void toggleGrid();                // Grid button: shows / hides the editor grid (Shift: options)
+    int m_msaa = 4;               // viewport anti-aliasing: MSAA samples (1 off, 4, 8, 16; Display menu)
+    size_t m_selSig = 0;          // selection signature: the glow animation restarts when it changes
+    double m_selSince = 0;
+    int m_axisMode = 0;          // move / rotate axes: 0 world, 1 object, 2 parent (scale: always object)
+    float m_stepMove = 1.0f, m_stepRotate = 15.0f, m_stepScale = 0.1f;   // increments (Shift, or Snapping on)
+    bool m_snapAbsolute = false; // move increments land on the grid of the step instead of relative to the start
+    // Snapping (Snapping.cpp): the grid points of the absolute snapping (intersections, centres of the cells, middles of
+    // the edges, SnapOptions), drawn around the moved object; V: the vertex nearest to the cursor; the options window
+    // (Shift + the Snapping button); placement on the surfaces (Place button); the pivot (Edit Pivot: C or Insert,
+    // Center Pivot: Alt+Y)
+    bool m_showSnapOptions = false;
+    bool m_surfacePlace = false;       // Place: a selected object dragged with the left button slides over the surfaces
+    struct SurfaceDrag { bool active = false, moved = false; std::vector<int> objs; std::vector<float3> offs; std::vector<float4> rots; int lead = -1; float3 hit, normal; } m_sd;
+    bool m_pivotEdit = false;          // Insert: Edit Pivot until pressed again
+    bool m_pivotHold = false;          // D held: Edit Pivot meanwhile
+    int m_pivotTool = -1;              // the tool before Edit Pivot (the move manipulator moves the pivot)
+    bool m_snapShown = false;          // snap points drawn this frame (tests)
+    float3 m_snapTarget;               // the grid point the dragged pivot lands on (drawn lit)
+    bool m_snapTargetOn = false;
+    bool pivotEditing() const { return m_pivotEdit || m_pivotHold; }
+    float snapCell() const;            // size of the cells of the absolute snapping
+    float3 snapGridPoint(const float3& p, const bool on[3]) const;
+    bool nearestVertex(float mx, float my, const std::vector<int>& skip, float maxPx, float3& out) const;
+    void drawSnapPoints(ImDrawList* dl);
+    void drawSnapOptionsWindow();
+    void toggleSnap();                 // the Snapping button: on / off; Shift: the options
+    bool surfacePlaceInput(bool inView, bool click);
+    void surfacePlaceDrag(float mx, float my);
+    void pivotInput(bool allowed);     // D / Insert / Alt+Y
+    void centerPivot();
+    void hierRebase(uint32_t id);      // Outliner.cpp: the children do not follow this move of their parent
     float m_camSpeed = 1.0f;     // camera navigation speed factor
     struct Marquee { bool active = false, moved = false; float x0 = 0, y0 = 0; } m_marq;
     GizmoDrag m_gz;
-    int m_gzHover = -1;
+    int m_gzHover = MH_NONE;
+    int m_gzLast[4] = {MH_NONE, MH_NONE, MH_NONE, MH_NONE};   // last used handle per tool (middle button, drawn yellow)
+    // (shown: drawn, after a short delay: a quick flick only does the item in its direction, as in Maya)
+    struct MarkingMenu { bool open = false, shown = false; int tool = 0, hover = -1; float x = 0, y = 0, mx = 0, my = 0; double t0 = 0; } m_mm;
+    // a quick gesture: the chosen item alone, lit for a moment (the marking menus, the view menu of Space)
+    struct RadialFlash { double t = -10; ImVec2 b0, b1, centre; std::string label; };   // (centre: of the menu, the line of the choice)
+    RadialFlash m_mmFlash, m_vmFlash;
+    static void pillRect(ImVec2 centre, int dir, const std::string& label, float dpi, ImVec2& b0, ImVec2& b1);
+    static void drawPill(ImDrawList* dl, ImVec2 b0, ImVec2 b1, const std::string& label, bool hot, float alpha, float dpi, ImU32 edge);
+    void drawRadialFlash(ImDrawList* dl, const RadialFlash& f);
+    bool m_gzDemo = false;       // --gizmo-demo: a drag / marking menu frozen on screen for a capture
+    int m_shotSeqDone = 0;       // --shot-seq: images saved
+    void gizmoScript();          // --gizmo-demo / --gizmo-test (command line), called once per frame
+    float2 gizmoHandlePoint(int handle);   // screen point on a handle of the current manipulator (tests)
+    float2 gizmoHandleDir(int handle, float2 at);   // screen direction to drag that handle along (tests)
+    int gizmoTestDrag(int tool, int handle, float px, bool snap, bool keep);   // scripted drag; returns the handle hit
+    std::string gizmoLogicTests(int& fails);   // logic checks of the manipulators and Advanced Scale (report lines)
+    // editor self-test (--self-test, SelfTest.cpp): logic, interface driven by scripted input, renders measured
+    struct SelfTest;
+    std::shared_ptr<SelfTest> m_selfTest;
+    void selfTestFrame();        // called once per frame
+    int m_exitCode = 0;          // of run(): 1 when the self-test failed
     std::vector<Snapshot> m_undo, m_redo;
-    int m_viewMode = 0;
+
 
     // panels
     int m_contentAsset = 0;     // selected asset in the content browser
