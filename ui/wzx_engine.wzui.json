@@ -1,0 +1,1380 @@
+{
+ "format": "wzui",
+ "version": 1,
+ "name": "WZX Engine",
+ "showInEditor": false,
+ "windows": [
+  {
+   "type": "Window",
+   "id": "wzxEditor",
+   "text": "WZX Engine · Scene",
+   "x": 0,
+   "y": 0,
+   "w": 1600,
+   "h": 900,
+   "children": [
+    {
+     "type": "Panel",
+     "id": "topBar",
+     "text": "",
+     "x": 0,
+     "y": 0,
+     "w": 1584,
+     "h": 37,
+     "bg": [
+      0.082,
+      0.102,
+      0.118,
+      1
+     ],
+     "padding": 6,
+     "rounding": 0,
+     "children": [
+      {
+       "type": "Row",
+       "id": "brand",
+       "x": 0,
+       "y": 0,
+       "spacing": 6,
+       "children": [
+        {
+         "type": "Label",
+         "id": "logo",
+         "text": "WZX ENGINE",
+         "tooltip": "Logo / nom du moteur",
+         "color": [
+          0.4,
+          0.729,
+          0.816,
+          1
+         ]
+        }
+       ]
+      },
+      {
+       "type": "Row",
+       "id": "menus",
+       "x": 110,
+       "y": -2,
+       "spacing": 2,
+       "children": [
+        {
+         "type": "Button",
+         "id": "menuFile",
+         "text": "File",
+         "w": 50,
+         "h": 24,
+         "tooltip": "Menu File",
+         "bg": [
+          0.082,
+          0.102,
+          0.118,
+          1
+         ]
+        },
+        {
+         "type": "Button",
+         "id": "menuEdit",
+         "text": "Edit",
+         "w": 50,
+         "h": 24,
+         "tooltip": "Menu Edit",
+         "bg": [
+          0.082,
+          0.102,
+          0.118,
+          1
+         ]
+        },
+        {
+         "type": "Button",
+         "id": "menuCreate",
+         "text": "Create",
+         "w": 50,
+         "h": 24,
+         "tooltip": "Menu Create",
+         "bg": [
+          0.082,
+          0.102,
+          0.118,
+          1
+         ]
+        },
+        {
+         "type": "Button",
+         "id": "menuView",
+         "text": "View",
+         "w": 50,
+         "h": 24,
+         "tooltip": "Menu View",
+         "bg": [
+          0.082,
+          0.102,
+          0.118,
+          1
+         ]
+        },
+        {
+         "type": "Button",
+         "id": "menuTools",
+         "text": "Tools",
+         "w": 50,
+         "h": 24,
+         "tooltip": "Menu Tools",
+         "bg": [
+          0.082,
+          0.102,
+          0.118,
+          1
+         ]
+        },
+        {
+         "type": "Button",
+         "id": "menuHelp",
+         "text": "Help",
+         "w": 50,
+         "h": 24,
+         "tooltip": "Menu Help",
+         "bg": [
+          0.082,
+          0.102,
+          0.118,
+          1
+         ]
+        }
+       ]
+      },
+      {
+       "type": "Row",
+       "id": "workspaces",
+       "x": 450,
+       "y": -2,
+       "spacing": 4,
+       "children": [
+        {
+         "type": "Button",
+         "id": "workspaceScene",
+         "text": "Scene",
+         "w": 79,
+         "h": 24,
+         "bind": "workspace.scene",
+         "bg": [
+          0.169,
+          0.282,
+          0.345,
+          1
+         ]
+        },
+        {
+         "type": "Button",
+         "id": "workspaceGraph",
+         "text": "Graph",
+         "w": 96,
+         "h": 24,
+         "bind": "graph"
+        },
+        {
+         "type": "Button",
+         "id": "workspaceMaterials",
+         "text": "Materials",
+         "w": 117,
+         "h": 24,
+         "bind": "workspace.materials"
+        }
+       ]
+      },
+      {
+       "type": "Row",
+       "id": "playBar",
+       "x": 760,
+       "y": -2,
+       "spacing": 6,
+       "children": [
+        {
+         "type": "Button",
+         "id": "buildScene",
+         "text": "Build",
+         "w": 103,
+         "h": 25,
+         "bind": "build",
+         "tooltip": "Build  (F7)",
+         "bg": [
+          0.86,
+          0.58,
+          0.27,
+          1
+         ]
+        },
+        {
+         "type": "Button",
+         "id": "playScene",
+         "text": "Play",
+         "w": 71,
+         "h": 25,
+         "bind": "play",
+         "tooltip": "Play  (F5)"
+        },
+        {
+         "type": "Button",
+         "id": "stopScene",
+         "text": "Stop",
+         "w": 71,
+         "h": 25,
+         "bind": "stop",
+         "tooltip": "Stop  (F5)"
+        }
+       ]
+      },
+      {
+       "type": "Row",
+       "id": "rightBar",
+       "x": 1350,
+       "y": -2,
+       "spacing": 6,
+       "children": [
+        {
+         "type": "Button",
+         "id": "saveScene",
+         "text": "Save",
+         "w": 72,
+         "h": 25,
+         "bind": "save",
+         "tooltip": "Save the scene (Ctrl+S)"
+        },
+        {
+         "type": "Button",
+         "id": "sceneSettings",
+         "text": "Settings",
+         "w": 80,
+         "h": 25,
+         "bind": "settings"
+        },
+        {
+         "type": "Button",
+         "id": "profile",
+         "text": "Profil",
+         "w": 60,
+         "h": 25,
+         "bind": "about"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "type": "Panel",
+     "id": "sceneManager",
+     "text": "Scene Manager",
+     "x": 5,
+     "y": 42,
+     "w": 222,
+     "h": 826,
+     "bg": [
+      0.11,
+      0.129,
+      0.149,
+      1
+     ],
+     "padding": 10,
+     "rounding": 4,
+     "children": [
+      {
+       "type": "Column",
+       "id": "sceneCol",
+       "spacing": 8,
+       "children": [
+        {
+         "type": "Label",
+         "id": "scenesLabel",
+         "text": "SCENES",
+         "color": [
+          0.518,
+          0.561,
+          0.608,
+          1
+         ]
+        },
+        {
+         "type": "Column",
+         "id": "sceneList",
+         "spacing": 4,
+         "children": [
+          {
+           "type": "Button",
+           "id": "scene0",
+           "text": "Cornell Box",
+           "w": 202,
+           "h": 26,
+           "bind": "scene.cornell"
+          },
+          {
+           "type": "Button",
+           "id": "scene1",
+           "text": "Village",
+           "w": 202,
+           "h": 26,
+           "bind": "scene.village",
+           "bg": [
+            0.169,
+            0.282,
+            0.345,
+            1
+           ]
+          },
+          {
+           "type": "Button",
+           "id": "scene2",
+           "text": "LookDev",
+           "w": 202,
+           "h": 26,
+           "bind": "scene.lookdev"
+          }
+         ]
+        },
+        {
+         "type": "Separator",
+         "id": "sepScenes",
+         "w": 202,
+         "h": 20
+        },
+        {
+         "type": "Row",
+         "id": "outlinerHead",
+         "spacing": 6,
+         "children": [
+          {
+           "type": "Label",
+           "id": "outlinerLabel",
+           "text": "OUTLINER"
+          },
+          {
+           "type": "Spacer",
+           "id": "outlinerGap",
+           "w": 88,
+           "h": 8
+          },
+          {
+           "type": "Label",
+           "id": "outlinerCount",
+           "text": "7 items",
+           "color": [
+            0.518,
+            0.561,
+            0.608,
+            1
+           ]
+          }
+         ]
+        },
+        {
+         "type": "Input",
+         "id": "sceneSearch",
+         "text": "",
+         "w": 202,
+         "bind": "sceneSearch",
+         "tooltip": "Search scene..."
+        },
+        {
+         "type": "Row",
+         "id": "outlinerButtons",
+         "spacing": 6,
+         "children": [
+          {
+           "type": "Button",
+           "id": "addObject",
+           "text": "Add Object",
+           "w": 98,
+           "h": 23,
+           "bind": "addObject"
+          },
+          {
+           "type": "Button",
+           "id": "addCollection",
+           "text": "Collection",
+           "w": 98,
+           "h": 23,
+           "bind": "addCollection"
+          }
+         ]
+        },
+        {
+         "type": "Column",
+         "id": "outlinerItems",
+         "spacing": 2,
+         "children": [
+          {
+           "type": "Button",
+           "id": "item0",
+           "text": "Scene Camera",
+           "w": 202,
+           "h": 22,
+           "bind": "select.scenecamera",
+           "bg": [
+            0.11,
+            0.129,
+            0.149,
+            1
+           ]
+          },
+          {
+           "type": "Button",
+           "id": "item1",
+           "text": "Sun",
+           "w": 202,
+           "h": 22,
+           "bind": "select.sun",
+           "bg": [
+            0.11,
+            0.129,
+            0.149,
+            1
+           ]
+          },
+          {
+           "type": "Button",
+           "id": "item2",
+           "text": "Floor",
+           "w": 202,
+           "h": 22,
+           "bind": "select.floor",
+           "bg": [
+            0.11,
+            0.129,
+            0.149,
+            1
+           ]
+          },
+          {
+           "type": "Button",
+           "id": "item3",
+           "text": "House 01",
+           "w": 202,
+           "h": 22,
+           "bind": "select.house01",
+           "bg": [
+            0.169,
+            0.282,
+            0.345,
+            1
+           ]
+          },
+          {
+           "type": "Button",
+           "id": "item4",
+           "text": "House 02",
+           "w": 202,
+           "h": 22,
+           "bind": "select.house02",
+           "bg": [
+            0.11,
+            0.129,
+            0.149,
+            1
+           ]
+          },
+          {
+           "type": "Button",
+           "id": "item5",
+           "text": "Tree 01",
+           "w": 202,
+           "h": 22,
+           "bind": "select.tree01",
+           "bg": [
+            0.11,
+            0.129,
+            0.149,
+            1
+           ]
+          },
+          {
+           "type": "Button",
+           "id": "item6",
+           "text": "Rock 01",
+           "w": 202,
+           "h": 22,
+           "bind": "select.rock01",
+           "bg": [
+            0.11,
+            0.129,
+            0.149,
+            1
+           ]
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "type": "Panel",
+     "id": "viewport",
+     "text": "",
+     "x": 234,
+     "y": 42,
+     "w": 1062,
+     "h": 636,
+     "bg": [
+      0.11,
+      0.129,
+      0.149,
+      1
+     ],
+     "padding": 8,
+     "rounding": 4,
+     "children": [
+      {
+       "type": "Panel",
+       "id": "viewportHeader",
+       "text": "",
+       "x": 0,
+       "y": 0,
+       "w": 1046,
+       "h": 35,
+       "bg": [
+        0.145,
+        0.169,
+        0.192,
+        1
+       ],
+       "padding": 6,
+       "rounding": 4,
+       "children": [
+        {
+         "type": "Label",
+         "id": "viewportTitle",
+         "text": "Village   >   Viewport · Perspective",
+         "x": 0,
+         "y": 2
+        },
+        {
+         "type": "Row",
+         "id": "viewportTools",
+         "x": 560,
+         "y": -2,
+         "spacing": 6,
+         "children": [
+          {
+           "type": "Button",
+           "id": "atlStats",
+           "text": "Stats",
+           "w": 50,
+           "h": 24,
+           "bind": "stats"
+          },
+          {
+           "type": "Combo",
+           "id": "atlView",
+           "text": "",
+           "w": 118,
+           "bind": "viewMode",
+           "items": [
+            "Perspective",
+            "Front",
+            "Back",
+            "Left",
+            "Right",
+            "Top"
+           ]
+          },
+          {
+           "type": "Combo",
+           "id": "atlDisplay",
+           "text": "",
+           "w": 150,
+           "bind": "display",
+           "items": [
+            "Shaded",
+            "Wireframe",
+            "Wireframe Override"
+           ]
+          },
+          {
+           "type": "Combo",
+           "id": "atlShading",
+           "text": "",
+           "w": 118,
+           "bind": "renderMode",
+           "items": [
+            "Lit",
+            "Metal iOS",
+            "Progressive",
+            "GI"
+           ]
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "type": "Panel",
+       "id": "viewportImage",
+       "text": "",
+       "x": 0,
+       "y": 42,
+       "w": 1046,
+       "h": 570,
+       "bg": [
+        0.06,
+        0.07,
+        0.08,
+        1
+       ],
+       "padding": 8,
+       "rounding": 2,
+       "children": [
+        {
+         "type": "Label",
+         "id": "viewportHint",
+         "text": "Image 3D du moteur (rendu DX12)",
+         "x": 410,
+         "y": 262,
+         "color": [
+          0.518,
+          0.561,
+          0.608,
+          1
+         ]
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "type": "Panel",
+     "id": "contentBrowser",
+     "text": "",
+     "x": 234,
+     "y": 688,
+     "w": 1062,
+     "h": 180,
+     "bg": [
+      0.11,
+      0.129,
+      0.149,
+      1
+     ],
+     "padding": 8,
+     "rounding": 4,
+     "children": [
+      {
+       "type": "Row",
+       "id": "contentTabs",
+       "x": 0,
+       "y": 0,
+       "spacing": 5,
+       "children": [
+        {
+         "type": "Button",
+         "id": "contentTab0",
+         "text": "Content Browser",
+         "w": 140,
+         "h": 25,
+         "bind": "contentTab.0",
+         "bg": [
+          0.169,
+          0.282,
+          0.345,
+          1
+         ]
+        },
+        {
+         "type": "Button",
+         "id": "contentTab1",
+         "text": "Materials",
+         "w": 100,
+         "h": 25,
+         "bind": "contentTab.1",
+         "bg": [
+          0.11,
+          0.129,
+          0.149,
+          1
+         ]
+        },
+        {
+         "type": "Button",
+         "id": "contentTab2",
+         "text": "Camera Views",
+         "w": 122,
+         "h": 25,
+         "bind": "contentTab.2",
+         "bg": [
+          0.11,
+          0.129,
+          0.149,
+          1
+         ]
+        },
+        {
+         "type": "Button",
+         "id": "contentTab3",
+         "text": "Output Log",
+         "w": 108,
+         "h": 25,
+         "bind": "contentTab.3",
+         "bg": [
+          0.11,
+          0.129,
+          0.149,
+          1
+         ]
+        }
+       ]
+      },
+      {
+       "type": "Input",
+       "id": "assetSearch",
+       "text": "",
+       "x": 780,
+       "y": 1,
+       "w": 210,
+       "bind": "assetSearch",
+       "tooltip": "Search assets..."
+      },
+      {
+       "type": "Button",
+       "id": "listToggle",
+       "text": "Liste",
+       "x": 996,
+       "y": 1,
+       "w": 50,
+       "h": 23,
+       "bind": "listMode"
+      },
+      {
+       "type": "Row",
+       "id": "assets",
+       "x": 0,
+       "y": 40,
+       "spacing": 10,
+       "children": [
+        {
+         "type": "Column",
+         "id": "asset0",
+         "spacing": 4,
+         "children": [
+          {
+           "type": "Button",
+           "id": "assetThumb0",
+           "text": "C",
+           "w": 96,
+           "h": 80,
+           "bind": "add.cube",
+           "bg": [
+            0.145,
+            0.169,
+            0.192,
+            1
+           ]
+          },
+          {
+           "type": "Label",
+           "id": "assetName0",
+           "text": "Cube",
+           "color": [
+            0.518,
+            0.561,
+            0.608,
+            1
+           ]
+          }
+         ]
+        },
+        {
+         "type": "Column",
+         "id": "asset1",
+         "spacing": 4,
+         "children": [
+          {
+           "type": "Button",
+           "id": "assetThumb1",
+           "text": "S",
+           "w": 96,
+           "h": 80,
+           "bind": "add.sphere",
+           "bg": [
+            0.145,
+            0.169,
+            0.192,
+            1
+           ]
+          },
+          {
+           "type": "Label",
+           "id": "assetName1",
+           "text": "Sphere",
+           "color": [
+            0.518,
+            0.561,
+            0.608,
+            1
+           ]
+          }
+         ]
+        },
+        {
+         "type": "Column",
+         "id": "asset2",
+         "spacing": 4,
+         "children": [
+          {
+           "type": "Button",
+           "id": "assetThumb2",
+           "text": "P",
+           "w": 96,
+           "h": 80,
+           "bind": "add.plane",
+           "bg": [
+            0.145,
+            0.169,
+            0.192,
+            1
+           ]
+          },
+          {
+           "type": "Label",
+           "id": "assetName2",
+           "text": "Plane",
+           "color": [
+            0.518,
+            0.561,
+            0.608,
+            1
+           ]
+          }
+         ]
+        },
+        {
+         "type": "Column",
+         "id": "asset3",
+         "spacing": 4,
+         "children": [
+          {
+           "type": "Button",
+           "id": "assetThumb3",
+           "text": "C",
+           "w": 96,
+           "h": 80,
+           "bind": "add.cylinder",
+           "bg": [
+            0.145,
+            0.169,
+            0.192,
+            1
+           ]
+          },
+          {
+           "type": "Label",
+           "id": "assetName3",
+           "text": "Cylinder",
+           "color": [
+            0.518,
+            0.561,
+            0.608,
+            1
+           ]
+          }
+         ]
+        },
+        {
+         "type": "Column",
+         "id": "asset4",
+         "spacing": 4,
+         "children": [
+          {
+           "type": "Button",
+           "id": "assetThumb4",
+           "text": "T",
+           "w": 96,
+           "h": 80,
+           "bind": "add.torus",
+           "bg": [
+            0.145,
+            0.169,
+            0.192,
+            1
+           ]
+          },
+          {
+           "type": "Label",
+           "id": "assetName4",
+           "text": "Torus",
+           "color": [
+            0.518,
+            0.561,
+            0.608,
+            1
+           ]
+          }
+         ]
+        },
+        {
+         "type": "Column",
+         "id": "asset5",
+         "spacing": 4,
+         "children": [
+          {
+           "type": "Button",
+           "id": "assetThumb5",
+           "text": "H",
+           "w": 96,
+           "h": 80,
+           "bind": "add.house",
+           "bg": [
+            0.145,
+            0.169,
+            0.192,
+            1
+           ]
+          },
+          {
+           "type": "Label",
+           "id": "assetName5",
+           "text": "House",
+           "color": [
+            0.518,
+            0.561,
+            0.608,
+            1
+           ]
+          }
+         ]
+        },
+        {
+         "type": "Column",
+         "id": "asset6",
+         "spacing": 4,
+         "children": [
+          {
+           "type": "Button",
+           "id": "assetThumb6",
+           "text": "S",
+           "w": 96,
+           "h": 80,
+           "bind": "add.shaderball",
+           "bg": [
+            0.145,
+            0.169,
+            0.192,
+            1
+           ]
+          },
+          {
+           "type": "Label",
+           "id": "assetName6",
+           "text": "Shader Ball",
+           "color": [
+            0.518,
+            0.561,
+            0.608,
+            1
+           ]
+          }
+         ]
+        },
+        {
+         "type": "Column",
+         "id": "asset7",
+         "spacing": 4,
+         "children": [
+          {
+           "type": "Button",
+           "id": "assetThumb7",
+           "text": "T",
+           "w": 96,
+           "h": 80,
+           "bind": "add.tree",
+           "bg": [
+            0.145,
+            0.169,
+            0.192,
+            1
+           ]
+          },
+          {
+           "type": "Label",
+           "id": "assetName7",
+           "text": "Tree",
+           "color": [
+            0.518,
+            0.561,
+            0.608,
+            1
+           ]
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "type": "Panel",
+     "id": "inspector",
+     "text": "Inspector",
+     "x": 1302,
+     "y": 42,
+     "w": 284,
+     "h": 826,
+     "bg": [
+      0.11,
+      0.129,
+      0.149,
+      1
+     ],
+     "padding": 12,
+     "rounding": 4,
+     "children": [
+      {
+       "type": "Row",
+       "id": "inspectorTabs",
+       "spacing": 5,
+       "children": [
+        {
+         "type": "Button",
+         "id": "inspectorTab0",
+         "text": "Actor",
+         "w": 58,
+         "h": 25,
+         "bind": "inspectorTab.0",
+         "bg": [
+          0.169,
+          0.282,
+          0.345,
+          1
+         ]
+        },
+        {
+         "type": "Button",
+         "id": "inspectorTab1",
+         "text": "Light",
+         "w": 58,
+         "h": 25,
+         "bind": "inspectorTab.1",
+         "bg": [
+          0.11,
+          0.129,
+          0.149,
+          1
+         ]
+        },
+        {
+         "type": "Button",
+         "id": "inspectorTab2",
+         "text": "Render",
+         "w": 58,
+         "h": 25,
+         "bind": "inspectorTab.2",
+         "bg": [
+          0.11,
+          0.129,
+          0.149,
+          1
+         ]
+        },
+        {
+         "type": "Button",
+         "id": "inspectorTab3",
+         "text": "World",
+         "w": 58,
+         "h": 25,
+         "bind": "inspectorTab.3",
+         "bg": [
+          0.11,
+          0.129,
+          0.149,
+          1
+         ]
+        }
+       ]
+      },
+      {
+       "type": "Column",
+       "id": "inspectorBody",
+       "x": 0,
+       "y": 36,
+       "spacing": 7,
+       "children": [
+        {
+         "type": "Label",
+         "id": "objectName",
+         "text": "House 01",
+         "tooltip": "Nom de l'objet sélectionné"
+        },
+        {
+         "type": "Label",
+         "id": "objectType",
+         "text": "Static Mesh · House",
+         "color": [
+          0.4,
+          0.729,
+          0.816,
+          1
+         ]
+        },
+        {
+         "type": "Separator",
+         "id": "sepTransform",
+         "w": 258,
+         "h": 12
+        },
+        {
+         "type": "Label",
+         "id": "transformLabel",
+         "text": "TRANSFORM",
+         "color": [
+          0.518,
+          0.561,
+          0.608,
+          1
+         ]
+        },
+        {
+         "type": "Column",
+         "id": "position",
+         "spacing": 4,
+         "children": [
+          {
+           "type": "Label",
+           "id": "positionLabel",
+           "text": "Position",
+           "color": [
+            0.518,
+            0.561,
+            0.608,
+            1
+           ]
+          },
+          {
+           "type": "Row",
+           "id": "positionRow",
+           "spacing": 6,
+           "children": [
+            {
+             "type": "Slider",
+             "id": "positionX",
+             "text": "X",
+             "w": 64,
+             "bind": "transform.position.x",
+             "min": -50,
+             "max": 50
+            },
+            {
+             "type": "Slider",
+             "id": "positionY",
+             "text": "Y",
+             "w": 64,
+             "bind": "transform.position.y",
+             "min": -50,
+             "max": 50
+            },
+            {
+             "type": "Slider",
+             "id": "positionZ",
+             "text": "Z",
+             "w": 64,
+             "bind": "transform.position.z",
+             "min": -50,
+             "max": 50
+            }
+           ]
+          }
+         ]
+        },
+        {
+         "type": "Column",
+         "id": "rotation",
+         "spacing": 4,
+         "children": [
+          {
+           "type": "Label",
+           "id": "rotationLabel",
+           "text": "Rotation",
+           "color": [
+            0.518,
+            0.561,
+            0.608,
+            1
+           ]
+          },
+          {
+           "type": "Row",
+           "id": "rotationRow",
+           "spacing": 6,
+           "children": [
+            {
+             "type": "Slider",
+             "id": "rotationX",
+             "text": "X",
+             "w": 64,
+             "bind": "transform.rotation.x",
+             "min": -180,
+             "max": 180
+            },
+            {
+             "type": "Slider",
+             "id": "rotationY",
+             "text": "Y",
+             "w": 64,
+             "bind": "transform.rotation.y",
+             "min": -180,
+             "max": 180
+            },
+            {
+             "type": "Slider",
+             "id": "rotationZ",
+             "text": "Z",
+             "w": 64,
+             "bind": "transform.rotation.z",
+             "min": -180,
+             "max": 180
+            }
+           ]
+          }
+         ]
+        },
+        {
+         "type": "Column",
+         "id": "scale",
+         "spacing": 4,
+         "children": [
+          {
+           "type": "Label",
+           "id": "scaleLabel",
+           "text": "Scale",
+           "color": [
+            0.518,
+            0.561,
+            0.608,
+            1
+           ]
+          },
+          {
+           "type": "Row",
+           "id": "scaleRow",
+           "spacing": 6,
+           "children": [
+            {
+             "type": "Slider",
+             "id": "scaleX",
+             "text": "X",
+             "w": 64,
+             "bind": "transform.scale.x",
+             "min": 0,
+             "max": 10
+            },
+            {
+             "type": "Slider",
+             "id": "scaleY",
+             "text": "Y",
+             "w": 64,
+             "bind": "transform.scale.y",
+             "min": 0,
+             "max": 10
+            },
+            {
+             "type": "Slider",
+             "id": "scaleZ",
+             "text": "Z",
+             "w": 64,
+             "bind": "transform.scale.z",
+             "min": 0,
+             "max": 10
+            }
+           ]
+          }
+         ]
+        },
+        {
+         "type": "Separator",
+         "id": "sepMaterial",
+         "w": 258,
+         "h": 12
+        },
+        {
+         "type": "Label",
+         "id": "materialLabel",
+         "text": "MATERIAL",
+         "color": [
+          0.518,
+          0.561,
+          0.608,
+          1
+         ]
+        },
+        {
+         "type": "Combo",
+         "id": "materialPreset",
+         "text": "Preset",
+         "w": 170,
+         "bind": "material.preset",
+         "items": [
+          "Clay",
+          "Chrome",
+          "Glass",
+          "Plastic",
+          "Wood"
+         ]
+        },
+        {
+         "type": "Color",
+         "id": "baseColor",
+         "text": "Base Color",
+         "bind": "material.baseColor"
+        },
+        {
+         "type": "Slider",
+         "id": "roughness",
+         "text": "Roughness",
+         "w": 170,
+         "bind": "material.roughness",
+         "min": 0,
+         "max": 1
+        },
+        {
+         "type": "Slider",
+         "id": "metallic",
+         "text": "Metallic",
+         "w": 170,
+         "bind": "material.metallic",
+         "min": 0,
+         "max": 1
+        },
+        {
+         "type": "Separator",
+         "id": "sepRendering",
+         "w": 258,
+         "h": 12
+        },
+        {
+         "type": "Label",
+         "id": "renderingLabel",
+         "text": "RENDERING",
+         "color": [
+          0.518,
+          0.561,
+          0.608,
+          1
+         ]
+        },
+        {
+         "type": "Checkbox",
+         "id": "castShadows",
+         "text": "Cast Shadows",
+         "bind": "render.castShadows"
+        },
+        {
+         "type": "Checkbox",
+         "id": "visibleInRender",
+         "text": "Visible",
+         "bind": "render.visible"
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

@@ -600,6 +600,13 @@ void Designer::canvas(float s) {
     m_ctx.design = !m_preview;
     m_ctx.scale = s;
     m_ctx.bindings = &bindings;
+    // zoom: text and widget metrics scaled with the layout, so the canvas looks like the real UI at any zoom
+    const ImGuiStyle& st = ImGui::GetStyle();
+    ImGui::SetWindowFontScale(m_zoom);
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(st.FramePadding.x * m_zoom, st.FramePadding.y * m_zoom));
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemInnerSpacing, ImVec2(st.ItemInnerSpacing.x * m_zoom, st.ItemInnerSpacing.y * m_zoom));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(st.WindowPadding.x * m_zoom, st.WindowPadding.y * m_zoom));
+    ImGui::PushStyleVar(ImGuiStyleVar_GrabMinSize, st.GrabMinSize * m_zoom);
     if (!m_preview) {   // inert widgets drawn at full opacity (DisabledAlpha is read by BeginDisabled)
         ImGui::PushStyleVar(ImGuiStyleVar_DisabledAlpha, 1.0f);
         ImGui::BeginDisabled();
@@ -609,6 +616,8 @@ void Designer::canvas(float s) {
         ImGui::EndDisabled();
         ImGui::PopStyleVar();
     }
+    ImGui::PopStyleVar(4);
+    ImGui::SetWindowFontScale(1.0f);
 
     ImVec2 m = io.MousePos;
     auto ref = [&](ImVec2 screen, ImVec2 base) { return ImVec2((screen.x - base.x) / s, (screen.y - base.y) / s); };

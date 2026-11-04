@@ -69,6 +69,7 @@ Les interfaces sont des fichiers `ui/*.wzui.json`. Ils sont enregistrés automat
 Un document coché « Dans l'éditeur » s'affiche dans WZX en vraies fenêtres. Ses widgets sont reliés au code par nom avec `wzui::designer().bindings` : par exemple, `actions["play"]` est appelé par un bouton dont la liaison est `play`. `play`, `stop`, `build` et `graph` sont déjà reliés dans `GameHost::init`. Une valeur sans code garde sa propre valeur, ce qui permet de construire l'interface avant d'écrire la logique.
 API : `POST /cmd {"cmd": "designer", "show"?: true, "file"?: "nom.wzui.json"}` renvoie le fichier ouvert et l'élément sélectionné. Claude sait ainsi quel élément est désigné.
 Test sans GPU : `tools/ui_designer_test/designer_test.cpp` (Linux), qui produit aussi des captures.
+Template : `ui/wzx_engine.wzui.json` reproduit l'éditeur WZX (espace Scene, disposition Atelier en 1600 × 900 : barre du haut, Scene Manager, viewport, Content Browser, Inspector) comme point de départ à modifier dans le Designer. Ses boutons portent les liaisons de l'éditeur (`play`, `stop`, `build`, `graph`…).
 
 ## Structure
 

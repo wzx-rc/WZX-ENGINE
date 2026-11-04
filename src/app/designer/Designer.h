@@ -38,6 +38,8 @@ public:
     ImRect paletteRect(Kind k) const { return m_paletteRects[(int)k]; }
     bool preview() const { return m_preview; }
     void setPreview(bool on) { m_preview = on; }
+    void setZoom(float z) { m_zoom = z; }
+    void setPan(ImVec2 p) { m_pan = p; }
 
 private:
     enum class Drag { None, Pending, Move, Resize, Pan, Palette };
