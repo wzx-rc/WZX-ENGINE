@@ -562,7 +562,11 @@ void BrickApp::setLookdev(bool on) {
     m_giLookdev = on;
     for (size_t i = 0; i < m_colorMaterial.size() && i < m_colorMaterialOrig.size(); ++i) {
         Material m = m_colorMaterialOrig[i];
-        if (on) {
+        if (on && m.transmission > 0.5f) {   // the transparent parts stay glass (neutral, the same roughness and IOR)
+            m.baseColor = float3(srgbToLinear(0.92f), srgbToLinear(0.93f), srgbToLinear(0.94f));
+            m.flags &= ~4u;   // (no print colour)
+        } else if (on) {
+            m.flags &= ~4u;   // one grey: the prints too (MAT_FLAG_VCOLOR off)
             m.baseColor = float3(srgbToLinear(0.78f), srgbToLinear(0.79f), srgbToLinear(0.80f));
             m.roughness = 0.9f;
             m.specular = 0.0f;
