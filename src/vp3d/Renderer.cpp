@@ -2382,6 +2382,7 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
     fc.selRadius = rs.selectionRadius;
     fc.selStyle = (uint32_t)rs.selectionStyle;
     fc.selFill = rs.selectionFill;
+    fc.sharpen = rs.sharpen;
     fc.selPixelScale = rs.pixelScale;
     for (int o : m_extraSelection) {
         if (fc.selMoreCount >= 32 || o < 0 || o >= (int)m_objectToInstance.size() || m_objectToInstance[o] < 0) continue;

@@ -2125,6 +2125,7 @@ void BrickApp::uiSettings() {
         {"Rendu", {{"Rapide", m_rs.raster && m_quality == 0}, {"HQ", m_rs.raster && m_quality == 1}, {"PT", pathTraced()}, {"RC", m_rcMode}}, 2},
         {"Anti-aliasing (Radiance Cascades)", {{"MSAA 4x", m_rs.aaQuality == 0}, {"MSAA 8x", m_rs.aaQuality == 1}, {"AAA", m_rs.aaQuality == 2}}, 9},
         {"Ombres (Radiance Cascades)", {{"Basse", m_rs.shadowQuality <= 1}, {"Moyenne", m_rs.shadowQuality == 2}, {"Haute", m_rs.shadowQuality == 3}, {"AAA", m_rs.shadowQuality == 4}}, 10},
+        {"Échelle de rendu", {{"100 %", m_renderScale > 0.95f}, {"85 %", std::fabs(m_renderScale - 0.85f) < 0.01f}, {"75 %", std::fabs(m_renderScale - 0.75f) < 0.01f}, {"67 %", m_renderScale < 0.7f}}, 11},
         {"Occlusion HDRI (HQ)", {{"Oui", m_ssaoOn}, {"Non", !m_ssaoOn}}, 3},   // the traced occlusion of the environment (about 1.2 ms)
         {"Transformation de vue", {{"ACES", m_rs.tonemapper == 0}, {"AgX", m_rs.tonemapper == 1}, {"Std", m_rs.tonemapper == 3}}, 4},
         {"Voxels", {{"Affichés", m_showVox}, {"Masqués", !m_showVox}}, 6},
@@ -2381,6 +2382,7 @@ void BrickApp::uiSettings() {
         case 8: m_autosaveOn = clickOpt == 0; break;
         case 9: m_rs.aaQuality = clickOpt; break;
         case 10: m_rs.shadowQuality = clickOpt == 0 ? 0 : clickOpt + 1; break;
+        case 11: { static const float k[4] = {1.0f, 0.85f, 0.75f, 0.67f}; m_renderScale = k[std::clamp(clickOpt, 0, 3)]; break; }
         }
         m_renderer.resetAccumulation();
         savePrefs();

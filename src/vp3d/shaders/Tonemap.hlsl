@@ -24,6 +24,13 @@ void main(uint3 id : SV_DispatchThreadID) {
     float3 color = raw;
     if (T.raster) {
         color = gTex[T.denoisedSlot][p].rgb;
+        if (F.sharpen > 0) {   // rendered at a reduced scale: contrast adaptive sharpening (the 4 neighbours, clamped to them)
+            const int2 mx = int2(F.resolution) - 1;
+            const float3 a = gTex[T.denoisedSlot][clamp(p + int2(-1, 0), 0, mx)].rgb, b = gTex[T.denoisedSlot][clamp(p + int2(1, 0), 0, mx)].rgb;
+            const float3 c = gTex[T.denoisedSlot][clamp(p + int2(0, -1), 0, mx)].rgb, d = gTex[T.denoisedSlot][clamp(p + int2(0, 1), 0, mx)].rgb;
+            const float3 lo = min(min(min(a, b), min(c, d)), color), hi = max(max(max(a, b), max(c, d)), color);
+            color = clamp(color + F.sharpen * (color - (a + b + c + d) * 0.25), lo, hi);
+        }
         if (T.auxSlot != 0) color = 0.5 * (color + gTex[T.auxSlot - 1][p].rgb);   // the other sub-pixel offset
     } else if (T.denoisedSlot != 0xFFFFFFFFu) {
         float3 den = gTex[T.denoisedSlot][p].rgb * max(alb.rgb, 0.01);

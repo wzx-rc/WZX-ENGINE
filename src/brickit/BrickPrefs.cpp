@@ -66,7 +66,7 @@ void BrickApp::savePrefs() {
     auto names = [&](const std::vector<int>& v) { std::string s = "["; for (size_t i = 0; i < v.size(); ++i) s += (i ? ", " : "") + jstr(m_lib.parts[v[i]].name); return s + "]"; };
     j += std::string("\"dev\": {\"on\": ") + (m_dev ? "true" : "false") + ", \"showVox\": " + (m_devShowVox ? "true" : "false") + ", \"showEdges\": " + (m_devShowEdges ? "true" : "false") + ", \"useOverrides\": " + (m_devUseOverrides ? "true" : "false") + "},";
     { char mb[160]; snprintf(mb, sizeof(mb), "\"manual\": {\"w\": %d, \"h\": %d, \"pdfPage\": %d, \"pdfName\": ", (int)m_manW, (int)m_manH, m_pdfPage); j += mb; j += jstr(m_pdfName) + "},"; }
-    { char sb[320]; snprintf(sb, sizeof(sb), "\"settings\": {\"uiScale\": %.2f, \"ssao\": %s, \"autosave\": %s, \"showVox\": %s},", m_uiScaleUser, m_ssaoOn ? "true" : "false", m_autosaveOn ? "true" : "false", m_showVox ? "true" : "false"); j += sb; }
+    { char sb[320]; snprintf(sb, sizeof(sb), "\"settings\": {\"uiScale\": %.2f, \"ssao\": %s, \"autosave\": %s, \"showVox\": %s, \"renderScale\": %.2f},", m_uiScaleUser, m_ssaoOn ? "true" : "false", m_autosaveOn ? "true" : "false", m_showVox ? "true" : "false", m_renderScale); j += sb; }
     {   // Réglages > Lumière
         char lb[512];
         const uint32_t rgb = (uint32_t)std::lround(m_gridRgb.x * 255) | ((uint32_t)std::lround(m_gridRgb.y * 255) << 8) | ((uint32_t)std::lround(m_gridRgb.z * 255) << 16);
@@ -139,6 +139,7 @@ void BrickApp::loadPrefs() {
         if (st["autosave"].type == app::Json::Bool) m_autosaveOn = st["autosave"].b;
         if (st["showVox"].type == app::Json::Bool) m_showVox = st["showVox"].b;
         if (st["aa"].type == app::Json::Number) m_rs.aaQuality = std::clamp((int)st["aa"].n, 0, 2);
+        if (st["renderScale"].type == app::Json::Number) m_renderScale = std::clamp((float)st["renderScale"].n, 0.5f, 1.0f);
         if (st["shadows"].type == app::Json::Number) m_rs.shadowQuality = std::clamp((int)st["shadows"].n, 0, 4);
         if (st["rc"].type == app::Json::Bool && st["rc"].b) setRC(true);
     }

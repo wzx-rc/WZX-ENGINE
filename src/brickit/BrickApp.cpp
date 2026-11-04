@@ -1042,7 +1042,9 @@ void BrickApp::frame() {
     ImVec2 ds = ImGui::GetIO().DisplaySize;
     // Path tracing: half resolution while the view moves (and 0.25 s after), full resolution to converge when still.
     const bool moving = ImGui::GetTime() - m_lastMove < 0.25 && m_opt.shotPath.empty();
-    const float scale = (pathTraced() && moving) ? m_opt.ptMoveScale : 1.0f;
+    // Réglages › Échelle de rendu (Rapide, HQ, RC): the image rendered smaller, enlarged and sharpened; the path tracer
+    // converges at full size
+    const float scale = (pathTraced() && moving) ? m_opt.ptMoveScale : (pathTraced() ? 1.0f : (m_opt.renderScale > 0 ? m_opt.renderScale : m_renderScale));
     // the stage: between the top bar and the tray (no UI: the whole window)
     if (m_opt.noUi || m_uiRects.size() < 2) m_stage = ImVec4(0, 0, ds.x, ds.y);
     else m_stage = ImVec4(0, m_uiRects[0].w, ds.x, std::max(m_uiRects[0].w + 16, m_uiRects[1].y));
@@ -1113,6 +1115,7 @@ void BrickApp::frame() {
     }
     const int selObj = (m_selected >= 0 && !m_holding) ? m_firstBrickObject + m_selected : -1;
     m_rs.pixelScale = scale;
+    m_rs.sharpen = (!pathTraced() && scale < 0.99f) ? std::min(0.6f, (1.0f - scale) * 1.1f) : 0.0f;
     // part sheet open: the main view keeps its last image, the renderer draws the 3D viewer of the part
     const bool sheet = m_infoPart >= 0 && !m_dev;
     if (sheet && !m_frozenTex && m_frame > 0) {
@@ -1317,6 +1320,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         else if (a == L"--read-step") opt.readStep = _wtoi(next().c_str());
         else if (a == L"--import-report") opt.importReport = next();
         else if (a == L"--group-test") opt.groupTest = next();
+        else if (a == L"--render-scale") opt.renderScale = (float)_wtof(next().c_str());
         else if (a == L"--gi-soft") opt.giSoft = _wtoi(next().c_str());
         else if (a == L"--gi-smooth") opt.giSmooth = (float)_wtof(next().c_str());
         else if (a == L"--gi-hold") opt.giHold = _wtoi(next().c_str());

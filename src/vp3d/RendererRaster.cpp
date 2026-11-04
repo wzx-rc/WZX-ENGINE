@@ -859,7 +859,8 @@ void Renderer::recordRaster(const Scene& scene, const RenderSettings& rs, const 
                 if (z < -R || std::fabs(dot(v, r)) > z * ta + R * kx || std::fabs(dot(v, u)) > z * t + R * ky) inView[k] = 0;
                 if (lodOn && d.mesh < (int)scene.lods.size()) {
                     const Scene::MeshLod& l = scene.lods[d.mesh];
-                    float px = 2.0f * R * pixK / std::max(z, 1e-3f);
+                    // (the size on the display: an image rendered at a reduced scale keeps the levels of the full size)
+                    float px = 2.0f * R * pixK / std::max(z, 1e-3f) / std::clamp(rs.pixelScale, 0.25f, 1.0f);
                     if (px < scene.lodPixels2 && l.lod2 >= 0) mesh = l.lod2;
                     else if (px < scene.lodPixels1 && l.lod1 >= 0) mesh = l.lod1;
                 }
