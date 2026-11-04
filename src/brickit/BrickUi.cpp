@@ -2323,6 +2323,9 @@ void BrickApp::uiSettings() {
         // the highlight of the selection: its thin outline and its white veil (Wzx: tunable)
         slider(106, "Contour de sélection", m_selOutline, 0.0f, 1.0f, "%.2f", m_selOutline);
         slider(107, "Voile de sélection", m_selFill, 0.0f, 0.5f, "%.2f", m_selFill);
+        // the lens of the HQ: depth of field on the camera target, and the glow of the bright parts
+        slider(108, "Profondeur de champ (HQ)", m_dof, 0.0f, 1.0f, "%.2f", m_dof);
+        slider(109, "Bloom", m_bloom, 0.0f, 1.0f, "%.2f", m_bloom);
         // colour of the ground grid: swatches (Défaut = the lines of the web), then its opacity
         u.text(ImVec2(x0 + pad, ly), 11, C_DIM, "Couleur de la grille");
         ly += 16 * s;

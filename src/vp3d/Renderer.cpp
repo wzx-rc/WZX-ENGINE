@@ -213,6 +213,34 @@ bool Renderer::init(HWND hwnd, uint32_t width, uint32_t height, const std::wstri
     return true;
 }
 
+// Depth of field and bloom of the raster views (PostFX.hlsl), after the tone mapper; the depth from one camera ray per
+// pixel against the TLAS (no depth target in the raster passes). Expects the compute root signature bound.
+void Renderer::recordPostFx(const Scene& scene, const RenderSettings& rs, UINT gx, UINT gy, bool depthOk) {
+    const bool dof = rs.dof > 0 && depthOk && m_tlas.res && m_asThisFrame;
+    if ((!dof && rs.bloom <= 0) || !m_psoPostFx) return;
+    uavBarrier();
+    m_cmd->SetPipelineState(m_psoPostFx.Get());
+    float focus = std::max(scene.camera.distance, 1e-3f);
+    uint32_t pc[4] = {0u, 0u, 0u, 0u};
+    const float dofPx = dof ? rs.dof * 24.0f : 0.0f;
+    memcpy(&pc[1], &dofPx, 4);
+    memcpy(&pc[2], &rs.bloom, 4);
+    memcpy(&pc[3], &focus, 4);
+    if (dof) {
+        m_cmd->SetComputeRootShaderResourceView(2, m_tlas.va());
+        m_cmd->SetComputeRoot32BitConstants(1, 4, pc, 0);
+        m_cmd->Dispatch(gx, gy, 1);
+        uavBarrier();
+    }
+    pc[0] = 1u;
+    m_cmd->SetComputeRoot32BitConstants(1, 4, pc, 0);
+    m_cmd->Dispatch(gx, gy, 1);
+    uavBarrier();
+    pc[0] = 2u;
+    m_cmd->SetComputeRoot32BitConstants(1, 4, pc, 0);
+    m_cmd->Dispatch(gx, gy, 1);
+}
+
 bool Renderer::createPipelines(std::string* error) {
     // Root signature shared by all compute passes.
     D3D12_DESCRIPTOR_RANGE range = {};
@@ -354,7 +382,7 @@ bool Renderer::createPipelines(std::string* error) {
         if (!make(L"SSAO.cso", m_psoSSAO) || !make(L"SSAO_MS.cso", m_psoSSAOMS) || !make(L"SSAOBlur.cso", m_psoSSAOBlur)) { m_psoSSAO.Reset(); m_psoSSAOMS.Reset(); m_psoSSAOBlur.Reset(); }
         error = keep;
     }
-    return make(L"PathTrace.cso", m_psoTrace) && make(L"Denoise.cso", m_psoDenoise) && make(L"Tonemap.cso", m_psoTonemap) && make(L"GIFade.cso", m_psoGIFade) &&
+    return make(L"PathTrace.cso", m_psoTrace) && make(L"Denoise.cso", m_psoDenoise) && make(L"Tonemap.cso", m_psoTonemap) && make(L"GIFade.cso", m_psoGIFade) && make(L"PostFX.cso", m_psoPostFx) &&
            make(L"DDGIUpdate.cso", m_psoGIUpdate) && make(L"DDGIRaster.cso", m_psoGIRaster) &&
            make(L"DDGIBlend.cso", m_psoGIBlend) && make(L"GIShade.cso", m_psoGIShade) &&
            make(L"RCVisibility.cso", m_psoRCVisibility) && make(L"RCTrace.cso", m_psoRCTrace) &&
@@ -2477,6 +2505,7 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
             m_taaValid = true;
             ++m_taaFrame;
         } else m_taaValid = false;
+        if (!m_msaaTemporal) recordPostFx(scene, rs, gx, gy, true);   // (MSAA x16 keeps its history in the slot of the post passes)
     } else if (giRaster) {
         // Probe captures (raster), probe rays + blend (compute), then the viewport lit by the raster pass reading the
         // probes, and the tonemapper. Nothing here needs ray tracing.
@@ -2554,7 +2583,7 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
             uint32_t fk[4] = {0u, 0u, 0u, 0u};
             m_cmd->SetComputeRoot32BitConstants(1, 4, fk, 0);
             m_cmd->Dispatch(gx, gy, 1);
-        }
+        } else recordPostFx(scene, rs, gx, gy, true);
     } else {
     m_cmd->SetComputeRootSignature(m_rootSig.Get());
     m_cmd->SetComputeRootConstantBufferView(0, m_constants.va());

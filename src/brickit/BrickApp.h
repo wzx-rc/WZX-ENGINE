@@ -50,6 +50,7 @@ struct Options {
     int readStep = -1;         // --read-step n: the page read for the capture
     std::wstring importReport; // --import-report file: pieces, steps, parts not found
     std::wstring groupTest;   // --group-test file: the groups checked (BrickGroups.cpp)
+    float dof = -1, bloom = -1;   // --dof s, --bloom s (-1: the settings)
     float renderScale = -1;  // --render-scale s: the image rendered at s of the window (-1: the setting)
     int giSoft = 1;          // --gi-soft 0: the sharp visibility weights of the probes (comparison)
     float giSmooth = 0.0f;   // --gi-smooth r: probe GI read over the surface (radius in spacings, 0 = off; 0.5: +6 ms at 2000 x 1125)
@@ -493,6 +494,7 @@ private:
     std::unordered_map<std::string, int> m_catCount, m_techSubCount;
     int m_availCount = 0;
     bool m_allColors = false;         // Couleurs: every colour offered, even those that do not exist for the part
+    float m_dof = 0.0f, m_bloom = 0.0f;   // Réglages › Lumière › Profondeur de champ / Bloom (0 = off)
     float m_renderScale = 1.0f;       // Réglages › Échelle de rendu (1, 0.85, 0.75, 0.67)
     float m_selOutline = 0.22f, m_selFill = 0.15f;   // Réglages › Lumière: Contour / Voile de sélection
     float m_lumColumnH = 0.0f;        // Réglages: height of the Lumière column drawn last frame

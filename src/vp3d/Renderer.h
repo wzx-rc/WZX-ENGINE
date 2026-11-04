@@ -70,7 +70,9 @@ struct RenderSettings {
     float2 selectionCenter{0, 0};   // screen centre (viewport pixels) and radius of the selection: the glow light runs around it
     float selectionRadius = 100.0f;
     float selectionFill = 0.15f;
-    float sharpen = 0.0f;           // tone mapper: contrast adaptive sharpening (an image rendered below the window size)    // selection style 2 (BrickIt): the white veil over the selected objects (post, after the lighting)
+    float sharpen = 0.0f;
+    float dof = 0.0f;     // raster views: depth of field (0 = off, 1 = a blur of 24 px at twice the focus distance)
+    float bloom = 0.0f;   // raster views: the glow of the bright parts (0 = off)           // tone mapper: contrast adaptive sharpening (an image rendered below the window size)    // selection style 2 (BrickIt): the white veil over the selected objects (post, after the lighting)
     float pixelScale = 1.0f;        // render pixels per screen pixel (viewport supersampling): lines and the glow keep their size
     // raster: screen-space ambient occlusion (radius in scene units), multiplied into the image before the tone mapping
     bool ssao = false;
@@ -330,7 +332,8 @@ private:
     void setupProbeGrid(const RenderSettings& rs);
     void createProbeTextures(const lit::ProbeGrid& grid);
     uint64_t m_giBoundsKey = 0;   // GI bounds the probe grid was placed on (0 = the scene bounds)
-    void recordDDGI(const RenderSettings& rs, UINT gx, UINT gy, bool shade = true);   // shade: GIShade (ray traced visibility)
+    void recordDDGI(const RenderSettings& rs, UINT gx, UINT gy, bool shade = true);
+    void recordPostFx(const Scene& scene, const RenderSettings& rs, UINT gx, UINT gy, bool depthOk);   // depth of field, bloom   // shade: GIShade (ray traced visibility)
     void recordRC(const RenderSettings& rs);   // Radiance Cascades: trace + merge every cascade, then fill the probe atlases
     void recordRCScreen(const RenderSettings& rs, UINT gx, UINT gy);   // screen-space cascades + per-pixel gather
     void recordSplitRC(const RenderSettings& rs, UINT gx, UINT gy);    // Split Radiance Cascades + per-pixel gather
@@ -391,7 +394,7 @@ private:
     std::wstring m_shaderDir;
 
     ComPtr<ID3D12RootSignature> m_rootSig;
-    ComPtr<ID3D12PipelineState> m_psoTrace, m_psoDenoise, m_psoTonemap, m_psoGIFade;
+    ComPtr<ID3D12PipelineState> m_psoTrace, m_psoDenoise, m_psoTonemap, m_psoGIFade, m_psoPostFx;
     // raster while moving (RenderSettings::giRasterWhileMoving): still frames, motion key, image kept, fade weight
     int m_giMoveStill = 1 << 20;
     uint32_t m_giMoveKey = 0;

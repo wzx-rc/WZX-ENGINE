@@ -1116,6 +1116,9 @@ void BrickApp::frame() {
     const int selObj = (m_selected >= 0 && !m_holding) ? m_firstBrickObject + m_selected : -1;
     m_rs.pixelScale = scale;
     m_rs.sharpen = (!pathTraced() && scale < 0.99f) ? std::min(0.6f, (1.0f - scale) * 1.1f) : 0.0f;
+    // Réglages › Lumière: depth of field (HQ, RC) and bloom (the raster views); the path tracer has its own lens
+    m_rs.dof = (m_quality == 1 || m_rcMode) ? (m_opt.dof >= 0 ? m_opt.dof : m_dof) : 0.0f;
+    m_rs.bloom = m_opt.bloom >= 0 ? m_opt.bloom : m_bloom;
     // part sheet open: the main view keeps its last image, the renderer draws the 3D viewer of the part
     const bool sheet = m_infoPart >= 0 && !m_dev;
     if (sheet && !m_frozenTex && m_frame > 0) {
@@ -1320,6 +1323,8 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         else if (a == L"--read-step") opt.readStep = _wtoi(next().c_str());
         else if (a == L"--import-report") opt.importReport = next();
         else if (a == L"--group-test") opt.groupTest = next();
+        else if (a == L"--dof") opt.dof = (float)_wtof(next().c_str());
+        else if (a == L"--bloom") opt.bloom = (float)_wtof(next().c_str());
         else if (a == L"--render-scale") opt.renderScale = (float)_wtof(next().c_str());
         else if (a == L"--gi-soft") opt.giSoft = _wtoi(next().c_str());
         else if (a == L"--gi-smooth") opt.giSmooth = (float)_wtof(next().c_str());
