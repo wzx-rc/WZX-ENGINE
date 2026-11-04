@@ -1282,10 +1282,10 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         else if (a == L"--quality") opt.quality = _wtoi(next().c_str());
         else if (a == L"--light") opt.light = _wtoi(next().c_str());
         else if (a == L"--settings") opt.openSettings = true;
-        else if (a == L"--theme") { std::wstring t = next(); opt.theme = _wcsicmp(t.c_str(), L"ambre") == 0 ? "Ambre" : _wcsicmp(t.c_str(), L"corail") == 0 ? "Corail" : "Atelier"; }
+        else if (a == L"--theme") { std::wstring t = next(); opt.theme = _wcsicmp(t.c_str(), L"ambre") == 0 ? "Ambre" : _wcsicmp(t.c_str(), L"corail") == 0 ? "Corail" : (_wcsicmp(t.c_str(), L"spartan") == 0 || _wcsicmp(t.c_str(), L"halo") == 0) ? "Spartan" : "Atelier"; }
         else if (a == L"--sizes") swscanf_s(next().c_str(), L"%f,%f,%f", &opt.sizes.x, &opt.sizes.y, &opt.sizes.z);
         else if (a == L"--main-color") swscanf_s(next().c_str(), L"%f,%f,%f", &opt.mainColor.x, &opt.mainColor.y, &opt.mainColor.z);
-        else if (a == L"--workspace") { std::wstring w = next(); opt.workspace = w == L"graph" ? 1 : (w == L"material" ? 2 : 0); }
+        else if (a == L"--workspace") { std::wstring w = next(); opt.workspace = w == L"graph" ? 1 : w == L"material" ? 2 : w == L"prefab" ? 3 : 0; }
         else if (a == L"--ddgi") opt.ddgi = _wtoi(next().c_str()) != 0;
         else if (a == L"--probes") opt.probes = _wtoi(next().c_str());
         else if (a == L"--ddgi-raster") opt.ddgiRaster = _wtoi(next().c_str()) != 0;

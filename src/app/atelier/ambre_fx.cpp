@@ -36,6 +36,57 @@ void SetCoralAccent(ImU32 a) {
     coral::selectionBorder = mixc(pb);
 }
 
+bool Halo() { return Style().skin == 3; }
+
+void SetHalo(ImU32 main, ImU32 background, ImU32 second) {
+    const ImVec4 bg = ImGui::ColorConvertU32ToFloat4(background);
+    auto up = [&](float k) {   // lighter step of the background (the mockup panels are 2.5 to 15 % towards white)
+        return ImGui::ColorConvertFloat4ToU32(ImVec4(bg.x + (1 - bg.x) * k, bg.y + (1 - bg.y) * k, bg.z + (1 - bg.z) * k, 1));
+    };
+    auto over = [](ImU32 base, ImU32 c, float k) {   // c laid over base at k
+        const ImVec4 a = ImGui::ColorConvertU32ToFloat4(base), b = ImGui::ColorConvertU32ToFloat4(c);
+        return ImGui::ColorConvertFloat4ToU32(ImVec4(a.x + (b.x - a.x) * k, a.y + (b.y - a.y) * k, a.z + (b.z - a.z) * k, 1));
+    };
+    halo::shell = halo::input = background;
+    halo::panel = up(0.025f);
+    halo::raised = up(0.045f);
+    halo::hover = up(0.072f);
+    halo::border = up(0.092f);
+    halo::borderHi = up(0.15f);
+    halo::accent = main;
+    halo::accentLo = over(halo::panel, main, 0.38f);
+    halo::accentBg = over(halo::panel, main, 0.12f);
+    halo::second = second;
+    halo::secondLo = over(halo::panel, second, 0.40f);
+    halo::secondBg = over(halo::panel, second, 0.10f);
+}
+
+void Chamfer(ImDrawList* dl, ImVec2 a, ImVec2 b, float cut, ImU32 fill, ImU32 border) {
+    cut = std::min(cut, std::min(b.x - a.x, b.y - a.y) * 0.5f);
+    ImVec2 pts[5] = {a, ImVec2(b.x - cut, a.y), ImVec2(b.x, a.y + cut), b, ImVec2(a.x, b.y)};
+    if (fill) dl->AddConvexPolyFilled(pts, 5, fill);
+    if (border) {
+        // inset by half a pixel so the 1 px line stays inside the shape
+        ImVec2 in[5] = {ImVec2(a.x + 0.5f, a.y + 0.5f), ImVec2(b.x - cut - 0.2f, a.y + 0.5f), ImVec2(b.x - 0.5f, a.y + cut + 0.2f),
+                        ImVec2(b.x - 0.5f, b.y - 0.5f), ImVec2(a.x + 0.5f, b.y - 0.5f)};
+        dl->AddPolyline(in, 5, border, ImDrawFlags_Closed, 1.0f);
+    }
+}
+
+void CornerTick(ImDrawList* dl, ImVec2 a, float len, ImU32 color) {
+    dl->AddRectFilled(a, ImVec2(a.x + len, a.y + 1), color);
+    dl->AddRectFilled(a, ImVec2(a.x + 1, a.y + len), color);
+}
+
+void Reticle(ImDrawList* dl, ImVec2 a, ImVec2 b, float len, ImU32 color, float t) {
+    const ImVec2 c[4] = {a, ImVec2(b.x, a.y), ImVec2(a.x, b.y), b};
+    for (int i = 0; i < 4; ++i) {
+        float dx = i % 2 ? -len : len, dy = i / 2 ? -len : len;
+        dl->AddLine(c[i], ImVec2(c[i].x + dx, c[i].y), color, t);
+        dl->AddLine(c[i], ImVec2(c[i].x, c[i].y + dy), color, t);
+    }
+}
+
 const ImVec2 kGlowOffsets[8] = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}, {0.7f, 0.7f}, {-0.7f, 0.7f}, {0.7f, -0.7f}, {-0.7f, -0.7f}};
 
 ImU32 Alpha(ImU32 c, float a) {
@@ -94,6 +145,21 @@ void TopEdge(ImDrawList* dl, ImVec2 a, ImVec2 b, float s, ImU32 color, float alp
 }
 
 ImU32 Button(ImDrawList* dl, ImVec2 a, ImVec2 b, Face face, float s, float rounding) {
+    if (Halo()) {   // flat face, 2 px corners; text buttons (wider than twice their height) get the chamfered corner
+        const bool wide = b.x - a.x > 2 * (b.y - a.y);
+        const float cut = 6 * s, r = 2 * s;
+        auto face2 = [&](ImU32 fill, ImU32 border) {
+            if (wide) Chamfer(dl, a, b, cut, fill, border);
+            else { dl->AddRectFilled(a, b, fill, r); dl->AddRect(a, b, border, r); }
+        };
+        switch (face) {
+        case Face::Active: face2(halo::accentBg, halo::accentLo); return halo::accent;
+        case Face::Primary: face2(halo::secondBg, halo::secondLo); return halo::second;
+        case Face::Hover: face2(halo::hover, halo::borderHi); return halo::text;
+        case Face::Disabled: face2(Alpha(halo::raised, 0.6f), halo::border); return halo::dim;
+        default: face2(halo::raised, halo::border); return halo::text;
+        }
+    }
     if (Coral()) {   // button-secondary / button-build / icon-button-move.svg: 7 px radius, no glow, no light edge
         const float r = 7 * s;
         switch (face) {
@@ -154,6 +220,13 @@ ImU32 Button(ImDrawList* dl, ImVec2 a, ImVec2 b, Face face, float s, float round
 }
 
 void Panel(ImDrawList* dl, ImVec2 a, ImVec2 b, float s, float headerH, float rounding) {
+    if (Halo()) {   // flat panel, 1 px border, separator under the title band, main-colour corner mark
+        dl->AddRectFilled(a, b, halo::panel, 2 * s);
+        dl->AddRect(a, b, halo::border, 2 * s);
+        if (headerH > 0) dl->AddLine(ImVec2(a.x + 1, a.y + headerH), ImVec2(b.x - 1, a.y + headerH), halo::border);
+        CornerTick(dl, a, 8 * s, Alpha(halo::accent, 0.8f));
+        return;
+    }
     if (Coral()) {   // matte card, 8 px radius, no border; the title zone ends with a thin separator
         dl->AddRectFilled(a, b, coral::panel, 8 * s);
         if (headerH > 0) dl->AddLine(ImVec2(a.x, a.y + headerH), ImVec2(b.x, a.y + headerH), coral::border);
@@ -171,6 +244,11 @@ void Panel(ImDrawList* dl, ImVec2 a, ImVec2 b, float s, float headerH, float rou
 }
 
 void SelectedRow(ImDrawList* dl, ImVec2 a, ImVec2 b, float s) {
+    if (Halo()) {   // tinted row, 2 px main-colour bar on the left
+        dl->AddRectFilled(a, b, halo::accentBg, 2 * s);
+        dl->AddRectFilled(a, ImVec2(a.x + 2 * s, b.y), halo::accent);
+        return;
+    }
     if (Coral()) {   // hierarchy-selected.svg
         dl->AddRectFilled(a, b, coral::selection, 5 * s);
         dl->AddRect(a, b, coral::selectionBorder, 5 * s);
@@ -182,6 +260,11 @@ void SelectedRow(ImDrawList* dl, ImVec2 a, ImVec2 b, float s) {
 
 void TabLine(ImDrawList* dl, ImVec2 a, ImVec2 b, bool active, bool hovered, float s) {
     ImVec2 la(a.x, b.y - 2 * s), lb(b.x, b.y);
+    if (Halo()) {
+        if (active) dl->AddRectFilled(ImVec2(a.x + 6 * s, la.y), ImVec2(b.x - 6 * s, lb.y), halo::accent);
+        else if (hovered) dl->AddRectFilled(ImVec2(a.x + 6 * s, b.y - 1 * s), ImVec2(b.x - 6 * s, lb.y), halo::borderHi);
+        return;
+    }
     if (Coral()) {   // coral underline, no glow
         if (active) dl->AddRectFilled(la, lb, coral::accent, 1 * s);
         else if (hovered) dl->AddRectFilled(ImVec2(a.x, b.y - 1 * s), lb, coral::borderStrong);
@@ -196,12 +279,18 @@ void TabLine(ImDrawList* dl, ImVec2 a, ImVec2 b, bool active, bool hovered, floa
 }
 
 void SelectedFrame(ImDrawList* dl, ImVec2 a, ImVec2 b, float s, float rounding) {
+    if (Halo()) { Chamfer(dl, a, b, 8 * s, 0, halo::accent); return; }
     if (Coral()) { dl->AddRect(a, b, coral::accent, 6 * s, 0, 1.2f * s); return; }
     Glow(dl, a, b, col::accent, rounding * s, 5 * s, 0.16f);
     dl->AddRect(a, b, col::accent, rounding * s, 0, 1.5f * s);
 }
 
 void Field(ImDrawList* dl, ImVec2 a, ImVec2 b, float s, bool focus, float rounding) {
+    if (Halo()) {
+        dl->AddRectFilled(a, b, halo::input, 2 * s);
+        dl->AddRect(a, b, focus ? halo::accent : halo::border, 2 * s);
+        return;
+    }
     if (Coral()) {
         dl->AddRectFilled(a, b, coral::input, 5 * s);
         dl->AddRect(a, b, focus ? coral::selectionBorder : coral::border, 5 * s);
@@ -212,18 +301,28 @@ void Field(ImDrawList* dl, ImVec2 a, ImVec2 b, float s, bool focus, float roundi
 }
 
 ImU32 AxisColor(int axis) {
+    if (Halo()) return axis == 0 ? halo::axisX : axis == 1 ? halo::axisY : halo::axisZ;
     if (Coral()) return axis == 0 ? coral::axisX : axis == 1 ? coral::axisY : coral::axisZ;
     return axis == 0 ? col::axisX : axis == 1 ? col::axisY : col::axisZ;
 }
 
 void AxisTag(ImDrawList* dl, ImVec2 a, ImVec2 b, int axis, float s) {
     if (Coral()) return;   // vector-position.svg: only the coloured letter
+    if (Halo()) { dl->AddRectFilled(ImVec2(a.x + 1 * s, a.y + 1 * s), ImVec2(a.x + 22 * s, b.y - 1 * s), Alpha(AxisColor(axis), 0.08f), 1 * s); return; }
     dl->AddRectFilled(ImVec2(a.x + 1 * s, a.y + 1 * s), ImVec2(a.x + 22 * s, b.y - 1 * s), Alpha(AxisColor(axis), 0.18f), 2 * s);
 }
 
 void SliderTrack(ImDrawList* dl, float x0, float x1, float y, float t, bool enabled, bool focus, float s) {
     t = std::clamp(t, 0.0f, 1.0f);
     float hx0 = x0 + 2.5f * s, hx1 = x1 - 2.5f * s, x = hx0 + (hx1 - hx0) * t;
+    if (Halo()) {   // 2 px track, main-colour fill, small square handle
+        dl->AddRectFilled(ImVec2(hx0, y - 1 * s), ImVec2(hx1, y + 1 * s), halo::border);
+        dl->AddRectFilled(ImVec2(hx0, y - 1 * s), ImVec2(x, y + 1 * s), enabled ? halo::accent : halo::dim);
+        ImVec2 ha(x - 3 * s, y - 6 * s), hb(x + 3 * s, y + 6 * s);
+        dl->AddRectFilled(ha, hb, enabled ? halo::text : halo::dim, 1 * s);
+        if (focus) dl->AddRect(ImVec2(ha.x - 1.5f * s, ha.y - 1.5f * s), ImVec2(hb.x + 1.5f * s, hb.y + 1.5f * s), halo::accent, 1 * s);
+        return;
+    }
     dl->AddRectFilled(ImVec2(hx0, y - 1.5f * s), ImVec2(hx1, y + 1.5f * s), col::border, 1.5f * s);
     dl->AddRectFilled(ImVec2(hx0, y - 1.5f * s), ImVec2(x, y + 1.5f * s), enabled ? col::accent : col::rgb(0x68717B), 1.5f * s);
     ImVec2 ha(x - 2.5f * s, y - 8 * s), hb(x + 2.5f * s, y + 8 * s);
@@ -232,6 +331,15 @@ void SliderTrack(ImDrawList* dl, float x0, float x1, float y, float t, bool enab
 }
 
 void Checkbox(ImDrawList* dl, ImVec2 a, ImVec2 b, bool on, bool hovered, float s) {
+    if (Halo()) {   // square box; on: main-colour border and an inner filled square (HUD style, no tick)
+        dl->AddRectFilled(a, b, halo::input, 1 * s);
+        dl->AddRect(a, b, on ? halo::accent : (hovered ? halo::muted : halo::borderHi), 1 * s, 0, 1.2f * s);
+        if (on) {
+            float m = (b.x - a.x) * 0.28f;
+            dl->AddRectFilled(ImVec2(a.x + m, a.y + m), ImVec2(b.x - m, b.y - m), halo::accent, 0.5f * s);
+        }
+        return;
+    }
     if (Coral()) {   // checkbox-checked.svg: filled coral box, dark tick; unchecked: dark box, grey border
         float r = 3 * s, w = b.x - a.x, h = b.y - a.y;
         dl->AddRectFilled(a, b, on ? coral::accent : coral::input, r);
@@ -322,6 +430,23 @@ void SliderField(ImDrawList* dl, ImFont* font, float textSize, ImVec2 a, ImVec2 
 }
 
 float Brand(ImDrawList* dl, ImFont* font, ImFont* bold, ImVec2 p, float s) {
+    if (Halo()) {   // outlined hexagon in the main colour, "WZX" spaced, "ENGINE" small and dim below
+        const float m = 22 * s;
+        ImVec2 c(p.x + m / 2, p.y + m / 2);
+        ImVec2 hex[6];
+        for (int i = 0; i < 6; ++i) {
+            float ang = 3.14159265f / 3 * i - 3.14159265f / 2;
+            hex[i] = ImVec2(c.x + std::cos(ang) * m * 0.48f, c.y + std::sin(ang) * m * 0.48f);
+        }
+        dl->AddPolyline(hex, 6, halo::accent, ImDrawFlags_Closed, 1.5f * s);
+        dl->AddLine(ImVec2(c.x, c.y - m * 0.22f), ImVec2(c.x, c.y + m * 0.24f), halo::accent, 1.5f * s);
+        dl->AddLine(ImVec2(c.x - m * 0.2f, c.y - m * 0.08f), c, halo::accent, 1.5f * s);
+        dl->AddLine(ImVec2(c.x + m * 0.2f, c.y - m * 0.08f), c, halo::accent, 1.5f * s);
+        float x = p.x + m + 10 * s;
+        float e1 = SpacedText(dl, bold ? bold : font, 14 * s, ImVec2(x, p.y - 1 * s), halo::text, "WZX", 3.0f * s);
+        float e2 = SpacedText(dl, font, 8.5f * s, ImVec2(x, p.y + 15 * s), halo::dim, "ENGINE", 2.6f * s);
+        return std::max(e1, e2);
+    }
     if (Coral()) {   // rounded dark tile with the coral cube, "WZX Engine" and a small spaced subtitle
         const float k = 26 * s / 34.0f;
         ImVec2 o(p.x, p.y - 1 * s);

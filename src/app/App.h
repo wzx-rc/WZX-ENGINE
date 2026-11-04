@@ -370,12 +370,37 @@ private:
     void atlViewMenus(float x, float y, float w);   // camera, display, renderer and axes menus inside the view (w: the room)
     void atlContent(float x, float y, float w, float h);
     void atlInspector(float x, float y, float w, float h);
+    void atlMenuItems(int menu);                                        // items of the top bar menus (classic and Spartan)
+    void atlInspectorPage(int page, float x, float y, float w, float h);  // an inspector page in a scrolling child
+    // Spartan theme (SpartanUI.cpp, design/halo/mockup-halo-espaces.html): its own layout and drawing for every workspace
+    void spDraw(float X, float Y, float W, float H);
+    void spTopBar(float x, float y, float w, float h);
+    void spRail(float x, float y, float w, float h);
+    void spScenePanel(float x, float y, float w, float h);
+    void spViewport(float x, float y, float w, float h);
+    void spDrawer(float x, float y, float w, float h);
+    void spInspector(float x, float y, float w, float h);
+    void spStatus(float x, float y, float w, float h);
+    void spMaterials(float x, float y, float w, float h);
+    void spPrefab(float x, float y, float w, float h);
+    struct SpartanState {
+        ImTextureID icons = 0;      // assets/ui/spartan_icons.png
+        float iconsW = 1024, iconsH = 896;
+        bool loaded = false;
+        int railPage = 0;           // inspector page shown (Actor, Light, Render, World)
+        int drawerTab = 0;          // Assets, Console, Graph
+        bool sect[8] = {true, true, true, false, true, true, true, true};   // open inspector sections (3: Avancé, closed)
+        int matSel = 0, matShape = 0, matTab = 0;
+        int prefabSel = 0, prefabComp = 4, prefabTab = 0;
+        bool prefabOn[7] = {true, true, true, true, true, false, true};
+    } m_sp;
     void atlInspectorActor(float x, float y, float w, float h);
     void atlInspectorLighting(float x, float y, float w, float h);
     void atlInspectorRender(float x, float y, float w, float h);
     void atlInspectorWorld(float x, float y, float w, float h);
     struct AtelierState {
         float leftW = 222, rightW = 284, bottomH = 190;   // reference pixels of the Graph Editor (scaled by s)
+        bool searchFocus = false;                          // Halo rail: focus the Scene Manager search next frame
         int sceneTab = 0, inspectorTab = 0, contentTab = 0, folder = 0;
         bool expanded[10] = {true, true, true, true, false, false, false, true, true, true};
         bool folderOpen[4] = {true, false, true, true};    // hierarchy: root, environment, objects, lights

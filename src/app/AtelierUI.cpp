@@ -108,7 +108,7 @@ bool Button(const char* id, R r, const char* label, Icon icon, bool active = fal
         // gradient face, light top edge; active: amber border, inner ring and halo, glowing icon
         afx::Face f = !enabled ? afx::Face::Disabled : active ? afx::Face::Active : hover ? afx::Face::Hover : afx::Face::Normal;
         ImU32 c = afx::Button(dl, r.min(), r.max(), f, s, 4);
-        if (P().skin == 2) Glyph(icon, ix, iy, 13, c);   // Corail: no glow
+        if (P().skin >= 2) Glyph(icon, ix, iy, 13, c);   // Corail, Halo: no glow
         else if (active) GlowGlyph(icon, ix, iy, 13, c, afx::col::accent, 0.08f);
         else GlowGlyph(icon, ix, iy, 13, c, c, enabled ? 0.025f : 0.0f);
         if (!iconOnly && label && *label) {
@@ -222,8 +222,15 @@ void Panel(R r, Icon icon, const char* title, const char* tag, ImU32 iconColor) 
     }
     if (P().skin) {   // surface gradient with a title band (structure-header.svg)
         afx::Panel(dl, r.min(), r.max(), s, 34 * s);
-        GlowGlyph(icon, r.x + 12 * s, r.y + 11 * s, 13, iconColor, iconColor, iconColor == P().accent ? 0.06f : 0.0f);
-        Text(r.x + 33 * s, r.y + 10 * s, title, P().text, 13);
+        if (P().skin == 3) {   // Halo: muted icon, condensed spaced capitals
+            Glyph(icon, r.x + 12 * s, r.y + 11 * s, 13, P().muted);
+            std::string up = title;
+            for (char& ch : up) ch = (char)std::toupper((unsigned char)ch);
+            afx::SpacedText(dl, P().fontHud ? P().fontHud : font, 10.5f * s * ts(), ImVec2(r.x + 33 * s, r.y + 11 * s), P().mutedLight, up.c_str(), 1.5f * s);
+        } else {
+            GlowGlyph(icon, r.x + 12 * s, r.y + 11 * s, 13, iconColor, iconColor, iconColor == P().accent ? 0.06f : 0.0f);
+            Text(r.x + 33 * s, r.y + 10 * s, title, P().text, 13);
+        }
         if (tag && *tag) Text(r.x + r.w - 12 * s - TextSize(tag, 8).x, r.y + 14 * s, tag, P().muted, 8);
         return;
     }
@@ -399,7 +406,7 @@ std::vector<Asset> assetList() {
 // Feeds the Atelier modules (graph, material studio, inspector, scene) with the current theme settings:
 // dark mode: the Atelier reference colours with the main colour tint (Blue Slate gives the exact values),
 // light mode: derived from the light palette.
-static void syncAtelierStyle(ImFont* bold) {
+static void syncAtelierStyle(ImFont* bold, ImFont* hud) {
     atelier::Palette& a = atelier::Style();
     const atelier::Palette ref;
     const ThemePalette& p = th::P();
@@ -410,6 +417,7 @@ static void syncAtelierStyle(ImFont* bold) {
     a.textScale = th::textSize() / a.layoutScale;
     a.iconScale = th::iconSize() / a.layoutScale;
     a.fontBold = bold;
+    a.fontHud = hud;
     a.skin = th::skin();
     if (a.skin == 1) {
         // Ambre: colours of the pack; the graph keeps its Atelier node style on graphite surfaces
@@ -446,6 +454,24 @@ static void syncAtelierStyle(ImFont* bold) {
         a.menuX = 168; a.menuW = 46; a.headerShift = 111;   // room for the WZX Engine brand
         return;
     }
+    if (a.skin == 3) {
+        // Halo: the three colours of the settings; the graph keeps its Atelier node style on these surfaces
+        using namespace atelier::fx::halo;
+        const UiSettings& us = th::settings();
+        atelier::fx::SetHalo(u(us.haloMain), u(us.haloBg), u(us.haloSecond));
+        auto over = [&](ImU32 base, ImU32 c, float k, int al = 255) { ImVec4 m = mixc(v(base), v(c), k); return u(m, al / 255.0f); };
+        a.light = false;
+        a.accent = accent; a.select = accentBg; a.strong = second;
+        a.bg = shell; a.panel = panel; a.raised = raised; a.hover = hover; a.bar = panel; a.border = border;
+        a.text = text; a.muted = muted; a.mutedLight = atelier::fx::col::rgb(0xAEB7C0);
+        a.canvas = over(shell, raised, 0.6f); a.node = raised; a.nodeOff = panel;
+        a.gridDot = over(border, muted, 0.2f, 150); a.gridLine = over(panel, border, 0.8f, 95);
+        a.overlay = over(panel, panel, 0, 230); a.minimap = over(panel, panel, 0, 240); a.headerBar = panel; a.popupHeader = raised;
+        a.track = border; a.frameHover = borderHi; a.checkerA = atelier::fx::col::rgb(0x3A424A); a.checkerB = atelier::fx::col::rgb(0x6B757E);
+        a.toast = over(panel, accent, 0.10f, 245); a.knob = text; a.pinExec = atelier::fx::col::rgb(0xE2E7EB);
+        a.menuX = 158; a.menuW = 46; a.headerShift = 101;   // room for the WZX brand
+        return;
+    }
     a.menuX = 53; a.menuW = 53; a.headerShift = 53;
     a.light = th::settings().light;
     a.accent = u(a.light ? th::accentTextV() : p.accent);
@@ -474,8 +500,9 @@ static void syncAtelierStyle(ImFont* bold) {
 // --------------------------------------------------------------------------- frame
 
 void App::drawAtelier() {
-    syncAtelierStyle(m_gui.fontBold);
-    if (m_workspace == 2) {
+    syncAtelierStyle(m_gui.fontBold, m_gui.fontHud);
+    if (m_workspace == 3 && P().skin != 3) m_workspace = 0;   // Prefab: Spartan workspace only
+    if (m_workspace == 2 && P().skin != 3) {
         int target = atelier::material::Draw();
         if (target) m_workspace = target == 1 ? 0 : 1;
         return;
@@ -499,6 +526,8 @@ void App::drawAtelier() {
     Box({X, Y, W, H}, P().bg, 0);
 
     AtelierState& A = m_atl;
+    if (P().skin == 3) spDraw(X, Y, W, H);   // Spartan: its own layout (SpartanUI.cpp)
+    else {
     atlTopBar(X, Y, W);
     m_atelierTop = 42 * s;   // the game layer draws the Graph tab below this bar
     float maxL = std::max(185.0f, std::min(360.0f, W / s - 680)), maxR = std::max(248.0f, std::min(400.0f, W / s - 650)), maxB = std::max(141.0f, H / s - 430);
@@ -517,6 +546,7 @@ void App::drawAtelier() {
         Splitter("splitRight", {X + W - rw - 12 * s, top, 6 * s, H - 52 * s}, A.rightW, 248, maxR, true, true);
         Splitter("splitBottom", {cx, Y + H - bh - 13 * s, cw, 5 * s}, A.bottomH, 140, maxB, false, true);
     }
+    }   // not Halo
 
     // toast (status messages), as in archive/atelier-graph/former Atelier graph.cpp
     if (!m_status.empty() && GetTickCount64() - m_statusTime < 3500) {
@@ -530,119 +560,198 @@ void App::drawAtelier() {
     ImGui::End();
 }
 
+// One inspector page (0 Actor, 1 Light, 2 Render, 3 World) in a scrolling child at (x, y): used by the Spartan
+// inspector for the pages it does not redraw itself.
+void App::atlInspectorPage(int page, float x, float y, float w, float h) {
+    ImGui::SetCursorScreenPos(ImVec2(x, y));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+    ImGui::BeginChild("spInspectorPage", ImVec2(w, h), ImGuiChildFlags_None, ImGuiWindowFlags_NoBackground);
+    ImGui::SetWindowFontScale(atelier::Style().layoutScale);
+    ImGui::PopStyleVar();
+    dl = ImGui::GetWindowDrawList();
+    g_labelRight = x + w - 8 * s;
+    ImVec2 c = ImGui::GetCursorScreenPos();
+    const float bw = w - 8 * s;
+    if (page == 0) atlInspectorActor(c.x, c.y, bw, 0);
+    else if (page == 1) atlInspectorLighting(c.x, c.y, bw, 0);
+    else if (page == 2) atlInspectorRender(c.x, c.y, bw, 0);
+    else atlInspectorWorld(c.x, c.y, bw, 0);
+    ImGui::EndChild();
+    dl = ImGui::GetWindowDrawList();
+}
+
 // --------------------------------------------------------------------------- header (former Atelier graph HeaderBar)
 
+// Items of the top bar menus (File, Edit, Create, View, Tools, Help), shared by the classic and Spartan top bars.
+void App::atlMenuItems(int mi) {
+    auto save = [&] { if (!m_themeTestOnly) th::saveSettings(m_exeDir + L"\\wzx_settings.ini"); };
+    // menu text as large as the top bar labels (the default popup text was too small), same for the sub-menus
+    const float menuScale = 1.4f * ts();
+    ImGui::SetWindowFontScale(menuScale);
+    if (mi == 0) {
+        if (ImGui::MenuItem("New Scene", "Ctrl+N")) m_pendingAction = PA_NEW;
+        if (ImGui::MenuItem("Open Scene…", "Ctrl+O")) m_pendingAction = PA_OPEN;
+        if (ImGui::MenuItem("Save Scene", "Ctrl+S")) m_pendingAction = PA_SAVE;
+        if (ImGui::MenuItem("Save Scene As…", "Ctrl+Shift+S")) m_pendingAction = PA_SAVE_AS;
+        if (ImGui::MenuItem("Import OBJ Mesh…")) m_pendingAction = PA_IMPORT_MESH;
+        ImGui::Separator();
+        if (ImGui::MenuItem("Cornell Box Scene", "F1", m_sceneId == SCENE_CORNELL)) m_pendingScene = SCENE_CORNELL;
+        if (ImGui::MenuItem("Village Scene", "F2", m_sceneId == SCENE_STUDIO)) m_pendingScene = SCENE_STUDIO;
+        if (ImGui::MenuItem("LookDev Scene", "F3", m_sceneId == SCENE_LOOKDEV)) m_pendingScene = SCENE_LOOKDEV;
+        if (ImGui::MenuItem("Concept Scene", "F4", m_sceneId == SCENE_CONCEPT)) m_pendingScene = SCENE_CONCEPT;
+        ImGui::Separator();
+        if (ImGui::MenuItem("Build…", "F7") && m_game) m_game->openBuildWindow();
+        ImGui::Separator();
+        if (ImGui::MenuItem("Viewport Capture", "F12")) saveScreenshot(false);
+        if (ImGui::MenuItem("Settings…")) m_showSettings = true;
+        ImGui::Separator();
+        if (ImGui::MenuItem("Exit", "Alt+F4")) PostMessageW(m_hwnd, WM_CLOSE, 0, 0);
+    }
+    if (mi == 1) {
+        if (ImGui::MenuItem("Undo", "Ctrl+Z", false, !m_undo.empty())) undo();
+        if (ImGui::MenuItem("Redo", "Ctrl+Y", false, !m_redo.empty())) redo();
+        ImGui::Separator();
+        if (ImGui::MenuItem("Duplicate", "Ctrl+D", false, m_selected >= 0)) duplicateSelected();
+        if (ImGui::MenuItem("Delete", "Del", false, m_selected >= 0)) deleteSelected();
+        ImGui::Separator();
+        if (ImGui::BeginMenu("Add Object")) {
+            ImGui::SetWindowFontScale(menuScale);
+            for (const PartDef& p : parts())
+                if (ImGui::MenuItem(toUtf8(p.name).c_str())) addPartFromLibrary(p);
+            ImGui::EndMenu();
+        }
+    }
+    if (mi == 2 && ImGui::BeginMenu("Mesh")) {
+        ImGui::SetWindowFontScale(menuScale);
+        for (int t : {PRIM_CUBE, PRIM_SPHERE, PRIM_PLANE, PRIM_CYLINDER, PRIM_TORUS, PRIM_DISK})
+            if (ImGui::MenuItem(primitiveName(t))) addPrimitive(t);
+        ImGui::EndMenu();
+    }
+    if (mi == 2) {   // a camera object where the view is (the first one is the render camera)
+        if (ImGui::MenuItem("Camera from View")) createCameraFromView(false);
+        if (ImGui::MenuItem("Render Camera from View")) createCameraFromView(true);
+    }
+    if (mi == 2 && m_curves) m_curves->menu(menuScale);   // Create > Curve (CurveEditor.cpp)
+    if (mi == 3) {
+        if (ImGui::MenuItem("Frame Selection", "F")) frameSelection();
+        ImGui::MenuItem("Viewport Statistics", nullptr, &m_showStats);
+        ImGui::MenuItem("Transform Gizmo", nullptr, &m_showGizmo);
+        ImGui::Separator();
+        if (ImGui::MenuItem("Wireframe", nullptr, m_rs.wireframe == 1)) { m_rs.wireframe = m_rs.wireframe == 1 ? 0 : 1; markDirty(); }
+        if (ImGui::MenuItem("Wireframe Override", nullptr, m_rs.wireframe == 2)) { m_rs.wireframe = m_rs.wireframe == 2 ? 0 : 2; markDirty(); }
+        ImGui::Separator();
+        if (ImGui::MenuItem("Restore Panel Layout")) { m_atl.leftW = 222; m_atl.rightW = 284; m_atl.bottomH = 190; }
+        ImGui::Separator();
+        if (ImGui::MenuItem("Light Mode", nullptr, th::settings().light && !th::styled(), !th::styled())) { th::settings().light = !th::settings().light; th::apply(m_dpi); save(); }
+        if (ImGui::BeginMenu("Theme")) {
+            ImGui::SetWindowFontScale(menuScale);
+            const char* names[] = {"Atelier", "Ambre", "Anthracite-Corail", "Spartan"}, *ids[] = {"Atelier", "Ambre", "Corail", "Spartan"};
+            for (int i = 0; i < 4; ++i)
+                if (ImGui::MenuItem(names[i], nullptr, th::skin() == i)) { th::settings().theme = ids[i]; th::apply(m_dpi); save(); }
+            ImGui::EndMenu();
+        }
+        if (ImGui::MenuItem("Appearance Settings…")) m_showSettings = true;
+    }
+    if (mi == 4) {
+        if (ImGui::MenuItem("Select", "Q", m_tool == TOOL_SELECT)) m_tool = TOOL_SELECT;
+        if (ImGui::MenuItem("Move", "W", m_tool == TOOL_MOVE)) m_tool = TOOL_MOVE;
+        if (ImGui::MenuItem("Rotate", "E", m_tool == TOOL_ROTATE)) m_tool = TOOL_ROTATE;
+        if (ImGui::MenuItem("Scale", "R", m_tool == TOOL_SCALE)) m_tool = TOOL_SCALE;
+        ImGui::Separator();
+        ImGui::MenuItem("Snapping always on (else Shift)", nullptr, &m_magnet);
+        if (ImGui::BeginMenu("Axes (Move / Rotate)")) {
+            ImGui::SetWindowFontScale(menuScale);
+            const char* modes[] = {"World", "Object", "Parent"};
+            for (int i = 0; i < 3; ++i)
+                if (ImGui::MenuItem(modes[i], nullptr, m_axisMode == i)) m_axisMode = i;
+            ImGui::EndMenu();
+        }
+        ImGui::SetNextItemWidth(150 * s);
+        ImGui::SliderFloat("Camera speed", &m_camSpeed, 0.1f, 5.0f, "%.1f");
+    }
+    if (mi == 5) {
+        if (ImGui::MenuItem("Controls & Shortcuts")) m_showShortcuts = true;
+        if (ImGui::MenuItem("About")) m_showAbout = true;
+    }
+}
+
 void App::atlTopBar(float x0, float y0, float width) {
-    Box({x0, y0, width, 37 * s}, P().bar, 0);
+    const bool halo = P().skin == 3;
+    const float barH = (halo ? 40 : 37) * s;
+    Box({x0, y0, width, barH}, P().bar, 0);
     if (P().skin) {   // topbar.svg: gold cube and WZX ENGINE wordmark, bottom border
-        dl->AddLine(ImVec2(x0, y0 + 37 * s - 0.5f), ImVec2(x0 + width, y0 + 37 * s - 0.5f), P().border);
+        dl->AddLine(ImVec2(x0, y0 + barH - 0.5f), ImVec2(x0 + width, y0 + barH - 0.5f), P().border);
         afx::Brand(dl, font, P().fontBold, ImVec2(x0 + 13 * s, y0 + 6.5f * s), s);
     } else {
         Glyph(Icon::Cube, x0 + 15 * s, y0 + 10 * s, 17, P().accent);
     }
     const float sep = P().menuX - 10;
-    dl->AddLine(ImVec2(x0 + sep * s, y0 + 7 * s), ImVec2(x0 + sep * s, y0 + 30 * s), P().border);
+    if (!halo) dl->AddLine(ImVec2(x0 + sep * s, y0 + 7 * s), ImVec2(x0 + sep * s, y0 + 30 * s), P().border);
+    const float my = halo ? y0 + 8 * s : y0 + 6 * s;   // menu row
     const char* menus[] = {"File", "Edit", "Create", "View", "Tools", "Help"};
     float x = x0 + P().menuX * s;
     auto save = [&] { if (!m_themeTestOnly) th::saveSettings(m_exeDir + L"\\wzx_settings.ini"); };
     for (int mi = 0; mi < 6; ++mi) {
         std::string id = "atlmenu" + std::to_string(mi);
-        R r = {x, y0 + 6 * s, P().menuW * s, 24 * s};
+        R r = {x, my, P().menuW * s, 24 * s};
         if (Hit(id.c_str(), r)) ImGui::OpenPopup(id.c_str());
-        if (ImGui::IsItemHovered()) Box(r, P().raised);
-        Center(r, menus[mi], P().text, 11);
+        const bool menuHover = ImGui::IsItemHovered() || ImGui::IsPopupOpen(id.c_str());
+        if (menuHover) Box(r, halo ? P().hover : P().raised, halo ? 2 : 3);
+        Center(r, menus[mi], halo && !menuHover ? P().muted : P().text, 11);
         if (ImGui::BeginPopup(id.c_str())) {
-            // menu text as large as the top bar labels (the default popup text was too small), same for the sub-menus
-            const float menuScale = 1.4f * ts();
-            ImGui::SetWindowFontScale(menuScale);
-            if (mi == 0) {
-                if (ImGui::MenuItem("New Scene", "Ctrl+N")) m_pendingAction = PA_NEW;
-                if (ImGui::MenuItem("Open Scene…", "Ctrl+O")) m_pendingAction = PA_OPEN;
-                if (ImGui::MenuItem("Save Scene", "Ctrl+S")) m_pendingAction = PA_SAVE;
-                if (ImGui::MenuItem("Save Scene As…", "Ctrl+Shift+S")) m_pendingAction = PA_SAVE_AS;
-                if (ImGui::MenuItem("Import OBJ Mesh…")) m_pendingAction = PA_IMPORT_MESH;
-                ImGui::Separator();
-                if (ImGui::MenuItem("Cornell Box Scene", "F1", m_sceneId == SCENE_CORNELL)) m_pendingScene = SCENE_CORNELL;
-                if (ImGui::MenuItem("Village Scene", "F2", m_sceneId == SCENE_STUDIO)) m_pendingScene = SCENE_STUDIO;
-                if (ImGui::MenuItem("LookDev Scene", "F3", m_sceneId == SCENE_LOOKDEV)) m_pendingScene = SCENE_LOOKDEV;
-                if (ImGui::MenuItem("Concept Scene", "F4", m_sceneId == SCENE_CONCEPT)) m_pendingScene = SCENE_CONCEPT;
-                ImGui::Separator();
-                if (ImGui::MenuItem("Build…", "F7") && m_game) m_game->openBuildWindow();
-                ImGui::Separator();
-                if (ImGui::MenuItem("Viewport Capture", "F12")) saveScreenshot(false);
-                if (ImGui::MenuItem("Settings…")) m_showSettings = true;
-                ImGui::Separator();
-                if (ImGui::MenuItem("Exit", "Alt+F4")) PostMessageW(m_hwnd, WM_CLOSE, 0, 0);
-            }
-            if (mi == 1) {
-                if (ImGui::MenuItem("Undo", "Ctrl+Z", false, !m_undo.empty())) undo();
-                if (ImGui::MenuItem("Redo", "Ctrl+Y", false, !m_redo.empty())) redo();
-                ImGui::Separator();
-                if (ImGui::MenuItem("Duplicate", "Ctrl+D", false, m_selected >= 0)) duplicateSelected();
-                if (ImGui::MenuItem("Delete", "Del", false, m_selected >= 0)) deleteSelected();
-                ImGui::Separator();
-                if (ImGui::BeginMenu("Add Object")) {
-                    ImGui::SetWindowFontScale(menuScale);
-                    for (const PartDef& p : parts())
-                        if (ImGui::MenuItem(toUtf8(p.name).c_str())) addPartFromLibrary(p);
-                    ImGui::EndMenu();
-                }
-            }
-            if (mi == 2 && ImGui::BeginMenu("Mesh")) {
-                ImGui::SetWindowFontScale(menuScale);
-                for (int t : {PRIM_CUBE, PRIM_SPHERE, PRIM_PLANE, PRIM_CYLINDER, PRIM_TORUS, PRIM_DISK})
-                    if (ImGui::MenuItem(primitiveName(t))) addPrimitive(t);
-                ImGui::EndMenu();
-            }
-            if (mi == 2) {   // a camera object where the view is (the first one is the render camera)
-                if (ImGui::MenuItem("Camera from View")) createCameraFromView(false);
-                if (ImGui::MenuItem("Render Camera from View")) createCameraFromView(true);
-            }
-            if (mi == 2 && m_curves) m_curves->menu(menuScale);   // Create > Curve (CurveEditor.cpp)
-            if (mi == 3) {
-                if (ImGui::MenuItem("Frame Selection", "F")) frameSelection();
-                ImGui::MenuItem("Viewport Statistics", nullptr, &m_showStats);
-                ImGui::MenuItem("Transform Gizmo", nullptr, &m_showGizmo);
-                ImGui::Separator();
-                if (ImGui::MenuItem("Wireframe", nullptr, m_rs.wireframe == 1)) { m_rs.wireframe = m_rs.wireframe == 1 ? 0 : 1; markDirty(); }
-                if (ImGui::MenuItem("Wireframe Override", nullptr, m_rs.wireframe == 2)) { m_rs.wireframe = m_rs.wireframe == 2 ? 0 : 2; markDirty(); }
-                ImGui::Separator();
-                if (ImGui::MenuItem("Restore Panel Layout")) { m_atl.leftW = 222; m_atl.rightW = 284; m_atl.bottomH = 190; }
-                ImGui::Separator();
-                if (ImGui::MenuItem("Light Mode", nullptr, th::settings().light && !th::styled(), !th::styled())) { th::settings().light = !th::settings().light; th::apply(m_dpi); save(); }
-                if (ImGui::BeginMenu("Theme")) {
-                    ImGui::SetWindowFontScale(menuScale);
-                    const char* names[] = {"Atelier", "Ambre", "Anthracite-Corail"}, *ids[] = {"Atelier", "Ambre", "Corail"};
-                    for (int i = 0; i < 3; ++i)
-                        if (ImGui::MenuItem(names[i], nullptr, th::skin() == i)) { th::settings().theme = ids[i]; th::apply(m_dpi); save(); }
-                    ImGui::EndMenu();
-                }
-                if (ImGui::MenuItem("Appearance Settings…")) m_showSettings = true;
-            }
-            if (mi == 4) {
-                if (ImGui::MenuItem("Select", "Q", m_tool == TOOL_SELECT)) m_tool = TOOL_SELECT;
-                if (ImGui::MenuItem("Move", "W", m_tool == TOOL_MOVE)) m_tool = TOOL_MOVE;
-                if (ImGui::MenuItem("Rotate", "E", m_tool == TOOL_ROTATE)) m_tool = TOOL_ROTATE;
-                if (ImGui::MenuItem("Scale", "R", m_tool == TOOL_SCALE)) m_tool = TOOL_SCALE;
-                ImGui::Separator();
-                ImGui::MenuItem("Snapping always on (else Shift)", nullptr, &m_magnet);
-                if (ImGui::BeginMenu("Axes (Move / Rotate)")) {
-                    ImGui::SetWindowFontScale(menuScale);
-                    const char* modes[] = {"World", "Object", "Parent"};
-                    for (int i = 0; i < 3; ++i)
-                        if (ImGui::MenuItem(modes[i], nullptr, m_axisMode == i)) m_axisMode = i;
-                    ImGui::EndMenu();
-                }
-                ImGui::SetNextItemWidth(150 * s);
-                ImGui::SliderFloat("Camera speed", &m_camSpeed, 0.1f, 5.0f, "%.1f");
-            }
-            if (mi == 5) {
-                if (ImGui::MenuItem("Controls & Shortcuts")) m_showShortcuts = true;
-                if (ImGui::MenuItem("About")) m_showAbout = true;
-            }
+            atlMenuItems(mi);
             ImGui::EndPopup();
         }
         x += P().menuW * s;
+    }
+    if (halo) {
+        // workspaces: one joined strip of tabs (active: raised, main-colour underline)
+        const char* wsNames[] = {"SCENE", "GRAPH", "MATERIALS"};
+        const Icon wsIcons[] = {Icon::Scene, Icon::Blueprint, Icon::Material};
+        const float wsW[] = {92, 92, 120};
+        float wx = x + 14 * s, wy = y0 + 7 * s, wh = 26 * s;
+        float total = 0;
+        for (float v : wsW) total += v * s;
+        dl->AddRect(ImVec2(wx, wy), ImVec2(wx + total, wy + wh), P().border, 0);
+        for (int i = 0; i < 3; ++i) {
+            R t = {wx, wy, wsW[i] * s, wh};
+            char id[24];
+            snprintf(id, sizeof(id), "haloWs%d", i);
+            const bool on = m_workspace == i;
+            if (Hit(id, t)) m_workspace = i;
+            const bool hv = ImGui::IsItemHovered();
+            if (on) { Box(t, P().raised, 0); dl->AddRectFilled(ImVec2(t.x, t.y + t.h - 2 * s), ImVec2(t.x + t.w, t.y + t.h), P().accent); }
+            else if (hv) Box(t, P().hover, 0);
+            if (i > 0) dl->AddLine(ImVec2(t.x, t.y), ImVec2(t.x, t.y + t.h), P().border);
+            ImFont* hud = P().fontHud ? P().fontHud : font;
+            const float fs = 10.5f * s * ts();
+            float lw = afx::SpacedText(dl, hud, fs, ImVec2(-1e5f, 0), 0, wsNames[i], 1.6f * s) + 1e5f;   // measure
+            float gx = t.x + (t.w - (13 * s + 7 * s + lw)) / 2;
+            ImU32 c = on ? P().text : (hv ? P().text : P().muted);
+            Glyph(wsIcons[i], gx, t.y + (t.h - 13 * s) / 2, 13, on ? P().accent : c);
+            afx::SpacedText(dl, hud, fs, ImVec2(gx + 20 * s, t.y + (t.h - fs) / 2), c, wsNames[i], 1.6f * s);
+            wx += t.w;
+        }
+        // right: save, undo, redo | Play (main colour), Build (second colour) | settings
+        float bx = x0 + width - 12 * s, by = y0 + 6 * s, bh = 28 * s;
+        auto left = [&](float bw) { bx -= bw; float r0 = bx; bx -= 6 * s; return r0; };
+        if (Button("sceneSettings", {left(28 * s), by, 28 * s, bh}, "", Icon::Settings, m_showSettings, true)) m_showSettings = !m_showSettings;
+        Tip("Settings: theme, colours, sizes");
+        bx -= 6 * s;
+        if (PrimaryButton("buildScene", {left(98 * s), by, 98 * s, bh}, "Build  F7", Icon::Check, m_game != nullptr)) m_game->openBuildWindow();
+        Tip("Build  (F7)\nOpens the Build window: pick a platform profile, then Build or Build and Run.");
+        const bool playing = m_game && m_game->playing();
+        if (Button("playScene", {left(92 * s), by, 92 * s, bh}, playing ? "Stop  F5" : "Play  F5", Icon::Play, true, false, m_game != nullptr)) m_game->requestPlay();
+        Tip(playing ? "Stop  (F5)\nEnds the test: the scene comes back as it was before Play."
+                    : "Play  (F5)\nTests the game in the editor viewport with its graph.\nStop restores the scene as it was.");
+        bx -= 6 * s;
+        if (Button("haloRedo", {left(28 * s), by, 28 * s, bh}, "", Icon::Redo, false, true, !m_redo.empty())) redo();
+        Tip("Redo (Ctrl+Y)");
+        if (Button("haloUndo", {left(28 * s), by, 28 * s, bh}, "", Icon::Undo, false, true, !m_undo.empty())) undo();
+        Tip("Undo (Ctrl+Z)");
+        if (Button("saveScene", {left(28 * s), by, 28 * s, bh}, "", Icon::Save, false, true)) m_pendingAction = 1;
+        Tip("Save the scene (Ctrl+S)");
+        return;
     }
     // workspaces, same positions as the Graph Editor and Material Studio headers
     float ty = y0 + 7 * s, wx = x0 + P().headerShift * s;
@@ -687,9 +796,23 @@ void App::atlHierarchy(float x, float y, float w, float h) {
     AtelierState& A = m_atl;
     outlinerIds();
     R r = {x, y, w, h};
-    Panel(r, Icon::Scene, "Scene Manager", "LEVEL", P().accent);
+    const bool halo = P().skin == 3;
+    Panel(r, Icon::Scene, "Scene Manager", halo ? "" : "LEVEL", P().accent);
     float px = r.x + 10 * s, py = r.y + 44 * s, pw = r.w - 20 * s;
     g_labelRight = px + pw;
+    R addR = {px, 0, (pw - 6 * s) / 2, 23 * s}, colR = addR;   // Add Object / Collection buttons
+    if (halo) {
+        // Halo: the scenes are in the rail; the header holds the item count and the two add buttons, then the search
+        size_t count = m_scene.lights.size() + 1;
+        for (const Object& o : m_scene.objects) count += !o.ghost && !(o.part == "House" && o.grab == -2);
+        addR = {r.x + r.w - 62 * s, r.y + 6 * s, 24 * s, 22 * s};
+        colR = {r.x + r.w - 34 * s, r.y + 6 * s, 24 * s, 22 * s};
+        std::string cnt = std::to_string(count);
+        Text(addR.x - 8 * s - TextSize(cnt, 9).x, r.y + 12 * s, cnt, P().muted, 9);
+        if (A.searchFocus) { ImGui::SetKeyboardFocusHere(); A.searchFocus = false; }
+        Search("##atlSceneSearch", {px, r.y + 44 * s, pw, 28 * s}, A.sceneSearch, sizeof(A.sceneSearch), "Search scene...");
+        py = r.y + 80 * s;
+    } else {
     Label(px, py, "SCENES");
     py += 21 * s;
     const char* scenes[] = {"Cornell Box", "Village", "LookDev", "Concept"};
@@ -710,15 +833,18 @@ void App::atlHierarchy(float x, float y, float w, float h) {
     py += 24 * s;
     Search("##atlSceneSearch", {px, py, pw, 28 * s}, A.sceneSearch, sizeof(A.sceneSearch), "Search scene...");
     py += 36 * s;
-    const float halfW = (pw - 6 * s) / 2;
-    if (Button("addObject", {px, py, halfW, 23 * s}, "Add Object", Icon::Plus)) ImGui::OpenPopup("atlNewActor");
+    addR.y = colR.y = py;
+    colR.x = px + addR.w + 6 * s;
+    py += 33 * s;
+    }
+    if (Button("addObject", addR, halo ? "" : "Add Object", Icon::Plus, false, halo)) ImGui::OpenPopup("atlNewActor");
     Tip("Add a primitive to the scene (or drag one from the Content Browser)");
     if (ImGui::BeginPopup("atlNewActor")) {
         for (const PartDef& p : parts())
             if (ImGui::MenuItem(toUtf8(p.name).c_str())) addPartFromLibrary(p);
         ImGui::EndPopup();
     }
-    if (Button("addCollection", {px + halfW + 6 * s, py, halfW, 23 * s}, "Collection", Icon::Collection)) {
+    if (Button("addCollection", colR, halo ? "" : "Collection", Icon::Collection, false, halo)) {
         pushUndo();
         uint32_t c = addCollection("Collection", (int)(m_scene.collections.size() % kCollectionColorCount));
         // with a selection: the new collection takes it (one undo step)
@@ -731,7 +857,6 @@ void App::atlHierarchy(float x, float y, float w, float h) {
         startRename(c);
     }
     Tip("New collection (holds the selection if there is one): a folder of the Scene Manager, no effect on the scene");
-    py += 33 * s;
 
     ImGui::SetCursorScreenPos(ImVec2(px, py));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
@@ -804,7 +929,7 @@ void App::atlHierarchy(float x, float y, float w, float h) {
             }
         }
         // same left padding as the root rows (fold arrow slot, icon, name), a thin line below
-        Glyph(Icon::Camera, px + 15 * s, yy + (rowH - 2 * s - 13 * s) / 2, 13, P().accent);
+        Glyph(Icon::Camera, px + 15 * s, yy + (rowH - 2 * s - 13 * s) / 2, 13, halo ? P().muted : P().accent);
         Text(px + 37 * s, yy + (rowH - 2 * s - 11 * s * ts()) / 2, "Scene Camera", P().text, 11);
         dl->AddLine(ImVec2(px, yy + rowH - 1.5f * s), ImVec2(px + pw, yy + rowH - 1.5f * s), Fade(P().border, 150), 1.0f);
         Tip("The scene camera: always first (its settings: Render tab)");
@@ -889,6 +1014,7 @@ void App::atlHierarchy(float x, float y, float w, float h) {
         } else if (n.kind == NODE_LIGHT) { icon = Icon::Light; icol = IM_COL32(242, 201, 76, 255); }
         else if (n.kind == NODE_SUN) { icon = Icon::Sun; icol = IM_COL32(242, 201, 76, 255); }
         const bool dim = !vis;
+        if (halo && !isCol) icol = sel ? P().accent : P().muted;   // Halo: neutral icons, the selection in the main colour
         Glyph(icon, ix, ty, 13, dim ? P().muted : icol);
         const float nx = ix + 22 * s;
         if (m_renameId == row.id) {
@@ -1120,10 +1246,15 @@ void App::atlHierarchy(float x, float y, float w, float h) {
 // --------------------------------------------------------------------------- viewport (former Atelier graph CanvasHeader + Canvas + Footer)
 
 void App::atlViewport(float x, float y, float w, float h) {
-    // header
+    const bool halo = P().skin == 3;
+    // header (Halo: none, the tools float over the picture)
     R hr = {x, y, w, 35 * s};
+    if (!halo) {
     if (P().skin == 2) afx::FloatBar(dl, hr.min(), hr.max(), s);   // Corail: floating tool bar with its shadow
-    else if (P().skin) {   // header strip of the pack (header gradient, border, light edge)
+    else if (P().skin == 3) {   // Halo: flat strip with its corner mark
+        Box(hr, P().panel, 2, true);
+        afx::CornerTick(dl, hr.min(), 8 * s, afx::Alpha(P().accent, 0.8f));
+    } else if (P().skin) {   // header strip of the pack (header gradient, border, light edge)
         afx::Gradient(dl, hr.min(), hr.max(), afx::col::headerTop, afx::col::headerBottom, 4 * s);
         dl->AddRect(hr.min(), hr.max(), P().border, 4 * s);
         afx::TopEdge(dl, hr.min(), hr.max(), s, IM_COL32(181, 186, 192, 255), 0.10f);
@@ -1243,6 +1374,7 @@ void App::atlViewport(float x, float y, float w, float h) {
     Tip("Rotate (E)");
     if (Button("atlMove", {right(28 * s), by, 28 * s, 24 * s}, "", Icon::Move, m_tool == TOOL_MOVE && !m_advScale, true)) { m_tool = TOOL_MOVE; setAdvScale(false); }
     Tip("Move (W)");
+    }   // !halo
 
     // canvas: the panes of the layout (Panes.cpp). The active one is the renderer's image with the input, the tools and
     // the overlays below; drawPanes shows the others (raster views of their camera).
@@ -1415,7 +1547,7 @@ void App::atlViewport(float x, float y, float w, float h) {
     // footer (former Atelier graph Footer): state of the tools and of the renderer
     R fr = {x, area.y + area.h + 3 * s, w, 24 * s};
     if (P().skin == 2) afx::FloatBar(dl, fr.min(), fr.max(), s);   // Corail: floating status bar
-    else if (P().skin) { Box(fr, afx::col::footer, 0); dl->AddLine(ImVec2(fr.x, fr.y + 0.5f), ImVec2(fr.x + fr.w, fr.y + 0.5f), P().border); }
+    else if (P().skin) { Box(fr, P().skin == 3 ? P().bg : afx::col::footer, 0); dl->AddLine(ImVec2(fr.x, fr.y + 0.5f), ImVec2(fr.x + fr.w, fr.y + 0.5f), P().border); }
     else Box(fr, P().bg, 0);
     float fx = fr.x + 9 * s;
     const char* toolNames[] = {"Select", "Move", "Rotate", "Scale"};
@@ -1754,16 +1886,24 @@ void App::atlContent(float x, float y, float w, float h) {
     R r = {x, y, w, h};
     if (P().skin) afx::Panel(dl, r.min(), r.max(), s, 33 * s);   // the tab row sits in the title band
     else Box(r, P().panel, 4, true);
+    const bool halo = P().skin == 3;
     const char* names[] = {"Content Browser", "Materials", "Camera Views", "Output Log"};
-    Icon icons[] = {Icon::Cube, Icon::Material, Icon::Camera, Icon::List};
-    const float widths[] = {140, 100, 122, 108};
+    const char* haloNames[] = {"Assets", "Materials", "Views", "Console"};
+    Icon icons[] = {halo ? Icon::FolderOpen : Icon::Cube, Icon::Material, Icon::Camera, Icon::List};
+    const float widths[] = {140, 100, 122, 108}, haloWidths[] = {96, 104, 82, 96};
     float tx = r.x + 8 * s;
     A.contentTab = std::clamp(A.contentTab, 0, 3);
     for (int i = 0; i < 4; ++i) {
         char id[24];
         snprintf(id, sizeof(id), "contentTab%d", i);
-        if (TabButton(id, {tx, r.y + 4 * s, widths[i] * s, (P().skin ? 29 : 25) * s}, names[i], icons[i], A.contentTab == i)) A.contentTab = i;
-        tx += (widths[i] + 5) * s;
+        const float tw = (halo ? haloWidths[i] : widths[i]) * s;
+        if (TabButton(id, {tx, r.y + 4 * s, tw, (P().skin ? 29 : 25) * s}, halo ? haloNames[i] : names[i], icons[i], A.contentTab == i)) A.contentTab = i;
+        tx += tw + 5 * s;
+    }
+    if (halo) {   // the graph of the scene opens in its workspace
+        if (TabButton("contentTabGraph", {tx, r.y + 4 * s, 86 * s, 29 * s}, "Graph", Icon::Blueprint, false)) m_workspace = 1;
+        Tip("Open the graph of this scene (F3)");
+        tx += 91 * s;
     }
     std::vector<Asset> assets = assetList();
     static const char* folders[] = {"All", "Primitives", "Materials", "Scenes"};
@@ -1779,8 +1919,12 @@ void App::atlContent(float x, float y, float w, float h) {
         Tip("List view");
         if (Button("refreshAssets", {rx - 35 * s, r.y + 5 * s, 26 * s, 23 * s}, "", Icon::Refresh, false, true)) { A.assetSearch[0] = 0; status(std::to_wstring(assets.size()) + L" assets available"); }
         Tip("Clear the search");
-        float sw = std::min(210 * s, std::max(80 * s, rx - 45 * s - tx));
+        float sw = std::min(210 * s, std::max(80 * s, rx - 45 * s - tx - (halo ? 128 * s : 0)));
         Search("##atlAssetSearch", {rx - 43 * s - sw, r.y + 5 * s, sw, 23 * s}, A.assetSearch, sizeof(A.assetSearch), "Search assets...");
+        if (halo) {   // Halo: the folder tree becomes a filter next to the search
+            int f = A.folder;
+            if (Combo("haloFolder", {rx - 43 * s - sw - 124 * s, r.y + 5 * s, 118 * s, 23 * s}, f, folders, 4, Icon::FolderOpen)) A.folder = f;
+        }
     } else if (A.contentTab == 3) {
         if (Button("copyLog", {r.x + r.w - 72 * s, r.y + 5 * s, 26 * s, 23 * s}, "", Icon::List, false, true)) {
             std::string all;
@@ -1795,12 +1939,12 @@ void App::atlContent(float x, float y, float w, float h) {
     R body = {r.x + 2 * s, r.y + 35 * s, r.w - 4 * s, r.h - 38 * s};
 
     if (A.contentTab == 0) {
-        float tree = 128 * s, details = 176 * s;
+        float tree = halo ? 0 : 128 * s, details = halo ? 0 : 176 * s;   // Halo: one wide grid of tiles
         // folders (graph library rows)
         R ft = {body.x + 8 * s, body.y + 2 * s, tree - 14 * s, body.h - 6 * s};
         float fy = ft.y;
         Icon folderIcons[] = {Icon::FolderOpen, Icon::Cube, Icon::Material, Icon::Scene};
-        for (int f = 0; f < 4; ++f) {
+        for (int f = 0; f < (halo ? 0 : 4); ++f) {
             char id[20];
             snprintf(id, sizeof(id), "folder%d", f);
             R fr = {ft.x, fy, ft.w, 26 * s};
@@ -1812,7 +1956,7 @@ void App::atlContent(float x, float y, float w, float h) {
             Text(fr.x + 28 * s, fy + 7 * s, folders[f], P().text, 11);
             fy += 28 * s;
         }
-        dl->AddLine(ImVec2(body.x + tree, body.y + 2 * s), ImVec2(body.x + tree, body.y + body.h - 4 * s), P().border);
+        if (!halo) dl->AddLine(ImVec2(body.x + tree, body.y + 2 * s), ImVec2(body.x + tree, body.y + body.h - 4 * s), P().border);
         // grid
         R grid = {body.x + tree + 2 * s, body.y, body.w - tree - details - 4 * s, body.h};
         ImGui::SetCursorScreenPos(grid.min());
@@ -1821,8 +1965,9 @@ void App::atlContent(float x, float y, float w, float h) {
         ImGui::SetWindowFontScale(atelier::Style().layoutScale);   // child text independent of the layout size
         ImGui::PopStyleVar();
         dl = ImGui::GetWindowDrawList();
-        float gy = ImGui::GetCursorScreenPos().y + 4 * s, thumb = std::max(56.0f, A.thumb) * s, gap = 9 * s;
+        float gy = ImGui::GetCursorScreenPos().y + 4 * s, thumb = (halo ? 80.0f : std::max(56.0f, A.thumb)) * s, gap = 9 * s;
         int cols = std::max(1, (int)((grid.w - 20 * s + gap) / (thumb + gap))), shown = 0;
+        if (halo) cols = std::max(1, (int)((grid.w - 20 * s + 10 * s) / (thumb + 26 * s)));
         float gx = grid.x + 10 * s;
         for (size_t i = 0; i < assets.size(); ++i) {
             const Asset& a = assets[i];
@@ -1830,6 +1975,7 @@ void App::atlContent(float x, float y, float w, float h) {
             if (!matches(a.name, A.assetSearch)) continue;
             ImGui::PushID((int)i);
             R card = A.listMode ? R{gx, gy, grid.w - 22 * s, 38 * s} : R{gx, gy, thumb, thumb + 24 * s};
+            if (halo && !A.listMode) card = R{gx, gy, thumb + 16 * s, thumb + 38 * s};   // mockup tile: 96 x 116
             bool q = Hit("asset", card);
             bool hovered = ImGui::IsItemHovered();
             if (q) m_contentAsset = (int)i;
@@ -1839,6 +1985,23 @@ void App::atlContent(float x, float y, float w, float h) {
                 ImGui::SetDragDropPayload(a.kind == 0 ? "WZX_ASSET" : "WZX_MATERIAL", &payload, sizeof(int));
                 ImGui::TextUnformatted(a.name.c_str());
                 ImGui::EndDragDropSource();
+            }
+            if (halo && !A.listMode) {
+                // chamfered tile: picture on top, name strip below a separator; selected: main-colour outline
+                const bool selA = m_contentAsset == (int)i;
+                afx::Chamfer(dl, card.min(), card.max(), 8 * s, P().raised, selA ? P().accent : (hovered ? afx::halo::borderHi : P().border));
+                const float nameY = card.y + card.h - 22 * s;
+                dl->AddLine(ImVec2(card.x + 1, nameY), ImVec2(card.x + card.w - 1, nameY), P().border);
+                drawAssetThumb(dl, a.kind, a.index, ImVec2(card.x + 14 * s, card.y + 10 * s), ImVec2(card.x + card.w - 14 * s, nameY - 8 * s), m_dpi);
+                dl->PushClipRect(ImVec2(card.x, nameY), card.max(), true);
+                Text(card.x + 8 * s, nameY + 5 * s, Fit(a.name, card.w - 14 * s, 9), selA ? P().text : P().muted, 9);
+                dl->PopClipRect();
+                Tip(a.kind == 0 ? "Click: select · double-click: add · drag to the viewport" : a.kind == 1 ? "Double-click: apply to the selection · drag onto an object" : "Double-click: open the scene");
+                ImGui::PopID();
+                ++shown;
+                if (shown % cols == 0) { gx = grid.x + 10 * s; gy += card.h + 10 * s; }
+                else gx += card.w + 10 * s;
+                continue;
             }
             R tile = A.listMode ? R{gx, gy, 34 * s, 34 * s} : R{gx, gy, thumb, thumb};
             Box(tile, P().bg, 4, true);
@@ -1865,6 +2028,7 @@ void App::atlContent(float x, float y, float w, float h) {
         ImGui::Dummy(ImVec2(1, 1));
         ImGui::EndChild();
         dl = ImGui::GetWindowDrawList();
+        if (halo) return;   // no details column
         // details
         R dr = {body.x + body.w - details, body.y, details, body.h};
         dl->AddLine(ImVec2(dr.x, dr.y + 2 * s), ImVec2(dr.x, dr.y + dr.h - 4 * s), P().border);
@@ -2001,7 +2165,11 @@ void App::atlInspector(float x, float y, float w, float h) {
     R r = {x, y, w, h};
     A.inspectorTab = std::clamp(A.inspectorTab, 0, 3);
     const char* tags[] = {"ACTOR", "LIGHTING", "RENDER", "WORLD"};
+    const bool halo = P().skin == 3;
     Panel(r, Icon::Info, "Inspector", tags[A.inspectorTab], P().text);
+    float by = r.y + 76 * s;
+    if (halo) by = r.y + 46 * s;   // Halo: the pages are chosen in the icon rail
+    else {
     const char* tabs[] = {"Actor", "Light", "Render", "World"};
     Icon is[] = {Icon::Cube, Icon::Sun, Icon::Camera, Icon::World};
     float tw = (r.w - 26 * s - 15 * s) / 4, tx = r.x + 13 * s;
@@ -2012,7 +2180,7 @@ void App::atlInspector(float x, float y, float w, float h) {
         tx += tw + 5 * s;
     }
     if (P().skin) dl->AddLine(ImVec2(r.x + 13 * s, r.y + 69 * s), ImVec2(r.x + r.w - 13 * s, r.y + 69 * s), P().border);
-    float by = r.y + 76 * s;
+    }
     g_labelRight = r.x + r.w - 21 * s;   // inner width of the inspector body (scrollbar room excluded)
     ImGui::SetCursorScreenPos(ImVec2(r.x + 13 * s, by));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));

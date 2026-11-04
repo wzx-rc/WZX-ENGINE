@@ -48,6 +48,26 @@ void TintCoral(ImU32 (*tint)(ImU32));
 // Selection colour of the Corail theme (coral by default): accent, selection fill and selection border.
 void SetCoralAccent(ImU32 accent);
 
+// colours of the Halo theme (design/halo/mockup-halo.html), set from the settings by SetHalo: flat graphite
+// surfaces, one main colour (selection, active tools), a second colour (primary action, warnings), no glow.
+namespace halo {
+inline ImU32 shell = col::rgb(0x0D1013), panel = col::rgb(0x13171B), raised = col::rgb(0x181D22), hover = col::rgb(0x1F252B);
+inline ImU32 border = col::rgb(0x242B32), borderHi = col::rgb(0x333C45), input = col::rgb(0x0D1013);
+inline ImU32 text = col::rgb(0xD5DCE2), muted = col::rgb(0x8B96A1), dim = col::rgb(0x5D6873);
+inline ImU32 accent = col::rgb(0x6CC4DC), accentLo = col::rgb(0x2B5563), accentBg = col::rgb(0x1A2A31);
+inline ImU32 second = col::rgb(0xD6A64A), secondLo = col::rgb(0x5E4A26), secondBg = col::rgb(0x272219);
+constexpr ImU32 axisX = col::rgb(0xD77A7A), axisY = col::rgb(0x84C48F), axisZ = col::rgb(0x7EA6D8);
+} // namespace halo
+bool Halo();   // the Halo theme is active (atelier::Style().skin == 3)
+// Halo colours from the three colours of the settings: main, background (the surfaces are lighter steps of it), second.
+void SetHalo(ImU32 main, ImU32 background, ImU32 second);
+// Rectangle with its top right corner cut at 45° (cut in pixels): fill (0: none) and 1 px border (0: none).
+void Chamfer(ImDrawList* dl, ImVec2 a, ImVec2 b, float cut, ImU32 fill, ImU32 border);
+// HUD corner mark: two short strokes in the top left corner of a panel or title band.
+void CornerTick(ImDrawList* dl, ImVec2 a, float len, ImU32 color);
+// Selection reticle: four corner brackets around a box.
+void Reticle(ImDrawList* dl, ImVec2 a, ImVec2 b, float len, ImU32 color, float thickness);
+
 // Soft drop shadow under a floating bar (the float-shadow filter: dy 4, blur 6, black 25 %).
 void Shadow(ImDrawList* dl, ImVec2 a, ImVec2 b, float rounding, float s);
 // Corail floating bar: rounded panel with its drop shadow (viewport toolbar, status bar).
