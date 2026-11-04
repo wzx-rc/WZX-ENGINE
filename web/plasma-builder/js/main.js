@@ -10,6 +10,7 @@ import { PRESETS, buildPreset, loadMyPoses } from './riglab/poses.js';
 import { orkSockets, SOCKET_TYPES } from './sockets.js';
 import { CATEGORIES, catById, Store, brickMeshes, refreshBrickMaterials, mat4, triCount } from './bricks.js';
 import { exportMerged, exportParts, exportJSON } from './io.js';
+import { applyTheme, savedTheme, SOCKET_ICONS } from './atelier.js';
 
 // Le path tracing n'est proposé que dans l'app Windows (desktop/ : Electron expose window.plasmaDesktop).
 const DESKTOP = !!window.plasmaDesktop;
@@ -26,7 +27,7 @@ const TAGS = { BODY_high: 'skin', BODY_low: 'skin', HEAD_high: 'skin', HEAD_low:
 export function defaultXf() { return { p: [0, 0, 0], r: [0, 0, 0], s: 1, m: [false, false, false] }; }
 function freshState() { return { placed: {}, pose: null, poseId: 'garde', curl: { L: 1.1, R: 1.1 }, scale: 32 }; }
 let state = freshState();
-const ui = { cat: 'weapon', sel: null, tool: 'select', step: 'asm', tab: 'T', rig: false, sockets: true, view: 1, shade: 'resin', quality: 'rt', search: '', lod: 'high', test: false, info: '' };
+const ui = { cat: 'weapon', sel: null, tool: 'select', step: 'asm', tab: 'T', rig: false, sockets: true, view: 1, shade: 'resin', quality: 'rt', search: '', lod: 'high', test: false, info: '', theme: savedTheme(), drawer: true };
 const STORE = 'plasmaork.builder';
 try {
   const saved = JSON.parse(localStorage.getItem(STORE) || 'null');
@@ -252,6 +253,7 @@ function renderSteps() {
   $('rigBtn').setAttribute('aria-pressed', String(ui.rig));
   $('shading').querySelectorAll('[data-shade]').forEach(b => b.classList.toggle('on', b.dataset.shade === ui.shade));
   $('qualitySel').value = ui.quality;
+  document.body.dataset.step = ui.step;
   $('scaleSel').value = String(state.scale);
 }
 function renderViews() {
@@ -260,8 +262,21 @@ function renderViews() {
 }
 // Pastilles des sockets dans le viewport (libres : anneau creux ; occupés : plein).
 function renderPins() {
-  $('pins').innerHTML = [...sockets.values()].map(s => `<button type="button" class="pin${state.placed[s.id] ? '' : ' free'}" data-socket="${s.id}" aria-pressed="${ui.sel === s.id}" title="${esc(SOCKET_TYPES[s.type] || s.type)}"><i></i>${esc(s.label)}</button>`).join('');
+  $('pins').innerHTML = [...sockets.values()].map((s, n) => `<button type="button" class="pin${state.placed[s.id] ? '' : ' free'}" data-socket="${s.id}" aria-pressed="${ui.sel === s.id}" aria-label="${n + 1} · ${esc(s.label)}" title="${esc(SOCKET_TYPES[s.type] || s.type)}"><i></i><b>${n + 1}</b><span>${esc(s.label)}</span></button>`).join('');
   $('pins').hidden = !ui.sockets || ui.test;
+  renderEquip();
+}
+// Interface Atelier : la liste Équipement (un bouton par socket, mêmes numéros que les pastilles).
+function renderEquip() {
+  const list = [...sockets.values()];
+  $('equipCount').textContent = `${list.filter(s => state.placed[s.id]).length} / ${list.length} posés`;
+  $('equipList').innerHTML = list.map((s, n) => {
+    const p = state.placed[s.id], r = p && rec(p.brick);
+    const sub = r ? esc(r.name) : s.id === 'head' && !state.placed.head ? 'Tête d\u2019origine' : 'Vide · ' + esc(SOCKET_TYPES[s.type] || s.type);
+    return `<button type="button" class="equip-row${r ? ' fitted' : ''}" data-socket="${s.id}" aria-pressed="${ui.sel === s.id}"><span class="equip-ic"><img alt="" src="${SOCKET_ICONS[s.type] || SOCKET_ICONS.any}"></span><span class="equip-txt"><b>${esc(s.label)}</b><small>${sub}</small></span><span class="equip-n">${n + 1}</span></button>`;
+  }).join('');
+  document.body.classList.toggle('drawer-closed', !ui.drawer);
+  $('drawerOpen').hidden = ui.drawer || ui.theme !== 'atelier';
 }
 
 const XF_ROWS = [
@@ -506,12 +521,18 @@ document.addEventListener('click', e => {
   const t = e.target.closest('button');
   if (!t || t.disabled) {
     if (!e.target.closest('.export')) { $('exportMenu').hidden = true; $('exportMenuBtn').setAttribute('aria-expanded', 'false'); }
+    if (!e.target.closest('.settings')) { $('settingsMenu').hidden = true; $('settingsBtn').setAttribute('aria-expanded', 'false'); }
     return;
   }
+  if (!t.closest('.settings')) { $('settingsMenu').hidden = true; $('settingsBtn').setAttribute('aria-expanded', 'false'); }
   const d = t.dataset;
   if (d.cat) { ui.cat = d.cat; renderRail(); renderLibrary(); }
   else if (d.brick) { if (dragTile.suppress) { dragTile.suppress = false; return; } if (model) startHold(rec(d.brick), true); }
-  else if (d.socket) { select(d.socket); if (t.classList.contains('pin')) hold.flash(socketWorld(d.socket)); }
+  else if (d.theme) { ui.theme = d.theme; applyTheme(ui.theme); renderAll(); }
+  else if (t.id === 'settingsBtn') { const m = $('settingsMenu'); m.hidden = !m.hidden; t.setAttribute('aria-expanded', String(!m.hidden)); }
+  else if (t.id === 'drawerClose') { ui.drawer = false; renderEquip(); }
+  else if (t.id === 'drawerOpen') { ui.drawer = true; renderEquip(); }
+  else if (d.socket) { if (t.classList.contains('equip-row')) ui.drawer = true; select(d.socket); if (t.classList.contains('pin')) hold.flash(socketWorld(d.socket)); }
   else if (d.clear) removeAt(d.clear);
   else if (d.tool) { ui.tool = d.tool; attachGizmo(); renderSteps(); }
   else if (d.step) setStep(d.step);
@@ -719,6 +740,7 @@ document.addEventListener('visibilitychange', async () => {
 });
 
 // ---------- démarrage ----------
+applyTheme(ui.theme);
 renderSteps(); renderViews(); renderOrk(); renderPoses(); renderRenderPanel(); syncUndo();
 try {
   const [m] = await Promise.all([

@@ -1,0 +1,122 @@
+/* Réglages (les deux interfaces) */
+.settings { position: relative; }
+button.icon.framed { width: 44px; height: 44px; border: 1px solid var(--line); background: var(--panel); border-radius: 8px; }
+button.icon.framed[aria-expanded="true"] { border-color: var(--accent); color: var(--accent); }
+.settings-menu { min-width: 280px; gap: 10px; padding: 12px; }
+.menu-title { font-family: var(--head); font-size: 17px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+.settings-menu .seg button { text-align: center; }
+.settings-menu .muted { margin: 0; line-height: 1.45; }
+.seg button[aria-checked="true"] { background: var(--accent-bg); color: var(--accent); }
+.drawer-only { display: none !important; }
+.pin b { display: none; }
+
+/* ===================== Interface Atelier ===================== */
+body.ui-atelier { --rail-w: 264px; --drawer-w: 300px; }
+.ui-atelier .app { height: 100vh; min-height: 560px; overflow: hidden; }
+
+/* Barre du haut : les étapes au centre, Rig Lab / Importer en icônes */
+.ui-atelier .topbar { flex-wrap: nowrap; gap: 14px; padding-block: 8px; }
+.ui-atelier .brand { margin-right: 0; width: calc(var(--rail-w) - 30px); flex: none; }
+.ui-atelier .mainnav { flex: 1 1 auto; justify-content: center; align-items: center; flex-wrap: nowrap; gap: 4px; min-width: 0; }
+.ui-atelier .mainnav a.active, .ui-atelier .mainnav a[aria-disabled="true"] { display: none; }
+.ui-atelier .mainnav a { order: 2; min-height: 38px; width: 38px; padding: 0; justify-content: center; font-size: 0; gap: 0; color: var(--muted); }
+.ui-atelier .mainnav a:hover { color: var(--text); background: var(--raised); }
+.ui-atelier .mainnav .steps { order: 1; margin-right: 10px; counter-reset: step; border: 0; background: none; padding: 0; gap: 4px; flex-wrap: nowrap; }
+.ui-atelier .steps button { counter-increment: step; display: flex; align-items: center; gap: 8px; min-height: 38px; padding: 0 14px 0 10px; border-radius: 8px; border: 0; color: var(--muted); font-size: 14px; }
+.ui-atelier .steps button::before { content: counter(step); width: 20px; height: 20px; border-radius: 50%; border: 1px solid #3a3e46; display: grid; place-items: center; font-size: 11px; font-weight: 600; }
+.ui-atelier .steps button:hover { color: var(--text); }
+.ui-atelier .steps button[aria-pressed="true"] { background: var(--raised); color: #fff; border: 0; }
+.ui-atelier .steps button[aria-pressed="true"]::before { background: var(--accent); border-color: var(--accent); color: #16070a; }
+.ui-atelier .projname, .ui-atelier button.primary { min-height: 40px; }
+.ui-atelier button.icon.framed { width: 40px; height: 40px; }
+
+/* Corps : Équipement | tiroir bibliothèque | vue | inspecteur */
+.ui-atelier .body { flex-wrap: nowrap; gap: 0; padding: 0; min-height: 0; }
+.ui-atelier .rail { display: none; }
+.ui-atelier .work { flex: 1 1 auto; gap: 0; min-height: 0; }
+.ui-atelier .row-top { flex-wrap: nowrap; gap: 0; min-height: 0; }
+.ui-atelier .panel { border-radius: 0; border-width: 0; }
+
+/* Équipement (sockets de l'ork) */
+.equip { width: var(--rail-w); flex: none; display: flex; flex-direction: column; gap: 4px; padding: 14px 10px; border-right: 1px solid var(--line); overflow-y: auto;
+  background: #0e0f12 linear-gradient(rgba(14,15,18,.84), rgba(14,15,18,.92)); }
+.ui-atelier .equip { background-image: linear-gradient(rgba(14,15,18,.84), rgba(14,15,18,.92)), url(../assets/ui/panel_gunmetal.jpg); background-size: cover; background-position: center; }
+.equip-head { display: flex; align-items: baseline; justify-content: space-between; padding: 0 8px 8px; }
+.equip-head h2 { margin: 0; font-family: var(--head); font-size: 22px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+.equip-list { display: flex; flex-direction: column; gap: 4px; }
+.equip-row { display: flex; align-items: center; gap: 10px; min-height: 52px; padding: 6px 8px; border-radius: 10px; border: 1px solid transparent; background: none; text-align: left; color: var(--text); }
+.equip-row:hover { background: rgba(255,255,255,.04); }
+.equip-row[aria-pressed="true"] { border-color: var(--accent); background: rgba(240,67,90,.12); }
+.equip-ic { width: 36px; height: 36px; flex: none; display: grid; place-items: center; border-radius: 8px; background: #1a1c21; border: 1px solid var(--line2); }
+.equip-ic img { width: 22px; height: 22px; display: block; opacity: .9; }
+.equip-row.fitted .equip-ic { border-color: #3d4a3d; }
+.equip-row[aria-pressed="true"] .equip-ic { background: var(--accent); border-color: var(--accent); }
+.equip-row[aria-pressed="true"] .equip-ic img { filter: brightness(0) invert(.06); opacity: 1; }
+.equip-txt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.equip-txt b { font-weight: 600; font-size: 13.5px; }
+.equip-txt small { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.equip-row.fitted small { color: var(--ok); }
+.equip-n { width: 22px; height: 22px; flex: none; border-radius: 50%; display: grid; place-items: center; font-size: 11px; font-weight: 600; background: #24272d; color: var(--text2); }
+.equip-row[aria-pressed="true"] .equip-n { background: var(--accent); color: #16070a; }
+.equip-hint { margin: auto 8px 0; padding-top: 12px; border-top: 1px solid var(--line); line-height: 1.45; }
+
+/* Bibliothèque en tiroir */
+.ui-atelier .library { width: var(--drawer-w); max-width: none; min-width: 0; flex: none; background: #121418; border-right: 1px solid var(--line); padding: 16px 14px; overflow: hidden; }
+.ui-atelier.drawer-closed .library { display: none; }
+.ui-atelier .drawer-only { display: inline-flex !important; }
+.ui-atelier .libgrid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; max-height: none; flex: 1 1 auto; min-height: 0; }
+.ui-atelier .tile { border-radius: 10px; border-width: 1px; border-color: var(--line2); background: #0e0f12; font-size: 12px; padding-bottom: 8px; }
+.ui-atelier .tile[aria-pressed="true"] { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.ui-atelier .libempty { align-items: center; text-align: center; border: 0; padding: 4px; font-size: 13px; line-height: 1.45; color: var(--muted); }
+.ui-atelier .libempty::before { content: ''; width: 220px; height: 220px; border-radius: 12px; background: url(../assets/ui/empty_ork.jpg) center / cover; }
+
+/* Vue */
+.ui-atelier .viewport-panel { flex: 1 1 auto; padding: 0; gap: 0; background: radial-gradient(ellipse at 50% 42%, #1b1d22 0%, #121316 55%, #0c0d0f 100%); }
+.ui-atelier .vp-main { gap: 0; min-height: 0; }
+.ui-atelier .vp-bar { position: absolute; z-index: 3; right: 12px; top: 60px; flex-direction: column; align-items: flex-end; }
+.ui-atelier .viewport-panel { position: relative; }
+.ui-atelier .vp-right .btngroup { flex-direction: column; background: rgba(14,15,18,.86); }
+.ui-atelier .vp-area { position: relative; flex: 1 1 auto; min-height: 0; gap: 0; }
+.ui-atelier .vp { border-radius: 0; background: transparent; }
+.ui-atelier .vp-info { top: 14px; left: 16px; font-size: 12px; line-height: 1.5; }
+.ui-atelier .views { position: absolute; z-index: 3; top: 12px; right: 12px; flex-direction: row; gap: 4px; padding: 4px; border-radius: 10px; background: rgba(14,15,18,.86); border: 1px solid #23262c; }
+.ui-atelier .views button { width: 40px; border-width: 1px; border-radius: 7px; }
+.ui-atelier .vp-foot { padding: 8px 16px; border-top: 1px solid var(--line); background: #0e0f12; }
+.drawer-open { position: absolute; z-index: 3; left: 14px; top: 58px; display: flex; align-items: center; gap: 6px; height: 36px; padding: 0 12px; border: 1px solid var(--line2); border-radius: 8px; background: #121418; font-size: 13px; }
+.drawer-open svg { width: 14px; height: 14px; }
+
+/* Barre flottante : outils · affichage · qualité */
+.floatbar { position: absolute; z-index: 4; left: 50%; bottom: 18px; transform: translateX(-50%); display: flex; align-items: center; gap: 6px; padding: 6px; border-radius: 12px; background: rgba(14,15,18,.92); border: 1px solid #23262c; box-shadow: 0 10px 30px rgba(0,0,0,.4); }
+.floatbar .tools, .floatbar .btngroup { flex-direction: row; padding: 0; border: 0; background: none; gap: 4px; }
+.floatbar .tools button, .floatbar .btngroup button.icon { width: 40px; height: 40px; border: 0; border-radius: 8px; }
+.floatbar .tools button[aria-pressed="true"], .floatbar .btngroup button.icon.on { background: rgba(240,67,90,.16); color: #ff8fa0; }
+.floatbar .btngroup { padding-left: 6px; margin-left: 2px; border-left: 1px solid var(--line2); border-radius: 0; }
+.floatbar .select { height: 40px; margin-left: 2px; border: 0; background: #1a1c21; }
+.floatbar .select select { font-weight: 600; }
+
+/* Pastilles numérotées : numéro dans un rond, étiquette au survol ou à la sélection */
+.ui-atelier .pin { position: absolute; gap: 0; padding: 0; min-height: 0; border: 0; background: none; }
+.ui-atelier .pin i { display: none; }
+.ui-atelier .pin b { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: rgba(14,15,18,.9); border: 1.5px solid #8e9097; font-size: 11px; font-weight: 600; }
+.ui-atelier .pin.free b { border-style: dashed; }
+.ui-atelier .pin span { display: none; position: absolute; left: 100%; top: 50%; transform: translateY(-50%); white-space: nowrap; margin-left: 6px; padding: 4px 10px; border-radius: 6px; background: #0e0f12; border: 1px solid var(--line2); font-size: 12px; }
+.ui-atelier .pin:hover span, .ui-atelier .pin[aria-pressed="true"] span { display: block; }
+.ui-atelier .pin[aria-pressed="true"] b { background: var(--accent); border-color: var(--accent); color: #16070a; }
+.ui-atelier .pin[aria-pressed="true"] span { border-color: var(--accent); }
+
+/* Inspecteur contextuel */
+.ui-atelier .rightcol { width: 300px; max-width: none; min-width: 0; flex: none; gap: 0; border-left: 1px solid var(--line); background: #0e0f12; overflow-y: auto; }
+.ui-atelier .rightcol .panel { background: none; }
+.ui-atelier .rightcol .panel + .panel { border-top: 1px solid var(--line); }
+
+/* Bandeaux : l'assemblage est dans Équipement ; les poses seulement à l'étape Pose */
+.ui-atelier .row-bottom { gap: 0; border-top: 1px solid var(--line); }
+.ui-atelier .strip[aria-label="Assemblage"] { display: none; }
+.ui-atelier:not([data-step="pose"]) .row-bottom { display: none; }
+.ui-atelier .strip { padding: 10px 16px; background: #0e0f12; }
+
+@media (max-width: 1100px) {
+  body.ui-atelier { --rail-w: 220px; --drawer-w: 260px; }
+  .ui-atelier .rightcol { width: 270px; }
+  .ui-atelier .steps button { padding: 0 10px 0 8px; font-size: 13px; }
+}
