@@ -1278,13 +1278,15 @@ void App::atlViewport(float x, float y, float w, float h) {
         char v[6][32];
         snprintf(v[0], 32, "%.0f FPS", 1000.0f / std::max(m_frameMs, 0.1f));
         snprintf(v[1], 32, "%.1f ms", m_frameMs);
-        if (m_rs.raster) snprintf(v[2], 32, "%.2f ms", m_renderer.gpuFrameMs());
+        const bool gpuRow = m_rs.raster || renderMode() == 4;   // real-time modes: GPU time, else the samples
+        if (renderMode() == 4) snprintf(v[2], 32, "%.2f (RC %.2f)", m_renderer.gpuFrameMs(), m_renderer.splitMs());
+        else if (m_rs.raster) snprintf(v[2], 32, "%.2f ms", m_renderer.gpuFrameMs());
         else snprintf(v[2], 32, "%u / %u", std::min<uint32_t>(m_renderer.sampleCount(), m_rs.maxSamples), m_rs.maxSamples);
         snprintf(v[3], 32, "%s", triText);
         snprintf(v[4], 32, "%zu · %zu", objs, m_scene.lights.size());
         const uint32_t aa = m_renderer.msaaSamples();
         if (aa > 1) snprintf(v[5], 32, m_renderer.msaaTemporal() ? "MSAA x%u (%ux2)" : "MSAA x%u", aa, aa / 2); else snprintf(v[5], 32, "Off");
-        const char* names[] = {"Frame rate", "Frame time", m_rs.raster ? "GPU" : "Samples", "Triangles", "Objects · lights", "Anti-aliasing"};
+        const char* names[] = {"Frame rate", "Frame time", (m_rs.raster || renderMode() == 4) ? "GPU" : "Samples", "Triangles", "Objects · lights", "Anti-aliasing"};
         for (int i = 0; i < 6; ++i) {
             Text(st.x + 12 * s, st.y + (34 + i * 19) * s, names[i], P().muted, 11);
             Text(st.x + 112 * s, st.y + (34 + i * 19) * s, v[i], P().text, 11);
@@ -1425,7 +1427,7 @@ void App::atlViewport(float x, float y, float w, float h) {
     Text(fx + 13 * s, fr.y + 6 * s, m_magnet ? "Snapping" : "Free", P().muted, 9);
     std::string info = std::to_string(objs) + " objects  /  " + triText + " triangles";
     Text(fr.x + fr.w - 290 * s, fr.y + 6 * s, info, P().muted, 9);
-    static const char* modeNames[] = {"●  Real time", "●  Metal iOS", "●  Progressive PT", "●  GI probes"};
+    static const char* modeNames[] = {"●  Real time", "●  Metal iOS", "●  Progressive PT", "●  GI probes", "●  Split RC"};
     Text(fr.x + fr.w - 116 * s, fr.y + 6 * s, modeNames[renderMode()], m_rs.raster ? kGreen : P().accent, 9);
 }
 
@@ -1492,11 +1494,11 @@ void App::drawAdvScaleMenu(float x, float y, float w, float h) {
 void App::atlViewMenus(float x, float y, float room) {
     const float menuScale = 1.4f * ts();
     static const char* displays[] = {"Shaded", "Wireframe", "Wireframe Override"};
-    static const char* modes[] = {"Lit", "Metal iOS", "Progressive", "GI"};
+    static const char* modes[] = {"Lit", "Metal iOS", "Progressive", "GI", "Split RC"};
     static const char* axes[] = {"World", "Object", "Parent"};
     const std::string camName = paneCameraName(m_activePane);
     const char* display = displays[std::clamp(m_rs.wireframe, 0, 2)];
-    const char* mode = modes[std::clamp(renderMode(), 0, 3)];
+    const char* mode = modes[std::clamp(renderMode(), 0, 4)];
     const char* axis = axes[std::clamp(m_axisMode, 0, 2)];
     auto pillW = [&](const std::string& l) { return TextSize(l, 12).x + 52 * s; };
     const float rowW = pillW(camName) + pillW(display) + pillW(mode) + pillW(axis) + TextSize("Grid", 12).x + 38 * s +
@@ -1579,8 +1581,8 @@ void App::atlViewMenus(float x, float y, float room) {
         ImGui::EndPopup();
     }
     if (pill("vmRender", mode, Icon::Sun,
-             "Renderer: Lit (real-time raster) · Metal iOS (Lit + GI probes, as the iOS build) · Progressive (path tracing) · GI (ray traced probes)", compact)) {
-        for (int i = 0; i < 4; ++i)
+             "Renderer: Lit (real-time raster) · Metal iOS (Lit + GI probes, as the iOS build) · Progressive (path tracing) · GI (ray traced probes) · Split RC (Split Radiance Cascades, ray traced, no history)", compact)) {
+        for (int i = 0; i < 5; ++i)
             if (ImGui::MenuItem(modes[i], nullptr, renderMode() == i)) setRenderMode(i);
         ImGui::EndPopup();
     }
@@ -2448,7 +2450,7 @@ void App::atlInspectorLighting(float x, float y, float w, float) {
 // tracing ones, and the progressive and GI engines have theirs. Each option has an info icon.
 void App::atlInspectorRender(float x, float y, float w, float) {
     bool ch = false, act = false;
-    static const char* names[] = {"Real time (raster)", "Metal iOS (raster + GI probes)", "Progressive path tracing", "GI probes (DDGI, ray traced)"};
+    static const char* names[] = {"Real time (raster)", "Metal iOS (raster + GI probes)", "Progressive path tracing", "GI probes (DDGI, ray traced)", "Split Radiance Cascades"};
     const int mode = renderMode();
     Text(x, y, names[mode], P().text, 14);
     y += 25 * s;
@@ -2571,11 +2573,76 @@ void App::atlInspectorRender(float x, float y, float w, float) {
         sliderF("##ic", "Indirect clamp", m_rs.indirectClamp, 0, 20, m_rs.indirectClamp > 0 ? "%.1f" : "off", "Caps each light contribution after a rough bounce or through subsurface scattering. Removes the sparkles of rare bright paths; lower = cleaner but the indirect light gets a little darker. 0 = off (exact).");
         Text(x, y, "HDRI and emissive objects are sampled as lights (MIS).", P().muted, 11);
         y += 22 * s;
+    } else if (mode == 4) {
+        Label(x, y, "SPLIT RADIANCE CASCADES");
+        y += 24 * s;
+        sliderI("##srpx", "Probe size (pixels)", m_rs.rcSplitProbePx, 4, 16, "%.0f px", "Size on screen of a cascade-0 probe cell (levels of detail keep it so with distance). Smaller = finer contact shadows, fewer rays per probe (noisier) and more GPU cost.");
+        sliderF("##srint", "First interval", m_rs.rcSplitInterval, 0.5f, 6, "%.1f cells", "Length of the cascade-0 rays in probe cells (x4 per cascade). Shorter = sharper near occlusion, more angular aliasing further.");
+        sliderI("##srcas", "Cascades", m_rs.rcSplitCascades, 2, 6, "%.0f", "Cascades of probes (the top one sees to infinity and the sky). Each has 2x the spacing and 4x the directions of the one below. More cascades = longer rays before the sky (big scenes); the top ones have many directions, so few rays each.");
+        sliderI("##srhist", "Accumulate while still", m_rs.rcSplitHistory, 0, 64, m_rs.rcSplitHistory > 1 ? "%.0f frames" : "off", "Averages the probes over up to this many frames, in world space: the camera can move without losing it. Dropped around an object that moves, and everywhere when a light or a material changes, so nothing ghosts. Off (0 or 1): every frame on its own (flickers a little more).");
+        check("##srflt", "Probe filter", m_rs.rcSplitFilter, "Each probe is averaged with its 6 neighbour cells: removes the isolated dark or bright cells (a probe that caught too few rays towards a small bright source), at the cost of a probe cell of blur.");
+        check("##sranim", "Moving ray jitter", m_rs.rcSplitAnimate, "Turns the ray set every frame (always on with the accumulation). Off and without accumulation: a still image stays perfectly still.");
+        check("##srbn", "Further bounces", m_rs.rcBounces, "The ray hits read the world cascades of the previous frame (the bounce cache, no history either). Off: one bounce.");
+        static const char* views[] = {"Full", "Indirect only", "Direct only"};
+        int view = m_rs.ddgiView;
+        ImGui::SetCursorScreenPos(ImVec2(x, y));
+        if (Combo("##srview", R{x, y, w - 22 * s, 28 * s}, view, views, 3, Icon::Sun)) { m_rs.ddgiView = view; ch = true; }
+        info("##srview_i", x + w - 18 * s, y + 5 * s, "Full image, only the indirect light, or only the direct light (debug).");
+        y += 36 * s;
+        check("##srsh", "Ray traced sun shadow", m_rs.rtSunShadows, "Sun shadow traced per pixel (soft, filtered, no history) instead of the shadow map.");
+        check("##srrf", "Ray traced reflections", m_rs.rtReflections, "Metals and glossy surfaces reflect the scene (traced per pixel, filtered, no history).");
+        y += 8 * s;
+        Label(x, y, "QUALITY");
+        y += 24 * s;
+        {
+            static const char* aa[] = {"Anti-aliasing: MSAA 4x", "Anti-aliasing: MSAA 8x", "Anti-aliasing: AAA (8x, HDR resolve)"};
+            int a = std::clamp(m_rs.aaQuality, 0, 2);
+            ImGui::SetCursorScreenPos(ImVec2(x, y));
+            if (Combo("##sraa", R{x, y, w - 22 * s, 28 * s}, a, aa, 3, Icon::Cube)) { m_rs.aaQuality = a; ch = true; }
+            info("##sraa_i", x + w - 18 * s, y + 5 * s, "Edges of the objects. MSAA 4x: as Lit. 8x: twice the samples per pixel. AAA: 8x resolved in tonemapped space, so the edges between a bright and a dark surface stay smooth instead of stair-stepping. Lit keeps 4x.");
+            y += 36 * s;
+            static const char* sq[] = {"Shadows: low", "Shadows: medium", "Shadows: high (default)", "Shadows: ultra", "Shadows: AAA"};
+            int q = std::clamp(m_rs.shadowQuality, 0, 4);
+            ImGui::SetCursorScreenPos(ImVec2(x, y));
+            if (Combo("##srsq", R{x, y, w - 22 * s, 28 * s}, q, sq, 5, Icon::Sun)) { m_rs.shadowQuality = q; ch = true; }
+            info("##srsq_i", x + w - 18 * s, y + 5 * s, "Ray traced shadows of the sun and of the main lamp: rays per pixel (sun 2 / 4 / 8 / 16 / 32, lamp twice as many) and the width of their smoothing filter. AAA: 32 / 64 rays, the softest and cleanest penumbra, the most GPU time.");
+            y += 36 * s;
+        }
+        y += 8 * s;
+        Label(x, y, "INSPECTION");
+        y += 24 * s;
+        {
+            static const char* insp[] = {"Off (shaded)", "Probe cells", "Probe irradiance (no blend)", "Cascade hit by the ray", "Rays per probe", "Level of detail", "Accumulated frames", "Shadow mask (ray traced)"};
+            int d = std::clamp(m_rs.rcSplitDebug, 0, 7);
+            ImGui::SetCursorScreenPos(ImVec2(x, y));
+            if (Combo("##srdbg", R{x, y, w - 22 * s, 28 * s}, d, insp, 8, Icon::Eye)) { m_rs.rcSplitDebug = d; ch = true; }
+            info("##srdbg_i", x + w - 18 * s, y + 5 * s, "Probe cells: a colour per probe cell of the chosen cascade (magenta = no probe, dark lines = cell borders). Probe irradiance: the light of the nearest cascade-0 probe, unblended. Cascade hit: where each pixel's ray found its light (blue = cascade 0 ... red = top, black = sky). Rays per probe: rays of the pixel's cascade-0 probe (white = 256). Level of detail: a colour per LOD. Accumulated frames: black = none (just moved), white = full history.");
+            y += 36 * s;
+            if (m_rs.rcSplitDebug == 1) sliderI("##srdbgc", "Cascade shown", m_rs.rcSplitDebugCascade, 0, (float)std::max(0, m_rs.rcSplitCascades - 1), "%.0f", "Cascade whose probe cells are drawn.");
+        }
+        y += 8 * s;
+        const vp3d::RCStats& st = m_renderer.rcStats();
+        char b[160];
+        snprintf(b, sizeof(b), "GPU %.2f ms, of which Split RC %.2f ms", m_renderer.gpuFrameMs(), m_renderer.splitMs());
+        Text(x, y, b, P().muted, 11);
+        y += 19 * s;
+        snprintf(b, sizeof(b), "%llu rays (1 per pixel), %d cascades, %u to %u directions", (unsigned long long)st.splitRays,
+                 st.splitCascades, st.splitDirs[0], st.splitDirs[std::max(0, st.splitCascades - 1)]);
+        Text(x, y, b, P().muted, 11);
+        y += 19 * s;
+        snprintf(b, sizeof(b), "Probes C0 %u / %u, C1 %u / %u%s", st.splitProbes[0], st.splitCapacity[0], st.splitProbes[1],
+                 st.splitCapacity[1], st.splitProbes[0] > st.splitCapacity[0] ? " (full: bigger probes)" : "");
+        Text(x, y, b, st.splitProbes[0] > st.splitCapacity[0] ? P().accent : P().muted, 11);
+        y += 19 * s;
+        Text(x, y, "History only while nothing moves: what moves is right the next frame.", P().muted, 11);
+        y += 22 * s;
     } else {
         Label(x, y, "PROBES");
         y += 24 * s;
         sliderI("##pb", "Probe budget", m_rs.ddgiProbeBudget, 256, 8192, "%.0f", "Number of irradiance probes over the scene. More = finer indirect light, more GPU cost.");
-        sliderF("##hy", "Hysteresis", m_rs.ddgiHysteresis, 0.80f, 0.999f, "%.3f", "How much each probe keeps its previous value per frame. Higher = steadier, slower to react.");
+        sliderF("##hy", "Hysteresis", m_rs.ddgiHysteresis, 0.80f, 0.999f, "%.3f", "How much each probe keeps its previous value per frame. Higher = steadier, slower to react. Progressive probes: the value reached once still.");
+        if (mode == 3) check("##rmov", "Raster pendant le mouvement", m_rs.giRasterWhileMoving, "While the camera or an object moves: the raster view of the probes (no noise), then a short fade to the ray traced image once still.");
+        check("##prog", "Progressive probes", m_rs.ddgiProgressive, "Running average while nothing changes (converged and still), only the probes around a moved object restart, a quarter of the probes per frame once still. Off: the former per-frame blend.");
         ImGui::SetCursorScreenPos(ImVec2(x, y));
         static const char* views[] = {"Full", "Indirect only", "Direct only"};
         int view = m_rs.ddgiView;
@@ -2619,9 +2686,9 @@ void App::atlInspectorWorld(float x, float y, float w, float) {
     y += 35 * s;
     Text(x, y, "Rendering", P().muted, 11);
     y += 19 * s;
-    static const char* modes[] = {"Real time", "Metal iOS", "Progressive", "GI probes (DDGI)"};
+    static const char* modes[] = {"Real time", "Metal iOS", "Progressive", "GI probes (DDGI)", "Split RC"};
     int mode = renderMode();
-    if (Combo("worldRender", {x, y, w, 27 * s}, mode, modes, 4, Icon::Sun)) setRenderMode(mode);
+    if (Combo("worldRender", {x, y, w, 27 * s}, mode, modes, 5, Icon::Sun)) setRenderMode(mode);
     y += 43 * s;
     Label(x, y, "SCENE SUMMARY");
     y += 25 * s;

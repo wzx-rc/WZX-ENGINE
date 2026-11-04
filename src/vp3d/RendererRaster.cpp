@@ -30,6 +30,13 @@ struct RasterConstants {
     float shIrr[9][4];
     float envMapOn; float envRotation; float envMapIntensity; float envMips;
     float envVisible; uint32_t sunLight; float giMode, orthoHalfH;   // giMode: DDGI probes read by Shade (Raster.hlsl); orthoHalfH: orthographic camera
+    float3 hemiSky; float hemiOn;
+    float3 hemiGround; float bevelOn;
+    float rtShadow, sunTanRadius, rtShadowSamples, rtRefl;   // ray traced sun shadow (mask in t12), reflections (t13)
+    float centreValid, rtLights, rtAO; uint32_t gridLine;   // centreValid: t14 holds this frame's pixel-centre depth
+    float3 envSun2Dir; float envSun2On;                     // HQ: the light of the HDRI as a second soft light
+    float3 envSun2E; float envSun2Tan;
+    float sssScale, sssPad0, sssPad1, sssPad2;              // subsurface of the raster view (Raster.hlsl, 0 = off)
 };
 
 struct DrawConstants {
@@ -109,7 +116,7 @@ void blendOn(D3D12_GRAPHICS_PIPELINE_STATE_DESC& d) {
 
 } // namespace
 
-bool Renderer::createRasterPipelines(std::string* error) {
+bool Renderer::createRasterPipelines(std::string* error, bool msaaOnly) {
     D3D12_DESCRIPTOR_RANGE range = {};
     range.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
     range.NumDescriptors = 1;
@@ -126,12 +133,26 @@ bool Renderer::createRasterPipelines(std::string* error) {
     envRange.NumDescriptors = 1;
     envRange.BaseShaderRegister = 3;
 
-    D3D12_DESCRIPTOR_RANGE probeRange = {};   // t4..t6 probe atlases (DDGI without ray tracing)
-    probeRange.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
-    probeRange.NumDescriptors = 3;
-    probeRange.BaseShaderRegister = 4;
+    // One table from kProbeSrvSlot: t4..t6 probe atlases (DDGI without ray tracing), then t11 screen GI (screen-space
+    // cascades), t12 ray traced sun shadow, t13 reflections, t14 pixel-centre depth of the traced passes (edge fix);
+    // (t7 is the buffer of the instanced draws)
+    D3D12_DESCRIPTOR_RANGE probeRanges[2] = {};
+    probeRanges[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+    probeRanges[0].NumDescriptors = 3;
+    probeRanges[0].BaseShaderRegister = 4;
+    probeRanges[0].OffsetInDescriptorsFromTableStart = 0;
+    probeRanges[1].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+    probeRanges[1].NumDescriptors = 4;
+    probeRanges[1].BaseShaderRegister = 11;
+    probeRanges[1].OffsetInDescriptorsFromTableStart = 3;
 
-    D3D12_ROOT_PARAMETER p[10] = {};
+    D3D12_DESCRIPTOR_RANGE bevelRange = {};   // t0..t3 space2: the scene of the raster bevel (one table: the root
+    bevelRange.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;   // signature is at 63 of its 64 DWORDs)
+    bevelRange.NumDescriptors = 4;
+    bevelRange.BaseShaderRegister = 0;
+    bevelRange.RegisterSpace = 2;
+
+    D3D12_ROOT_PARAMETER p[12] = {};
     p[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
     p[0].Descriptor.ShaderRegister = 0;
     p[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
@@ -156,9 +177,9 @@ bool Renderer::createRasterPipelines(std::string* error) {
     p[7].ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;   // b3 probe face (DDGI capture), vertex + pixel
     p[7].Constants.ShaderRegister = 3;
     p[7].Constants.Num32BitValues = 32;   // probe face (20 values) or editor grid (32)
-    p[8].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;   // t4..t6 probe atlases, pixel
-    p[8].DescriptorTable.NumDescriptorRanges = 1;
-    p[8].DescriptorTable.pDescriptorRanges = &probeRange;
+    p[8].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;   // t4..t6 probe atlases, t11..t14, pixel
+    p[8].DescriptorTable.NumDescriptorRanges = 2;
+    p[8].DescriptorTable.pDescriptorRanges = probeRanges;
     p[8].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
     p[9].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;   // b2 DDGI constants, pixel
     p[9].Descriptor.ShaderRegister = 2;
@@ -182,7 +203,13 @@ bool Renderer::createRasterPipelines(std::string* error) {
     ts.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
 
     D3D12_ROOT_SIGNATURE_DESC rsd = {};
-    rsd.NumParameters = 10;
+    p[10].ParameterType = D3D12_ROOT_PARAMETER_TYPE_SRV;   // t7 instanced draw constants (gDraws), vertex + pixel
+    p[10].Descriptor.ShaderRegister = 7;
+    p[11].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;   // raster bevel scene, pixel
+    p[11].DescriptorTable.NumDescriptorRanges = 1;
+    p[11].DescriptorTable.pDescriptorRanges = &bevelRange;
+    p[11].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+    rsd.NumParameters = 12;
     rsd.pParameters = p;
     rsd.NumStaticSamplers = 2;
     rsd.pStaticSamplers = samplers;
@@ -192,7 +219,7 @@ bool Renderer::createRasterPipelines(std::string* error) {
         if (error) *error = err ? (const char*)err->GetBufferPointer() : "raster root signature";
         return false;
     }
-    m_device->CreateRootSignature(0, blob->GetBufferPointer(), blob->GetBufferSize(), IID_PPV_ARGS(&m_rasterRoot));
+    if (!msaaOnly || !m_rasterRoot) m_device->CreateRootSignature(0, blob->GetBufferPointer(), blob->GetBufferSize(), IID_PPV_ARGS(&m_rasterRoot));
 
     auto load = [&](const wchar_t* name, std::vector<char>& code) {
         if (readBlob(m_shaderDir + L"\\" + name, code)) return true;
@@ -248,6 +275,7 @@ bool Renderer::createRasterPipelines(std::string* error) {
 
     // Viewport passes (multisampled, m_msaa samples)
     if (!createMsaaPipelines(error)) return false;
+    if (msaaOnly) return true;
 
     // Object id pass (single sample) into the albedo texture (w = id)
     d = rasterDesc(m_rasterRoot.Get());
@@ -325,7 +353,7 @@ bool Renderer::createRasterPipelines(std::string* error) {
     sh.ptr += (SIZE_T)kTexCount * m_descSize;
     m_device->CreateShaderResourceView(m_shadowMap.Get(), &srv, sh);
 
-    m_rasterCB = createBuffer(1024, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ);
+    m_rasterCB = createBuffer(2048, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ);
     return true;
 }
 
@@ -489,14 +517,24 @@ void Renderer::createRasterTargets(uint32_t w, uint32_t h) {
     cc.Format = d.Format;
     m_msaaColor.Reset();
     m_device->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &d, D3D12_RESOURCE_STATE_RENDER_TARGET, &cc, IID_PPV_ARGS(&m_msaaColor));
-    // MSAA depth
-    d.Format = DXGI_FORMAT_D32_FLOAT;
+    {   // its SRV for the tonemapped resolve (compute, t7 of that pass)
+        D3D12_SHADER_RESOURCE_VIEW_DESC sv = {};
+        sv.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
+        sv.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2DMS;
+        sv.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+        D3D12_CPU_DESCRIPTOR_HANDLE h = m_heap->GetCPUDescriptorHandleForHeapStart();
+        h.ptr += (SIZE_T)kMsaaSrvSlot * m_descSize;
+        m_device->CreateShaderResourceView(m_msaaColor.Get(), &sv, h);
+    }
+    // MSAA depth (typeless: also read as R32 by the ambient occlusion, SRV t9)
+    d.Format = DXGI_FORMAT_R32_TYPELESS;
     d.Flags = D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;
     D3D12_CLEAR_VALUE dc = {};
     dc.Format = DXGI_FORMAT_D32_FLOAT;
     dc.DepthStencil.Depth = 1.0f;
     m_msaaDepth.Reset();
     m_device->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &d, D3D12_RESOURCE_STATE_DEPTH_WRITE, &dc, IID_PPV_ARGS(&m_msaaDepth));
+    d.Format = DXGI_FORMAT_D32_FLOAT;
     // id depth (single sample)
     d.SampleDesc.Count = 1;
     m_idDepth.Reset();
@@ -507,7 +545,20 @@ void Renderer::createRasterTargets(uint32_t w, uint32_t h) {
     rtv.ptr += m_rtvSize;
     m_device->CreateRenderTargetView(m_tex[kTexAlbedo].Get(), nullptr, rtv);
     D3D12_CPU_DESCRIPTOR_HANDLE dsv = m_dsvHeap->GetCPUDescriptorHandleForHeapStart();
-    m_device->CreateDepthStencilView(m_msaaDepth.Get(), nullptr, dsv);
+    {
+        D3D12_DEPTH_STENCIL_VIEW_DESC dv = {};
+        dv.Format = DXGI_FORMAT_D32_FLOAT;
+        dv.ViewDimension = m_msaa > 1 ? D3D12_DSV_DIMENSION_TEXTURE2DMS : D3D12_DSV_DIMENSION_TEXTURE2D;
+        m_device->CreateDepthStencilView(m_msaaDepth.Get(), &dv, dsv);
+        D3D12_SHADER_RESOURCE_VIEW_DESC zs = {};
+        zs.Format = DXGI_FORMAT_R32_FLOAT;
+        zs.ViewDimension = m_msaa > 1 ? D3D12_SRV_DIMENSION_TEXTURE2DMS : D3D12_SRV_DIMENSION_TEXTURE2D;
+        zs.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+        if (m_msaa <= 1) zs.Texture2D.MipLevels = 1;
+        D3D12_CPU_DESCRIPTOR_HANDLE zh = m_heap->GetCPUDescriptorHandleForHeapStart();
+        zh.ptr += (SIZE_T)kDepthSrvSlot * m_descSize;
+        m_device->CreateShaderResourceView(m_msaaDepth.Get(), &zs, zh);
+    }
     dsv.ptr += m_dsvSize;
     m_device->CreateDepthStencilView(m_idDepth.Get(), nullptr, dsv);
 
@@ -535,6 +586,22 @@ void Renderer::createRasterTargets(uint32_t w, uint32_t h) {
     D3D12_CPU_DESCRIPTOR_HANDLE sh = m_heap->GetCPUDescriptorHandleForHeapStart();
     sh.ptr += (SIZE_T)kSelCovSlot * m_descSize;
     m_device->CreateShaderResourceView(m_selCov.Get(), &sv, sh);
+}
+
+uint32_t Renderer::allocDraws(uint32_t count) {
+    const uint64_t need = (m_drawBufUsed + count) * sizeof(DrawConstants);
+    if (!m_drawBuf.res || need > m_drawBuf.size) {
+        uint64_t size = std::max<uint64_t>((uint64_t)count * sizeof(DrawConstants) * 2, 1u << 20);
+        if (m_drawBuf.res) {
+            size = std::max(size, m_drawBuf.size * 2);
+            m_drawGrave.push_back(m_drawBuf);   // still read by the commands recorded this frame
+        }
+        m_drawBuf = createBuffer(size, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ);
+        m_drawBufUsed = 0;
+    }
+    uint32_t first = (uint32_t)m_drawBufUsed;
+    m_drawBufUsed += count;
+    return first;
 }
 
 // Coverage of the selection: the selected objects drawn into the mask with the samples (and depth) of the viewport,
@@ -609,6 +676,9 @@ void Renderer::recordRaster(const Scene& scene, const RenderSettings& rs, const 
     // the SH ambient. Its highlight already is in the blurred reflections, so this key has no specular term.
     const bool envMap = scene.env.hdri && scene.env.hdri == m_envImage && m_envW > 0;
     const bool envSun = envMap && !sun && m_envSunValid && rs.rasterEnvSun;
+    // HQ (rasterRT): beside the scene sun, the light of the HDRI as a second light with a traced soft shadow (it is
+    // left out of the SH); its cone: the 6 degrees of its extraction (uploadEnvironment)
+    const bool envSun2 = envMap && sun && m_envSunValid && rs.rasterRT && !probeCapture && m_tlas.res && m_tlasVersion == m_buildVersion;
     float3 envSunDir = m_envSunDir;
     {
         float cr = std::cos(scene.env.hdriRotation), sr = std::sin(scene.env.hdriRotation);   // image space to world
@@ -649,8 +719,21 @@ void Renderer::recordRaster(const Scene& scene, const RenderSettings& rs, const 
     rc.envBottom = scene.env.bottom;
     rc.envIntensity = scene.env.intensity;
     rc.gridScale = scene.gridScale;
+    rc.gridLine = scene.gridLine;
     rc.keyLight = key < 0 ? 0xFFFFFFFFu : (uint32_t)key;
     rc.ambient = scene.env.ambient;
+    rc.hemiSky = scene.env.hemiSky * scene.env.hemiIntensity;
+    rc.hemiGround = scene.env.hemiGround * scene.env.hemiIntensity;
+    rc.hemiOn = scene.env.hemiIntensity > 0 ? 1.0f : 0.0f;
+    const bool tlasOk = m_tlas.res && m_tlasVersion == m_buildVersion;
+    rc.bevelOn = (rs.bevel && rs.rasterBevel && tlasOk) ? rs.bevelScale : 0.0f;   // raster bevel (TLAS built for it)
+    rc.rtLights = (rs.rasterRT && tlasOk && !probeCapture) ? 1.0f : 0.0f;
+    rc.rtAO = (rs.rasterRT && tlasOk && !probeCapture) ? std::max(0.0f, rs.rasterAO) : 0.0f;
+    rc.envSun2On = envSun2 ? 1.0f : 0.0f;
+    rc.envSun2Dir = envSunDir;
+    rc.envSun2E = envSun2 ? m_envSunE * scene.env.hdriIntensity : float3(0.0f);
+    rc.envSun2Tan = std::tan(radians(6.0f));
+    rc.sssScale = std::max(0.0f, rs.rasterSSS);
     rc.shadowTexel = 1.0f / kShadowSize;
     rc.keyPos = keyCenter;
     rc.lightScale = rs.lightScale;
@@ -659,7 +742,7 @@ void Renderer::recordRaster(const Scene& scene, const RenderSettings& rs, const 
     rc.sunRadiance = envSun ? m_envSunE * scene.env.hdriIntensity : scene.sun.color * scene.sun.intensity;
     rc.sunFromEnv = envSun ? 1.0f : 0.0f;
     for (int k = 0; k < 9; ++k)
-        for (int ch = 0; ch < 3; ++ch) rc.shIrr[k][ch] = envSun ? m_envSH[k][ch] : m_envSHFull[k][ch];
+        for (int ch = 0; ch < 3; ++ch) rc.shIrr[k][ch] = (envSun || envSun2) ? m_envSH[k][ch] : m_envSHFull[k][ch];
     rc.envMapOn = envMap ? 1.0f : 0.0f;
     rc.envRotation = scene.env.hdriRotation;
     rc.envMapIntensity = scene.env.hdriIntensity;
@@ -667,11 +750,24 @@ void Renderer::recordRaster(const Scene& scene, const RenderSettings& rs, const 
     rc.envVisible = scene.env.visibleToCamera ? 1.0f : 0.0f;
     rc.sunLight = m_sunLight;
     rc.giMode = (probes || probeCapture) ? 1.0f : 0.0f;   // probes read by the main pass; the capture drops its ambient
-    // The id pass reads a copy without jitter (offset 512); the viewport passes may be jittered: MSAA x16 on a GPU with
+    // sun shadow traced per pixel when this frame has an acceleration structure (GI modes)
+    rc.rtShadow = (rs.rtSunShadows && m_asThisFrame && m_tlas.res) ? 1.0f : 0.0f;
+    rc.sunTanRadius = std::tan(radians(std::max(rs.sunAngle, 0.0f)) * 0.5f);
+    rc.rtShadowSamples = (float)std::max(1, std::min(rs.rtShadowSamples, 32));
+    // reflections traced per pixel on glossy surfaces: GI modes (the hits read the probes), not the probe captures
+    const bool reflOn = rs.rtReflections && (probes || rs.rasterRT) && !probeCapture && !xv && m_asThisFrame && m_tlas.res;   // (main view only)
+    rc.rtRefl = reflOn ? 1.0f : 0.0f;
+    // ray traced sun shadow and reflections: computed now (compute passes), read by the main pass (t8, t9)
+    // the mask is the sun's, or without a sun the key area light's (a lamp in a room: the Cornell box)
+    const int areaKey = (rc.sunOn > 0 || key < 0) ? -1 : key;
+    const bool sunMask = rc.rtShadow > 0 && !probeCapture && !xv && (rc.sunOn > 0 || areaKey >= 0);
+    // the traced passes also give the depth of each pixel centre: the edge fix of the main pass (Raster.hlsl, t10)
+    rc.centreValid = (sunMask || reflOn) ? 1.0f : 0.0f;
+    // The id pass reads a copy without jitter (offset 768); the viewport passes may be jittered: MSAA x16 on a GPU with
     // 8 samples alternates two sub-pixel offsets of its pattern, frame after frame, and the tonemapper averages the last
     // two frames while nothing moves (16 different samples per pixel).
-    static_assert(sizeof(RasterConstants) <= 512, "two copies in m_rasterCB");
-    memcpy((uint8_t*)rcb.mapped + 512, &rc, sizeof(rc));
+    static_assert(sizeof(RasterConstants) <= 768, "two copies in m_rasterCB (768 + size <= 1536: the frame constants of an extra view)");
+    memcpy((uint8_t*)rcb.mapped + 768, &rc, sizeof(rc));
     if (m_msaaTemporal && !overlay && !probeCapture && !probes && !xv) {
         const float o = (m_taaFrame & 1) ? 1.0f / 32.0f : -1.0f / 32.0f;   // pixels: the two frames are 1/16 px apart
         const float jx = 2.0f * o / (float)vp.w, jy = -2.0f * o / (float)vp.h;
@@ -681,8 +777,38 @@ void Renderer::recordRaster(const Scene& scene, const RenderSettings& rs, const 
         }
     }
     memcpy(rcb.mapped, &rc, sizeof(rc));
+    if (sunMask || reflOn) recordScreenTrace(rc.sunDir, rs, sunMask, reflOn, areaKey);
 
     m_cmd->SetGraphicsRootSignature(m_rasterRoot.Get());
+    {   // raster bevel: the scene for the inline ray queries (views written when the bevel is on; read nowhere when
+        // rc.bevelOn = 0, the table then points at whatever the slots hold)
+        D3D12_CPU_DESCRIPTOR_HANDLE h = m_heap->GetCPUDescriptorHandleForHeapStart();
+        h.ptr += (SIZE_T)kBevelSrvSlot * m_descSize;
+        if (rc.bevelOn > 0 || rc.rtLights > 0) {
+            D3D12_SHADER_RESOURCE_VIEW_DESC sv = {};
+            sv.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+            sv.ViewDimension = D3D12_SRV_DIMENSION_RAYTRACING_ACCELERATION_STRUCTURE;
+            sv.RaytracingAccelerationStructure.Location = m_tlas.va();
+            m_device->CreateShaderResourceView(nullptr, &sv, h);
+            auto structured = [&](ID3D12Resource* res, UINT64 bytes, UINT stride, UINT slot) {
+                D3D12_SHADER_RESOURCE_VIEW_DESC b = {};
+                b.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+                b.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
+                b.Format = DXGI_FORMAT_UNKNOWN;
+                b.Buffer.NumElements = (UINT)(bytes / stride);
+                b.Buffer.StructureByteStride = stride;
+                D3D12_CPU_DESCRIPTOR_HANDLE hh = h;
+                hh.ptr += (SIZE_T)slot * m_descSize;
+                m_device->CreateShaderResourceView(res, &b, hh);
+            };
+            structured(m_vb.res.Get(), m_vb.size, sizeof(gpu::GpuVertex), 1);
+            structured(m_ib.res.Get(), m_ib.size, 4, 2);
+            structured(m_instances.res.Get(), m_instances.size, sizeof(gpu::GpuInstance), 3);
+        }
+        D3D12_GPU_DESCRIPTOR_HANDLE g = m_heap->GetGPUDescriptorHandleForHeapStart();
+        g.ptr += (UINT64)kBevelSrvSlot * m_descSize;
+        m_cmd->SetGraphicsRootDescriptorTable(11, g);
+    }
     m_cmd->SetGraphicsRootConstantBufferView(0, rcb.va());
     m_cmd->SetGraphicsRootShaderResourceView(2, m_materials.va());
     m_cmd->SetGraphicsRootShaderResourceView(3, m_lights.va());
@@ -704,16 +830,85 @@ void Renderer::recordRaster(const Scene& scene, const RenderSettings& rs, const 
     m_cmd->IASetIndexBuffer(&ibv);
     m_cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
+    // Instancing: the constants of every draw go to m_drawBuf once, sorted by mesh (counting sort), and each pass draws
+    // runs of consecutive draws of the same mesh with one DrawIndexedInstanced.
+    m_cmd->SetGraphicsRootShaderResourceView(10, 0);
+    m_rasterTris = 0;
+    const uint32_t nDraws = (uint32_t)m_draws.size();
+    std::vector<uint32_t> order(nDraws), slotOf(nDraws);
+    // Level of detail (Scene::lods, by the size of the object on screen) and frustum culling of the camera passes.
+    std::vector<int> drawMesh(nDraws);
+    std::vector<uint8_t> inView(nDraws, 1);
+    {
+        const float pixK = (float)vp.h / (2.0f * t);   // screen pixels per unit at distance 1 (perspective)
+        const float ta = t * a, kx = std::sqrt(1.0f + ta * ta), ky = std::sqrt(1.0f + t * t);
+        const bool persp = !cam.ortho;
+        const bool lodOn = !scene.lods.empty() && !probeCapture;
+        for (uint32_t k = 0; k < nDraws; ++k) {
+            const Draw& d = m_draws[k];
+            int mesh = d.mesh;
+            if (persp && !(d.flags & 2u)) {
+                const MeshGpu& g = m_meshes[d.mesh];
+                float3 c = d.xf.point(g.center);
+                float sc = std::sqrt(std::max(d.xf.m[0][0] * d.xf.m[0][0] + d.xf.m[1][0] * d.xf.m[1][0] + d.xf.m[2][0] * d.xf.m[2][0],
+                                              d.xf.m[0][1] * d.xf.m[0][1] + d.xf.m[1][1] * d.xf.m[1][1] + d.xf.m[2][1] * d.xf.m[2][1]));
+                float R = g.radius * sc;
+                float3 v = c - eye;
+                float z = dot(v, f);
+                if (z < -R || std::fabs(dot(v, r)) > z * ta + R * kx || std::fabs(dot(v, u)) > z * t + R * ky) inView[k] = 0;
+                if (lodOn && d.mesh < (int)scene.lods.size()) {
+                    const Scene::MeshLod& l = scene.lods[d.mesh];
+                    float px = 2.0f * R * pixK / std::max(z, 1e-3f);
+                    if (px < scene.lodPixels2 && l.lod2 >= 0) mesh = l.lod2;
+                    else if (px < scene.lodPixels1 && l.lod1 >= 0) mesh = l.lod1;
+                }
+            }
+            drawMesh[k] = mesh < (int)m_meshes.size() ? mesh : d.mesh;
+        }
+    }
+    {
+        std::vector<uint32_t> start(m_meshes.size() + 1, 0);
+        for (uint32_t k = 0; k < nDraws; ++k) ++start[drawMesh[k] + 1];
+        for (size_t k = 1; k < start.size(); ++k) start[k] += start[k - 1];
+        for (uint32_t k = 0; k < nDraws; ++k) order[start[drawMesh[k]]++] = k;
+    }
+    const uint32_t drawBase = nDraws ? allocDraws(nDraws * (rs.wireframe ? 2u : 1u)) : 0;
+    if (nDraws) {
+        DrawConstants* dst = (DrawConstants*)m_drawBuf.mapped + drawBase;
+        for (uint32_t k = 0; k < nDraws; ++k) {
+            const Draw& d = m_draws[order[k]];
+            DrawConstants& dc = dst[k];
+            memcpy(dc.rows, d.xf.m, sizeof(dc.rows));
+            dc.materialId = d.material;
+            dc.id = d.id;
+            dc.alpha = d.alpha;
+            dc.flags = d.flags;
+            slotOf[order[k]] = drawBase + k;
+        }
+        m_cmd->SetGraphicsRootShaderResourceView(10, m_drawBuf.va());
+    }
     auto drawOne = [&](const Draw& d) {
         const MeshGpu& g = m_meshes[d.mesh];
-        DrawConstants dc = {};
-        memcpy(dc.rows, d.xf.m, sizeof(dc.rows));
-        dc.materialId = d.material;
-        dc.id = d.id;
-        dc.alpha = d.alpha;
-        dc.flags = d.flags;
-        m_cmd->SetGraphicsRoot32BitConstants(1, 16, &dc, 0);
+        uint32_t slot = slotOf[&d - m_draws.data()];
+        m_cmd->SetGraphicsRoot32BitConstants(1, 1, &slot, 0);
         m_cmd->DrawIndexedInstanced(g.indexCount, 1, g.indexOffset, (INT)g.vertexOffset, 0);
+    };
+    // every draw passing the filter (and in the view when cull is set), batched by mesh (level of detail)
+    auto drawAll = [&](const std::function<bool(const Draw&)>& pass, bool cull = true) {
+        uint32_t k = 0;
+        auto ok = [&](uint32_t j) { return (!cull || inView[order[j]]) && pass(m_draws[order[j]]); };
+        while (k < nDraws) {
+            if (!ok(k)) { ++k; continue; }
+            const int mesh = drawMesh[order[k]];
+            uint32_t e = k + 1;
+            while (e < nDraws && drawMesh[order[e]] == mesh && ok(e)) ++e;
+            const MeshGpu& g = m_meshes[mesh];
+            uint32_t slot = drawBase + k;
+            m_cmd->SetGraphicsRoot32BitConstants(1, 1, &slot, 0);
+            m_cmd->DrawIndexedInstanced(g.indexCount, e - k, g.indexOffset, (INT)g.vertexOffset, 0);
+            if (cull) m_rasterTris += (uint64_t)(g.indexCount / 3) * (e - k);
+            k = e;
+        }
     };
     auto isTransparent = [&](const Draw& d) {
         return d.material < scene.materials.size() && scene.materials[d.material].transmission > 0.5f;
@@ -733,8 +928,7 @@ void Renderer::recordRaster(const Scene& scene, const RenderSettings& rs, const 
     m_cmd->RSSetScissorRects(1, &ssc);
     m_cmd->SetPipelineState(m_psoShadow.Get());
     if (key >= 0 || sun || envSun)
-        for (const Draw& d : m_draws)
-            if (!(d.flags & 7u) && !isTransparent(d)) drawOne(d);
+        drawAll([&](const Draw& d) { return !(d.flags & 7u) && !isTransparent(d); }, false);
     transition(m_shadowMap.Get(), D3D12_RESOURCE_STATE_DEPTH_WRITE, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
     }
 
@@ -781,8 +975,7 @@ void Renderer::recordRaster(const Scene& scene, const RenderSettings& rs, const 
                 m_cmd->SetPipelineState(m_psoProbeBg.Get());   // environment first, geometry over it
                 m_cmd->DrawInstanced(3, 1, 0, 0);
                 m_cmd->SetPipelineState(m_psoProbe.Get());
-                for (const Draw& d : m_draws)
-                    if (!(d.flags & 7u) && !isTransparent(d)) drawOne(d);
+                drawAll([&](const Draw& d) { return !(d.flags & 7u) && !isTransparent(d); }, false);
             }
         }
         for (ID3D12Resource* r : capTargets) transition(r, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
@@ -834,40 +1027,61 @@ void Renderer::recordRaster(const Scene& scene, const RenderSettings& rs, const 
     };
     if (overlay) {   // depth of the opaque objects, then the grid
         m_cmd->SetPipelineState(m_psoDepth.Get());
-        for (const Draw& d : m_draws)
-            if (!(d.flags & 5u) && !isTransparent(d)) drawOne(d);
+        drawAll([&](const Draw& d) { return !(d.flags & 5u) && !isTransparent(d); });
         drawGrid();
     } else if (rs.wireframe == 1) {
         m_cmd->SetPipelineState(m_psoMain.Get());
-        for (const Draw& d : m_draws)
-            if (!(d.flags & 5u) && isGround(d)) drawOne(d);
+        drawAll([&](const Draw& d) { return !(d.flags & 5u) && isGround(d); });
         drawGrid();
     } else {
     m_cmd->SetPipelineState(m_psoMain.Get());
-    for (const Draw& d : m_draws)
-        if (!(d.flags & 5u) && !isTransparent(d)) drawOne(d);
+    drawAll([&](const Draw& d) { return !(d.flags & 5u) && !isTransparent(d); });
     drawGrid();
     m_cmd->SetPipelineState(m_psoTrans.Get());
-    for (const Draw& d : m_draws)
-        if (!(d.flags & 5u) && isTransparent(d)) drawOne(d);
+    drawAll([&](const Draw& d) { return !(d.flags & 5u) && isTransparent(d); });
     m_cmd->SetPipelineState(m_psoGhost.Get());
-    for (const Draw& d : m_draws)
-        if (d.flags & 1u) drawOne(d);
+    drawAll([&](const Draw& d) { return d.flags & 1u; });
     }
     if (rs.wireframe) {   // light lines alone, dark lines over the shaded view
         m_cmd->SetPipelineState(m_psoWire.Get());
         m_cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_LINELIST);
+        const uint32_t wireBase = drawBase + nDraws;
         for (const Draw& d : m_draws) {
             if ((d.flags & 5u) || isGround(d)) continue;
             const MeshGpu& g = m_meshes[d.mesh];
-            DrawConstants dc = {};
+            const uint32_t slot = wireBase + (uint32_t)(&d - m_draws.data());
+            DrawConstants& dc = ((DrawConstants*)m_drawBuf.mapped)[slot];
             memcpy(dc.rows, d.xf.m, sizeof(dc.rows));
             dc.materialId = d.material;
             dc.id = d.id;
             dc.alpha = rs.wireframe == 1 ? 0.75f : 0.62f;   // line grey level
             dc.flags = d.flags | (rs.wireframe == 2 ? 8u : 0u);   // over the shaded view: faint light lines (PSWire)
-            m_cmd->SetGraphicsRoot32BitConstants(1, 16, &dc, 0);
+            m_cmd->SetGraphicsRoot32BitConstants(1, 1, &slot, 0);
             m_cmd->DrawIndexedInstanced(g.lineCount, 1, g.lineOffset, (INT)g.vertexOffset, 0);
+        }
+        m_cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+    }
+    if (!m_edgeObjects.empty() && !probeCapture && m_psoWire) {   // edge outline: the hard edges of the objects given
+        std::vector<uint32_t> ids;
+        for (int o : m_edgeObjects)
+            if (o >= 0 && o < (int)m_objectToInstance.size() && m_objectToInstance[o] >= 0) ids.push_back((uint32_t)(m_objectToInstance[o] + 1));
+        const uint32_t edgeBase = ids.empty() ? 0 : allocDraws((uint32_t)ids.size());
+        uint32_t n = 0;
+        m_cmd->SetPipelineState(m_psoWire.Get());
+        m_cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_LINELIST);
+        for (const Draw& d : m_draws) {
+            if ((d.flags & 5u) || n >= ids.size() || std::find(ids.begin(), ids.end(), d.id) == ids.end()) continue;
+            const MeshGpu& g = m_meshes[d.mesh];
+            if (!g.hardCount) continue;
+            const uint32_t slot = edgeBase + n++;
+            DrawConstants& dc = ((DrawConstants*)m_drawBuf.mapped)[slot];
+            memcpy(dc.rows, d.xf.m, sizeof(dc.rows));
+            dc.materialId = d.material;
+            dc.id = d.id;
+            dc.alpha = m_edgeOpacity;
+            dc.flags = d.flags | 16u | (m_edgeRed ? 32u : 0u);   // PSWire: the outline colour
+            m_cmd->SetGraphicsRoot32BitConstants(1, 1, &slot, 0);
+            m_cmd->DrawIndexedInstanced(g.hardCount, 1, g.hardOffset, (INT)g.vertexOffset, 0);
         }
         m_cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
     }
@@ -879,7 +1093,21 @@ void Renderer::recordRaster(const Scene& scene, const RenderSettings& rs, const 
     }
     // 3) resolve into the HDR slot read by the tonemapper
     ID3D12Resource* idTex = xv ? xv->id.Get() : m_tex[kTexAlbedo].Get();
-    resolveViewport(xv ? xv->color.Get() : m_msaaColor.Get(), xv ? xv->hdr.Get() : m_tex[kTexDenoiseA].Get());
+    if (!xv && rs.aaQuality >= 2 && !rs.raster && probes && !probeCapture) {
+        // AAA: resolve in tonemapped space (ResolveTM.hlsl), compute: MSAA colour as t7, the HDR slot as u3
+        transition(m_msaaColor.Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+        m_cmd->SetComputeRootSignature(m_rootSig.Get());
+        m_cmd->SetComputeRootDescriptorTable(8, m_heap->GetGPUDescriptorHandleForHeapStart());
+        D3D12_GPU_DESCRIPTOR_HANDLE msSrv = m_heap->GetGPUDescriptorHandleForHeapStart();
+        msSrv.ptr += (UINT64)kMsaaSrvSlot * m_descSize;
+        m_cmd->SetComputeRootDescriptorTable(14, msSrv);
+        m_cmd->SetPipelineState(m_psoResolve.Get());
+        m_cmd->Dispatch((vp.w + 7) / 8, (vp.h + 7) / 8, 1);
+        uavBarrier(m_tex[kTexDenoiseA].Get());
+        transition(m_msaaColor.Get(), D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_RENDER_TARGET);
+    } else {
+        resolveViewport(xv ? xv->color.Get() : m_msaaColor.Get(), xv ? xv->hdr.Get() : m_tex[kTexDenoiseA].Get());
+    }
 
     // 4) object ids (selection outline)
     D3D12_CPU_DESCRIPTOR_HANDLE idRtv = rtvBase;
@@ -892,10 +1120,12 @@ void Renderer::recordRaster(const Scene& scene, const RenderSettings& rs, const 
     m_cmd->ClearRenderTargetView(idRtv, zero, 0, nullptr);
     m_cmd->ClearDepthStencilView(idDsv, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
     m_cmd->SetPipelineState(m_psoId.Get());
-    m_cmd->SetGraphicsRootConstantBufferView(0, rcb.va() + 512);   // ids without the anti-aliasing jitter
-    for (const Draw& d : m_draws)
-        if (!(d.flags & 7u)) drawOne(d);
+    m_cmd->SetGraphicsRootConstantBufferView(0, rcb.va() + 768);   // ids without the anti-aliasing jitter
+    if (rs.idPass) drawAll([&](const Draw& d) { return !(d.flags & 7u); });
     transition(idTex, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+    if (sunMask) transition(m_sunShadow.Get(), D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+    if (sunMask || reflOn) transition(m_sunShadowRaw.Get(), D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+    if (reflOn) transition(m_refl.Get(), D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
 }
 
 // --------------------------------------------------------------------------- extra views
@@ -1042,15 +1272,15 @@ void Renderer::renderView(int slot, const Scene& scene, const Camera& cam, const
     fc.selRadius = selectionRadius;
     fc.selPixelScale = 1.0f;
     fc.selCovValid = (!m_selIds.empty() && m_psoSelect) ? 1u : 0u;
-    memcpy((uint8_t*)v.cb.mapped + 1024, &fc, sizeof(fc));
+    memcpy((uint8_t*)v.cb.mapped + 1536, &fc, sizeof(fc));
     m_cmd->SetComputeRootSignature(m_rootSig.Get());
-    m_cmd->SetComputeRootConstantBufferView(0, v.cb.va() + 1024);
+    m_cmd->SetComputeRootConstantBufferView(0, v.cb.va() + 1536);
     D3D12_GPU_DESCRIPTOR_HANDLE table = m_heap->GetGPUDescriptorHandleForHeapStart();
     table.ptr += (UINT64)(kViewHeapBase + slot * kViewHeapStride) * m_descSize;
     m_cmd->SetComputeRootDescriptorTable(8, table);
     D3D12_GPU_DESCRIPTOR_HANDLE cov = table;
     cov.ptr += (UINT64)kTexCount * m_descSize;
-    m_cmd->SetComputeRootDescriptorTable(16, cov);
+    m_cmd->SetComputeRootDescriptorTable(23, cov);
     m_cmd->SetPipelineState(m_psoTonemap.Get());
     uint32_t tc[4] = {(uint32_t)kTexDenoiseA, 1u, (uint32_t)rs.tonemapper, 0u};
     m_cmd->SetComputeRoot32BitConstants(1, 4, tc, 0);
@@ -1095,6 +1325,34 @@ bool Renderer::readView(int slot, std::vector<uint8_t>& rgba, uint32_t& w, uint3
     D3D12_RANGE wr = {0, 0};
     m_readback.res->Unmap(0, &wr);
     return true;
+}
+
+// Ambient occlusion of the raster viewport (SSAO.hlsl): occlusion from the viewport depth into the alpha of the
+// resolved HDR slot, then a 4 x 4 blur multiplied into its colour, before the tonemapper reads it.
+void Renderer::recordSSAO(const RenderSettings& rs, const ViewRect& vp, const Scene& scene) {
+    ID3D12PipelineState* pso = m_msaa > 1 ? m_psoSSAOMS.Get() : m_psoSSAO.Get();
+    if (!pso || !m_psoSSAOBlur || !m_msaaDepth || scene.camera.ortho) return;
+    const Camera& cam = scene.camera;
+    const float zn = std::max(cam.distance * 0.005f, 0.02f), zf = cam.distance * 40.0f + 2000.0f;   // (recordRaster)
+    struct { uint32_t slot; float A, B, radius; } c = {(uint32_t)kTexDenoiseA, zf / (zf - zn), -zf * zn / (zf - zn), rs.ssaoRadius};
+    transition(m_msaaDepth.Get(), D3D12_RESOURCE_STATE_DEPTH_WRITE, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+    m_cmd->SetComputeRootSignature(m_rootSig.Get());
+    m_cmd->SetComputeRootConstantBufferView(0, m_constants.va());
+    m_cmd->SetComputeRootDescriptorTable(8, m_heap->GetGPUDescriptorHandleForHeapStart());
+    D3D12_GPU_DESCRIPTOR_HANDLE t8 = m_heap->GetGPUDescriptorHandleForHeapStart();
+    t8.ptr += (UINT64)kSelCovSlot * m_descSize;
+    m_cmd->SetComputeRootDescriptorTable(23, t8);
+    m_cmd->SetComputeRoot32BitConstants(1, 4, &c, 0);
+    m_cmd->SetPipelineState(pso);
+    m_cmd->Dispatch((vp.w + 7) / 8, (vp.h + 7) / 8, 1);
+    D3D12_RESOURCE_BARRIER b = {};
+    b.Type = D3D12_RESOURCE_BARRIER_TYPE_UAV;
+    b.UAV.pResource = m_tex[kTexDenoiseA].Get();
+    m_cmd->ResourceBarrier(1, &b);
+    m_cmd->SetPipelineState(m_psoSSAOBlur.Get());
+    m_cmd->Dispatch((vp.w + 7) / 8, (vp.h + 7) / 8, 1);
+    m_cmd->ResourceBarrier(1, &b);
+    transition(m_msaaDepth.Get(), D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_DEPTH_WRITE);
 }
 
 } // namespace vp3d

@@ -61,6 +61,22 @@ float3 EnvDirectIrradiance(float3 P, float3 N, float3 Ng, inout uint rng) {
     return EnvMap(L, 0) * T * c / pdf;
 }
 
+// Progressive probes (G.flags bit 16): the age of probe p, i.e. its updates since the objects around it last changed
+// (0 when it lies in this frame's dirty box), and whether it is skipped this frame (an old probe: one frame in stride).
+float ProbeAge(uint p) {
+    float3 pp = ProbePos(ProbeCoord(p));
+    if (G.dirtyMax.w > 0 && all(pp >= G.dirtyMin.xyz) && all(pp <= G.dirtyMax.xyz)) return 0;
+    return gProbe[int2(p, 0)].z;
+}
+
+bool ProbeSkipped(uint p) {
+    if ((G.flags & 16u) == 0u) return false;
+    const float age = ProbeAge(p);
+    if (G.ageCap > 0 && age >= G.ageCap) return true;   // converged and nothing changed around it: not updated
+    if (G.stride <= 1) return false;
+    return age >= 64.0 && (p + G.frame) % G.stride != 0;
+}
+
 // Albedo used for the diffuse transport in the probes (metals and SSS approximated as diffuse).
 float3 DiffuseAlbedo(Surf s) {
     return s.base * (1.0 - s.trans) * (1.0 - 0.6 * s.metal);

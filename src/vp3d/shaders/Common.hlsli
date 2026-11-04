@@ -50,6 +50,16 @@ void CameraRay(float2 ndc, out float3 org, out float3 dir) {
 
 // Distance at which a perspective camera would see P as this camera does (pixel footprint): line widths and fading
 // of the procedural ground grid.
+#ifndef VP3D_PRINT_COLOR
+#define VP3D_PRINT_COLOR
+// A print colour packed in a vertex uv (MAT_FLAG_VCOLOR): x = sRGB 0xRRGGBB as a float, linear out
+float3 PrintColor(float packed) {
+    const uint c = (uint)round(packed);
+    const float3 srgb = float3((c >> 16) & 255u, (c >> 8) & 255u, c & 255u) / 255.0;
+    return pow(srgb, 2.2);
+}
+#endif
+
 float ViewDistance(float3 P) { return F.orthoHalfH > 0 ? F.orthoHalfH / max(F.tanHalfFovY, 1e-3) : length(P - F.camPos); }
 
 uint Hash(uint x) {

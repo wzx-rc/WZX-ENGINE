@@ -24,6 +24,11 @@ struct Material {
     float coatRoughness = 0.05f;
     uint32_t flags = 0;            // MAT_FLAG_*
     int baseColorTex = -1;         // index in Scene::textures multiplied with baseColor (-1 = none)
+    // Roughness mask (fingerprints, smudges): Scene::textures index projected in object space (triplanar, roughTexScale
+    // repeats per unit, a random offset per object), its dark areas raise the roughness by up to roughTexStrength.
+    int roughnessTex = -1;
+    float roughTexScale = 0.125f;
+    float roughTexStrength = 0.0f;
     int preset = 0;                // app-defined preset id (UI only)
     int colorId = -1;              // app-defined palette colour id (UI only)
 };
@@ -145,6 +150,9 @@ struct Environment {
     float intensity = 1.0f;
     bool visibleToCamera = true;
     float3 ambient{0.06f, 0.06f, 0.065f};  // extra fill used by the raster viewport (no GI there)
+    // hemisphere fill of the raster viewport (three.js HemisphereLight): sky and ground colours (linear), 0 = off
+    float3 hemiSky{0, 0, 0}, hemiGround{0, 0, 0};
+    float hemiIntensity = 0.0f;
     // HDRI (lat-long image): replaces the gradient for lighting, reflections and the background when set.
     EnvImagePtr hdri;
     float hdriIntensity = 1.0f;
@@ -195,7 +203,20 @@ struct Scene {
     Camera camera;               // default camera
     float gridScale = 1.0f;      // grid spacing for MAT_FLAG_GRID
     float unitsPerMeter = 1.0f;  // used for DOF and bevel defaults
+    // Lines of the ground grid (materials with MAT_FLAG_GRID): RGBA8, sRGB colour in the low bytes, opacity in the top
+    // byte; 0 = the default lines (lighter than the ground)
+    uint32_t gridLine = 0;
     uint32_t geometryVersion = 1; // bump when meshes change
+    // Revision of everything per object (transforms, materials, visibility), the materials, the lights and the
+    // environment, kept by the application: 0 (default) = the renderer rebuilds and hashes its per-object data every
+    // frame; nonzero = it reuses them while the value is unchanged (scenes of tens of thousands of objects). An
+    // application that sets it must bump it after every such change.
+    uint32_t objectsVersion = 0;
+    // Raster levels of detail: lods[mesh] = the simpler meshes drawn when the object covers fewer than lodPixels1 /
+    // lodPixels2 pixels (diameter of its bounding sphere on screen). -1 = none. The path tracer always uses the full mesh.
+    struct MeshLod { int lod1 = -1, lod2 = -1; };
+    std::vector<MeshLod> lods;
+    float lodPixels1 = 90.0f, lodPixels2 = 14.0f;
 
     int addMesh(const std::string& n, MeshData m) {
         meshes.push_back(std::move(m));

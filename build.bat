@@ -26,16 +26,20 @@ if not exist build\obj\vp3d mkdir build\obj\vp3d
 if not exist build\obj\app mkdir build\obj\app
 if not exist build\lib mkdir build\lib
 
-echo [1/3] Shaders
+echo [1/5] Shaders
 set "DXC=%WindowsSdkVerBinPath%x64\dxc.exe"
-for %%S in (PathTrace Denoise Tonemap DDGIUpdate DDGIRaster DDGIBlend GIShade) do (
+for %%S in (PathTrace Denoise Tonemap DDGIUpdate DDGIRaster DDGIBlend GIShade GIFade RCVisibility RCTrace RCGather RCSProbes RCSTrace RCSProbeSH RCSGather SunShadowTrace SunShadowFilter ReflectTrace ReflectFilter SRCClear SRCInsert SRCAlloc SRCCount SRCTrace SRCMerge SRCIrradiance SRCFilter SRCGather ResolveTM) do (
     "%DXC%" -nologo -T cs_6_5 -E main -HV 2021 -O3 -I src\vp3d\shaders src\vp3d\shaders\%%S.hlsl -Fo "%OUT%\shaders\%%S.cso" || exit /b 1
 )
+rem screen-space ambient occlusion of the raster viewport (depth multisampled or not) and its blur
+"%DXC%" -nologo -T cs_6_5 -E main -HV 2021 -O3 -I src\vp3d\shaders src\vp3d\shaders\SSAO.hlsl -Fo "%OUT%\shaders\SSAO.cso" || exit /b 1
+"%DXC%" -nologo -T cs_6_5 -E main -HV 2021 -O3 -DSSAO_MS -I src\vp3d\shaders src\vp3d\shaders\SSAO.hlsl -Fo "%OUT%\shaders\SSAO_MS.cso" || exit /b 1
+"%DXC%" -nologo -T cs_6_5 -E main -HV 2021 -O3 -DSSAO_BLUR -I src\vp3d\shaders src\vp3d\shaders\SSAO.hlsl -Fo "%OUT%\shaders\SSAOBlur.cso" || exit /b 1
 for %%E in (VSMain VSWire VSShadow VSBackground VSProbe) do (
     "%DXC%" -nologo -T vs_6_0 -E %%E -HV 2021 -O3 -DVP3D_DDGI_PROBES -I src\vp3d\shaders src\vp3d\shaders\Raster.hlsl -Fo "%OUT%\shaders\Raster_%%E.cso" || exit /b 1
 )
 for %%E in (PSMain PSGhost PSId PSSelect PSWire PSBackground PSProbe PSProbeBackground) do (
-    "%DXC%" -nologo -T ps_6_0 -E %%E -HV 2021 -O3 -DVP3D_DDGI_PROBES -I src\vp3d\shaders src\vp3d\shaders\Raster.hlsl -Fo "%OUT%\shaders\Raster_%%E.cso" || exit /b 1
+    "%DXC%" -nologo -T ps_6_5 -E %%E -HV 2021 -O3 -DVP3D_DDGI_PROBES -DVP3D_RT_SHADOWS -I src\vp3d\shaders src\vp3d\shaders\Raster.hlsl -Fo "%OUT%\shaders\Raster_%%E.cso" || exit /b 1
 )
 rem editor ground grid of the raster viewport
 "%DXC%" -nologo -T vs_6_0 -E VSGrid -HV 2021 -O3 src\vp3d\shaders\EditorGrid.hlsl -Fo "%OUT%\shaders\EditorGrid_VSGrid.cso" || exit /b 1
@@ -71,4 +75,10 @@ cl %CFLAGS% /Isrc\app\atelier /c src\app\*.cpp src\app\atelier\*.cpp /Fo:build\o
 rc /nologo /fo build\obj\app\wzx.res src\app\res\wzx.rc || exit /b 1
 link /nologo /OUT:%OUT%\Viewport3D.exe build\obj\app\*.obj build\obj\app\wzx.res build\obj\game\*.obj build\lib\vp3d.lib build\lib\imgui_te_mt.lib ws2_32.lib d3d12.lib dxgi.lib d3dcompiler.lib windowscodecs.lib user32.lib gdi32.lib ole32.lib shell32.lib shcore.lib comdlg32.lib dwmapi.lib /SUBSYSTEM:WINDOWS || exit /b 1
 
-echo Build OK: %OUT%\Viewport3D.exe
+rem Radiance Cascades viewer (src\rcviewer, branch claude/project-thread-0x1y2n)
+if not exist build\obj\rcviewer mkdir build\obj\rcviewer
+del /q build\obj\rcviewer\*.obj 2>nul
+cl %CFLAGS% /c src\rcviewer\*.cpp src\app\ImGuiLayer.cpp src\app\Theme.cpp src\app\Content.cpp /Fo:build\obj\rcviewer\ || exit /b 1
+link /nologo /OUT:%OUT%\RCViewer.exe build\obj\rcviewer\*.obj build\obj\app\wzx.res build\lib\vp3d.lib build\lib\imgui_te_mt.lib d3d12.lib dxgi.lib d3dcompiler.lib windowscodecs.lib user32.lib gdi32.lib ole32.lib shell32.lib shcore.lib comdlg32.lib dwmapi.lib /SUBSYSTEM:WINDOWS || exit /b 1
+
+echo Build OK: %OUT%\Viewport3D.exe %OUT%\RCViewer.exe

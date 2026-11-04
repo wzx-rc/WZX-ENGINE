@@ -3,6 +3,8 @@
 // rough dielectrics, random-walk subsurface scattering, Cycles-style bevel
 // normals, thin-lens depth of field, procedural ground grid.
 #include "Common.hlsli"
+#define FP_SAMPLE(t, uv) gTextures[NonUniformResourceIndex(t)].SampleLevel(gLinearWrap, (uv), 0)
+#include "Fingerprint.hlsli"
 
 struct Hit {
     float t;
@@ -12,6 +14,8 @@ struct Hit {
     uint inst;
     bool front;  // ray hit the outward side
     float2 uv;   // texture coordinates of the hit point
+    float3 Po;   // object space position and geometric normal (roughness mask projection)
+    float3 No;
 };
 
 struct Surf {
@@ -62,7 +66,7 @@ float3 WorldNormal(uint inst, uint prim, float2 bc, float3x4 w2o, out float3 ngO
 }
 
 bool TraceClosest(float3 o, float3 d, float tmax, uint mask, out Hit h) {
-    RayQuery<RAY_FLAG_FORCE_OPAQUE> q;
+    RayQuery<RAY_FLAG_FORCE_OPAQUE | RAY_FLAG_SKIP_PROCEDURAL_PRIMITIVES> q;
     RayDesc r;
     r.Origin = o; r.Direction = d; r.TMin = 0.0; r.TMax = tmax;
     q.TraceRayInline(gScene, RAY_FLAG_NONE, mask, r);
@@ -86,11 +90,14 @@ bool TraceClosest(float3 o, float3 d, float tmax, uint mask, out Hit h) {
         h.uv = v0.uv * (1.0 - bc.x - bc.y) + v1.uv * bc.x + v2.uv * bc.y;
     }
     h.Ng = ng;
+    float3x4 w2o = q.CommittedWorldToObject3x4();
+    h.Po = mul(w2o, float4(h.P, 1));
+    h.No = mul((float3x3)w2o, ng);
     return true;
 }
 
 bool Occluded(float3 o, float3 d, float tmax) {
-    RayQuery<RAY_FLAG_FORCE_OPAQUE | RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH> q;
+    RayQuery<RAY_FLAG_FORCE_OPAQUE | RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH | RAY_FLAG_SKIP_PROCEDURAL_PRIMITIVES> q;
     RayDesc r;
     r.Origin = o; r.Direction = d; r.TMin = 0.0; r.TMax = tmax;
     q.TraceRayInline(gScene, RAY_FLAG_NONE, MASK_OPAQUE, r);
@@ -147,7 +154,7 @@ float3 BevelNormal(Hit h, float radius, uint samples, inout uint rng) {
         float2 dsk = ConcentricDisk(Rnd2(rng)) * radius;
         float3 o = h.P + a1 * dsk.x + a2 * dsk.y + axis * radius;
 
-        RayQuery<RAY_FLAG_FORCE_NON_OPAQUE> q;
+        RayQuery<RAY_FLAG_FORCE_NON_OPAQUE | RAY_FLAG_SKIP_PROCEDURAL_PRIMITIVES> q;
         RayDesc r;
         r.Origin = o; r.Direction = -axis; r.TMin = 0.0; r.TMax = 2.0 * radius;
         q.TraceRayInline(gScene, RAY_FLAG_NONE, MASK_OPAQUE | MASK_GLASS, r);
@@ -182,6 +189,7 @@ Surf MakeSurf(GpuMaterial m, Hit h) {
     s.base = m.baseColor;
     if (m.baseColorTex != NO_TEXTURE)
         s.base *= gTextures[NonUniformResourceIndex(m.baseColorTex)].SampleLevel(gLinearWrap, h.uv, 0).rgb;
+    if ((m.flags & MAT_FLAG_VCOLOR) && h.uv.y > 0.5) s.base = PrintColor(h.uv.x);   // a print (BrickIt)
     s.rough = m.roughness;
     s.metal = m.metallic;
     s.spec = m.specular;
@@ -194,20 +202,36 @@ Surf MakeSurf(GpuMaterial m, Hit h) {
     s.coat = m.coat;
     s.coatRough = m.coatRoughness;
     s.flags = m.flags;
+    if (m.roughTex != NO_TEXTURE) {   // fingerprints
+        float fp = FingerprintMask(m.roughTex, m.roughTexScale, h.Po, h.No, h.inst) * m.roughTexStrength;
+        s.rough = saturate(s.rough + fp);
+        s.spec *= 1.0 - 0.35 * fp;
+        s.coatRough = saturate(m.coatRoughness + fp * 1.2);
+    }
     if (m.flags & MAT_FLAG_GRID) {
+        // the very lines of the raster view (Raster.hlsl, GridColor): the screen derivatives of the grid coordinates
+        // are rebuilt from the pixel footprint on the ground (stretched along the view at grazing angles), the
+        // samples spread over the pixel antialias them as the raster does
         float g = F.gridScale;
         float dist = ViewDistance(h.P);
-        float lw = max(0.02, 0.0009 * dist / g);
+        const float pix = (F.orthoHalfH > 0 ? 2.0 * F.orthoHalfH : 2.0 * F.tanHalfFovY * dist) / max((float)F.resolution.y, 1.0);
+        const float3 vd = F.orthoHalfH > 0 ? F.camFwd : normalize(h.P - F.camPos);
+        const float cosV = max(abs(vd.y), 0.08);
+        const float2 dv = length(vd.xz) > 1e-4 ? normalize(vd.xz) : float2(1, 0);
+        const float2 fw = pix / g * sqrt(float2(dv.x * dv.x / (cosV * cosV) + dv.y * dv.y, dv.y * dv.y / (cosV * cosV) + dv.x * dv.x));
         float2 p = h.P.xz / g;
-        float2 d = abs(frac(p + 0.5) - 0.5);
-        float2 dm = abs(frac(p / 10.0 + 0.5) - 0.5) * 10.0;
-        float minor = (min(d.x, d.y) < lw) ? 1.0 : 0.0;
-        float major = (min(dm.x, dm.y) < lw * 1.6) ? 1.0 : 0.0;
+        float2 d = abs(frac(p + 0.5) - 0.5) / max(fw, 1e-4);
+        float minor = 1 - saturate(min(d.x, d.y));
+        float2 pm = p / 10.0;
+        float2 dm = abs(frac(pm + 0.5) - 0.5) / max(fw / 10.0, 1e-4);
+        float major = 1 - saturate(min(dm.x, dm.y) - 0.3);
         float fade = saturate(1.0 - dist / (g * 160.0));
-        s.base = lerp(s.base, s.base * 2.2 + 0.015, max(minor * 0.55, major) * fade);
-        float axisW = lw * 1.8 * g;
-        if (abs(h.P.z) < axisW) { s.base = float3(0.5, 0.06, 0.05); s.emission += float3(0.25, 0.02, 0.02); }
-        if (abs(h.P.x) < axisW) { s.base = float3(0.06, 0.12, 0.6); s.emission += float3(0.02, 0.05, 0.3); }
+        if (F.gridLine != 0u) {   // the colour of the lines (Scene::gridLine), its opacity in the top byte
+            float3 lc = float3(F.gridLine & 255u, (F.gridLine >> 8) & 255u, (F.gridLine >> 16) & 255u) / 255.0;
+            lc = pow(lc, 2.2);
+            s.base = lerp(s.base, lc, max(minor * 0.4, major * 0.8) * fade * ((F.gridLine >> 24) / 255.0));
+        } else
+            s.base = lerp(s.base, s.base * 2.2 + 0.015, max(minor * 0.4, major * 0.8) * fade);
     }
     return s;
 }
@@ -403,10 +427,12 @@ float EnvPdf(float3 d) {
 // Fresnel transmission (and tint) of each glass surface crossed. A glass ball then casts a light shadow with a
 // dark rim (grazing angles reflect), instead of no shadow at all. Glass instances are non-opaque in the TLAS.
 float3 ShadowTransmittance(float3 o, float3 d, float tmax) {
-    RayQuery<RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH> q;
+    // opaque blockers first: one fast any-hit query (most shadow rays end here or see nothing at all)
+    if (Occluded(o, d, tmax)) return 0;
+    RayQuery<RAY_FLAG_SKIP_PROCEDURAL_PRIMITIVES> q;
     RayDesc r;
     r.Origin = o; r.Direction = d; r.TMin = 0.0; r.TMax = tmax;
-    q.TraceRayInline(gScene, RAY_FLAG_NONE, MASK_OPAQUE | MASK_GLASS, r);
+    q.TraceRayInline(gScene, RAY_FLAG_NONE, MASK_GLASS, r);
     float3 T = 1;
     while (q.Proceed()) {
         if (q.CandidateType() != CANDIDATE_NON_OPAQUE_TRIANGLE) continue;
@@ -509,6 +535,9 @@ float3 LightVisibility(uint li, float3 o, float3 L, float dist) {
 
 // Next-event estimation from a surface point (returns MIS-weighted radiance): one light sample, plus one HDRI
 // sample when the environment is an image (each strategy weighted against the BSDF sampling).
+// HDRI next-event estimation only on the first vertices of a path (gEnvNee, set by TracePath): deeper vertices find
+// the environment by BSDF sampling alone (full weight), which saves a long shadow ray per bounce.
+static bool gEnvNee = true;
 float3 DirectLight(Surf s, Hit h, float3 V, bool lambertOnly, inout uint rng) {
     float3 sum = 0;
     float3 o = OffsetRay(h.P, h.Ng);
@@ -519,7 +548,7 @@ float3 DirectLight(Surf s, Hit h, float3 V, bool lambertOnly, inout uint rng) {
         if (k == 0) {
             if (!SampleLight(h.P, rng, L, dist, Le, lpdf, li)) continue;
         } else {
-            if (!EnvEnabled()) break;
+            if (!EnvEnabled() || !gEnvNee) break;
             L = EnvSample(Rnd2(rng), lpdf);
             if (lpdf <= 0) continue;
             dist = 1e30;
@@ -609,6 +638,7 @@ float3 Indirect(float3 c, bool roughSeen) {
 float3 TracePath(float3 o, float3 d, inout uint rng, inout Guides g) {
     float3 radiance = 0, thr = 1;
     bool specPrev = true;
+    bool envNeeDone = false;   // the last next-event estimation also sampled the HDRI
     float prevPdf = 0;
     // Light that reaches a surface through glass is already counted by its next-event estimation (shadow rays
     // cross glass, see ShadowTransmittance): a path that crossed glass after such a surface does not add it again.
@@ -620,7 +650,7 @@ float3 TracePath(float3 o, float3 d, inout uint rng, inout Guides g) {
         if (!TraceClosest(o, d, 1e30, mask, h)) {
             float3 env = bounce == 0 ? Background(d) : Environment(d);
             float w = 1.0;
-            if (EnvEnabled() && bounce > 0) {   // the HDRI is also sampled by next-event estimation: MIS
+            if (EnvEnabled() && bounce > 0 && envNeeDone) {   // the HDRI was also sampled by next-event estimation: MIS
                 if (viaGlass && neeDone) w = 0.0;
                 else if (!specPrev) w = PowerHeuristic(prevPdf, EnvPdf(d));
             }
@@ -704,6 +734,8 @@ float3 TracePath(float3 o, float3 d, inout uint rng, inout Guides g) {
         }
 
         // --- Next-event estimation
+        gEnvNee = bounce <= 1;
+        envNeeDone = gEnvNee;
         radiance += Indirect(thr * DirectLight(s, h, V, false, rng), roughSeen);
         neeDone = true;
         viaGlass = false;
@@ -757,7 +789,12 @@ float3 TracePath(float3 o, float3 d, inout uint rng, inout Guides g) {
 
 #ifndef VP3D_NO_MAIN   // the DDGI shaders include this file for its helpers
 [numthreads(8, 8, 1)]
-void main(uint3 id : SV_DispatchThreadID) {
+void main(uint3 tid : SV_DispatchThreadID) {
+    // traceStride 4: a quarter-resolution dispatch, each thread traces one pixel of its 2 x 2 block, the block pixel
+    // changing every frame (the accumulation keeps a sample count per pixel, the other pixels keep their history)
+    uint2 px = tid.xy;
+    if (F.traceStride == 4) { uint k = F.frameIndex & 3u; px = tid.xy * 2u + uint2((k == 1u || k == 2u) ? 1u : 0u, k >> 1); }
+    const uint3 id = uint3(px, 0);
     if (id.x >= F.resolution.x || id.y >= F.resolution.y) return;
     uint rng = Hash(id.x + id.y * 65521u + Hash(F.frameIndex * 9781u + 1u));
 

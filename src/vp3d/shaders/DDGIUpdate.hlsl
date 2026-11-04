@@ -6,6 +6,7 @@
 void main(uint3 id : SV_DispatchThreadID) {
     uint ray = id.x, p = id.y;
     if (ray >= DDGI_RAYS || p >= G.counts.w) return;
+    if (ProbeSkipped(p)) return;   // (an old probe, not updated this frame)
     uint rng = Hash(ray * 7919u + p * 104729u + Hash(G.frame * 31u + 7u));
     float3 o = ProbePos(ProbeCoord(p));
     float3 d = ProbeRayDir(ray);
@@ -23,7 +24,7 @@ void main(uint3 id : SV_DispatchThreadID) {
         float3 albedo = DiffuseAlbedo(s);
         float3 rad = s.emission;
         rad += albedo / PI * (DirectIrradiance(h.P, h.N, h.Ng, rng) + EnvDirectIrradiance(h.P, h.N, h.Ng, rng));
-        if (G.frame > 0) rad += albedo * SampleIrradiance(h.P, h.N, -d);
+        if (G.frame > 0) rad += albedo * SampleIrradiance(h.P, h.N, -d) / max(G.energy, 1e-3);   // (the bounce without the read scale)
         result = float4(rad, h.t);
     }
     gRays[int2(ray, p)] = result;

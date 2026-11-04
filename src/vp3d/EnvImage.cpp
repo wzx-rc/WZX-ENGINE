@@ -720,6 +720,10 @@ void downsize(EnvImage& img, uint32_t maxWidth) {
 
 } // namespace
 
+bool inflateZlibStream(const uint8_t* src, size_t n, std::vector<uint8_t>& out, size_t expected) {
+    return inflateZlib(src, n, out, expected);
+}
+
 bool isEnvImageFile(const std::wstring& path) {
     std::wstring e = lowerExt(path);
     return e == L".hdr" || e == L".pic" || e == L".exr" || e == L".jpg" || e == L".jpeg" || e == L".png" ||

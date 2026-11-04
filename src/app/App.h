@@ -121,6 +121,18 @@ struct Options {
     bool ddgi = false;          // start in the real-time probe GI mode
     bool ddgiRaster = false;    // probe rays from raster cube captures (no ray tracing for the probes)
     bool ddgiRasterView = false;   // diagnostic: raster viewport reading ray traced probes (--ddgi-raster-view 1)
+    bool split = false;            // start in the Split Radiance Cascades mode (--split 1)
+    int splitPx = 0, splitCascades = 0;   // its probe size in pixels, cascade count (--split-px, --split-cascades)
+    int splitHistory = -1, splitDebug = 0;   // accumulation frames, inspection view (--split-history, --split-debug)
+    int splitFilter = -1;                    // probe filter 0 / 1 (--split-filter)
+    int aaQuality = -1, shadowQuality = -1;  // GI raster modes: AA 0..2, shadows 0..4 (--aa, --shadow-quality)
+    float camDist = 0, camPitch = -1000;      // test: camera distance factor, pitch in degrees (--cam-dist, --cam-pitch)
+    float splitInterval = 0;              // its first interval in probe cells (--split-interval)
+    // Ghosting test: object index and / or light 0 swinging by animMove (--anim-object N, --anim-light 1,
+    // --anim-move x,y,z, --anim-period frames, --anim-at F = frozen at the pose of frame F)
+    int animObject = -1, animPeriod = 120, animAt = -1, animStop = -1;   // --anim-stop F: moving until frame F, then still
+    bool animLight = false;
+    vp3d::float3 animMove = vp3d::float3(10, 0, 0);
     bool showProbes = false;       // draw the probes as spheres shaded with their irradiance (--show-probes 1)
     bool baked = false;            // Lit mode: baked probes (--baked 1)
     // Stability tests: camera yaw oscillation (radians, 2 s period), first object bobbing, and the flicker statistics
@@ -133,7 +145,11 @@ struct Options {
     int probes = 2048;          // target probe count over the scene bounds
     int ddgiView = 0;           // 0 full, 1 indirect only, 2 direct only
     int temporalCap = 1024;      // history length in frames (converges; the history is dropped on lighting changes)
-    float hysteresis = 0.97f;
+    float hysteresis = -1.0f;   // < 0: 0.995 with the progressive probes, 0.97 without
+    int rasterMoving = 1;       // GI mode: the raster view of the probes while something moves, then a fade to the traced
+                                // image (--raster-moving 0: always traced)
+    int progressive = 1;        // GI mode: progressive probes (running average while still, restart around what changed,
+                                // a quarter of the probes per frame once still); --progressive 0 = the former blend
     int light = -1;             // test: 1 light mode, 0 dark mode
     bool openSettings = false;  // test: open the settings window at startup
     std::string theme;          // test: start with this theme ("Atelier" or "Ambre"), not saved
@@ -312,6 +328,7 @@ private:
     void drawSettingsWindow();
     bool m_showSettings = false;
     float m_swayBase = 0.0f, m_animBase = 0.0f;   // camera yaw and object height before the stability test moves them
+    float3 m_animObjBase, m_animLightBase, m_animLightTarget;   // ghosting test: poses before it moves them
     std::vector<double> m_statMean, m_statM2;     // flicker statistics (Welford), one per pixel
     int m_statCount = 0;
     bool m_themeTestOnly = false;   // theme forced from the command line: do not save the settings
