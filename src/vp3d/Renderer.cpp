@@ -1,5 +1,6 @@
 #include "Renderer.h"
 #include <algorithm>
+#include <unordered_map>
 #include "shaders/Shared.h"
 #include <cstring>
 #include <fstream>
@@ -580,6 +581,41 @@ void Renderer::setScene(const Scene& scene) {
             for (size_t t = 0; t + 2 < m.indices.size(); t += 3)
                 for (int k = 0; k < 3; ++k) { inds.push_back(m.indices[t + k]); inds.push_back(m.indices[t + (k + 1) % 3]); }
         g.lineCount = (uint32_t)inds.size() - g.lineOffset;
+        // hard edges (edge outline): the positions welded, an edge with one face (open border) or two faces at more
+        // than 35 degrees (as three.js EdgesGeometry(geo, 35) in the web build)
+        g.hardOffset = (uint32_t)inds.size();
+        {
+            std::unordered_map<uint64_t, uint32_t> weld;
+            std::vector<uint32_t> wid(m.vertices.size());
+            for (size_t v = 0; v < m.vertices.size(); ++v) {
+                const float3& p = m.vertices[v].pos;
+                const uint64_t k = ((uint64_t)(std::llround(p.x * 1e3) & 0x1FFFFF) << 42) | ((uint64_t)(std::llround(p.y * 1e3) & 0x1FFFFF) << 21) |
+                                   (uint64_t)(std::llround(p.z * 1e3) & 0x1FFFFF);
+                wid[v] = weld.emplace(k, (uint32_t)v).first->second;
+            }
+            struct E { uint32_t a, b; float3 n; int faces; bool hard; };
+            std::unordered_map<uint64_t, E> edges;
+            const float cosHard = std::cos(radians(35.0f));
+            for (size_t t = 0; t + 2 < m.indices.size(); t += 3) {
+                const uint32_t i0 = m.indices[t], i1 = m.indices[t + 1], i2 = m.indices[t + 2];
+                float3 n = cross(m.vertices[i1].pos - m.vertices[i0].pos, m.vertices[i2].pos - m.vertices[i0].pos);
+                const float len = length(n);
+                if (len < 1e-12f) continue;
+                n = n / len;
+                const uint32_t tri[3] = {i0, i1, i2};
+                for (int k = 0; k < 3; ++k) {
+                    uint32_t a = wid[tri[k]], b = wid[tri[(k + 1) % 3]];
+                    if (a == b) continue;
+                    const uint64_t key = a < b ? ((uint64_t)a << 32) | b : ((uint64_t)b << 32) | a;
+                    auto it = edges.find(key);
+                    if (it == edges.end()) edges.emplace(key, E{tri[k], tri[(k + 1) % 3], n, 1, false});
+                    else { if (std::fabs(dot(it->second.n, n)) < cosHard) it->second.hard = true; ++it->second.faces; }
+                }
+            }
+            for (const auto& e : edges)
+                if (e.second.hard || e.second.faces == 1) { inds.push_back(e.second.a); inds.push_back(e.second.b); }
+        }
+        g.hardCount = (uint32_t)inds.size() - g.hardOffset;
         m_meshes.push_back(g);
     };
     for (auto& m : scene.meshes) addMesh(m);
@@ -2572,7 +2608,7 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
 
     // editor overlay (grid, wireframe) drawn by the raster pass into the denoise slot not holding the image
     uint32_t overlay = 0;
-    if (m_psoDepth && (rs.editorGrid > 0 || rs.wireframe || !m_selIds.empty())) {   // (also draws the coverage of the selection)
+    if (m_psoDepth && (rs.editorGrid > 0 || rs.wireframe || !m_selIds.empty() || !m_edgeObjects.empty())) {   // (also draws the coverage of the selection)
         const uint32_t slot = (rs.denoise && denoisedSlot == TEX_DENOISE_A) ? TEX_DENOISE_B : TEX_DENOISE_A;
         recordRaster(scene, rs, vp, false, false, false, (int)slot);
         overlay = slot + 1;

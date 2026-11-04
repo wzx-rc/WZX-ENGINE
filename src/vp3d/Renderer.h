@@ -94,6 +94,8 @@ struct RenderSettings {
     // progressive probes: updates of a probe after which it is converged and left alone until a change around it (or of
     // the lights, the environment, the settings) restarts it; 0 = every probe always updated
     int ddgiAgeCap = 0;
+    // subsurface of the raster view (HQ): scale of the material subsurface, the light wrapped past the terminator (0 = off)
+    float rasterSSS = 0.0f;
     // GI mode (ray traced probes and visibility): while the camera or an object moves, and giSettleFrames after, the
     // raster view of the probes (no per-pixel noise), then a fade of giFadeFrames to the ray traced image
     bool giRasterWhileMoving = false;
@@ -204,6 +206,9 @@ public:
     // Leaves the back buffer in RENDER_TARGET state (an overlay is expected to transition it to PRESENT).
     // With toBackBuffer = false the image is only rendered offscreen (e.g. thumbnails) and the call waits.
     void setExtraSelection(const std::vector<int>& objects) { m_extraSelection = objects; }   // multi-selection outline
+    // edge outline (BrickIt, as its web build): the hard edges of these objects drawn as thin lines over their faces,
+    // white or red (blocked), at the opacity given; empty = none
+    void setEdgeOutline(const std::vector<int>& objects, bool red, float opacity) { m_edgeObjects = objects; m_edgeRed = red; m_edgeOpacity = opacity; }
     void render(const Scene& scene, const RenderSettings& rs, const ViewRect& vp, int selectedObject,
                 bool toBackBuffer = true);
     // Same, but the image stays in outputTexture(), left in PIXEL_SHADER_RESOURCE state so an editor UI can draw it.
@@ -283,6 +288,7 @@ private:
     struct MeshGpu {
         uint32_t indexOffset, vertexOffset, indexCount, vertexCount;
         uint32_t lineOffset = 0, lineCount = 0;   // wireframe line list, stored in m_ib after the triangles
+        uint32_t hardOffset = 0, hardCount = 0;   // its hard edges (faces at more than 35 degrees, open borders): the edge outline
         Buffer blas;
         float3 bmin, bmax;
         float3 center; float radius = 0;   // bounding sphere (emissive objects: light sampling cone)
@@ -441,6 +447,9 @@ private:
     uint32_t m_sunLight = 0xFFFFFFFFu;   // the sun's area light (path tracing; the raster pass skips it)
     std::vector<int> m_objectToInstance;
     std::vector<int> m_extraSelection;
+    std::vector<int> m_edgeObjects;
+    bool m_edgeRed = false;
+    float m_edgeOpacity = 0.45f;
     uint32_t m_sceneGeometryVersion = 0;
 
     bool m_toTexture = false;

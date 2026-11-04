@@ -25,7 +25,8 @@ struct RasterConstants {
     float rtShadow; float sunTanRadius; float rtShadowSamples; float rtRefl;   // ray traced sun shadow (t12), reflections (t13)
     float centreValid; float rtLights; float rtAO; uint gridLine;
     float3 envSun2Dir; float envSun2On;  // HQ: the light of the HDRI (its brightest area) as a second, ray traced soft light
-    float3 envSun2E; float envSun2Tan;   // beside the scene sun (out of the SH and the probes); its cone (tan half angle)   // centreValid: t14 is this frame's; rtLights: area
+    float3 envSun2E; float envSun2Tan;   // beside the scene sun (out of the SH and the probes); its cone (tan half angle)
+    float sssScale; float sssPad0, sssPad1, sssPad2;   // subsurface of the raster view: scale of the material subsurface (0 = off)   // centreValid: t14 is this frame's; rtLights: area
                                          // lights shadowed by rays (TLAS, space2); rtAO: ambient occluded by rays; rtProbes:
                                          // gridLine: Scene::gridLine (RGBA8 colour of the ground grid lines, 0 = default)
 };
@@ -503,6 +504,15 @@ float3 GridColor(float3 base, float3 wpos, inout float3 emission) {
     return base;
 }
 
+// Cosine of the diffuse light with subsurface: wrapped past the terminator by w (0 = Lambert), energy kept (the peak
+// lowered by 1 + w), the wrapped part tinted (the light scattered under the surface takes the colour of the plastic).
+float3 DiffuseNoL(float NoLraw, float w, float3 tint) {
+    const float lambert = saturate(NoLraw);
+    if (w <= 0) return lambert.xxx;
+    const float wrapped = saturate((NoLraw + w) / (1.0 + w)) / (1.0 + 0.5 * w);
+    return lambert + (wrapped - lambert) * lerp(1.0.xxx, tint, 0.6);
+}
+
 // capture: the probe capture (PSProbe). In DDGI mode its ambient is left out: the bounce is added from the probes
 // by the ray pass (DDGIRaster.hlsl), so the camera view and the probes see the same light, once.
 float4 Shade(VSOut i, bool ghost, float shadowBias, bool capture) {
@@ -541,7 +551,11 @@ float4 Shade(VSOut i, bool ghost, float shadowBias, bool capture) {
     float3 diffuseCol = base * (1 - metal);
     if (trans > 0.5) { diffuseCol = base * 0.18; f0 = 0.05; }
     float NoV = saturate(dot(N, V)) + 1e-4;
-
+    // Subsurface (HQ): the light wraps past the terminator (the plastic scatters it under its surface), the wrapped part
+    // tinted by the colour of the brick, as the path tracer's random walk does at a millimetre scale; no ray, no noise.
+    // DiffuseNoL: the cosine of the diffuse part (per channel), the specular keeps the plain one.
+    const float sssW = (R.sssScale > 0 && trans < 0.5 && !capture) ? saturate(m.subsurface * R.sssScale * 1.6) : 0.0;
+    const float3 sssTint = saturate(base / max(max(base.r, max(base.g, base.b)), 1e-3));
     float3 color = 0;
     for (uint li = 0; li < R.lightCount; ++li) {
         GpuLight l = gLights[li];
@@ -550,14 +564,15 @@ float4 Shade(VSOut i, bool ghost, float shadowBias, bool capture) {
             float d2 = dot(Lv, Lv);
             float3 L = Lv * rsqrt(d2);
             float NoL = saturate(dot(N, L));
-            if (NoL <= 0) continue;
+            const float3 NoLd = DiffuseNoL(dot(N, L), sssW, sssTint);
+            if (NoLd.r + NoLd.g + NoLd.b <= 0) continue;
             float r2 = l.area * l.area;
             float3 E = l.radiance * PI * r2 / max(d2, r2);
             float3 H = normalize(V + L);
             float aL = saturate(a + l.area / (2.0 * sqrt(d2)));
             float3 F = Fresnel(f0, saturate(dot(V, H)));
             float3 spec = D_GGX(saturate(dot(N, H)), aL) * V_Smith(NoV, NoL, aL) * F * (a * a) / max(aL * aL, 1e-4);
-            color += (diffuseCol / PI * (1 - F) + spec) * E * NoL;
+            color += (diffuseCol / PI * (1 - F) * NoLd + spec * NoL) * E;
             continue;
         }
         // The sun is drawn once, by the directional term below (with the shadow map): its area light copy, made
@@ -570,7 +585,8 @@ float4 Shade(VSOut i, bool ghost, float shadowBias, bool capture) {
         float3 L = Lv * rsqrt(d2);
         float cosL = saturate(dot(-L, Ln));
         float NoL = saturate(dot(N, L));
-        if (NoL <= 0 || cosL <= 0) continue;
+        const float3 NoLd = DiffuseNoL(dot(N, L), sssW, sssTint);
+        if (NoLd.r + NoLd.g + NoLd.b <= 0 || cosL <= 0) continue;
         float size = sqrt(l.area);
         float3 E = l.radiance * R.lightScale * l.area * cosL / max(d2, l.area * 0.5);
         float shadow = 1.0;
@@ -600,12 +616,13 @@ float4 Shade(VSOut i, bool ghost, float shadowBias, bool capture) {
             float acL = saturate(ac + size / (3.0 * sqrt(d2)));
             spec += D_GGX(NoH, acL) * V_Smith(NoV, NoL, acL) * 0.04 * m.coat * (ac * ac) / max(acL * acL, 1e-4);
         }
-        color += (diff + spec) * E * NoL * shadow;
+        color += (diff * NoLd + spec * NoL) * E * shadow;
     }
     if (R.sunOn > 0) {
         float3 L = R.sunDir;
         float NoL = saturate(dot(N, L));
-        if (NoL > 0) {
+        const float3 NoLd = DiffuseNoL(dot(N, L), sssW, sssTint);
+        if (NoLd.r + NoLd.g + NoLd.b > 0) {
             float3 H = normalize(V + L);
             float NoH = saturate(dot(N, H));
             float3 F = Fresnel(f0, saturate(dot(V, H)));
@@ -618,7 +635,7 @@ float4 Shade(VSOut i, bool ghost, float shadowBias, bool capture) {
             else
 #endif
             sunVis = Shadow(i.wpos, N, shadowBias);
-            color += (diff + spec) * R.sunRadiance * R.lightScale * NoL * sunVis;
+            color += (diff * NoLd + spec * NoL) * R.sunRadiance * R.lightScale * sunVis;
         }
     }
     // HQ: the light of the HDRI (studio softbox...) beside the scene sun, its soft shadow traced (it is out of the SH)
@@ -626,11 +643,12 @@ float4 Shade(VSOut i, bool ghost, float shadowBias, bool capture) {
 #ifndef VP3D_ATTRIB_SEMANTICS
     if (R.envSun2On > 0 && !capture) {
         envSun2NoL = saturate(dot(N, R.envSun2Dir));
-        if (envSun2NoL > 0) {
+        const float3 NoLd = DiffuseNoL(dot(N, R.envSun2Dir), sssW, sssTint);
+        if (NoLd.r + NoLd.g + NoLd.b > 0) {
             float3 Ngs = normalize(i.nrm);
             if (dot(Ngs, V) < 0) Ngs = -Ngs;
             envSun2Vis = BvConeShadow(i.wpos, Ngs, R.envSun2Dir, R.envSun2Tan, i.pos.xy);
-            color += diffuseCol / PI * R.envSun2E * envSun2NoL * envSun2Vis;   // (its highlight is in the reflections)
+            color += diffuseCol / PI * R.envSun2E * NoLd * envSun2Vis;   // (its highlight is in the reflections)
         }
     }
 #endif
@@ -781,6 +799,9 @@ float4 PSSelect(VSOut i) : SV_Target { return 1.0; }
 // camera and fading towards the silhouettes (where the lines crowd).
 float4 PSWire(VSOut i) : SV_Target {
     DRAW_PS(i);
+    // edge outline (Renderer::setEdgeOutline): white, or red for a blocked brick, bright enough to stay white once
+    // tone mapped, at the opacity of the draw
+    if (D.flags & 16u) return float4((D.flags & 32u) ? float3(3.0, 0.25, 0.2) : 3.0.xxx, D.alpha);
     if (D.flags & 8u) {
         float facing = abs(dot(normalize(i.nrm), ToViewer(i.wpos)));
         return float4(D.alpha.xxx, 0.02 + 0.24 * facing * facing);

@@ -1876,7 +1876,8 @@ void BrickApp::uiSettings() {
     const float hdriRowsN = (float)((m_hdriPaths.size() + 1) / 2);
     const float H2 = (16 * s + rowH + gap) + pad + 20 * s + gap + 16 * s + hdriRowsN * (rowH + 4 * s) + gap + rowH + gap + 2 * (16 * s + rowH + gap) + 16 * s + rowH + gap + 16 * s + rowH + gap + 18 * s + pad;
     const float W2 = 2 * W;
-    ImVec2 p0(std::min(m_popupAt.x, d.x - W2 - 10 * s), m_popupAt.y), p1(p0.x + W2, std::min(p0.y + std::max(H, H2), d.y - 8 * s));
+    // (the Lumière column as tall as it was drawn last frame: its rows depend on the settings)
+    ImVec2 p0(std::min(m_popupAt.x, d.x - W2 - 10 * s), m_popupAt.y), p1(p0.x + W2, std::min(p0.y + std::max(H, std::max(H2, m_lumColumnH)), d.y - 8 * s));
     u.dl->AddRectFilled(ImVec2(p0.x, p0.y + 10 * s), ImVec2(p1.x, p1.y + 10 * s), IM_COL32(0, 0, 0, 60), 12 * s);
     u.dl->AddRectFilled(p0, p1, C_PANEL_SOLID, 12 * s);
     u.dl->AddRect(p0, p1, C_LINE, 12 * s);
@@ -2024,6 +2025,8 @@ void BrickApp::uiSettings() {
         if (slider(101, "Rotation de la HDRI", m_hdriRotDeg, 0.0f, 360.0f, "%.0f°", m_hdriRotDeg)) lookChanged = true;
         if (slider(102, "Intensité de la HDRI", m_hdriInt, 0.0f, 3.0f, "%.2f", m_hdriInt)) lookChanged = true;
         if (m_softGI) slider(104, "Intensité GI (HQ)", m_softGIStrength, 0.0f, 2.0f, "%.2f", m_softGIStrength);   // (live, probes kept)
+        // SSS (HQ): the light under the surface of the plastic (HQ and RC), 0 = off
+        slider(105, "SSS (HQ) · 0 = coupé", m_hqSSSStrength, 0.0f, 2.0f, "%.2f", m_hqSSSStrength);
         // colour of the ground grid: swatches (Défaut = the lines of the web), then its opacity
         u.text(ImVec2(x0 + pad, ly), 11, C_DIM, "Couleur de la grille");
         ly += 16 * s;
@@ -2058,6 +2061,7 @@ void BrickApp::uiSettings() {
             char ib[96];
             snprintf(ib, sizeof(ib), "HDRI chargée en %.0f ms · le soleil reste fixe", m_hdriLoadMs);
             u.text(ImVec2(x0 + pad, ly), 10, C_DIM, ib);
+            m_lumColumnH = ly + 14 * s + pad - p0.y;
         }
         if (lookChanged) {   // live: the environment and the grid of every renderer (accumulations reset)
             m_scene.env.hdriRotation = radians(m_hdriRotDeg);

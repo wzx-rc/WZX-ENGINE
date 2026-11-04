@@ -1058,6 +1058,8 @@ void BrickApp::frame() {
     m_rs.ssao = m_rs.raster && m_quality == 1 && m_ssaoOn && !m_rs.rasterRT;   // (the traced occlusion replaces the SSAOPass of the web)
     m_rs.ssaoRadius = 0.6f;
     m_rs.rasterBevel = m_quality == 1 || m_rcMode;
+    // subsurface of the real time views (HQ, RC): the light wrapped past the terminator, tinted (Réglages › Lumière)
+    m_rs.rasterSSS = (m_quality == 1 || m_rcMode) ? (m_opt.hqSSS >= 0 ? m_opt.hqSSS : m_hqSSSStrength) : 0.0f;
     // Radiance Cascades: GI bounds = the bricks + a margin, fading out over the same distance; the ground beyond gets
     // the analytic sky ambient (else its probe cells reached the horizon and overflowed the hash tables when the camera
     // tilts: light and dark squares). Recomputed when the scene changes.
@@ -1084,6 +1086,13 @@ void BrickApp::frame() {
     std::vector<int> extra;
     for (int i : m_multi) extra.push_back(m_firstBrickObject + i);
     m_renderer.setExtraSelection(extra);
+    {   // edge outline of the selected / held brick and the rest of the selection (thin white lines, red when blocked)
+        std::vector<int> edge;
+        const int fb = focusBrick();
+        if (fb >= 0 && fb < (int)m_bricks.size() && !m_mechOn) edge.push_back(m_firstBrickObject + fb);
+        if (!m_mechOn) for (int i : m_multi) edge.push_back(m_firstBrickObject + i);
+        m_renderer.setEdgeOutline(edge, m_holding && m_held.blocked, 0.45f);
+    }
     const int selObj = (m_selected >= 0 && !m_holding) ? m_firstBrickObject + m_selected : -1;
     m_rs.pixelScale = scale;
     // part sheet open: the main view keeps its last image, the renderer draws the 3D viewer of the part
@@ -1270,6 +1279,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         else if (a == L"--soft-gi-margin") opt.softGIMargin = (float)_wtof(next().c_str());
         else if (a == L"--soft-gi-probes") opt.softGIProbes = _wtoi(next().c_str());
         else if (a == L"--gi-hold") opt.giHold = _wtoi(next().c_str());
+        else if (a == L"--hq-sss") opt.hqSSS = (float)_wtof(next().c_str());
         else if (a == L"--gi-age-cap") opt.giAgeCap = _wtoi(next().c_str());
         else if (a == L"--gi-carry") { opt.giCarryBrick = _wtoi(next().c_str()); opt.giCarryFrom = _wtoi(next().c_str()); opt.giCarryTo = _wtoi(next().c_str()); }
         else if (a == L"--gi-edit") { opt.giEditBrick = _wtoi(next().c_str()); opt.giEditOff = _wtoi(next().c_str()); opt.giEditOn = _wtoi(next().c_str()); }

@@ -130,9 +130,8 @@ void main(uint3 id : SV_DispatchThreadID) {
                         if (IsSelected((uint)(gTex[SLOT_ALBEDO][q].w + 0.5))) { edge = 1.0; break; }
                     }
         }
-        if (F.selStyle == 2) {   // BrickIt: a thin white line at 45 % and a light fill
-            c = lerp(c, 1.0.xxx, 0.10 * cover);
-            c = lerp(c, 1.0.xxx, 0.45 * edge);
+        if (F.selStyle == 2) {   // BrickIt: a faint white fill (its edges are drawn by the edge outline, as the web build)
+            c = lerp(c, 1.0.xxx, 0.05 * cover);
         } else {
             c = lerp(c, float3(1.0, 0.9, 0.4), 0.08 * cover);
             c = lerp(c, yellow, 0.95 * edge);

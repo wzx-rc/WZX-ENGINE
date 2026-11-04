@@ -100,6 +100,7 @@ struct RasterConstants {
     float centreValid = 0, rcPad0 = 0, rcPad1 = 0, rcPad2 = 0;
     float3 envSun2Dir{0, 1, 0}; float envSun2On = 0;   // (DirectX 12 viewport only)
     float3 envSun2E{0, 0, 0}; float envSun2Tan = 0;
+    float sssScale = 0, sssPad0 = 0, sssPad1 = 0, sssPad2 = 0;   // (DirectX 12 viewport only)
 };
 
 struct DrawConstants {

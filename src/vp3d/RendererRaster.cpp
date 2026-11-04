@@ -36,6 +36,7 @@ struct RasterConstants {
     float centreValid, rtLights, rtAO; uint32_t gridLine;   // centreValid: t14 holds this frame's pixel-centre depth
     float3 envSun2Dir; float envSun2On;                     // HQ: the light of the HDRI as a second soft light
     float3 envSun2E; float envSun2Tan;
+    float sssScale, sssPad0, sssPad1, sssPad2;              // subsurface of the raster view (Raster.hlsl, 0 = off)
 };
 
 struct DrawConstants {
@@ -732,6 +733,7 @@ void Renderer::recordRaster(const Scene& scene, const RenderSettings& rs, const 
     rc.envSun2Dir = envSunDir;
     rc.envSun2E = envSun2 ? m_envSunE * scene.env.hdriIntensity : float3(0.0f);
     rc.envSun2Tan = std::tan(radians(6.0f));
+    rc.sssScale = std::max(0.0f, rs.rasterSSS);
     rc.shadowTexel = 1.0f / kShadowSize;
     rc.keyPos = keyCenter;
     rc.lightScale = rs.lightScale;
@@ -1056,6 +1058,30 @@ void Renderer::recordRaster(const Scene& scene, const RenderSettings& rs, const 
             dc.flags = d.flags | (rs.wireframe == 2 ? 8u : 0u);   // over the shaded view: faint light lines (PSWire)
             m_cmd->SetGraphicsRoot32BitConstants(1, 1, &slot, 0);
             m_cmd->DrawIndexedInstanced(g.lineCount, 1, g.lineOffset, (INT)g.vertexOffset, 0);
+        }
+        m_cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+    }
+    if (!m_edgeObjects.empty() && !probeCapture && m_psoWire) {   // edge outline: the hard edges of the objects given
+        std::vector<uint32_t> ids;
+        for (int o : m_edgeObjects)
+            if (o >= 0 && o < (int)m_objectToInstance.size() && m_objectToInstance[o] >= 0) ids.push_back((uint32_t)(m_objectToInstance[o] + 1));
+        const uint32_t edgeBase = ids.empty() ? 0 : allocDraws((uint32_t)ids.size());
+        uint32_t n = 0;
+        m_cmd->SetPipelineState(m_psoWire.Get());
+        m_cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_LINELIST);
+        for (const Draw& d : m_draws) {
+            if ((d.flags & 5u) || n >= ids.size() || std::find(ids.begin(), ids.end(), d.id) == ids.end()) continue;
+            const MeshGpu& g = m_meshes[d.mesh];
+            if (!g.hardCount) continue;
+            const uint32_t slot = edgeBase + n++;
+            DrawConstants& dc = ((DrawConstants*)m_drawBuf.mapped)[slot];
+            memcpy(dc.rows, d.xf.m, sizeof(dc.rows));
+            dc.materialId = d.material;
+            dc.id = d.id;
+            dc.alpha = m_edgeOpacity;
+            dc.flags = d.flags | 16u | (m_edgeRed ? 32u : 0u);   // PSWire: the outline colour
+            m_cmd->SetGraphicsRoot32BitConstants(1, 1, &slot, 0);
+            m_cmd->DrawIndexedInstanced(g.hardCount, 1, g.hardOffset, (INT)g.vertexOffset, 0);
         }
         m_cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
     }
