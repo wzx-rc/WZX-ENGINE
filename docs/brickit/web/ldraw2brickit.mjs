@@ -149,9 +149,26 @@ function latheStud(profile, M, seg = 24) {
 
 // ---------------------------------------------------------------- recursive load
 // returns triangles in part space (LDU, LDraw axes), hard edges (type 2), snaps, primitive instances
+// LDraw colours (LDConfig.ldr): code -> 0xRRGGBB, for the prints (triangles of another colour than 16)
+let LDCOLORS = null;
+function ldColor(code, parent) {
+  if (code === 16) return parent;
+  if (code === 24) return parent;
+  if (code >= 0x2000000) return code & 0xffffff;   // direct colour 0x2RRGGBB
+  if (!LDCOLORS) {
+    LDCOLORS = new Map();
+    const f = path.join(LDRAW, "LDConfig.ldr");
+    if (fs.existsSync(f)) for (const l of readLines(f)) {
+      const m = l.match(/!COLOUR\s+\S+\s+CODE\s+(\d+)\s+VALUE\s+#([0-9A-Fa-f]{6})/);
+      if (m) LDCOLORS.set(Number(m[1]), parseInt(m[2], 16));
+    }
+  }
+  return LDCOLORS.has(code) ? LDCOLORS.get(code) : parent;
+}
 function loadPart(name) {
   const tris = [], snaps = [], prims = [];
-  function walk(fname, M, invert, certifiedParent, depth) {
+  // colour: -1 = the colour of the brick (16), else 0xRRGGBB of the print
+  function walk(fname, M, invert, certifiedParent, depth, colour = -1) {
     const f = findFile(fname);
     if (!f) { console.warn("missing", fname); return; }
     const rel = f.rel;
@@ -190,7 +207,7 @@ function loadPart(name) {
         const inv = invert !== (det(C) < 0) !== invertNext;
         prims.push({ name: child.toLowerCase().replace(/\\/g, "/"), M: W });
         const before = childSnaps.length;
-        const sub = walkCollect(child, W, inv, cert, depth + 1);
+        const sub = walkCollect(child, W, inv, cert, depth + 1, ldColor(Number(t[1]), colour));
         childSnaps.push(...sub);
         invertNext = false;
       } else if (t[0] === "3" || t[0] === "4") {
@@ -198,12 +215,15 @@ function loadPart(name) {
         const pts = [];
         for (let i = 0; i < n; i++) pts.push(tp(M, t.slice(2 + i * 3, 5 + i * 3).map(Number)));
         const quads = n === 3 ? [[0, 1, 2]] : [[0, 1, 2], [0, 2, 3]];
+        const c = ldColor(Number(t[1]), colour);
         for (const q of quads) {
           const tri = q.map((i) => pts[i]);
-          if (!cert) { tris.push(tri); tris.push([tri[0], tri[2], tri[1]]); continue; }
+          const rev = [tri[0], tri[2], tri[1]];
+          tri.c = c; rev.c = c;
+          if (!cert) { tris.push(tri); tris.push(rev); continue; }
           let ccw = winding === "CCW";
           if (invert) ccw = !ccw;
-          tris.push(ccw ? tri : [tri[0], tri[2], tri[1]]);
+          tris.push(ccw ? tri : rev);
         }
         invertNext = false;
       }
@@ -213,7 +233,7 @@ function loadPart(name) {
     for (const c of sh.clear) inherited = c === "*" ? [] : inherited.filter((s) => s.id.toLowerCase() !== c.toLowerCase());
     return [...mySnaps, ...inherited];
   }
-  function walkCollect(child, W, inv, cert, depth) { return walk(child, W, inv, cert, depth) || []; }
+  function walkCollect(child, W, inv, cert, depth, colour) { return walk(child, W, inv, cert, depth, colour) || []; }
   const top = walk(name, IDENT, false, true, 0) || [];
   snaps.push(...top);
   return { tris, snaps, prims };
@@ -222,7 +242,7 @@ function loadPart(name) {
 // ---------------------------------------------------------------- geometry: to BrickIt space, weld, crease normals
 const toB = (p) => [p[0] * LDU, -p[1] * LDU, -p[2] * LDU];
 function buildMesh(trisL, crease = 35) {
-  const tris = trisL.map((t) => t.map(toB));
+  const tris = trisL.map((t) => { const b = t.map(toB); b.c = t.c === undefined ? -1 : t.c; return b; });
   // drop degenerate
   const faces = [];
   for (const t of tris) {
@@ -231,7 +251,7 @@ function buildMesh(trisL, crease = 35) {
     const n = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
     const l = Math.hypot(...n);
     if (l < 1e-10) continue;
-    faces.push({ t, n: n.map((x) => x / l), area: l / 2 });
+    faces.push({ t, n: n.map((x) => x / l), area: l / 2, c: t.c });
   }
   // bbox -> origin at min corner
   const mn = [1e9, 1e9, 1e9], mx = [-1e9, -1e9, -1e9];
@@ -241,7 +261,8 @@ function buildMesh(trisL, crease = 35) {
   const incident = new Map();
   faces.forEach((f, fi) => f.t.forEach((p) => { const k = key(p); if (!incident.has(k)) incident.set(k, []); incident.get(k).push(fi); }));
   const cosT = Math.cos((crease * Math.PI) / 180);
-  const verts = [], idx = [], vmap = new Map();
+  const verts = [], idx = [], vmap = new Map(), vcol = [];
+  let printed = false;
   for (let fi = 0; fi < faces.length; fi++) {
     const f = faces[fi];
     for (const p of f.t) {
@@ -255,13 +276,13 @@ function buildMesh(trisL, crease = 35) {
       const l = Math.hypot(...nn) || 1;
       const n = nn.map((x) => x / l);
       const P = [p[0] - mn[0], p[1] - mn[1], p[2] - mn[2]];
-      const vk = k + "|" + n.map((x) => Math.round(x * 500)).join(",");
+      const vk = k + "|" + n.map((x) => Math.round(x * 500)).join(",") + "|" + f.c;   // (a print: its own vertices)
       let vi = vmap.get(vk);
-      if (vi === undefined) { vi = verts.length / 6; verts.push(...P, ...n); vmap.set(vk, vi); }
+      if (vi === undefined) { vi = verts.length / 6; verts.push(...P, ...n); vcol.push(f.c); vmap.set(vk, vi); if (f.c >= 0) printed = true; }
       idx.push(vi);
     }
   }
-  return { verts, idx, mn, mx, faces };
+  return { verts, idx, mn, mx, faces, vcol: printed ? vcol : null };
 }
 
 // ---------------------------------------------------------------- connection voxels

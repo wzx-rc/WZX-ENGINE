@@ -48,11 +48,13 @@ if (process.argv[2] === "--worker") {
         const r = convertPart(id, { system: sys });   // (Technic: the pin / axle holes, as the Technic packs)
         if (!r.mesh.idx.length) { res.push({ id, fail: "no geometry" }); continue; }
         const vb = Buffer.from(new Float32Array(r.mesh.verts).buffer), ib = Buffer.from(new Uint32Array(r.mesh.idx).buffer);
-        fs.writeFileSync(path.join(tmp, id + ".bin"), Buffer.concat([vb, ib]));
+        // a printed part: one colour per vertex after the indices (0xRRGGBB, 0xffffffff = the colour of the brick)
+        const cb = r.mesh.vcol ? Buffer.from(new Uint32Array(r.mesh.vcol.map((c) => (c < 0 ? 0xffffffff : c))).buffer) : Buffer.alloc(0);
+        fs.writeFileSync(path.join(tmp, id + ".bin"), Buffer.concat([vb, ib, cb]));
         const cnt = {};
         for (const t of r.types) cnt[t] = (cnt[t] || 0) + 1;
         const bb = [r.mesh.mx[0] - r.mesh.mn[0], r.mesh.mx[1] - r.mesh.mn[1], r.mesh.mx[2] - r.mesh.mn[2]];
-        res.push({ id, ms: Math.round(performance.now() - t0), vertexCount: r.mesh.verts.length / 6, indexCount: r.mesh.idx.length, meta: r.meta, cnt, bb,
+        res.push({ id, ms: Math.round(performance.now() - t0), vertexCount: r.mesh.verts.length / 6, indexCount: r.mesh.idx.length, meta: r.meta, cnt, bb, printed: !!r.mesh.vcol,
                    origin: r.mesh.mn.map((x) => +(-x).toFixed(4)), studs: r.studs.length });
       } catch (e) { res.push({ id, fail: String(e.message || e).slice(0, 120) }); }
     }
@@ -145,12 +147,13 @@ if (process.argv[2] === "--worker") {
       }
       const big = vc > 65535, ind = big ? new Uint32Array(idx) : new Uint16Array(idx);
       const bPos = pad(Buffer.from(pos.buffer)), bNrm = Buffer.from(nrm.buffer), bInd = pad(Buffer.from(ind.buffer));
+      const bCol = r.printed ? Buffer.from(bin.buffer, bin.byteOffset + vc * 24 + ic * 4, vc * 4) : Buffer.alloc(0);
       const h = heads.get(r.id);
       const label = h.title.replace(/\s+/g, " ").replace(/^[~_]/, "").trim();
-      cur.metas.push({ name: r.id, label, ...r.meta, q: { off: cur.off, vc, ic, big, mn, sc } });
-      cur.bufs.push(bPos, bNrm, bInd);
-      cur.off += bPos.length + bNrm.length + bInd.length;
-      cur.size += bPos.length + bNrm.length + bInd.length;
+      cur.metas.push({ name: r.id, label, ...r.meta, q: { off: cur.off, vc, ic, big, mn, sc, col: r.printed } });
+      cur.bufs.push(bPos, bNrm, bInd, Buffer.from(bCol));
+      cur.off += bPos.length + bNrm.length + bInd.length + bCol.length;
+      cur.size += bPos.length + bNrm.length + bInd.length + bCol.length;
       index.push({ name: r.id, label, pack: cur.no, info: { ldraw: r.id, title: h.title, category: cat, family: "", sizeCm: r.bb.map((x) => +x.toFixed(2)),
         sizeStuds: [+(r.bb[0] / 0.8).toFixed(2), +(r.bb[2] / 0.8).toFixed(2)], triangles: ic / 3, vertices: vc, connectors: r.cnt, author: h.author,
         license: h.license, release: h.release, keywords: h.keywords, history: h.history, ldrawOrigin: r.origin }, voxN: r.meta.voxels.length,

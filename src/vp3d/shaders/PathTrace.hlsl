@@ -189,6 +189,7 @@ Surf MakeSurf(GpuMaterial m, Hit h) {
     s.base = m.baseColor;
     if (m.baseColorTex != NO_TEXTURE)
         s.base *= gTextures[NonUniformResourceIndex(m.baseColorTex)].SampleLevel(gLinearWrap, h.uv, 0).rgb;
+    if ((m.flags & MAT_FLAG_VCOLOR) && h.uv.y > 0.5) s.base = PrintColor(h.uv.x);   // a print (BrickIt)
     s.rough = m.roughness;
     s.metal = m.metallic;
     s.spec = m.specular;

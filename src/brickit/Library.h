@@ -48,7 +48,8 @@ struct Part {
     // geometry (empty until its pack is loaded)
     vp3d::MeshData mesh;
     bool loaded = false;
-    bool available() const { return loaded || pack >= 0; }   // geometry in memory or in a pack (loaded on demand)
+    bool available() const { return loaded || pack >= 0; }
+    bool printed = false;     // a printed part: the colour of the print per vertex (uv = 0xRRGGBB, 1)   // geometry in memory or in a pack (loaded on demand)
     vp3d::MeshData ldrawMesh;  // DEV mode: the LDraw mesh while a replacement is shown
     bool hasLdrawMesh = false, devActive = false;
     float3 bmin, bmax;

@@ -9,8 +9,8 @@ library. Ces fichiers sont générés et **ne sont pas dans git** (≈ 470 Mo) ;
   raw\ldraw_complete\ldraw\      bibliothèque officielle (complete.zip de library.ldraw.org)
   raw\ldcad_shadow\...\          LDCad shadow library (github.com/RolandMelkert/LDCadShadowLibrary)
   raw\rebrickable\*.csv.gz       données Rebrickable (couleurs réelles, tools/brickit/part_colors.py)
-  full\index.json, f<n>.bin      packs de la bibliothèque complète (524 packs, ≈ 390 Mo, index 13 Mo)
-  full\thumbs.pack               miniatures (PNG 128 px, 22 545, ≈ 72 Mo)
+  full\index.json, f<n>.bin      packs de la bibliothèque complète (635 packs, ≈ 420 Mo, index 13 Mo)
+  full\thumbs.pack               miniatures (PNG 128 px, 22 545, ≈ 88 Mo)
   full\aliases.txt               alias et pièces déplacées -> pièce cible (1 662)
   full\LDConfig.ldr              couleurs LDraw (import des modèles : couleur hors palette -> la plus proche)
   omr\*.mpd                      modèles officiels téléchargés (OMR)
@@ -35,7 +35,7 @@ build\bin\BrickIt.exe --build-full-thumbs "%LOCALAPPDATA%\BrickIt\full\thumbs.pa
 
 ## Limites connues
 
-- Pièces imprimées : la géométrie est là, l'impression (triangles d'une autre couleur que 16) n'est pas encore rendue.
+- Pièces imprimées : rendues (couleur par sommet) ; quelques pièces anciennes superposent deux impressions dans le même plan et scintillent.
 - 4 pièces sans géométrie après conversion (6637a–d).
 
 Crédits : géométrie LDraw (ldraw.org, CC BY 4.0 / CC BY 2.0), connecteurs LDCad shadow library (Roland Melkert),

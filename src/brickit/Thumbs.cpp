@@ -49,6 +49,7 @@ int BrickApp::setupStudio(Scene& ts) {
     Material m;
     m.baseColor = float3(srgbToLinear(0xc4 / 255.0f), srgbToLinear(0xc4 / 255.0f), srgbToLinear(0xc1 / 255.0f));   // neutral grey
     m.bevelRadius = 0.04f;
+    m.flags |= MAT_FLAG_VCOLOR;   // the prints
     m.roughness = 0.24f;
     m.coat = 0.35f;
     m.coatRoughness = 0.05f;

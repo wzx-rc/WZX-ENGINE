@@ -88,6 +88,15 @@ static const float PI = 3.14159265;
 #define DDGI_PROBE_REG_STATE t22
 #endif
 #include "DDGIProbe.hlsli"
+#ifndef VP3D_PRINT_COLOR
+#define VP3D_PRINT_COLOR
+// A print colour packed in a vertex uv (MAT_FLAG_VCOLOR): x = sRGB 0xRRGGBB as a float, linear out
+float3 PrintColor(float packed) {
+    const uint c = (uint)round(packed);
+    const float3 srgb = float3((c >> 16) & 255u, (c >> 8) & 255u, c & 255u) / 255.0;
+    return pow(srgb, 2.2);
+}
+#endif
 #ifndef VP3D_ATTRIB_SEMANTICS
 // Screen-space Radiance Cascades (DDGIConstants flags bit 8): the indirect irradiance of each pixel, computed by
 // RCSGather.hlsl (DirectX 12 viewport only).
@@ -527,6 +536,7 @@ float4 Shade(VSOut i, bool ghost, float shadowBias, bool capture) {
     float3 base = m.baseColor;
     float3 emission = m.emission;
     if (m.baseColorTex != NO_TEXTURE) base *= gTextures[NonUniformResourceIndex(m.baseColorTex)].Sample(gLinearWrap, i.uv).rgb;
+    if ((m.flags & MAT_FLAG_VCOLOR) && i.uv.y > 0.5) base = PrintColor(i.uv.x);   // a print (BrickIt)
     if (m.flags & MAT_FLAG_GRID) base = GridColor(base, i.wpos, emission);
     if (D.flags & DRAW_LIGHT) return float4(m.emission * R.lightScale, 1);
 

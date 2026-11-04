@@ -15,6 +15,7 @@ struct uint4 { uint x, y, z, w; };
 // Material flags
 #define MAT_FLAG_GRID      1u   // procedural ground grid
 #define MAT_FLAG_THIN      2u   // thin-walled transmission (no refraction offset)
+#define MAT_FLAG_VCOLOR    4u   // prints: a vertex uv with y = 1 carries a colour (x = sRGB 0xRRGGBB) over the base colour
 
 #define MAX_TEXTURES       16u  // material textures bound to the raster and path tracing passes
 #define NO_TEXTURE         0xFFFFFFFFu

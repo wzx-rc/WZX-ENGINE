@@ -179,7 +179,7 @@ bool BrickApp::importLDraw(const std::wstring& path) {
                 const bool first = !built[file];
                 built[file] = true;
                 if (withSteps && first) { endStep(); expand(file, W, col, sub, true); }
-                else { expand(file, W, col, sub, false); any = true; }
+                else { const size_t n0 = out.size(); expand(file, W, col, sub, false); any = any || out.size() > n0; }   // (a sticker of primitives only adds nothing)
                 continue;
             }
             const int pi = m_lib.find(stem(file));
@@ -232,6 +232,11 @@ bool BrickApp::importLDraw(const std::wstring& path) {
         snprintf(r, sizeof(r), "pieces=%d steps=%d submodels=%d missing=%d mirrored=%d\n", (int)m_bricks.size(), m_readSteps, (int)sections.size() - 1, missing, mirrored);
         m_importReport = r;
         for (auto& [nm, k] : missingNames) m_importReport += "missing " + nm + " x" + std::to_string(k) + "\n";
+        std::vector<int> per(m_readSteps, 0);
+        for (const Brick& b : m_bricks) if (b.step >= 0 && b.step < m_readSteps) ++per[b.step];
+        std::string empty;
+        for (int s = 0; s < m_readSteps; ++s) if (!per[s]) empty += " " + std::to_string(s + 1);
+        m_importReport += "empty steps:" + (empty.empty() ? std::string(" none") : empty) + "\n";
     }
     startReading(1);
     return true;

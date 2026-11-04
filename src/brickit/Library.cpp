@@ -288,7 +288,9 @@ bool Library::loadPack(int no, std::string* error) {
         float mn[3], sc[3];
         for (int k = 0; k < 3; ++k) { mn[k] = (float)q["mn"][k].num(); sc[k] = (float)q["sc"][k].num(); }
         size_t pb = (vc * 6 + 3) / 4 * 4;
-        size_t end = off + pb + vc * 4 + ic * (big ? 4 : 2);
+        const size_t ib4 = (ic * (big ? 4 : 2) + 3) / 4 * 4;
+        const bool printed = q["col"].type == Json::Bool && q["col"].b;   // the full library: a colour per vertex
+        size_t end = off + pb + vc * 4 + (printed ? ib4 + vc * 4 : ic * (big ? 4 : 2));
         if (end > dataSize) continue;
         const uint16_t* pos = (const uint16_t*)(data + off);
         const int8_t* nrm = (const int8_t*)(data + off + pb);
@@ -304,6 +306,13 @@ bool Library::loadPack(int no, std::string* error) {
         if (big) memcpy(p.mesh.indices.data(), ib, ic * 4);
         else
             for (size_t i = 0; i < ic; ++i) p.mesh.indices[i] = ((const uint16_t*)ib)[i];
+        // the print: its colour in the uv (x = 0xRRGGBB, y = 1; the brick materials read it, MAT_FLAG_VCOLOR)
+        p.printed = printed;
+        if (printed) {
+            const uint32_t* col = (const uint32_t*)(data + off + pb + vc * 4 + ib4);
+            for (size_t i = 0; i < vc; ++i)
+                if (col[i] != 0xffffffffu) p.mesh.vertices[i].uv = {(float)(col[i] & 0xffffffu), 1.0f};
+        }
         finishMesh(p);
     }
     return true;

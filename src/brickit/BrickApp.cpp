@@ -362,6 +362,7 @@ void BrickApp::setupStage() {
         m.coat = 0.35f;
         m.coatRoughness = 0.05f;
         m.bevelRadius = 0.035f;   // no fingerprint mask (Wzx: none anywhere)
+        m.flags |= 4u;   // MAT_FLAG_VCOLOR: the prints of the printed parts (their colour per vertex)
         const float lum = 0.2126f * m.baseColor.x + 0.7152f * m.baseColor.y + 0.0722f * m.baseColor.z;
         if (lum > 0.06f && m_opt.sss) {   // light goes into the ABS: more on the light colours (white, yellow, red),
             m.subsurface = std::min(0.35f, 0.15f + lum * 0.4f);   // a diffusion distance of about a millimetre, tinted
