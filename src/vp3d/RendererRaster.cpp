@@ -36,7 +36,7 @@ struct RasterConstants {
     float centreValid, rtLights, rtAO; uint32_t gridLine;   // centreValid: t14 holds this frame's pixel-centre depth
     float3 envSun2Dir; float envSun2On;                     // HQ: the light of the HDRI as a second soft light
     float3 envSun2E; float envSun2Tan;
-    float sssScale, sssPad0, sssPad1, sssPad2;              // subsurface of the raster view (Raster.hlsl, 0 = off)
+    float sssScale, debugView, sssPad1, sssPad2;            // subsurface of the raster view (Raster.hlsl, 0 = off); debugView: RenderSettings::debugView (Prefab studio)
 };
 
 struct DrawConstants {
@@ -766,6 +766,7 @@ void Renderer::recordRaster(const Scene& scene, const RenderSettings& rs, const 
     // The id pass reads a copy without jitter (offset 768); the viewport passes may be jittered: MSAA x16 on a GPU with
     // 8 samples alternates two sub-pixel offsets of its pattern, frame after frame, and the tonemapper averages the last
     // two frames while nothing moves (16 different samples per pixel).
+    rc.debugView = probeCapture ? 0.0f : (float)rs.debugView;
     static_assert(sizeof(RasterConstants) <= 768, "two copies in m_rasterCB (768 + size <= 1536: the frame constants of an extra view)");
     memcpy((uint8_t*)rcb.mapped + 768, &rc, sizeof(rc));
     if (m_msaaTemporal && !overlay && !probeCapture && !probes && !xv) {

@@ -11,6 +11,7 @@
 #include "GameHost.h"
 #include "CurveEditor.h"
 #include "Json.h"
+#include "MeshFile.h"
 #include "WzxRead.h"
 #include "vp3d/AssetImport.h"
 #include <algorithm>
@@ -532,6 +533,7 @@ void App::loadWzxScene(const Json& j, const std::wstring& path) {
 
     WzxRead rd;
     rd.readCurve = [](const Json& cj, Object& o) { curveFromJson(cj, o.curve); };   // curve objects (CurveEditor.cpp)
+    rd.loadMesh = [](const std::wstring& p, MeshData& m, std::string* e) { return loadMeshFile(p, m, nullptr, e); };   // OBJ or glTF
     readWzxScene(j, sc, [this](const std::string& p) { return absPath(p); }, toUtf8(fs::path(path).stem().wstring()), rd);
     m_placeholderMat = rd.placeholderMat;
     for (const std::string& w : rd.warnings) log(w, 2);
@@ -608,7 +610,7 @@ void App::loadWzxScene(const Json& j, const std::wstring& path) {
 void App::importMeshFile(const std::wstring& path) {
     MeshData mesh;
     std::string err;
-    if (!loadObj(path, mesh, nullptr, &err)) {
+    if (!loadMeshFile(path, mesh, nullptr, &err)) {
         status(L"Mesh not imported: " + fromUtf8(err), 2);
         return;
     }

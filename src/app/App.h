@@ -4,6 +4,10 @@
 #include "Content.h"
 #include "ImGuiLayer.h"
 #include "Json.h"
+#include "MeshFile.h"
+#include "Prefab.h"
+#include "Rig.h"
+#include "UvCheck.h"
 #include "Theme.h"
 #include "atelier/material_host.h"
 #include "atelier/material_model.h"
@@ -154,7 +158,19 @@ struct Options {
     int light = -1;             // test: 1 light mode, 0 dark mode
     bool openSettings = false;  // test: open the settings window at startup
     std::string theme;          // test: start with this theme ("Atelier" or "Ambre"), not saved
-    int workspace = 0;          // Atelier workspace at startup: 0 scene, 1 graph, 2 material
+    int workspace = 0;          // Atelier workspace at startup: 0 scene, 1 graph, 2 material, 3 prefab
+    // test: Prefab studio state at startup (--prefab-view, --prefab-select, --prefab-time, --prefab-tab, --prefab-clip)
+    int prefabView = -1, prefabSelect = -1, prefabTab = -1, prefabClip = -1, prefabBottom = -1, prefabLight = -1;
+    float prefabTime = -1;
+    std::wstring prefabOpen;
+    int prefabRig = -1, prefabJoint = -1;   // test: Rig module mode (0..3; loads the rig sample when the prefab has no joint), joint
+    std::wstring prefabClipName;   // test: clip shown, by name (--prefab-clip-name)
+    bool prefabDq = false;      // test: dual quaternion skinning on every skin (--prefab-dq)
+    std::wstring prefabExportGltf;   // test: exports the first skinned part as glTF at startup (--prefab-export-gltf)
+    std::wstring prefabRigFbx;  // test: imports this FBX in a new prefab and opens the Rig module
+    std::wstring prefabUv;      // test: opens the UV Editor: "setA,setB,compare,display,background" (--prefab-uv)
+    bool prefabPlace = false;   // test: places the prefab in the scene at startup and shows the Scene workspace (--prefab-place)
+    std::wstring prefabSave;    // test: writes the prefab of the studio to this file at startup (--prefab-save)
     int inspectorTab = -1;      // test: inspector tab at startup (0 actor, 1 light, 2 render, 3 world)
     ImVec4 mainColor = ImVec4(-1, -1, -1, 1);   // test: main colour for this run (--main-color r,g,b)
     ImVec4 sizes = ImVec4(-1, -1, -1, 0);       // test: text, icon and layout size for this run (--sizes t,i,l)
@@ -167,6 +183,10 @@ void drawAssetThumb(ImDrawList* dl, int kind, int index, ImVec2 p0, ImVec2 p1, f
 
 // Writes a file through a temporary file then replaces it (SceneWzx.cpp).
 bool writeFileSafe(const std::wstring& path, const std::string& text);
+
+// Open / save file dialog (PrefabStudio.cpp). Empty = cancelled.
+std::wstring pickFileDialog(HWND hwnd, bool save, const wchar_t* filter, const wchar_t* defExt, const std::wstring& initialDir,
+                           const std::wstring& initialName);
 
 // Screen-space rectangle (pixels).
 struct ScreenRect {
@@ -361,6 +381,174 @@ private:
     void renderMaterialPreview();
     void buildPreviewScene(int shape);
     void leavePreview();
+
+    // Prefab studio (workspace 3): assembles parts (mesh + material + transform) into an asset with animation clips,
+    // in its own scene and lighting. Logic in PrefabStudio.cpp, panels in PrefabUI.inl (included by AtelierUI.cpp).
+    struct PrefabStudio {
+        PrefabAsset asset;
+        std::wstring path;                 // file of the asset (empty = not saved yet)
+        std::string savedJson;             // the asset as saved: modified test
+        bool initialised = false;
+        Scene scene;                       // the studio world: floor, lights, the parts
+        bool active = false;               // the renderer holds the studio scene
+        bool rebuild = true;               // parts structure, meshes or textures changed: rebuild the scene
+        uint32_t buildSerial = 0;          // counts the rebuilds (UV layout cache)
+        std::vector<int> partObject;       // part index -> object of the studio scene (-1 = pivot)
+        int floorObject = -1, footprintObject = -1;
+        std::map<std::string, MeshData> meshCache;   // mesh files read once (path -> mesh, pivot recentred)
+        std::map<std::string, std::string> meshErrors;
+        std::map<std::string, float3> meshShift;     // offset removed from the vertices of a recentred mesh file
+        std::map<std::string, Texture> texCache;
+        std::vector<float3> meshMin, meshMax;        // bounds of the studio scene meshes (by mesh index)
+        // move gizmo on the selected part (world axes)
+        int gizmoAxis = -1, gizmoHover = -1;
+        float gizmoT0 = 0;
+        float3 gizmoStart, gizmoDir, gizmoOrigin;
+        std::vector<PartPose> pose;
+        std::vector<PartWorld> world;
+        // selection and editing
+        int sel = -1;                      // selected part index
+        std::vector<PrefabAsset> undo, redo;
+        bool editing = false;              // a field drag is in progress (one undo step per drag)
+        uint32_t renameId = 0;
+        char renameBuf[96] = {};
+        bool renameFocus = false;
+        uint32_t dragPart = 0;             // part dragged in the list (re-parenting)
+        // animation
+        int clip = 0;
+        float time = 0;
+        bool playing = false;
+        float speed = 1.0f;
+        bool autoKey = false;
+        int keyTrack = -1, keyIndex = -1;  // selected key (track index in the clip, key index)
+        bool keyDrag = false, scrubbing = false;
+        float keyDragStart = 0;
+        float timelineZoom = 1.0f;         // pixels per second factor
+        // view
+        Camera camera;
+        bool orbiting = false, panning = false;
+        float lastX = 0, lastY = 0;
+        ScreenRect rcView;
+        ViewRect vpPx;
+        int debugView = 0;                 // 0 lit, 1 albedo, 2 normals, 3 UV checker, 4 clay, 5 part colours
+        int wireframe = 0;                 // 0 off, 1 wire, 2 overlay
+        bool showGrid = true, showBounds = true, showFootprint = true, showPivots = true, showSelection = true;
+        bool turntable = false;
+        // lighting of the studio world
+        int lightPreset = 0;               // 0 studio, 1 daylight, 2 sunset, 3 night, 4 HDRI
+        float keyIntensity = 1.0f, fillIntensity = 1.0f, rimIntensity = 1.0f, envIntensity = 1.0f;
+        float sunAzimuth = 35.0f, sunElevation = 48.0f;
+        float exposure = 0.0f;
+        int floorStyle = 0;                // 0 grid, 1 plain, 2 none
+        std::wstring hdri;
+        // layout
+        float leftW = 250, rightW = 300, bottomH = 236;
+        int inspectorTab = 0;              // 0 part, 1 lighting, 2 debug, 3 asset
+        // UV Editor (centre tab 1): UV sets of the meshes, view, checks
+        std::map<std::string, std::vector<UvSet>> uvCache;   // mesh file key -> its UV sets
+        std::vector<std::vector<UvSet>> partUv;              // part index -> UV sets of its mesh (scene build)
+        int centerTab = 0;                 // 0 3D view, 1 UV Editor
+        int uvSetA = 0, uvSetB = 1;
+        int uvCompare = 0;                 // 0 one set, 1 overlay, 2 side by side
+        int uvFill = 0;                    // 0 wireframe, 1 islands, 2 overlap, 3 flipped, 4 texel density, 5 stretch
+        int uvBackground = 1;              // 0 none, 1 checker, 2 texture
+        float uvZoom = 0;                  // pixels per UV unit (0 = frame at the next draw)
+        float2 uvPan{0.5f, 0.5f};          // UV at the centre of the canvas
+        int uvFrame = 2;                   // frame at the next draw: 1 the 0-1 square, 2 all the UVs
+        bool uvPanning = false;
+        std::map<std::string, ImTextureID> uvTextures;      // texture path -> ImGui texture (background)
+        std::map<uint64_t, UvAnalysis> uvAnalysis;          // (part id, set, build) -> checks
+        // Rig module (centre tab 2): skeleton, skinning, weight painting, pose
+        int rigMode = 0;                   // 0 skeleton, 1 skin, 2 paint weights, 3 pose
+        int rigTab = 0;                    // inspector: 0 joint, 1 skin, 2 paint
+        int rigTool = 2;                   // 0 select, 1 move, 2 rotate
+        int selJoint = -1;                 // joint index
+        int skinPart = -1;                 // part index of the skin shown / bound / painted
+        bool showBones = true, showJointNames = true, showWeights = true, xray = true;
+        int weightView = 0;                // 0 selected influence (heat), 1 every influence (joint colours)
+        SkinBindOptions bindOpt;
+        int brushMode = 0;                 // PaintMode
+        float brushRadius = 0.3f, brushStrength = 0.4f, brushValue = 1.0f;
+        int brushFalloff = 0;              // 0 smooth, 1 linear, 2 constant
+        bool painting = false, brushHitValid = false;
+        float3 brushHit, brushNormal;
+        float brushLastStamp = 0;
+        std::map<uint32_t, PartPose> poseOverride;   // joint id -> local pose set in Pose mode (not keyed)
+        std::vector<PartPose> jointPose;
+        std::vector<PartWorld> jointNow, jointRest;
+        std::vector<MeshData> partRest;    // part index -> mesh as built (local), kept for the skinned parts
+        std::map<uint32_t, WeldGraph> weld;           // part id -> welded points (smoothing, painting)
+        std::map<uint32_t, uint64_t> skinSig;         // part id -> pose + weights signature of the last deformation
+        uint32_t weightsVersion = 1;       // bumped by every weight edit (the skins deform again)
+        int jgAxis = -1, jgHover = -1;     // joint gizmo: axis dragged / hovered (0..2 move, 3..5 rotate)
+        float jgT0 = 0, jgAngle0 = 0;
+        float3 jgStartPos, jgStartRot, jgDir, jgOrigin;
+        uint32_t jointRename = 0;
+        char jointRenameBuf[96] = {};
+        bool jointRenameFocus = false;
+        uint32_t jointDragTarget = 0;
+        char jointSearch[96] = {};
+        std::string rigStatus;             // last import / bind report
+        int bottomTab = 0;                 // 0 timeline, 1 UV layout
+        char search[96] = {};
+    } m_pf;
+    void prefabInit();
+    void prefabNew(bool demo);
+    bool prefabSave(bool saveAs);
+    bool prefabOpen(const std::wstring& path);
+    void prefabOpenDialog();
+    bool prefabDirty() const;
+    void prefabPushUndo();
+    void prefabUndo();
+    void prefabRedo();
+    void prefabBuildScene();             // full rebuild (structure, meshes, textures)
+    void prefabSyncScene();              // every frame: pose, materials, lights
+    void prefabLighting();
+    void renderPrefab();
+    void prefabFrameAll();
+    void prefabViewInput(bool hovered);
+    void prefabShortcuts();
+    void prefabAddPart(int kind);        // 0 pivot, 1.. PRIM_*, 100 mesh file (dialog)
+    void prefabDuplicate();
+    void prefabDelete();
+    void prefabKeySelected(int channel = -1);   // key the selected part at the current time (-1 = all channels)
+    void prefabSetTime(float t);
+    void prefabAddToScene();             // place the prefab (current pose) in the main scene as a group
+    bool prefabMeshFor(const PrefabPart& p, MeshData& out, std::string* err);
+    PrefabClip* prefabClip();
+    void prefabStep(float dt);
+    // panels (PrefabUI.inl)
+    void drawPrefabStudio(float X, float Y, float W, float H);
+    void pfParts(float x, float y, float w, float h);
+    void pfViewport(float x, float y, float w, float h);
+    void pfInspector(float x, float y, float w, float h);
+    void pfTimeline(float x, float y, float w, float h);
+    // Rig module (PrefabStudio.cpp logic, RigUI.inl panels)
+    void rigAddJoint(bool child);        // at the selected joint (child) or at the origin
+    void rigAddChain(int count, float length);
+    void rigDeleteJoint();
+    void rigOrientJoint();             // the selected joint aims +Y at its first child (children keep their place)
+    void rigMirrorJoints();            // creates the right side of the left joints (and the reverse), mirrored on X
+    void rigBind(int partIndex);         // bind the part to every joint (bind options of the studio)
+    void rigUnbind(int partIndex);
+    void rigJointPose(int joint, PartPose& local) const;   // local pose shown (override, clip, rest)
+    void rigSetJointLocal(int joint, int channel, const float3& v);   // edit in the current mode (rest / pose / key)
+    void prefabKeyJoint(int channel = -1);
+    void rigLoadSample();
+    void rigImportFbx();
+    bool rigExportGltf(int partIndex, const std::wstring& path);   // skinned part + skeleton + clips as a .gltf (embedded buffer)
+    bool rigImportFile(const std::wstring& path);
+    void rigViewInput(bool hovered);
+    void rigPaintStamp(bool first);
+    void pfSkeleton(float x, float y, float w, float h);
+    void pfRigViewport(float x, float y, float w, float h);
+    void pfRigInspector(float x, float y, float w, float h);
+    void pfRigOverlay(float x, float y, float w, float h);
+    void pfUvEditor(float x, float y, float w, float h);
+    void pfUvCanvas(float x, float y, float w, float h, int part, int set, int other, const char* id);
+    void pfUvSidebar(float x, float y, float w, float h, int part);
+    const UvAnalysis& prefabUvAnalysis(int part, int set);   // checks of a UV set of a part (cached until the next scene build)
+    ImTextureID prefabUvTexture(const std::string& path);     // background image of the UV Editor
 
     // Atelier layout (AtelierUI.cpp): fixed concept layout with the Atelier components
     void drawAtelier();

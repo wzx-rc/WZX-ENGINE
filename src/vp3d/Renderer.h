@@ -117,6 +117,9 @@ struct RenderSettings {
     bool bakedProbes = false;
     // Raster modes (Lit, Metal iOS): 0 shaded, 1 wireframe only, 2 wireframe over the shaded view (override).
     int wireframe = 0;
+    // Raster debug views (Prefab studio): 0 lit, 1 albedo, 2 world normals, 3 UV checker, 4 clay (lighting only),
+    // 5 part colours. Use the Standard tonemapper (3) and exposure 1 so the debug colours are shown as they are.
+    int debugView = 0;
     // Raster: object id pass (normal + id per pixel, used by the editor's id outline). Off: the target is only cleared
     // (the selection coverage still gives the outline), one geometry pass less.
     bool idPass = true;
@@ -203,6 +206,9 @@ public:
     void resize(uint32_t width, uint32_t height);   // swapchain resize; release external refs first
 
     void setScene(const Scene& scene);              // upload geometry and build BLAS
+    // Rewrites the vertices of one mesh of the current scene in place (skinned meshes, raster views): same vertex count
+    // as at setScene. The ray tracing BLAS is not rebuilt (path tracing keeps the old shape).
+    void updateMeshVertices(int mesh, const std::vector<Vertex>& vertices);
     // Path trace one frame into the viewport rectangle of the current back buffer.
     // Leaves the back buffer in RENDER_TARGET state (an overlay is expected to transition it to PRESENT).
     // With toBackBuffer = false the image is only rendered offscreen (e.g. thumbnails) and the call waits.

@@ -166,7 +166,7 @@ void readWzxScene(const Json& j, Scene& sc, const std::function<std::wstring(con
         if (it != meshes.end()) return it->second;
         MeshData mesh;
         std::string err;
-        bool ok = loadObj(absPath(rel), mesh, nullptr, &err);
+        bool ok = out.loadMesh ? out.loadMesh(absPath(rel), mesh, &err) : loadObj(absPath(rel), mesh, nullptr, &err);
         if (!ok) {
             warn("Mesh file not found: " + rel + " (red placeholder, the path is kept)");
             mesh = placeholderBox();

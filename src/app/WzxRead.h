@@ -18,6 +18,8 @@ struct WzxRead {
     // in: the "curve" block of a curve object into the object (editor, CurveEditor.cpp); empty in the player: the
     // curve object is kept without geometry
     std::function<void(const Json&, Object&)> readCurve;
+    // in: loader of the imported mesh files (editor: OBJ or glTF, MeshFile.cpp); empty: OBJ only (loadObj)
+    std::function<bool(const std::wstring&, MeshData&, std::string*)> loadMesh;
 };
 
 // Scene, environment (HDRI aside: the caller loads environment.hdri), sun, collections, lights, materials (and their
