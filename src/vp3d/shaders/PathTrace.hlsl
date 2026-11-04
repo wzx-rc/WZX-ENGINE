@@ -208,24 +208,29 @@ Surf MakeSurf(GpuMaterial m, Hit h) {
         s.coatRough = saturate(m.coatRoughness + fp * 1.2);
     }
     if (m.flags & MAT_FLAG_GRID) {
+        // the very lines of the raster view (Raster.hlsl, GridColor): the screen derivatives of the grid coordinates
+        // are rebuilt from the pixel footprint on the ground (stretched along the view at grazing angles), the
+        // samples spread over the pixel antialias them as the raster does
         float g = F.gridScale;
         float dist = ViewDistance(h.P);
-        float lw = max(0.02, 0.0009 * dist / g);
+        const float pix = (F.orthoHalfH > 0 ? 2.0 * F.orthoHalfH : 2.0 * F.tanHalfFovY * dist) / max((float)F.resolution.y, 1.0);
+        const float3 vd = F.orthoHalfH > 0 ? F.camFwd : normalize(h.P - F.camPos);
+        const float cosV = max(abs(vd.y), 0.08);
+        const float2 dv = length(vd.xz) > 1e-4 ? normalize(vd.xz) : float2(1, 0);
+        const float2 fw = pix / g * sqrt(float2(dv.x * dv.x / (cosV * cosV) + dv.y * dv.y, dv.y * dv.y / (cosV * cosV) + dv.x * dv.x));
         float2 p = h.P.xz / g;
-        float2 d = abs(frac(p + 0.5) - 0.5);
-        float2 dm = abs(frac(p / 10.0 + 0.5) - 0.5) * 10.0;
-        float minor = (min(d.x, d.y) < lw) ? 1.0 : 0.0;
-        float major = (min(dm.x, dm.y) < lw * 1.6) ? 1.0 : 0.0;
+        float2 d = abs(frac(p + 0.5) - 0.5) / max(fw, 1e-4);
+        float minor = 1 - saturate(min(d.x, d.y));
+        float2 pm = p / 10.0;
+        float2 dm = abs(frac(pm + 0.5) - 0.5) / max(fw / 10.0, 1e-4);
+        float major = 1 - saturate(min(dm.x, dm.y) - 0.3);
         float fade = saturate(1.0 - dist / (g * 160.0));
         if (F.gridLine != 0u) {   // the colour of the lines (Scene::gridLine), its opacity in the top byte
             float3 lc = float3(F.gridLine & 255u, (F.gridLine >> 8) & 255u, (F.gridLine >> 16) & 255u) / 255.0;
             lc = pow(lc, 2.2);
-            s.base = lerp(s.base, lc, max(minor * 0.55, major) * fade * ((F.gridLine >> 24) / 255.0));
+            s.base = lerp(s.base, lc, max(minor * 0.4, major * 0.8) * fade * ((F.gridLine >> 24) / 255.0));
         } else
-            s.base = lerp(s.base, s.base * 2.2 + 0.015, max(minor * 0.55, major) * fade);
-        float axisW = lw * 1.8 * g;
-        if (abs(h.P.z) < axisW) { s.base = float3(0.5, 0.06, 0.05); s.emission += float3(0.25, 0.02, 0.02); }
-        if (abs(h.P.x) < axisW) { s.base = float3(0.06, 0.12, 0.6); s.emission += float3(0.02, 0.05, 0.3); }
+            s.base = lerp(s.base, s.base * 2.2 + 0.015, max(minor * 0.4, major * 0.8) * fade);
     }
     return s;
 }

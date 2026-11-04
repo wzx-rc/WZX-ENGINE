@@ -495,13 +495,7 @@ float3 GridColor(float3 base, float3 wpos, inout float3 emission) {
         base = lerp(base, lc, max(minor * 0.4, major * 0.8) * fade * ((R.gridLine >> 24) / 255.0));
     } else
         base = lerp(base, base * 2.2 + 0.015, max(minor * 0.4, major * 0.8) * fade);
-    float ax = 1 - saturate(abs(wpos.z) / max(fwidth(wpos.z), 1e-4) - 0.2);
-    float az = 1 - saturate(abs(wpos.x) / max(fwidth(wpos.x), 1e-4) - 0.2);
-    base = lerp(base, float3(0.5, 0.06, 0.05), ax);
-    emission += float3(0.25, 0.02, 0.02) * ax;
-    base = lerp(base, float3(0.06, 0.12, 0.6), az);
-    emission += float3(0.02, 0.05, 0.3) * az;
-    return base;
+    return base;   // (no red / blue axis lines: plain grey, Wzx; the path tracer draws the same lines, PathTrace.hlsl)
 }
 
 // Cosine of the diffuse light with subsurface: wrapped past the terminator by w (0 = Lambert), energy kept (the peak
