@@ -1,0 +1,13 @@
+[OK] Ctrl+G : 4 pièces dans « Groupe 1 »
+[OK] clic sur une pièce du groupe : tout le groupe sélectionné
+[OK] groupe imbriqué : « Groupe 2 » = Groupe 1 + pièce 4
+[OK] niveau du haut : clic = Groupe 2 entier (5 pièces)
+[OK] double clic : dans Groupe 2, clic = Groupe 1 (4 pièces)
+[OK] dans Groupe 2 : la pièce 4 seule
+[OK] Échap : sorti, Groupe 2 sélectionné
+[OK] enregistrer / rouvrir : groupes et chemins identiques
+[OK] tourner le groupe d'un bloc : écarts entre pièces gardés
+[OK] Ctrl+D : copie du groupe entier au-dessus, groupe à part
+[OK] masquer Groupe 1 : ses 4 pièces cachées
+
+11 / 11 réussis

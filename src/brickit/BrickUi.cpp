@@ -7,6 +7,7 @@
 #include "Svg.h"
 #include "app/Theme.h"
 #include <algorithm>
+#include <functional>
 #include <cctype>
 #include <cmath>
 #include <cstring>
@@ -927,7 +928,8 @@ void BrickApp::uiPopups() {
     if (m_popup == 1) items = {{"Rapide", m_rs.raster && m_quality == 0, 0}, {"HQ", m_rs.raster && m_quality == 1, 1}, {"Path tracing", pathTraced(), 2}, {"Radiance Cascades", m_rcMode, 3}};
     else if (m_popup == 2) items = {{"ACES", m_rs.tonemapper == 0, 0}, {"AgX", m_rs.tonemapper == 1, 1}, {"Std", m_rs.tonemapper == 3, 3}};
     else if (m_popup == 3) items = {{"Bibliothèque", m_pTray.visible, 0}, {"Manuel d'instructions", m_pManual.visible, 4}, {"Infos (pièces, fps)", m_pHud.visible, 3},
-                                    {"Couleurs", m_pColors.visible, 2}, {"Actions de la brique", m_pOpts.visible, 1}, {"Réinitialiser la disposition", false, 5}};
+                                    {"Couleurs", m_pColors.visible, 2}, {"Actions de la brique", m_pOpts.visible, 1}, {"Groupes", m_pGroups.visible, 6},
+                                    {"Réinitialiser la disposition", false, 5}};
     else items = {{"Nouvelle scène", false, 0}, {"Ouvrir… (.v3d.json)", false, 1}, {"Enregistrer… (.v3d.json)", false, 2}, {"Ouvrir la maison test (GI)", false, 3}};
     const bool checks = m_popup == 3;
     float w = 0;
@@ -946,7 +948,7 @@ void BrickApp::uiPopups() {
         bool h = u.hover(a, b);
         if (h) u.dl->AddRectFilled(a, b, C_CARD_HI, 7 * s);
         float tx = a.x + 10 * s;
-        if (checks && it.id < 5) {
+        if (checks && it.id != 5) {
             ImVec2 ca(tx, a.y + 8 * s), cb(tx + 14 * s, a.y + 22 * s);
             if (it.on) {
                 u.dl->AddRectFilled(ca, cb, C_ACCENT, 4 * s);
@@ -967,6 +969,7 @@ void BrickApp::uiPopups() {
                 PanelState* ps[5] = {&m_pTray, &m_pOpts, &m_pColors, &m_pHud, &m_pManual};
                 if (it.id < 4) ps[it.id]->visible = !ps[it.id]->visible;
                 else if (it.id == 4) { m_pManual.visible = !m_pManual.visible; if (m_pManual.visible) m_pManual.collapsed = false; }
+                else if (it.id == 6) m_pGroups.visible = !m_pGroups.visible;
                 else { m_pTray = m_pOpts = m_pColors = PanelState(); m_pHud = m_pManual = PanelState{false, false}; m_optsRight = false; toast("Disposition réinitialisée"); }
             } else {
                 if (it.id == 0) { pushUndo(); m_bricks.clear(); m_selected = -1; m_multi.clear(); rebuildScene(); toast("Nouvelle scène"); }
@@ -1082,6 +1085,149 @@ void BrickApp::drawToast() {
 
 // ------------------------------------------------------------------ frame of the interface
 
+// ------------------------------------------------------------------ groups (outliner)
+// The tree of the groups: a row per group (unfold, name, number of pieces, shown / hidden, isolated), a click selects
+// the group, a double click on its name renames it. Affichage › Groupes, or the panel opens on the first Ctrl+G.
+void BrickApp::uiGroups() {
+    if (!m_pGroups.visible) return;
+    Ui u = ui(m_ui);
+    if (m_gui.fontBold) u.bold = m_gui.fontBold;
+    const float s = m_ui;
+    const int G = (int)m_build.groups.size();
+    // parent of each group and its number of pieces, from the paths of the bricks
+    std::vector<int> parent(G, -2), count(G, 0);
+    int loose = 0;
+    for (const Brick& b : m_bricks) {
+        if (b.path.empty()) ++loose;
+        for (size_t k = 0; k < b.path.size(); ++k) {
+            const int g = b.path[k];
+            if (g < 0 || g >= G) continue;
+            ++count[g];
+            if (parent[g] == -2) parent[g] = k ? b.path[k - 1] : -1;
+        }
+    }
+    struct Row { int g, depth; };
+    std::vector<Row> rows;
+    std::function<void(int, int)> add = [&](int par, int depth) {
+        for (int g = 0; g < G; ++g) {
+            if (parent[g] != par || count[g] == 0) continue;
+            rows.push_back({g, depth});
+            if (std::find(m_groupsOpen.begin(), m_groupsOpen.end(), g) != m_groupsOpen.end()) add(g, depth + 1);
+        }
+    };
+    add(-1, 0);
+    const float W = 270 * s, pad = 10 * s, rowH = 24 * s;
+    const int shown = std::min((int)rows.size(), 30);
+    const float H = pad + 20 * s + 6 * s + (shown ? shown * rowH : 18 * s) + 6 * s + 16 * s + pad;
+    ImVec2 a(10 * s, (m_pHud.visible ? 86 : 44) * s), b(a.x + W, a.y + H);
+    u.dl->AddRectFilled(a, b, C_PANEL_SOLID, 10 * s);
+    u.dl->AddRect(a, b, C_LINE, 10 * s);
+    m_uiRects.push_back(ImVec4(a.x, a.y, b.x, b.y));
+    u.text(ImVec2(a.x + pad, a.y + pad - 2 * s), 13, C_TEXT, "Groupes", true);
+    if (m_isolateGroup >= 0) {   // "Tout afficher" while a group is isolated
+        const char* lab = "Tout afficher";
+        const float tw = u.textW(11, lab);
+        ImVec2 ba(b.x - pad - tw - 12 * s, a.y + pad - 3 * s), bb(b.x - pad, a.y + pad + 15 * s);
+        const bool h = u.hover(ba, bb);
+        u.dl->AddRectFilled(ba, bb, h ? C_CARD_HI : C_CARD, 6 * s);
+        u.text(ImVec2(ba.x + 6 * s, ba.y + 2 * s), 11, C_TEXT, lab);
+        if (h && u.pressed) { m_isolateGroup = -1; syncObjects(); }
+    }
+    float y = a.y + pad + 20 * s + 6 * s;
+    if (rows.empty()) {
+        u.text(ImVec2(a.x + pad, y), 11, C_DIM, "Aucun groupe : sélectionne des pièces puis Ctrl+G");
+        y += 18 * s;
+    }
+    const int sel = unitGroup(m_selected);
+    for (int r = 0; r < shown; ++r) {
+        const Row& row = rows[r];
+        const int g = row.g;
+        Group& gr = m_build.groups[g];
+        ImVec2 ra(a.x + 4 * s, y), rb(b.x - 4 * s, y + rowH - 2 * s);
+        const bool h = u.hover(ra, rb);
+        if (g == sel) u.dl->AddRectFilled(ra, rb, C_ACCENT, 6 * s);
+        else if (h) u.dl->AddRectFilled(ra, rb, C_CARD_HI, 6 * s);
+        float x = ra.x + 6 * s + row.depth * 14 * s;
+        // unfold chevron (when it has sub-groups)
+        bool hasKids = false;
+        for (int k = 0; k < G; ++k) if (parent[k] == g && count[k] > 0) hasKids = true;
+        const bool open = std::find(m_groupsOpen.begin(), m_groupsOpen.end(), g) != m_groupsOpen.end();
+        ImVec2 ca(x, y + 4 * s), cb(x + 14 * s, y + rowH - 6 * s);
+        if (hasKids) {
+            const ImVec2 c((ca.x + cb.x) * 0.5f, (ca.y + cb.y) * 0.5f);
+            const float k = 3.5f * s;
+            if (open) u.dl->AddPolyline(std::vector<ImVec2>{ImVec2(c.x - k, c.y - k * 0.5f), ImVec2(c.x, c.y + k * 0.5f), ImVec2(c.x + k, c.y - k * 0.5f)}.data(), 3, C_DIM, 0, 1.8f * s);
+            else u.dl->AddPolyline(std::vector<ImVec2>{ImVec2(c.x - k * 0.5f, c.y - k), ImVec2(c.x + k * 0.5f, c.y), ImVec2(c.x - k * 0.5f, c.y + k)}.data(), 3, C_DIM, 0, 1.8f * s);
+        }
+        const bool overChev = hasKids && u.hover(ca, cb);
+        x += 18 * s;
+        char nm[96];
+        snprintf(nm, sizeof(nm), "%s", gr.name.c_str());
+        u.text(ImVec2(x, y + 3 * s), 12, gr.hidden ? C_FAINT : (g == sel ? C_INK : C_TEXT), nm, g == sel);
+        char cn[24];
+        snprintf(cn, sizeof(cn), "%d", count[g]);
+        // right: number of pieces, shown / hidden (eye), isolate
+        const float bx2 = rb.x - 4 * s;
+        ImVec2 ia(bx2 - 20 * s, y + 2 * s), ib(bx2, y + rowH - 4 * s);            // isolate
+        ImVec2 ea(ia.x - 24 * s, y + 2 * s), eb(ia.x - 4 * s, y + rowH - 4 * s);   // eye
+        u.text(ImVec2(ea.x - 6 * s - u.textW(11, cn), y + 4 * s), 11, g == sel ? C_INK : C_DIM, cn);
+        const bool he = u.hover(ea, eb), hi = u.hover(ia, ib);
+        {   // eye: an almond with its pupil, struck through when hidden
+            const ImVec2 c((ea.x + eb.x) * 0.5f, (ea.y + eb.y) * 0.5f);
+            const ImU32 col = he ? C_TEXT : (g == sel ? C_INK : C_DIM);
+            u.dl->AddEllipse(c, ImVec2(7 * s, 4 * s), col, 0, 0, 1.4f * s);
+            if (!gr.hidden) u.dl->AddCircleFilled(c, 2.2f * s, col);
+            else u.dl->AddLine(ImVec2(c.x - 7 * s, c.y + 5 * s), ImVec2(c.x + 7 * s, c.y - 5 * s), col, 1.4f * s);
+        }
+        {   // isolate: a target, filled when this group is the one isolated
+            const ImVec2 c((ia.x + ib.x) * 0.5f, (ia.y + ib.y) * 0.5f);
+            const ImU32 col = m_isolateGroup == g ? C_ACCENT : (hi ? C_TEXT : (g == sel ? C_INK : C_DIM));
+            u.dl->AddCircle(c, 5.5f * s, col, 0, 1.4f * s);
+            if (m_isolateGroup == g) u.dl->AddCircleFilled(c, 2.5f * s, col);
+        }
+        if (h && u.pressed) {
+            if (he) { gr.hidden = !gr.hidden; syncObjects(); autosave(); }
+            else if (hi) { m_isolateGroup = m_isolateGroup == g ? -1 : g; syncObjects(); }
+            else if (overChev) {
+                auto it = std::find(m_groupsOpen.begin(), m_groupsOpen.end(), g);
+                if (it != m_groupsOpen.end()) m_groupsOpen.erase(it); else m_groupsOpen.push_back(g);
+            } else if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+                m_renameGroup = g;
+                snprintf(m_renameBuf, sizeof(m_renameBuf), "%s", gr.name.c_str());
+            } else {   // select the group: the level of its parent is entered
+                std::vector<int> m = groupMembers(g);
+                if (!m.empty()) {
+                    const std::vector<int>& p = m_bricks[m[0]].path;
+                    const auto at = std::find(p.begin(), p.end(), g);
+                    m_groupCtx.assign(p.begin(), at);
+                    m_selected = m[0];
+                    m_multi.assign(m.begin() + 1, m.end());
+                    syncObjects();
+                }
+            }
+        }
+        if (m_renameGroup == g) {   // rename: a text field over the row, Entrée to keep, Échap to cancel
+            ImGui::SetNextWindowPos(ImVec2(x - 4 * s, y));
+            ImGui::SetNextWindowSize(ImVec2(rb.x - x - 70 * s, rowH));
+            ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(2 * s, 1 * s));
+            ImGui::Begin("##renamegroup", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoSavedSettings);
+            ImGui::SetNextItemWidth(-1);
+            if (ImGui::IsWindowAppearing()) ImGui::SetKeyboardFocusHere();
+            if (ImGui::InputText("##name", m_renameBuf, sizeof(m_renameBuf), ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_AutoSelectAll)) {
+                if (m_renameBuf[0]) gr.name = m_renameBuf;
+                m_renameGroup = -1;
+                autosave();
+            } else if (ImGui::IsKeyPressed(ImGuiKey_Escape) || (!ImGui::IsWindowFocused() && !ImGui::IsWindowAppearing())) m_renameGroup = -1;
+            ImGui::End();
+            ImGui::PopStyleVar();
+        }
+        y += rowH;
+    }
+    char lb[96];
+    snprintf(lb, sizeof(lb), "%d pièces hors groupe · Ctrl+G grouper · Ctrl+Maj+G dégrouper", loose);
+    u.text(ImVec2(a.x + pad, b.y - pad - 13 * s), 9.5f, C_FAINT, lb);
+}
+
 void BrickApp::drawUi() {
     ImVec2 d = ImGui::GetIO().DisplaySize;
     m_uiRects.clear();
@@ -1098,6 +1244,7 @@ void BrickApp::drawUi() {
     uiColors();
     uiMechPanel();
     uiHud();
+    uiGroups();
     uiPopups();
     uiManual();
     uiDevPanel();

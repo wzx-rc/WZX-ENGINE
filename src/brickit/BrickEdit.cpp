@@ -191,17 +191,24 @@ std::vector<int> BrickApp::selection() const {
 }
 
 void BrickApp::select(int brick, bool add) {
+    // a brick of a group selects the whole group at the level entered (double click enters it)
+    if (brick >= 0 && !add) fitGroupContext(brick);
+    const std::vector<int> unit = unitOf(brick);
     if (add && brick >= 0) {
-        if (m_selected < 0) m_selected = brick;
-        else if (brick == m_selected) { m_selected = m_multi.empty() ? -1 : m_multi.back(); if (!m_multi.empty()) m_multi.pop_back(); }
-        else {
-            auto it = std::find(m_multi.begin(), m_multi.end(), brick);
-            if (it != m_multi.end()) m_multi.erase(it);
-            else m_multi.push_back(brick);
+        std::vector<int> s = selection();
+        const bool in = std::find(s.begin(), s.end(), brick) != s.end();
+        for (int i : unit) {
+            auto it = std::find(s.begin(), s.end(), i);
+            if (in && it != s.end()) s.erase(it);
+            else if (!in && it == s.end()) s.push_back(i);
         }
+        m_selected = s.empty() ? -1 : s[0];
+        m_multi.assign(s.size() > 1 ? s.begin() + 1 : s.end(), s.end());
     } else {
         m_selected = brick;
         m_multi.clear();
+        for (int i : unit)
+            if (i != brick) m_multi.push_back(i);
     }
     syncObjects();
 }
@@ -222,6 +229,11 @@ void BrickApp::duplicateSelected() {
     if (m_holding) return;
     std::vector<int> s = selection();
     if (s.empty()) return;
+    if (unitGroup(m_selected) >= 0) {   // a group: one copy of the whole group, above it
+        pushUndo();
+        if (!duplicateGroup(s)) m_undo.pop_back();
+        return;
+    }
     pushUndo();
     int last = -1;
     for (int i : s) {
@@ -244,7 +256,8 @@ void BrickApp::rotateSelected(int dir) {
     std::vector<int> s = selection();
     if (s.empty()) return;
     pushUndo();
-    for (int i : s) m_build.rotatePlaced(i, dir);
+    if (unitGroup(m_selected) >= 0) rotateGroup(s, dir);   // a group turns as one block
+    else for (int i : s) m_build.rotatePlaced(i, dir);
     syncObjects();
 }
 
@@ -404,6 +417,7 @@ void BrickApp::editInput() {
         if (ctrl && ImGui::IsKeyPressed(ImGuiKey_Z)) undo();
         if (ctrl && ImGui::IsKeyPressed(ImGuiKey_Y)) redo();
         if (ctrl && ImGui::IsKeyPressed(ImGuiKey_D)) duplicateSelected();
+        if (ctrl && ImGui::IsKeyPressed(ImGuiKey_G) && !m_holding) { if (io.KeyShift) ungroupSelected(); else groupSelected(); }
         if (ctrl && ImGui::IsKeyPressed(ImGuiKey_S)) saveDialog();
         if (ctrl && ImGui::IsKeyPressed(ImGuiKey_O)) openDialog();
         // keys of the web: R or E = turn +90, Q = -90, C = pivot voxel, V = voxels, P = pivot edit, A = animations,
@@ -430,7 +444,7 @@ void BrickApp::editInput() {
         }
         if (ImGui::IsKeyPressed(ImGuiKey_Escape)) {
             if (m_holding) cancelHeld();
-            else select(-1);
+            else if (!leaveGroup()) select(-1);   // inside a group: Échap leaves it first
         }
         if (!ctrl && ImGui::IsKeyPressed(ImGuiKey_G)) { m_build.gridSnap = !m_build.gridSnap; toast(m_build.gridSnap ? "Grille : oui" : "Grille : non"); }
     }
@@ -522,6 +536,24 @@ void BrickApp::editInput() {
             snprintf(t, sizeof(t), "%d briques sélectionnées", (int)all.size());
             if (!all.empty()) toast(t);
         }
+        return;
+    }
+    if (m_groupDrag) {   // a group dragged: it follows the cursor until the button is released
+        if (ImGui::IsMouseDown(ImGuiMouseButton_Left)) { if (io.MouseDelta.x != 0 || io.MouseDelta.y != 0) updateGroupDrag(mp.x, mp.y); }
+        else endGroupDrag();
+        return;
+    }
+    if (m_pressed && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) && m_pressBrick >= 0 && unitGroup(m_pressBrick) >= 0) {
+        m_pressed = false;   // double click on a group: inside it
+        enterGroup(m_pressBrick);
+        return;
+    }
+    if (m_pressed && (m_mode == 0 || m_mode == 1) && ImGui::IsMouseDown(ImGuiMouseButton_Left) && !m_dragStarted && m_pressBrick >= 0 &&
+        unitOf(m_pressBrick).size() > 1 && (std::fabs(mp.x - m_pressPos.x) + std::fabs(mp.y - m_pressPos.y)) > 6) {
+        m_pressed = false;   // drag a group: the whole group moves as one block
+        fitGroupContext(m_pressBrick);
+        select(m_pressBrick);
+        beginGroupDrag(unitOf(m_pressBrick), mp.x, mp.y);
         return;
     }
     if (m_pressed && m_mode == 1 && ImGui::IsMouseDown(ImGuiMouseButton_Left) && !m_dragStarted && m_pressBrick >= 0 &&

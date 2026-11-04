@@ -356,6 +356,14 @@ std::string Builder::toJson(const Camera& c) const {
              "{\n \"format\": \"vp3d-scene\",\n \"version\": 1,\n \"units\": \"cm\",\n \"camera\": {\"target\": [%.4f, %.4f, %.4f], \"yaw\": %.3f, \"pitch\": %.3f, \"distance\": %.3f, \"fov\": %.3f},\n \"bricks\": [",
              c.target.x, c.target.y, c.target.z, c.yaw * deg, c.pitch * deg, c.distance, c.fovY * deg);
     out += buf;
+    // groups (BrickIt native; the web builder ignores them): their names, hidden or not; each brick has its path
+    std::string groupsJson;
+    if (!groups.empty()) {
+        groupsJson = ",\n \"groups\": [";
+        for (size_t g = 0; g < groups.size(); ++g)
+            groupsJson += std::string(g ? ", " : "") + "{\"name\": \"" + jsonEscape(groups[g].name) + "\", \"hidden\": " + (groups[g].hidden ? "true" : "false") + "}";
+        groupsJson += "]";
+    }
     for (size_t i = 0; i < bricks.size(); ++i) {
         const Brick& b = bricks[i];
         const Part& p = m_lib.parts[b.part];
@@ -369,8 +377,14 @@ std::string Builder::toJson(const Camera& c) const {
                  i ? "," : "", jsonEscape(p.name).c_str(), col.id, col.srgb.x, col.srgb.y, col.srgb.z, mat, b.pos.x, b.pos.y, b.pos.z, yaw,
                  b.rot.x, b.rot.y, b.rot.z, b.rot.w, g.x, g.y, g.z);
         out += buf;
+        if (!b.path.empty()) {   // , "groups": [ids] before the closing brace
+            out.pop_back();
+            out += ", \"groups\": [";
+            for (size_t k = 0; k < b.path.size(); ++k) out += (k ? ", " : "") + std::to_string(b.path[k]);
+            out += "]}";
+        }
     }
-    out += "\n ]\n}\n";
+    out += "\n ]" + groupsJson + "\n}\n";
     return out;
 }
 
@@ -400,9 +414,21 @@ bool Builder::fromJson(const std::string& text, Camera* cam, std::string* messag
             for (size_t v = 0; v < p.voxels.size(); ++v)
                 if (length(p.voxels[v] - g) < 0.02f) b.grab = (int)v;
         }
+        if (s["groups"].type == app::Json::Array)
+            for (const app::Json& g : s["groups"].a) b.path.push_back((int)g.num(-1));
         out.push_back(b);
     }
     bricks.swap(out);
+    groups.clear();
+    if (j["groups"].type == app::Json::Array)
+        for (const app::Json& g : j["groups"].a) {
+            Group gr;
+            gr.name = g["name"].str();
+            gr.hidden = g["hidden"].type == app::Json::Bool && g["hidden"].b;
+            groups.push_back(gr);
+        }
+    for (Brick& b : bricks)   // (a path pointing past the groups read: dropped)
+        b.path.erase(std::remove_if(b.path.begin(), b.path.end(), [&](int g) { return g < 0 || g >= (int)groups.size(); }), b.path.end());
     if (cam && j["camera"].type == app::Json::Object) {
         const app::Json& c = j["camera"];
         cam->target = float3((float)c["target"][0].num(), (float)c["target"][1].num(), (float)c["target"][2].num());

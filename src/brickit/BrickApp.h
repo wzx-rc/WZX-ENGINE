@@ -45,6 +45,7 @@ struct Options {
     float softGIMargin = 1.0f;  // --soft-gi-margin k (measures: the margin of the probe volume around the bricks, x k)
     int giAgeCap = 400;   // --gi-age-cap n: updates after which a probe is converged and left alone (0: always updated)
     float hqSSS = -1;   // --hq-sss s: subsurface of the HQ view (0 = off, -1: the setting)
+    std::wstring groupTest;   // --group-test file: the groups checked (BrickGroups.cpp)
     int giHold = 1;   // --gi-hold 0: the probes go on updating while a brick is carried (comparison)
     int giCarryBrick = -1, giCarryFrom = 0, giCarryTo = 0;   // --gi-carry i f1 f2: brick i carried in the air from frame f1, put down 3.5 cm in front at f2 (GI hold)
     int giEditBrick = -1, giEditOff = 0, giEditOn = 0;   // --gi-edit i f1 f2: brick i removed at frame f1, back at f2 (GI reactivity)  // --soft-gi-probes n (measures: probe budget of the soft GI)
@@ -150,6 +151,33 @@ private:
     void dropHeld(bool keepCopy = false);
     void cancelHeld();
     void select(int brick, bool add = false);
+    // groups (BrickGroups.cpp)
+    std::vector<int> m_groupCtx;   // the group entered by a double click (and its parents), outermost first
+    int m_isolateGroup = -1;       // outliner: only this group shown (-1 = all)
+    int unitGroup(int brick) const;              // the group selected with the brick at the level entered, -1 = alone
+    std::vector<int> unitOf(int brick) const;    // the bricks selected with it
+    std::vector<int> groupMembers(int group) const;
+    bool brickHidden(int i) const;
+    void fitGroupContext(int brick);
+    void enterGroup(int brick);
+    bool leaveGroup();
+    void groupSelected();
+    void ungroupSelected();
+    void rotateGroup(const std::vector<int>& s, int dir);
+    bool duplicateGroup(const std::vector<int>& s);
+    bool m_groupDrag = false;
+    std::vector<int> m_groupDragBricks;
+    std::vector<float3> m_groupDragPos;
+    float3 m_groupDragStart;
+    float m_groupDragY = 0;
+    void beginGroupDrag(const std::vector<int>& s, float sx, float sy);
+    void updateGroupDrag(float sx, float sy);
+    void endGroupDrag();
+    void uiGroups();   // the outliner of the groups (BrickUi.cpp)
+    void groupTest();  // --group-test file
+    std::vector<int> m_groupsOpen;   // outliner: the groups unfolded
+    int m_renameGroup = -1;
+    char m_renameBuf[64] = {};
     std::vector<int> selection() const;
     void deleteSelected();
     void duplicateSelected();
@@ -452,7 +480,7 @@ private:
     bool m_optsRight = false;
     bool gripPanel(int id, PanelState& P, ImVec2 ga, ImVec2 gb, ImVec2 panelTopLeft);
     void drawDropzone();
-    PanelState m_pTray, m_pOpts, m_pColors, m_pHud{false, false}, m_pManual{false, false};
+    PanelState m_pTray, m_pOpts, m_pColors, m_pHud{false, false}, m_pManual{false, false}, m_pGroups{false, false};
     int m_popup = 0;                   // 0 none, 1 quality, 2 tonemap, 3 windows, 4 scene
     ImVec2 m_popupAt;
     int m_libPress = -1;               // library card pressed (drag / long press)

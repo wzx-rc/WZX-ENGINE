@@ -19,6 +19,13 @@ struct Brick {
     float3 pos;               // origin of the part (its minimum corner when not turned)
     float4 rot{0, 0, 0, 1};   // quaternion, multiples of 90 degrees
     int grab = -1;            // pivot voxel (-1 = default)
+    std::vector<int> path;    // the groups holding the brick, outermost first (ids in Builder::groups)
+};
+
+// A group of bricks (BrickGroups.cpp): its members are the bricks whose path holds its id; ids are never reused
+struct Group {
+    std::string name;
+    bool hidden = false;
 };
 
 struct Box {
@@ -81,6 +88,7 @@ class Builder {
 public:
     explicit Builder(Library& lib) : m_lib(lib) {}
     std::vector<Brick> bricks;
+    std::vector<Group> groups;
     bool gridSnap = true;     // free floor positions fall on the stud lattice
     bool safety = true;       // refuse a position more than 50 % inside another brick
 

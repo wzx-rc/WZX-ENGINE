@@ -727,6 +727,7 @@ void BrickApp::syncObjects() {
     for (size_t i = 0; i < m_bricks.size(); ++i) {
         Object& o = m_scene.objects[m_firstBrickObject + i];
         const Brick& b = m_bricks[i];
+        o.visible = o.mesh >= 0 && !brickHidden((int)i);   // a group hidden or another isolated (outliner)
         o.position = b.pos;
         o.rot = b.rot;
         const int c = std::clamp(b.color, 0, (int)m_colorMaterial.size() - 1);
@@ -1137,7 +1138,7 @@ void BrickApp::frame() {
             // and where it is (Wzx)
             // converged probes are left alone: only those around what changed are computed again (Wzx)
             frs.ddgiAgeCap = m_opt.giAgeCap;
-            frs.ddgiHold = m_softGIHold && m_opt.giHold != 0 && (m_holding || m_gizmoDragging || m_mechDragging || m_testCarry);
+            frs.ddgiHold = m_softGIHold && m_opt.giHold != 0 && (m_holding || m_gizmoDragging || m_mechDragging || m_groupDrag || m_testCarry);
             frs.samplesPerFrame = 1;
             frs.historyFixes = true;
             // the bounds of the probe grid: a change recreates the probes (all of the GI restarts). Held while a brick is
@@ -1186,6 +1187,7 @@ void BrickApp::frame() {
     m_gui.render(true);
     ++m_frame;
     // GI hold test: a brick carried in the air (swinging), then put down on the ground 3.5 cm in front of where it was
+    if (!m_opt.groupTest.empty() && m_frame == 5) groupTest();
     if (m_opt.giCarryBrick >= 0 && m_opt.giCarryBrick < (int)m_bricks.size()) {
         static float3 home;
         Brick& b = m_bricks[m_opt.giCarryBrick];
@@ -1280,6 +1282,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         else if (a == L"--soft-gi-margin") opt.softGIMargin = (float)_wtof(next().c_str());
         else if (a == L"--show-probes") opt.showProbes = _wtoi(next().c_str());
         else if (a == L"--soft-gi-probes") opt.softGIProbes = _wtoi(next().c_str());
+        else if (a == L"--group-test") opt.groupTest = next();
         else if (a == L"--gi-hold") opt.giHold = _wtoi(next().c_str());
         else if (a == L"--hq-sss") opt.hqSSS = (float)_wtof(next().c_str());
         else if (a == L"--gi-age-cap") opt.giAgeCap = _wtoi(next().c_str());
