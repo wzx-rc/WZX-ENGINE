@@ -1,6 +1,7 @@
 // vp3d - scene description consumed by the renderer.
 #pragma once
 #include "MeshGen.h"
+#include "Curve.h"
 #include "EnvImage.h"
 #include <string>
 #include <vector>
@@ -37,6 +38,7 @@ struct Object {
     std::string name;
     std::string part;              // library part id (UI only)
     PrimitiveParams prim;          // parametric primitive (Create > Mesh): the mesh is built from it; type PRIM_NONE otherwise
+    CurveData curve;               // curve object (Create > Curve, part "CURVE", mesh -1): drawn by the editor only
     int mesh = 0;
     int material = 0;
     float3 position{0, 0, 0};

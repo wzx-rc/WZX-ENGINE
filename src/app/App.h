@@ -157,6 +157,7 @@ struct Options {
     int inspectorTab = -1;      // test: inspector tab at startup (0 actor, 1 light, 2 render, 3 world)
     ImVec4 mainColor = ImVec4(-1, -1, -1, 1);   // test: main colour for this run (--main-color r,g,b)
     ImVec4 sizes = ImVec4(-1, -1, -1, 0);       // test: text, icon and layout size for this run (--sizes t,i,l)
+    std::wstring curveTest;     // test: curve tools sequence, report written to this file (--curve-test)
 };
 
 // Procedural thumbnails of the content browser (Editor.cpp).
@@ -175,9 +176,11 @@ struct ScreenRect {
 };
 
 class GameHost;
+class CurveEditor;
 
 class App {
     friend class GameHost;   // game layer (GameHost.h, AppGame.cpp)
+    friend class CurveEditor;   // curve tools (CurveEditor.h)
 public:
     bool init(HINSTANCE inst, const Options& opt);
     int run();
@@ -390,6 +393,7 @@ private:
     void drawGizmo(ImDrawList* dl);
     int gizmoHit(float mx, float my);
     float gizmoSize(const float3& p) const;
+    float gizmoScale(const float3& pivot) const;   // size of the curve point manipulator (CurveEditor.cpp): 7 % of the distance
     void gizmoFrame(int obj, int tool, float3 ax[3]) const;
     std::vector<int> gizmoTargets() const;
     bool markingMenuInput(bool inView);
@@ -518,6 +522,7 @@ private:
     vp3d::Renderer m_renderer;
     ImGuiLayer m_gui;
     GameHost* m_game = nullptr;   // node graph, Play, builds, command API
+    CurveEditor* m_curves = nullptr;   // Create > Curve, point editing (CurveEditor.cpp)
     Scene m_scene;
     int m_sceneId = SCENE_CORNELL;
     std::string m_probeKey = "cornell";      // name of the baked probes file of the current scene

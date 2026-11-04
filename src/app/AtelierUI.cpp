@@ -3,6 +3,7 @@
 // and the shared Atelier palette (atelier/atelier_style.h), fed by the theme settings.
 #include "App.h"
 #include "GameHost.h"
+#include "CurveEditor.h"
 #include "AtelierIcons.h"
 #include "Icons.h"
 #include "atelier/atelier_style.h"
@@ -597,6 +598,7 @@ void App::atlTopBar(float x0, float y0, float width) {
                 if (ImGui::MenuItem("Camera from View")) createCameraFromView(false);
                 if (ImGui::MenuItem("Render Camera from View")) createCameraFromView(true);
             }
+            if (mi == 2 && m_curves) m_curves->menu(menuScale);   // Create > Curve (CurveEditor.cpp)
             if (mi == 3) {
                 if (ImGui::MenuItem("Frame Selection", "F")) frameSelection();
                 ImGui::MenuItem("Viewport Statistics", nullptr, &m_showStats);
@@ -882,6 +884,7 @@ void App::atlHierarchy(float x, float y, float w, float h) {
             const Object& o = m_scene.objects[n.index];
             if (o.group) { icon = Icon::Folder; icol = IM_COL32(150, 170, 200, 255); }
             else if (o.camera) { icon = Icon::Camera; icol = o.camRender ? IM_COL32(255, 196, 92, 255) : IM_COL32(214, 220, 230, 255); }   // the render camera: orange, as its icon in the view
+            else if (o.curve.valid()) { icon = Icon::Curve; icol = IM_COL32(98, 200, 150, 255); }   // curve (Create > Curve)
             else icol = IM_COL32(104, 160, 226, 255);   // every mesh: the same bluish icon
         } else if (n.kind == NODE_LIGHT) { icon = Icon::Light; icol = IM_COL32(242, 201, 76, 255); }
         else if (n.kind == NODE_SUN) { icon = Icon::Sun; icol = IM_COL32(242, 201, 76, 255); }
@@ -2044,6 +2047,7 @@ void App::atlInspectorActor(float x, float y, float w, float) {
         ImGui::Dummy(ImVec2(1, 1));
         return;
     }
+    if (o->curve.valid() && m_curves) { m_curves->inspector(x, y, w); return; }   // curve: its own section (CurveInspector.inl)
     if (o->group) {   // group node: its transform moves its children
         bool act = false;
         Box({x, y, w, 56 * s}, Fade(P().accent, 30), 4, true);
@@ -2714,5 +2718,9 @@ void App::atlInspectorWorld(float x, float y, float w, float) {
     ImGui::SetCursorScreenPos(ImVec2(x, y + 110 * s));
     ImGui::Dummy(ImVec2(1, 1));
 }
+
+
+// Actor tab of a curve object (uses the widgets above)
+#include "CurveInspector.inl"
 
 } // namespace app

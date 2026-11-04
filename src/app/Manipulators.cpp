@@ -86,6 +86,11 @@ float App::gizmoSize(const float3& p) const {
     return 92.0f * m_dpi * m_scene.camera.pixelSize(p, m_rcView.h);
 }
 
+// the curve point manipulator (CurveEditor.cpp) keeps its own size: 7 % of the distance to the camera
+float App::gizmoScale(const float3& pivot) const {
+    return length(pivot - m_scene.camera.eye()) * 0.07f;
+}
+
 // axes of the manipulator for an object: world, its own axes, or its parent's axes (the Scale tool is always local)
 void App::gizmoFrame(int obj, int tool, float3 ax[3]) const {
     int mode = tool == TOOL_SCALE ? 1 : m_axisMode;

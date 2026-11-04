@@ -2,6 +2,7 @@
 // move / rotate / scale gizmo and drag & drop from the content browser (overlays: AtelierUI.cpp).
 #include "App.h"
 #include "GameHost.h"
+#include "CurveEditor.h"
 #include "Icons.h"
 #include "imgui_internal.h"
 
@@ -71,7 +72,8 @@ void App::viewportCanvas(ImVec2 p0, ImVec2 size) {
     drawCameraIcons(dl);   // the camera objects
     drawSnapPoints(dl);    // the grid points of the absolute snapping
     drawAdvScale(dl);      // Advanced Scale: bounding box and handles
-    if (!(m_game && m_game->placementMode())) drawGizmo(dl);
+    if (m_curves && !(m_game && m_game->playing())) m_curves->draw(dl);   // curves, their points and the point manipulator
+    if (!(m_game && m_game->placementMode()) && !(m_curves && m_curves->hidesGizmo())) drawGizmo(dl);
     dl->PopClipRect();
     drawMarkingMenu(ImGui::GetForegroundDrawList());
 }
@@ -126,6 +128,7 @@ void App::viewportInput(bool hovered) {
         }
     }
 
+    if (m_curves && m_curves->input(inView, placing)) return;   // curve tools: creation, point editing, picking a curve
     // Advanced Scale (a separate tool) replaces the manipulator while it is on
     bool gzBusy = placing ? false : (m_advScale ? advScaleInput(inView) : gizmoInput(inView));
     if (!gzBusy && !placing) gzBusy = surfacePlaceInput(inView, ImGui::IsMouseClicked(0) && !alt);   // Place: dragged over the surfaces
