@@ -70,7 +70,7 @@ void BrickApp::savePrefs() {
     {   // Réglages > Lumière
         char lb[200];
         const uint32_t rgb = (uint32_t)std::lround(m_gridRgb.x * 255) | ((uint32_t)std::lround(m_gridRgb.y * 255) << 8) | ((uint32_t)std::lround(m_gridRgb.z * 255) << 16);
-        snprintf(lb, sizeof(lb), "\"light\": {\"rotation\": %.1f, \"intensity\": %.3f, \"gridRgb\": %u, \"gridAlpha\": %.3f, \"softGI\": %s, \"giStrength\": %.3f, \"giHold\": %s, \"sssStrength\": %.3f, \"hdri\": ", m_hdriRotDeg, m_hdriInt, rgb, m_gridAlpha, m_softGI ? "true" : "false", m_softGIStrength, m_softGIHold ? "true" : "false", m_hqSSSStrength);
+        snprintf(lb, sizeof(lb), "\"light\": {\"rotation\": %.1f, \"intensity\": %.3f, \"gridRgb\": %u, \"gridAlpha\": %.3f, \"softGI\": %s, \"giStrength\": %.3f, \"giHold\": %s, \"sssStrength\": %.3f, \"giProbes\": %d, \"showProbes\": %s, \"hdri\": ", m_hdriRotDeg, m_hdriInt, rgb, m_gridAlpha, m_softGI ? "true" : "false", m_softGIStrength, m_softGIHold ? "true" : "false", m_hqSSSStrength, m_softGIProbes, m_showProbes ? "true" : "false");
         j += lb;
         j += jstr(narrowW(m_hdriPath)) + ", \"custom\": [";
         for (size_t i = 0; i < m_hdriCustom.size(); ++i) j += (i ? ", " : "") + jstr(narrowW(m_hdriCustom[i]));
@@ -123,6 +123,8 @@ void BrickApp::loadPrefs() {
             if (lt["softGI"].type == app::Json::Bool) m_softGI = lt["softGI"].b;
         if (lt["giStrength"].type == app::Json::Number) m_softGIStrength = std::clamp((float)lt["giStrength"].n, 0.0f, 2.0f);
         if (lt["giHold"].type == app::Json::Bool) m_softGIHold = lt["giHold"].b;
+        if (lt["showProbes"].type == app::Json::Bool) m_showProbes = lt["showProbes"].b;
+        if (lt["giProbes"].type == app::Json::Number) m_softGIProbes = std::clamp((int)lt["giProbes"].n, 1024, 16384);
         if (lt["sssStrength"].type == app::Json::Number) m_hqSSSStrength = std::clamp((float)lt["sssStrength"].n, 0.0f, 2.0f);
             m_hdriCustom.clear();
             for (const app::Json& c : lt["custom"].a) m_hdriCustom.push_back(widenU(c.str()));

@@ -40,7 +40,8 @@ struct Options {
     float gridAlpha = -1;     // --grid-alpha 0..1
     int softGI = -1;          // --soft-gi 0 / 1
     float giStrength = -1;    // --gi-strength 0..2
-    int softGIProbes = 16384; 
+    int showProbes = -1;     // --show-probes 0 / 1
+    int softGIProbes = -1;   // --soft-gi-probes n: probe budget of the soft GI (-1: the setting)
     float softGIMargin = 1.0f;  // --soft-gi-margin k (measures: the margin of the probe volume around the bricks, x k)
     int giAgeCap = 400;   // --gi-age-cap n: updates after which a probe is converged and left alone (0: always updated)
     float hqSSS = -1;   // --hq-sss s: subsurface of the HQ view (0 = off, -1: the setting)
@@ -429,6 +430,8 @@ private:
     // bounded to the bricks): soft bounces and occlusion, stable, no ray per pixel for the GI
     bool m_softGI = true;
     float m_softGIStrength = 1.0f;
+    int m_softGIProbes = 16384;       // Réglages › Lumière › Sondes GI: probe budget of the soft GI
+    bool m_showProbes = false;        // Réglages › Lumière › Afficher les sondes
     float m_lumColumnH = 0.0f;        // Réglages: height of the Lumière column drawn last frame
     float m_hqSSSStrength = 1.0f;     // Réglages › Lumière › SSS (HQ): strength 0..2 (0 = off)
     bool m_softGIHold = true;   // Réglages › Lumière › Figer la GI pendant le déplacement: the probes held while a brick is carried

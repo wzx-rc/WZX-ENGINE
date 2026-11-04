@@ -176,6 +176,7 @@ Cases : `[x]` porté et vérifié · `[~]` partiel (ce qui manque est dit) · `[
 - GI douce figée pendant le transport (03/11/2026, Wzx) : brique en main, gizmo ou mécanisme tiré → sondes et bornes de la grille figées, un seul redémarrage local à la pose (ancienne et nouvelle place). Le web n'a pas de GI par sondes (pas d'équivalent). Captures 51a–51f. Réglage « Figer la GI pendant le déplacement » Oui / Non ; sondes convergées laissées au repos, seules celles autour d'un changement recalculées (passe des sondes au repos 0,86 → 0,08 ms, captures 52a–52e).
 - Surbrillance de sélection comme le web v22 (04/11/2026) : lignes blanches fines des arêtes vives (EdgesGeometry 35°), opacité 0,45, rouges si bloquée, remplissage blanc léger — captures 53e / 53f.
 - SSS en HQ (04/11/2026, natif) : enveloppe teintée, réglage « SSS (HQ) » — captures 53c / 53d.
+- Qualité des sondes Basse / Moyenne / Haute (4k / 8k / 16k) et « Afficher les sondes » (04/11/2026, natif) — captures 54a–54e.
 - Traces de doigts : retirées partout à la demande de Wzx (02/11/2026) — aucune texture de traces chargée, aucun masque de rugosité sur les matériaux de BrickIt (temps réel, HQ, path tracing, miniatures, aperçu de fiche), réglage retiré. Le masque reste disponible dans le moteur vp3d (Viewport3D).
 - Polices : Segoe UI + Segoe UI Symbol fusionnées pour les glyphes du web (› … ★ ☆ ✎ ✋ ◀ ▶), absents de la police latine seule.
 - Path tracing natif (studio clair validé sur 03b) en plus du temps réel identique au web.

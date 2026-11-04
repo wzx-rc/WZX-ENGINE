@@ -1943,6 +1943,38 @@ void BrickApp::uiSettings() {
             }
             ly += rowH + gap;
         }
+        if (m_softGI) {   // Sondes GI: their number (quality and cost of the soft GI); a change restarts the GI
+            u.text(ImVec2(x0 + pad, ly), 11, C_DIM, "Qualité des sondes");
+            ly += 16 * s;
+            // (16384 at most: the probe atlases are 16384 texels wide, lit::placeProbeGrid)
+            static const int kBudgets[3] = {4096, 8192, 16384};
+            static const char* kLabels[3] = {"Basse", "Moyenne", "Haute"};
+            const float bw4 = (W - 2 * pad - 2 * 4 * s) / 3;
+            for (int k = 0; k < 3; ++k) {
+                const bool on = m_softGIProbes == kBudgets[k];
+                ImVec2 a(x0 + pad + k * (bw4 + 4 * s), ly), b(a.x + bw4, ly + rowH);
+                const bool h = u.hover(a, b);
+                u.dl->AddRectFilled(a, b, on ? C_ACCENT : (h ? C_CARD_HI : C_CARD), 7 * s);
+                const float tw = u.textW(12, kLabels[k], on);
+                u.text(ImVec2((a.x + b.x) * 0.5f - tw * 0.5f, a.y + (rowH - u.fs(12)) * 0.5f), 12, on ? C_INK : C_TEXT, kLabels[k], on);
+                if (h && u.pressed && !on) { m_softGIProbes = kBudgets[k]; m_renderer.resetAccumulation(); savePrefs(); }
+            }
+            ly += rowH + gap;
+            u.text(ImVec2(x0 + pad, ly), 11, C_DIM, "Afficher les sondes");
+            ly += 16 * s;
+            const float bw2 = (W - 2 * pad - 4 * s) / 2;
+            for (int k = 0; k < 2; ++k) {
+                const bool on = (k == 0) == m_showProbes;
+                ImVec2 a(x0 + pad + k * (bw2 + 4 * s), ly), b(a.x + bw2, ly + rowH);
+                const bool h = u.hover(a, b);
+                u.dl->AddRectFilled(a, b, on ? C_ACCENT : (h ? C_CARD_HI : C_CARD), 7 * s);
+                const char* lab = k == 0 ? "Oui" : "Non";
+                const float tw = u.textW(12, lab, on);
+                u.text(ImVec2((a.x + b.x) * 0.5f - tw * 0.5f, a.y + (rowH - u.fs(12)) * 0.5f), 12, on ? C_INK : C_TEXT, lab, on);
+                if (h && u.pressed && !on) { m_showProbes = k == 0; savePrefs(); }
+            }
+            ly += rowH + gap;
+        }
         {   // Lookdev GI: one light grey for every brick, no reflection (the lighting alone); not saved
             u.text(ImVec2(x0 + pad, ly), 11, C_DIM, "Lookdev GI (gris uni)");
             ly += 16 * s;

@@ -1130,7 +1130,8 @@ void BrickApp::frame() {
             // a small view bias: under a roof overhang the lookup no longer reaches the probes out in the open
             // (maison_gi: gap to the PT 12.8 -> 10.9 %, under the overhang of the door view +55 -> +31 %)
             frs.ddgiViewBias = 0.10f;
-            frs.ddgiProbeBudget = m_opt.softGIProbes;
+            frs.ddgiProbeBudget = m_opt.softGIProbes > 0 ? m_opt.softGIProbes : m_softGIProbes;
+            frs.ddgiShowProbes = m_opt.showProbes >= 0 ? m_opt.showProbes != 0 : m_showProbes;   // the probes as small spheres with their light (Réglages › Lumière)
             // a brick carried (picked, duplicated, from the library), the gizmo or a mechanism dragged: the probes are
             // held, the scene does not refresh around the brick in the air; released, one restart around where it was
             // and where it is (Wzx)
@@ -1277,6 +1278,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         else if (a == L"--soft-gi") opt.softGI = _wtoi(next().c_str());
         else if (a == L"--gi-strength") opt.giStrength = (float)_wtof(next().c_str());
         else if (a == L"--soft-gi-margin") opt.softGIMargin = (float)_wtof(next().c_str());
+        else if (a == L"--show-probes") opt.showProbes = _wtoi(next().c_str());
         else if (a == L"--soft-gi-probes") opt.softGIProbes = _wtoi(next().c_str());
         else if (a == L"--gi-hold") opt.giHold = _wtoi(next().c_str());
         else if (a == L"--hq-sss") opt.hqSSS = (float)_wtof(next().c_str());
