@@ -1496,6 +1496,7 @@ void Renderer::recordDDGI(const RenderSettings& rs, UINT gx, UINT gy, bool shade
     gpu::DDGIConstants c;
     lit::ddgiConstants(grid, f, m_giRng, c);
     if (progressive) c.flags |= 16u;   // (DDGIBlend: no per-texel fast path, the noise would trigger it)
+    if (rs.ddgiSoftWeights) c.flags |= 32u;   // (SampleIrradiance: softer visibility weights, no grid cells on flat walls)
     c.stride = rs.ddgiRaster ? 1u : stride;
     c.energy = std::max(0.0f, rs.ddgiEnergy);
     if (rs.ddgiViewBias >= 0) c.viewBias = rs.ddgiViewBias;

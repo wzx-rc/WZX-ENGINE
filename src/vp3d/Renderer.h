@@ -97,6 +97,9 @@ struct RenderSettings {
     int ddgiAgeCap = 0;
     // subsurface of the raster view (HQ): scale of the material subsurface, the light wrapped past the terminator (0 = off)
     float rasterSSS = 0.0f;
+    // raster view of the probes: their light read at 5 points over the surface, this radius in probe spacings apart (0 = one read)
+    float ddgiSmooth = 0.0f;
+    bool ddgiSoftWeights = false;   // softer visibility weights of the probes (the grid cells less visible on flat walls)
     // GI mode (ray traced probes and visibility): while the camera or an object moves, and giSettleFrames after, the
     // raster view of the probes (no per-pixel noise), then a fade of giFadeFrames to the ray traced image
     bool giRasterWhileMoving = false;

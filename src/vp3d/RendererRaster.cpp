@@ -36,7 +36,7 @@ struct RasterConstants {
     float centreValid, rtLights, rtAO; uint32_t gridLine;   // centreValid: t14 holds this frame's pixel-centre depth
     float3 envSun2Dir; float envSun2On;                     // HQ: the light of the HDRI as a second soft light
     float3 envSun2E; float envSun2Tan;
-    float sssScale, sssPad0, sssPad1, sssPad2;              // subsurface of the raster view (Raster.hlsl, 0 = off)
+    float sssScale, giSmooth, sssPad1, sssPad2;             // subsurface of the raster view (Raster.hlsl, 0 = off); probe GI read over the surface
 };
 
 struct DrawConstants {
@@ -734,6 +734,7 @@ void Renderer::recordRaster(const Scene& scene, const RenderSettings& rs, const 
     rc.envSun2E = envSun2 ? m_envSunE * scene.env.hdriIntensity : float3(0.0f);
     rc.envSun2Tan = std::tan(radians(6.0f));
     rc.sssScale = std::max(0.0f, rs.rasterSSS);
+    rc.giSmooth = std::max(0.0f, rs.ddgiSmooth);
     rc.shadowTexel = 1.0f / kShadowSize;
     rc.keyPos = keyCenter;
     rc.lightScale = rs.lightScale;

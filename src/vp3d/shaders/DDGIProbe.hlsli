@@ -97,10 +97,11 @@ float3 SampleIrradiance(float3 P, float3 N, float3 V, out float confidence) {
             float var = abs(m.x * m.x - m.y);
             float diff = d - m.x;
             float cheb = var / (var + diff * diff);
-            w *= max(cheb * cheb * cheb, 0.0);
+            // (cubed in the raster view sharpened the cells of the grid on flat walls: G.flags 32 = soft weights)
+            w *= (G.flags & 32u) ? max(cheb, 0.0) : max(cheb * cheb * cheb, 0.0);
         }
         w = max(w, 1e-6);
-        const float crush = 0.2;
+        const float crush = (G.flags & 32u) ? 0.05 : 0.2;
         if (w < crush) w *= w * w / (crush * crush);
         w *= tri.x * tri.y * tri.z;
         sum += SampleTile(gIrr, p, DDGI_IRR_N, N).rgb * w;

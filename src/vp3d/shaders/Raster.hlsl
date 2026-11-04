@@ -26,7 +26,7 @@ struct RasterConstants {
     float centreValid; float rtLights; float rtAO; uint gridLine;
     float3 envSun2Dir; float envSun2On;  // HQ: the light of the HDRI (its brightest area) as a second, ray traced soft light
     float3 envSun2E; float envSun2Tan;   // beside the scene sun (out of the SH and the probes); its cone (tan half angle)
-    float sssScale; float sssPad0, sssPad1, sssPad2;   // subsurface of the raster view: scale of the material subsurface (0 = off)   // centreValid: t14 is this frame's; rtLights: area
+    float sssScale; float giSmooth, sssPad1, sssPad2;   // subsurface of the raster view: scale of the material subsurface (0 = off); giSmooth: probe GI read over the surface (radius in probe spacings, 0 = one read)   // centreValid: t14 is this frame's; rtLights: area
                                          // lights shadowed by rays (TLAS, space2); rtAO: ambient occluded by rays; rtProbes:
                                          // gridLine: Scene::gridLine (RGBA8 colour of the ground grid lines, 0 = default)
 };
@@ -708,6 +708,25 @@ float4 Shade(VSOut i, bool ghost, float shadowBias, bool capture) {
         if (!capture && G.view != 2) {
             float conf;
             float3 irr = SampleIrradiance(i.wpos, N, V, conf);
+#ifndef VP3D_ATTRIB_SEMANTICS
+            if (R.giSmooth > 0) {
+                // the probe light read at 4 more points along the surface (half a spacing around): the cells of the
+                // grid (8 probes, those inside a thin wall switched off, the weights renormalized from a cell to the
+                // next) no longer show on a flat wall; fixed points, no noise
+                float3 T, B;
+                BvBasis(N, T, B);
+                const float r = R.giSmooth * min(G.spacing.x, min(G.spacing.y, G.spacing.z));
+                const float3 o4[4] = {T, -T, B, -B};
+                float3 acc = irr;
+                float n = 1;
+                [unroll] for (int k = 0; k < 4; ++k) {
+                    float c2;
+                    const float3 e = SampleIrradiance(i.wpos + o4[k] * r, N, V, c2);
+                    if (c2 > 0) { acc += e; n += 1; }
+                }
+                irr = acc / n;
+            }
+#endif
 #ifdef VP3D_SCREEN_GI
             if (G.flags & 8u) {   // screen-space cascades where they answer, the probe volume elsewhere
                 float4 s = gScreenGI.Load(int3(TracedPixel(i.pos.xy, i.wpos, N), 0));

@@ -1151,6 +1151,8 @@ void BrickApp::frame() {
             // and where it is (Wzx)
             // converged probes are left alone: only those around what changed are computed again (Wzx)
             frs.ddgiAgeCap = m_opt.giAgeCap;
+            frs.ddgiSmooth = m_opt.giSmooth;   // (the cells of the probe grid melted on the flat walls, Wzx)
+            frs.ddgiSoftWeights = m_opt.giSoft != 0;
             frs.ddgiHold = m_softGIHold && m_opt.giHold != 0 && (m_holding || m_gizmoDragging || m_mechDragging || m_groupDrag || m_testCarry);
             frs.samplesPerFrame = 1;
             frs.historyFixes = true;
@@ -1311,6 +1313,8 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         else if (a == L"--read-step") opt.readStep = _wtoi(next().c_str());
         else if (a == L"--import-report") opt.importReport = next();
         else if (a == L"--group-test") opt.groupTest = next();
+        else if (a == L"--gi-soft") opt.giSoft = _wtoi(next().c_str());
+        else if (a == L"--gi-smooth") opt.giSmooth = (float)_wtof(next().c_str());
         else if (a == L"--gi-hold") opt.giHold = _wtoi(next().c_str());
         else if (a == L"--hq-sss") opt.hqSSS = (float)_wtof(next().c_str());
         else if (a == L"--gi-age-cap") opt.giAgeCap = _wtoi(next().c_str());

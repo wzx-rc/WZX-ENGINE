@@ -50,6 +50,8 @@ struct Options {
     int readStep = -1;         // --read-step n: the page read for the capture
     std::wstring importReport; // --import-report file: pieces, steps, parts not found
     std::wstring groupTest;   // --group-test file: the groups checked (BrickGroups.cpp)
+    int giSoft = 1;          // --gi-soft 0: the sharp visibility weights of the probes (comparison)
+    float giSmooth = 0.0f;   // --gi-smooth r: probe GI read over the surface (radius in spacings, 0 = off; 0.5: +6 ms at 2000 x 1125)
     int giHold = 1;   // --gi-hold 0: the probes go on updating while a brick is carried (comparison)
     int giCarryBrick = -1, giCarryFrom = 0, giCarryTo = 0;   // --gi-carry i f1 f2: brick i carried in the air from frame f1, put down 3.5 cm in front at f2 (GI hold)
     int giEditBrick = -1, giEditOff = 0, giEditOn = 0;   // --gi-edit i f1 f2: brick i removed at frame f1, back at f2 (GI reactivity)  // --soft-gi-probes n (measures: probe budget of the soft GI)
