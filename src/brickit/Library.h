@@ -48,6 +48,7 @@ struct Part {
     // geometry (empty until its pack is loaded)
     vp3d::MeshData mesh;
     bool loaded = false;
+    bool available() const { return loaded || pack >= 0; }   // geometry in memory or in a pack (loaded on demand)
     vp3d::MeshData ldrawMesh;  // DEV mode: the LDraw mesh while a replacement is shown
     bool hasLdrawMesh = false, devActive = false;
     float3 bmin, bmax;
@@ -59,7 +60,10 @@ public:
     bool load(const std::wstring& dir, std::string* error = nullptr);
     // Loads the geometry of a Technic pack (all its parts). Returns false when the file is missing or broken.
     bool loadPack(int pack, std::string* error = nullptr);
-    bool loadAll(std::string* error = nullptr);    // every pack (benchmarks, the part grid)
+    bool loadAll(std::string* error = nullptr);    // every Technic pack (benchmarks, the part grid; not the full library)
+    void unloadPack(int pack);                      // frees the geometry of a pack (thumbnails of the full library)
+    int technicPacks = 0;
+    std::wstring fullDir;                           // folder of the full library (empty: not built)                           // packs [0, technicPacks): Technic; then the full LDraw library
     // Part geometry, loading its pack when needed (nullptr when unknown or not loadable).
     Part* get(const std::string& name);
     int find(const std::string& name) const;
@@ -75,10 +79,15 @@ public:
 private:
     std::wstring m_dir;
     std::unordered_map<std::string, int> m_byName;
-    std::unordered_map<std::string, std::vector<int>> m_partColors;   // LDraw part name -> LDraw colour codes (sorted)
+    std::unordered_map<std::string, std::vector<int>> m_partColors;
+    std::unordered_map<std::string, std::string> m_alias;   // LDraw alias / moved part -> target (full\\aliases.txt)   // LDraw part name -> LDraw colour codes (sorted)
     const std::vector<int>* colorsOf(int part) const;
     std::vector<bool> m_packLoaded;
+    std::vector<std::wstring> m_packFile;   // file of each pack, relative to m_dir
 };
+
+// Folder of the full LDraw library: <assets>\\full, else %LOCALAPPDATA%\\BrickIt\\full (empty when neither exists).
+std::wstring fullLibraryDir(const std::wstring& assets);
 
 // sRGB to linear (one channel).
 float srgbToLinear(float c);

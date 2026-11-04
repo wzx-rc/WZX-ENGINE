@@ -151,7 +151,14 @@ bool BrickApp::init(HINSTANCE inst, const Options& opt) {
     if (opt.denoise >= 0) m_rs.denoise = opt.denoise != 0;
     if (opt.bevelSpp >= 0) { m_rs.bevel = opt.bevelSpp > 0; m_rs.bevelSamples = std::max(1, opt.bevelSpp); }
     m_lib.loadAll(&err);   // every Technic pack (about 10 MB): the library shows them all, the thumbnails need them
+    if (!opt.fullThumbs.empty()) {   // the thumbnails of the full library, then exit
+        const int n = buildFullThumbs();
+        FILE* lf = nullptr;
+        if (_wfopen_s(&lf, (opt.fullThumbs + L".txt").c_str(), L"w") == 0 && lf) { fprintf(lf, "%d thumbnails\n", n); fclose(lf); }
+        return false;
+    }
     buildThumbs();
+    loadFullThumbIndex();
     buildNav();
     if (opt.shotPath.empty()) loadPrefs();   // captures stay reproducible
     if (m_uiScaleUser != 1.0f) { m_ui *= m_uiScaleUser; th::apply(m_ui); }   // settings: UI scale over the screen scale
@@ -727,7 +734,7 @@ void BrickApp::syncObjects() {
     for (size_t i = 0; i < m_bricks.size(); ++i) {
         Object& o = m_scene.objects[m_firstBrickObject + i];
         const Brick& b = m_bricks[i];
-        o.visible = o.mesh >= 0 && !brickHidden((int)i);   // a group hidden or another isolated (outliner)
+        o.visible = o.mesh >= 0 && !brickHidden((int)i) && !readHidden((int)i);   // a group hidden or another isolated (outliner), a step not read yet
         o.position = b.pos;
         o.rot = b.rot;
         const int c = std::clamp(b.color, 0, (int)m_colorMaterial.size() - 1);
@@ -1090,8 +1097,11 @@ void BrickApp::frame() {
     {   // edge outline of the selected / held brick and the rest of the selection (thin white lines, red when blocked)
         std::vector<int> edge;
         const int fb = focusBrick();
-        if (fb >= 0 && fb < (int)m_bricks.size() && !m_mechOn) edge.push_back(m_firstBrickObject + fb);
-        if (!m_mechOn) for (int i : m_multi) edge.push_back(m_firstBrickObject + i);
+        if (m_reading) for (int i : readStepBricks()) edge.push_back(m_firstBrickObject + i);   // the parts of the step read
+        else {
+            if (fb >= 0 && fb < (int)m_bricks.size() && !m_mechOn) edge.push_back(m_firstBrickObject + fb);
+            if (!m_mechOn) for (int i : m_multi) edge.push_back(m_firstBrickObject + i);
+        }
         m_renderer.setEdgeOutline(edge, m_holding && m_held.blocked, 0.45f);
     }
     const int selObj = (m_selected >= 0 && !m_holding) ? m_firstBrickObject + m_selected : -1;
@@ -1188,6 +1198,17 @@ void BrickApp::frame() {
     ++m_frame;
     // GI hold test: a brick carried in the air (swinging), then put down on the ground 3.5 cm in front of where it was
     if (!m_opt.groupTest.empty() && m_frame == 5) groupTest();
+    if (!m_opt.importPath.empty() && m_frame == 3) {   // an LDraw model, then the page asked
+        const auto t0 = GetTickCount64();
+        importLDraw(m_opt.importPath);
+        const auto ms = GetTickCount64() - t0;
+        if (m_opt.readStep > 0) readStepTo(m_opt.readStep);
+        else if (m_opt.readStep == 0) { stopReading(); frameAll(); }
+        if (!m_opt.importReport.empty()) {
+            FILE* rf = nullptr;
+            if (_wfopen_s(&rf, m_opt.importReport.c_str(), L"wb") == 0 && rf) { fprintf(rf, "import_ms=%llu\n%s", (unsigned long long)ms, m_importReport.c_str()); fclose(rf); }
+        }
+    }
     if (m_opt.giCarryBrick >= 0 && m_opt.giCarryBrick < (int)m_bricks.size()) {
         static float3 home;
         Brick& b = m_bricks[m_opt.giCarryBrick];
@@ -1282,6 +1303,10 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         else if (a == L"--soft-gi-margin") opt.softGIMargin = (float)_wtof(next().c_str());
         else if (a == L"--show-probes") opt.showProbes = _wtoi(next().c_str());
         else if (a == L"--soft-gi-probes") opt.softGIProbes = _wtoi(next().c_str());
+        else if (a == L"--build-full-thumbs") opt.fullThumbs = next();
+        else if (a == L"--import") opt.importPath = next();
+        else if (a == L"--read-step") opt.readStep = _wtoi(next().c_str());
+        else if (a == L"--import-report") opt.importReport = next();
         else if (a == L"--group-test") opt.groupTest = next();
         else if (a == L"--gi-hold") opt.giHold = _wtoi(next().c_str());
         else if (a == L"--hq-sss") opt.hqSSS = (float)_wtof(next().c_str());

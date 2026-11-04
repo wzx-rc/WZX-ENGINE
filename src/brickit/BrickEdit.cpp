@@ -363,6 +363,9 @@ bool BrickApp::saveScene(const std::wstring& path) {
 }
 
 bool BrickApp::openScene(const std::wstring& path) {
+    std::wstring ext = path.size() > 4 ? path.substr(path.size() - 4) : L"";
+    for (auto& c : ext) c = (wchar_t)towlower(c);
+    if (ext == L".ldr" || ext == L".mpd" || ext == L".dat") return importLDraw(path);   // an LDraw model (OMR)
     FILE* f = nullptr;
     if (_wfopen_s(&f, path.c_str(), L"rb") != 0 || !f) { toast("Fichier introuvable"); return false; }
     std::string text;
@@ -388,7 +391,8 @@ static std::wstring fileDialog(HWND hwnd, bool save, const std::wstring& current
     if (!current.empty()) wcsncpy_s(file, current.c_str(), _TRUNCATE);
     OPENFILENAMEW ofn = {sizeof(ofn)};
     ofn.hwndOwner = hwnd;
-    ofn.lpstrFilter = L"Scène BrickIt (*.v3d.json)\0*.v3d.json;*.json\0Tous les fichiers\0*.*\0";
+    ofn.lpstrFilter = save ? L"Scène BrickIt (*.v3d.json)\0*.v3d.json;*.json\0Tous les fichiers\0*.*\0"
+                           : L"Scène BrickIt ou modèle LDraw (*.v3d.json, *.ldr, *.mpd)\0*.v3d.json;*.json;*.ldr;*.mpd;*.dat\0Tous les fichiers\0*.*\0";
     ofn.lpstrFile = file;
     ofn.nMaxFile = MAX_PATH;
     ofn.lpstrDefExt = L"v3d.json";
@@ -412,6 +416,11 @@ void BrickApp::openDialog() {
 void BrickApp::editInput() {
     ImGuiIO& io = ImGui::GetIO();
     const bool keys = !io.WantTextInput;
+    if (m_reading) {   // reading the instructions: the pages, Échap closes; no editing (the camera still orbits)
+        readInput();
+        if (keys && ImGui::IsKeyPressed(ImGuiKey_Escape)) stopReading();
+        return;
+    }
     if (keys) {
         const bool ctrl = io.KeyCtrl;
         if (ctrl && ImGui::IsKeyPressed(ImGuiKey_Z)) undo();

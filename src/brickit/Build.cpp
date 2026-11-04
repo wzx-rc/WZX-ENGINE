@@ -377,6 +377,7 @@ std::string Builder::toJson(const Camera& c) const {
                  i ? "," : "", jsonEscape(p.name).c_str(), col.id, col.srgb.x, col.srgb.y, col.srgb.z, mat, b.pos.x, b.pos.y, b.pos.z, yaw,
                  b.rot.x, b.rot.y, b.rot.z, b.rot.w, g.x, g.y, g.z);
         out += buf;
+        if (b.step >= 0) { out.pop_back(); out += ", \"step\": " + std::to_string(b.step) + "}"; }
         if (!b.path.empty()) {   // , "groups": [ids] before the closing brace
             out.pop_back();
             out += ", \"groups\": [";
@@ -414,6 +415,7 @@ bool Builder::fromJson(const std::string& text, Camera* cam, std::string* messag
             for (size_t v = 0; v < p.voxels.size(); ++v)
                 if (length(p.voxels[v] - g) < 0.02f) b.grab = (int)v;
         }
+        b.step = (int)s["step"].num(-1);
         if (s["groups"].type == app::Json::Array)
             for (const app::Json& g : s["groups"].a) b.path.push_back((int)g.num(-1));
         out.push_back(b);

@@ -45,6 +45,10 @@ struct Options {
     float softGIMargin = 1.0f;  // --soft-gi-margin k (measures: the margin of the probe volume around the bricks, x k)
     int giAgeCap = 400;   // --gi-age-cap n: updates after which a probe is converged and left alone (0: always updated)
     float hqSSS = -1;   // --hq-sss s: subsurface of the HQ view (0 = off, -1: the setting)
+    std::wstring fullThumbs;   // --build-full-thumbs pack: renders the thumbnails of the full library and exits
+    std::wstring importPath;   // --import model.mpd: an LDraw model (OMR), the reading mode opened
+    int readStep = -1;         // --read-step n: the page read for the capture
+    std::wstring importReport; // --import-report file: pieces, steps, parts not found
     std::wstring groupTest;   // --group-test file: the groups checked (BrickGroups.cpp)
     int giHold = 1;   // --gi-hold 0: the probes go on updating while a brick is carried (comparison)
     int giCarryBrick = -1, giCarryFrom = 0, giCarryTo = 0;   // --gi-carry i f1 f2: brick i carried in the air from frame f1, put down 3.5 cm in front at f2 (GI hold)
@@ -175,6 +179,21 @@ private:
     void endGroupDrag();
     void uiGroups();   // the outliner of the groups (BrickUi.cpp)
     void groupTest();  // --group-test file
+    // LDraw models and the reading of their instructions (BrickLDraw.cpp, BrickRead.cpp)
+    bool importLDraw(const std::wstring& path);
+    bool hasSteps() const;
+    void startReading(int step);
+    void stopReading();
+    void readStepTo(int step);
+    void frameReadStep();
+    bool readHidden(int i) const;
+    std::vector<int> readStepBricks() const;
+    void readInput();
+    void uiReader();
+    bool m_reading = false;
+    int m_readStep = 1, m_readSteps = 0;
+    std::vector<std::string> m_readTitles;   // per step: the submodel built ("" = the model)
+    std::string m_modelName, m_importReport;
     std::vector<int> m_groupsOpen;   // outliner: the groups unfolded
     int m_renameGroup = -1;
     char m_renameBuf[64] = {};
@@ -206,7 +225,7 @@ private:
     void drawToast();
     void buildNav();                        // library families / categories counts
     std::vector<int> visibleParts() const;  // parts of the current family / category / search
-    std::string partCat(int part) const;    // LDraw category of a part
+    const std::string& partCat(int part) const;    // LDraw category of a part
     void tiltSelected(int dir);             // radial: tilt towards the viewer (up / down)
     void drawVoxels();                      // voxel display (studs yellow, pins cyan, axles magenta)
 
@@ -360,6 +379,13 @@ private:
 
     // Thumbs.cpp
     void buildThumbs();
+    int buildFullThumbs();       // --build-full-thumbs pack: the thumbnails of the full library
+    void loadFullThumbIndex();
+    bool lazyThumb(int part, ImTextureID& tex);
+    std::vector<uint8_t> m_fullThumbData;
+    std::vector<std::pair<uint32_t, uint32_t>> m_fullThumbAt;   // per part: offset, size in m_fullThumbData
+    std::unordered_map<int, std::pair<ImTextureID, int>> m_lazyThumbs;   // part -> texture, frame last used
+    int m_lazyThumbBudget = 0;
     static bool decodeImage(const uint8_t* data, size_t size, std::vector<uint8_t>& rgba, int& w, int& h);
     int setupStudio(Scene& ts);
     // 3D viewer of the part sheet (web: partViewer): the part alone in the thumbnail studio, turned by dragging. While the
@@ -372,7 +398,7 @@ private:
     bool m_pvDrag = false;
     ImVec4 m_pvRect{0, 0, 0, 0};
     ImTextureID m_frozenTex = 0;
-    bool thumbUv(int part, ImTextureID& tex, ImVec2& uv0, ImVec2& uv1) const;
+    bool thumbUv(int part, ImTextureID& tex, ImVec2& uv0, ImVec2& uv1);
 
     HWND m_hwnd = nullptr;
     Options m_opt;
@@ -460,6 +486,9 @@ private:
     float m_softGIStrength = 1.0f;
     int m_softGIProbes = 16384;       // Réglages › Lumière › Sondes GI: probe budget of the soft GI
     bool m_showProbes = false;        // Réglages › Lumière › Afficher les sondes
+    size_t m_countsFor = 0;   // the library tray: parts counted for this many parts
+    std::unordered_map<std::string, int> m_catCount, m_techSubCount;
+    int m_availCount = 0;
     bool m_allColors = false;         // Couleurs: every colour offered, even those that do not exist for the part
     float m_lumColumnH = 0.0f;        // Réglages: height of the Lumière column drawn last frame
     float m_hqSSSStrength = 1.0f;     // Réglages › Lumière › SSS (HQ): strength 0..2 (0 = off)

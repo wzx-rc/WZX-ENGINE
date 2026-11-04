@@ -20,6 +20,7 @@ struct Brick {
     float4 rot{0, 0, 0, 1};   // quaternion, multiples of 90 degrees
     int grab = -1;            // pivot voxel (-1 = default)
     std::vector<int> path;    // the groups holding the brick, outermost first (ids in Builder::groups)
+    int step = -1;            // step of the instructions of an imported model (reading mode), -1 = none
 };
 
 // A group of bricks (BrickGroups.cpp): its members are the bricks whose path holds its id; ids are never reused

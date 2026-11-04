@@ -226,8 +226,13 @@ void BrickApp::buildThumbs() {
     for (auto& a : pix) m_thumbAtlas.push_back(m_gui.createTexture(a.data(), atlasPx, atlasPx));
 }
 
-bool BrickApp::thumbUv(int part, ImTextureID& tex, ImVec2& uv0, ImVec2& uv1) const {
-    if (part < 0 || part >= (int)m_thumbSlot.size() || m_thumbSlot[part] < 0) return false;
+bool BrickApp::thumbUv(int part, ImTextureID& tex, ImVec2& uv0, ImVec2& uv1) {
+    if (part < 0 || part >= (int)m_thumbSlot.size() || m_thumbSlot[part] < 0) {   // the full library: on demand
+        if (!lazyThumb(part, tex)) return false;
+        uv0 = ImVec2(0, 0);
+        uv1 = ImVec2(1, 1);
+        return true;
+    }
     const int perAtlas = m_thumbCols * m_thumbCols, s = m_thumbSlot[part];
     const int a = s / perAtlas, cell = s % perAtlas;
     if (a >= (int)m_thumbAtlas.size() || !m_thumbAtlas[a]) return false;
@@ -235,6 +240,170 @@ bool BrickApp::thumbUv(int part, ImTextureID& tex, ImVec2& uv0, ImVec2& uv1) con
     const float k = 1.0f / m_thumbCols;
     uv0 = ImVec2((cell % m_thumbCols) * k, (cell / m_thumbCols) * k);
     uv1 = ImVec2(uv0.x + k, uv0.y + k);
+    return true;
+}
+
+// ------------------------------------------------------------------------------------------------- full library
+// The thumbnails of the whole LDraw library (21 000 parts): rendered once by --build-full-thumbs into
+// assets/brickit/full/thumbs.pack (PNG per part, "BTF1"), then decoded on demand, a few per frame, for the cards on
+// screen (one texture each, the least recently used released beyond 900).
+
+static bool encodePng(const std::vector<uint8_t>& rgba, uint32_t w, uint32_t h, std::vector<uint8_t>& out) {
+    ComPtr<IWICImagingFactory> f;
+    if (FAILED(CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&f)))) return false;
+    ComPtr<IStream> mem;
+    if (FAILED(CreateStreamOnHGlobal(nullptr, TRUE, &mem))) return false;
+    ComPtr<IWICBitmapEncoder> enc;
+    f->CreateEncoder(GUID_ContainerFormatPng, nullptr, &enc);
+    if (!enc || FAILED(enc->Initialize(mem.Get(), WICBitmapEncoderNoCache))) return false;
+    ComPtr<IWICBitmapFrameEncode> fr;
+    ComPtr<IPropertyBag2> props;
+    enc->CreateNewFrame(&fr, &props);
+    fr->Initialize(props.Get());
+    fr->SetSize(w, h);
+    WICPixelFormatGUID fmt = GUID_WICPixelFormat32bppRGBA;
+    fr->SetPixelFormat(&fmt);
+    std::vector<uint8_t> px = rgba;
+    if (fmt != GUID_WICPixelFormat32bppRGBA)
+        for (size_t i = 0; i + 3 < px.size(); i += 4) std::swap(px[i], px[i + 2]);
+    fr->WritePixels(h, w * 4, (UINT)px.size(), px.data());
+    fr->Commit();
+    enc->Commit();
+    STATSTG st = {};
+    mem->Stat(&st, STATFLAG_NONAME);
+    out.resize((size_t)st.cbSize.QuadPart);
+    LARGE_INTEGER zero = {};
+    mem->Seek(zero, STREAM_SEEK_SET, nullptr);
+    ULONG got = 0;
+    mem->Read(out.data(), (ULONG)out.size(), &got);
+    return got == out.size();
+}
+
+// --build-full-thumbs: every part of the full library, pack by pack (the geometry freed after each), in the studio of
+// the thumbnails; writes the pack and returns the number of images
+int BrickApp::buildFullThumbs() {
+    const int px = m_thumbPx;
+    std::vector<uint8_t> pack = {'B', 'T', 'F', '1', 0, 0, 0, 0};
+    uint32_t count = 0;
+    Scene ts;
+    const int mat = setupStudio(ts);
+    ts.geometryVersion = 0x60000000u;
+    RenderSettings rs;
+    rs.raster = true;
+    rs.exposure = 0.92f;
+    rs.tonemapper = 0;
+    rs.idPass = false;
+    rs.vignette = 0.0f;
+    rs.msaaSamples = 4;
+    ViewRect vp{0, 0, px, px};
+    for (int pk = m_lib.technicPacks; pk < m_lib.packCount; ++pk) {
+        m_lib.loadPack(pk);
+        ts.meshes.clear();
+        ts.objects.clear();
+        std::vector<std::pair<int, int>> objs;   // part, object
+        for (int i = 0; i < (int)m_lib.parts.size(); ++i) {
+            const Part& p = m_lib.parts[i];
+            if (p.pack != pk || !p.loaded) continue;
+            Object o;
+            o.mesh = ts.addMesh(p.name, p.mesh);
+            o.material = mat;
+            o.visible = false;
+            objs.push_back({i, ts.addObject(o)});
+        }
+        ++ts.geometryVersion;
+        for (auto [i, ob] : objs) {
+            const Part& p = m_lib.parts[i];
+            ts.objects[ob].visible = true;
+            Camera& c = ts.camera;
+            c.fovY = radians(24.0f);
+            c.yaw = std::atan2(1.0f, 1.3f);
+            c.pitch = std::atan2(0.8f, std::sqrt(1.0f + 1.69f));
+            c.target = (p.bmin + p.bmax) * 0.5f;
+            const float r = std::max(length(p.bmax - p.bmin) * 0.5f, 0.2f);
+            c.distance = r / std::sin(c.fovY * 0.5f) * 1.4f;
+            std::vector<uint8_t> img, imgW;
+            uint32_t w = 0, h = 0, w2 = 0, h2 = 0;
+            ts.env.top = ts.env.horizon = ts.env.bottom = float3(0);
+            ++ts.objectsVersion;
+            m_renderer.render(ts, rs, vp, -1, false);
+            bool ok = m_renderer.readViewport(img, w, h);
+            ts.env.top = ts.env.horizon = ts.env.bottom = float3(1000);
+            ++ts.objectsVersion;
+            m_renderer.render(ts, rs, vp, -1, false);
+            ok = ok && m_renderer.readViewport(imgW, w2, h2);
+            ts.objects[ob].visible = false;
+            if (!ok || (int)w != px || (int)h != px || imgW.size() != img.size()) continue;
+            for (size_t q = 0; q + 3 < img.size(); q += 4) {
+                int diff = 0;
+                for (int ch = 0; ch < 3; ++ch) diff = std::max(diff, (int)imgW[q + ch] - (int)img[q + ch]);
+                const int a = 255 - std::clamp(diff, 0, 255);
+                for (int ch = 0; ch < 3; ++ch) img[q + ch] = a > 0 ? (uint8_t)std::min(255, img[q + ch] * 255 / a) : 0;
+                img[q + 3] = (uint8_t)a;
+            }
+            std::vector<uint8_t> png;
+            if (!encodePng(img, w, h, png)) continue;
+            const uint16_t nl = (uint16_t)p.name.size();
+            const uint32_t pl = (uint32_t)png.size();
+            pack.insert(pack.end(), (const uint8_t*)&nl, (const uint8_t*)&nl + 2);
+            pack.insert(pack.end(), p.name.begin(), p.name.end());
+            pack.insert(pack.end(), (const uint8_t*)&pl, (const uint8_t*)&pl + 4);
+            pack.insert(pack.end(), png.begin(), png.end());
+            ++count;
+        }
+        m_lib.unloadPack(pk);
+    }
+    memcpy(&pack[4], &count, 4);
+    FILE* f = nullptr;
+    if (_wfopen_s(&f, m_opt.fullThumbs.c_str(), L"wb") == 0 && f) { fwrite(pack.data(), 1, pack.size(), f); fclose(f); }
+    return (int)count;
+}
+
+// the index of the pack (read once, the images stay in memory compressed)
+void BrickApp::loadFullThumbIndex() {
+    FILE* f = nullptr;
+    if (m_lib.fullDir.empty() || _wfopen_s(&f, (m_lib.fullDir + L"\\thumbs.pack").c_str(), L"rb") != 0 || !f) return;
+    fseek(f, 0, SEEK_END);
+    m_fullThumbData.resize((size_t)ftell(f));
+    fseek(f, 0, SEEK_SET);
+    if (fread(m_fullThumbData.data(), 1, m_fullThumbData.size(), f) != m_fullThumbData.size()) m_fullThumbData.clear();
+    fclose(f);
+    const std::vector<uint8_t>& d = m_fullThumbData;
+    if (d.size() < 8 || memcmp(d.data(), "BTF1", 4) != 0) { m_fullThumbData.clear(); return; }
+    const uint32_t count = *(const uint32_t*)&d[4];
+    size_t o = 8;
+    m_fullThumbAt.assign(m_lib.parts.size(), {0, 0});
+    for (uint32_t e = 0; e < count && o + 2 <= d.size(); ++e) {
+        const uint16_t nl = *(const uint16_t*)&d[o];
+        o += 2;
+        if (o + nl + 4 > d.size()) break;
+        const int i = m_lib.find(std::string((const char*)&d[o], nl));
+        o += nl;
+        const uint32_t pl = *(const uint32_t*)&d[o];
+        o += 4;
+        if (o + pl > d.size()) break;
+        if (i >= 0) m_fullThumbAt[i] = {(uint32_t)o, pl};
+        o += pl;
+    }
+}
+
+bool BrickApp::lazyThumb(int part, ImTextureID& tex) {
+    if (part < 0 || part >= (int)m_fullThumbAt.size() || m_fullThumbAt[part].second == 0) return false;
+    auto it = m_lazyThumbs.find(part);
+    if (it != m_lazyThumbs.end()) { it->second.second = m_frame; tex = it->second.first; return true; }
+    if (m_lazyThumbBudget <= 0) return false;   // a few decoded per frame: the others show next frames
+    --m_lazyThumbBudget;
+    std::vector<uint8_t> rgba;
+    int w = 0, h = 0;
+    if (!decodeImage(&m_fullThumbData[m_fullThumbAt[part].first], m_fullThumbAt[part].second, rgba, w, h) || w <= 0 || h <= 0) return false;
+    if (m_lazyThumbs.size() >= 900) {   // the least recently used
+        auto old = m_lazyThumbs.begin();
+        for (auto q = m_lazyThumbs.begin(); q != m_lazyThumbs.end(); ++q)
+            if (q->second.second < old->second.second) old = q;
+        m_gui.releaseTexture(old->second.first);
+        m_lazyThumbs.erase(old);
+    }
+    tex = m_gui.createTexture(rgba.data(), (uint32_t)w, (uint32_t)h);
+    m_lazyThumbs[part] = {tex, m_frame};
     return true;
 }
 

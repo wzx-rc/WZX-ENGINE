@@ -8,6 +8,7 @@
 #include "app/Theme.h"
 #include <algorithm>
 #include <functional>
+#include <map>
 #include <cctype>
 #include <cmath>
 #include <cstring>
@@ -70,9 +71,10 @@ static const char* catFr(const std::string& c) {
 static const char* kTechSubs[] = {"Poutres", "Axes", "Pins", "Connecteurs", "Engrenages", "Briques", "Panneaux", "Direction", "Pneumatique",
                                   "Chenilles", "Moteurs", "Rotation", "Flex", "Bionicle", "Divers"};
 
-std::string BrickApp::partCat(int part) const {
+const std::string& BrickApp::partCat(int part) const {
+    static const std::string other = "Autre";
     const Part& p = m_lib.parts[part];
-    return p.category.empty() ? std::string("Autre") : p.category;
+    return p.category.empty() ? other : p.category;
 }
 
 void BrickApp::buildNav() {
@@ -109,8 +111,8 @@ std::vector<int> BrickApp::visibleParts() const {
         const std::string q = lower(m_search);
         for (int i = 0; i < (int)m_lib.parts.size(); ++i) {
             const Part& p = m_lib.parts[i];
-            if (!p.loaded) continue;
-            std::string c = partCat(i);
+            if (!p.available()) continue;
+            const std::string& c = partCat(i);
             if (lower(p.name).find(q) != std::string::npos || lower(p.label).find(q) != std::string::npos || lower(catFr(c)).find(q) != std::string::npos ||
                 lower(c).find(q) != std::string::npos)
                 out.push_back(i);
@@ -123,10 +125,10 @@ std::vector<int> BrickApp::visibleParts() const {
     for (const Fam& f : families()) if (m_fam == f.name) fam = &f;
     for (int i = 0; i < (int)m_lib.parts.size(); ++i) {
         const Part& p = m_lib.parts[i];
-        if (!p.loaded) continue;
+        if (!p.available()) continue;
         if (m_fam == "all") { out.push_back(i); continue; }
         if (!fam) continue;
-        std::string c = partCat(i);
+        const std::string& c = partCat(i);
         bool in = m_cat.empty() ? std::find_if(fam->cats.begin(), fam->cats.end(), [&](const char* x) { return c == x; }) != fam->cats.end() : c == m_cat;
         if (in && (m_sub.empty() || p.sub == m_sub)) out.push_back(i);
     }
@@ -517,16 +519,25 @@ void BrickApp::uiTray() {
     if (u.hover(ImVec2(x - 36 * s, y), ImVec2(x - 4 * s, y + famH))) ImGui::SetTooltip("Récentes");
     if (famTab("", -1, m_fam == "fav" && !m_searchOpen, svg::I_FAV, true, x)) { m_fam = "fav"; m_cat.clear(); m_sub.clear(); m_searchOpen = false; m_cardsScroll = 0; }
     if (u.hover(ImVec2(x - 36 * s, y), ImVec2(x - 4 * s, y + famH))) ImGui::SetTooltip("Favoris (appui long sur une pièce pour l'ajouter)");
-    int loaded = 0;
-    for (const Part& p : m_lib.parts) loaded += p.loaded;
+    // parts per family, per category, per Technic sub-family: counted once (the full library has 22 000 parts)
+    if (m_countsFor != m_lib.parts.size()) {
+        m_countsFor = m_lib.parts.size();
+        m_catCount.clear();
+        m_techSubCount.clear();
+        m_availCount = 0;
+        for (int i = 0; i < (int)m_lib.parts.size(); ++i) {
+            const Part& p = m_lib.parts[i];
+            if (!p.available()) continue;
+            ++m_availCount;
+            ++m_catCount[partCat(i)];
+            if (p.category == "Technic") ++m_techSubCount[p.sub];
+        }
+    }
+    const int loaded = m_availCount;
     if (famTab("Toutes", loaded, m_fam == "all" && !m_searchOpen, svg::I_RECENT, false, x)) { m_fam = "all"; m_cat.clear(); m_sub.clear(); m_searchOpen = false; m_cardsScroll = 0; }
     for (const Fam& f : families()) {
         int n = 0;
-        for (int i = 0; i < (int)m_lib.parts.size(); ++i) {
-            if (!m_lib.parts[i].loaded) continue;
-            std::string c = partCat(i);
-            for (const char* k : f.cats) if (c == k) { ++n; break; }
-        }
+        for (const char* k : f.cats) { auto it = m_catCount.find(k); if (it != m_catCount.end()) n += it->second; }
         if (famTab(f.name, n, m_fam == f.name && !m_searchOpen, svg::I_RECENT, false, x)) { m_fam = f.name; m_cat.clear(); m_sub.clear(); m_searchOpen = false; m_cardsScroll = 0; }
     }
     u.dl->PopClipRect();
@@ -610,16 +621,15 @@ void BrickApp::uiTray() {
         if (catPill("Tout", 0, m_cat.empty(), false)) { m_cat.clear(); m_sub.clear(); m_cardsScroll = 0; }
         std::vector<std::pair<const char*, int>> cs;
         for (const char* c : fam->cats) {
-            int n = 0;
-            for (int i = 0; i < (int)m_lib.parts.size(); ++i) n += m_lib.parts[i].loaded && partCat(i) == c;
-            cs.push_back({c, n});
+            auto it = m_catCount.find(c);
+            cs.push_back({c, it == m_catCount.end() ? 0 : it->second});
         }
         std::stable_sort(cs.begin(), cs.end(), [](const std::pair<const char*, int>& a, const std::pair<const char*, int>& b) { return (a.second > 0) > (b.second > 0); });
         for (auto& c : cs) {
             if (std::string(c.first) == "Technic" && c.second) {   // 700+ Technic parts: one chip per sub-family
                 for (const char* sn : kTechSubs) {
-                    int k = 0;
-                    for (const Part& p : m_lib.parts) k += p.loaded && p.category == "Technic" && p.sub == sn;
+                    auto it = m_techSubCount.find(sn);
+                    const int k = it == m_techSubCount.end() ? 0 : it->second;
                     if (!k) continue;
                     if (catPill(sn, k, m_cat == "Technic" && m_sub == sn, false)) { m_cat = "Technic"; m_sub = sn; m_cardsScroll = 0; }
                 }
@@ -952,7 +962,10 @@ void BrickApp::uiPopups() {
     else if (m_popup == 3) items = {{"Bibliothèque", m_pTray.visible, 0}, {"Manuel d'instructions", m_pManual.visible, 4}, {"Infos (pièces, fps)", m_pHud.visible, 3},
                                     {"Couleurs", m_pColors.visible, 2}, {"Actions de la brique", m_pOpts.visible, 1}, {"Groupes", m_pGroups.visible, 6},
                                     {"Réinitialiser la disposition", false, 5}};
-    else items = {{"Nouvelle scène", false, 0}, {"Ouvrir… (.v3d.json)", false, 1}, {"Enregistrer… (.v3d.json)", false, 2}, {"Ouvrir la maison test (GI)", false, 3}};
+    else {
+        items = {{"Nouvelle scène", false, 0}, {"Ouvrir… (.v3d.json, .ldr, .mpd)", false, 1}, {"Enregistrer… (.v3d.json)", false, 2}, {"Ouvrir la maison test (GI)", false, 3}};
+        if (hasSteps()) items.push_back({m_reading ? "Fermer la notice" : "Lire la notice (étapes du modèle)", false, 4});
+    }
     const bool checks = m_popup == 3;
     float w = 0;
     for (const Item& it : items) w = std::max(w, u.textW(12.5f, it.label));
@@ -997,6 +1010,7 @@ void BrickApp::uiPopups() {
                 if (it.id == 0) { pushUndo(); m_bricks.clear(); m_selected = -1; m_multi.clear(); rebuildScene(); toast("Nouvelle scène"); }
                 else if (it.id == 1) openDialog();
                 else if (it.id == 3) openTestHouse();
+                else if (it.id == 4) { if (m_reading) stopReading(); else startReading(1); }
                 else saveDialog();
             }
         }
@@ -1250,7 +1264,83 @@ void BrickApp::uiGroups() {
     u.text(ImVec2(a.x + pad, b.y - pad - 13 * s), 9.5f, C_FAINT, lb);
 }
 
+// ------------------------------------------------------------------ reading the instructions of a model
+// The page of the booklet over the 3D view: model, step n / N, the submodel built, previous / next, close; under it
+// the parts of the step (thumbnail, colour, x count), as the boxes of the official booklets.
+void BrickApp::uiReader() {
+    if (!m_reading) return;
+    Ui u = ui(m_ui);
+    if (m_gui.fontBold) u.bold = m_gui.fontBold;
+    const float s = m_ui;
+    const ImVec2 d = ImGui::GetIO().DisplaySize;
+    // the parts of the step, grouped by part and colour
+    std::map<std::pair<int, int>, int> cnt;
+    for (int i : readStepBricks()) ++cnt[{m_bricks[i].part, m_bricks[i].color}];
+    std::vector<std::pair<std::pair<int, int>, int>> items(cnt.begin(), cnt.end());
+    std::sort(items.begin(), items.end(), [](auto& a, auto& b) { return a.second > b.second; });
+    const float cell = 58 * s, gap = 6 * s, pad = 12 * s, headH = 30 * s;
+    const int maxCells = std::max(1, (int)((std::min(980 * s, d.x - 40 * s) - 2 * pad + gap) / (cell + gap)));
+    const int shown = std::min((int)items.size(), maxCells);
+    const float W = std::min(980 * s, d.x - 40 * s), H = pad + headH + gap + cell + 16 * s + pad;
+    ImVec2 a((d.x - W) * 0.5f, 44 * s), b(a.x + W, a.y + H);
+    u.dl->AddRectFilled(a, b, C_PANEL_SOLID, 12 * s);
+    u.dl->AddRect(a, b, C_LINE, 12 * s);
+    m_uiRects.push_back(ImVec4(a.x, a.y, b.x, b.y));
+    float x = a.x + pad;
+    const float y = a.y + pad;
+    x += u.text(ImVec2(x, y + 4 * s), 14, C_TEXT, m_modelName.empty() ? "Notice" : m_modelName.c_str(), true).x + 14 * s;
+    char st[64];
+    snprintf(st, sizeof(st), "Étape %d / %d", m_readStep, m_readSteps);
+    x += u.text(ImVec2(x, y + 4 * s), 14, C_ACCENT, st, true).x + 14 * s;
+    const std::string& sub = m_readStep - 1 < (int)m_readTitles.size() ? m_readTitles[m_readStep - 1] : std::string();
+    if (!sub.empty()) {
+        const std::string t = "Sous-modèle : " + sub;
+        u.text(ImVec2(x, y + 6 * s), 12, C_DIM, t.c_str());
+    }
+    // buttons: previous, next, close
+    auto button = [&](float bx, const char* lab, bool enabled) {
+        const float tw = u.textW(12, lab, true);
+        ImVec2 p0(bx - tw - 22 * s, y), p1(bx, y + headH);
+        const bool h = enabled && u.hover(p0, p1);
+        u.dl->AddRectFilled(p0, p1, h ? C_ACCENT : C_CARD, 8 * s);
+        u.text(ImVec2(p0.x + 11 * s, y + (headH - u.fs(12)) * 0.5f), 12, h ? C_INK : (enabled ? C_TEXT : C_FAINT), lab, true);
+        return std::pair<bool, float>(h && u.pressed, p0.x - 6 * s);
+    };
+    auto [close, x1] = button(b.x - pad, "Fermer", true);
+    auto [next, x2] = button(x1, "Suivante  ›", m_readStep < m_readSteps);
+    auto [prev, x3] = button(x2, "‹  Précédente", m_readStep > 1);
+    (void)x3;
+    if (close) stopReading();
+    if (next) readStepTo(m_readStep + 1);
+    if (prev) readStepTo(m_readStep - 1);
+    // the parts of the step
+    float cx = a.x + pad;
+    const float cy = y + headH + gap;
+    for (int k = 0; k < shown; ++k) {
+        const int part = items[k].first.first, col = items[k].first.second;
+        ImVec2 c0(cx, cy), c1(cx + cell, cy + cell);
+        u.dl->AddRectFilled(c0, c1, C_CARD, 8 * s);
+        ImTextureID tex;
+        ImVec2 uv0, uv1;
+        if (thumbUv(part, tex, uv0, uv1)) u.dl->AddImage(tex, ImVec2(c0.x + 3 * s, c0.y + 3 * s), ImVec2(c1.x - 3 * s, c1.y - 3 * s), uv0, uv1);
+        const Color& cc = m_lib.palette[std::clamp(col, 0, (int)m_lib.palette.size() - 1)];
+        u.dl->AddCircleFilled(ImVec2(c0.x + 9 * s, c1.y - 9 * s), 5 * s, IM_COL32((int)(cc.srgb.x * 255), (int)(cc.srgb.y * 255), (int)(cc.srgb.z * 255), 255));
+        u.dl->AddCircle(ImVec2(c0.x + 9 * s, c1.y - 9 * s), 5 * s, IM_COL32(255, 255, 255, 60), 0, 1 * s);
+        char nb[16];
+        snprintf(nb, sizeof(nb), "%d×", items[k].second);
+        u.text(ImVec2(c0.x + 4 * s, c1.y + 1 * s), 10.5f, C_TEXT, nb, true);
+        if (u.hover(c0, c1)) ImGui::SetTooltip("%s · %s", m_lib.parts[part].label.c_str(), cc.name.c_str());
+        cx += cell + gap;
+    }
+    if ((int)items.size() > shown) {
+        char more[32];
+        snprintf(more, sizeof(more), "+ %d", (int)items.size() - shown);
+        u.text(ImVec2(cx, cy + cell * 0.4f), 12, C_DIM, more);
+    }
+}
+
 void BrickApp::drawUi() {
+    m_lazyThumbBudget = 12;   // thumbnails of the full library decoded this frame at most
     ImVec2 d = ImGui::GetIO().DisplaySize;
     m_uiRects.clear();
     // one window covering the screen, behind every ImGui window, holding the draw list of the panels
@@ -1267,6 +1357,7 @@ void BrickApp::drawUi() {
     uiMechPanel();
     uiHud();
     uiGroups();
+    uiReader();
     uiPopups();
     uiManual();
     uiDevPanel();

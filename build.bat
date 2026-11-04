@@ -84,6 +84,13 @@ rem Technic packs of the web builder (geometry, read as they are)
 if not exist "%OUT%\assets\brickit\technic" mkdir "%OUT%\assets\brickit\technic"
 xcopy /Y /Q /D docs\brickit\web\technic\g*.wasm "%OUT%\assets\brickit\technic\" >nul
 xcopy /Y /Q /D docs\brickit\web\technic\index.json "%OUT%\assets\brickit\technic\" >nul
+rem the whole LDraw library when it was built (tools/brickit/build_full.mjs into build\full, not in git)
+if exist build\full\index.json (
+    if not exist "%OUT%\assets\brickit\full" mkdir "%OUT%\assets\brickit\full"
+    xcopy /Y /Q /D build\full\index.json "%OUT%\assets\brickit\full\" >nul
+    xcopy /Y /Q /D build\full\f*.bin "%OUT%\assets\brickit\full\" >nul
+    if exist build\full\thumbs.pack xcopy /Y /Q /D build\full\thumbs.pack "%OUT%\assets\brickit\full\" >nul
+)
 
 rem Radiance Cascades viewer (src\rcviewer, branch claude/project-thread-0x1y2n)
 if not exist build\obj\rcviewer mkdir build\obj\rcviewer

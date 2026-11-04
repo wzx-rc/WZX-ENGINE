@@ -1,4 +1,5 @@
 #include "Library.h"
+#include <windows.h>
 #include "app/Json.h"
 #include "vp3d/EnvImage.h"
 #include <algorithm>
@@ -137,6 +138,15 @@ bool Library::colorExists(int part, int paletteIndex) const {
     return std::binary_search(v->begin(), v->end(), palette[paletteIndex].id);
 }
 
+std::wstring fullLibraryDir(const std::wstring& assets) {
+    if (GetFileAttributesW((assets + L"\\full\\index.json").c_str()) != INVALID_FILE_ATTRIBUTES) return assets + L"\\full";
+    wchar_t la[MAX_PATH];
+    const DWORD n = GetEnvironmentVariableW(L"LOCALAPPDATA", la, MAX_PATH);
+    if (n == 0 || n >= MAX_PATH) return L"";
+    const std::wstring d = std::wstring(la) + L"\\BrickIt\\full";
+    return GetFileAttributesW((d + L"\\index.json").c_str()) != INVALID_FILE_ATTRIBUTES ? d : L"";
+}
+
 bool Library::load(const std::wstring& dir, std::string* error) {
     m_dir = dir;
     loadPartColors(dir + L"\\part_colors.txt", m_partColors);
@@ -182,6 +192,8 @@ bool Library::load(const std::wstring& dir, std::string* error) {
         if (Json::parse(std::string(text.begin(), text.end()), idx)) {
             packCount = (int)idx["packs"].a.size();
             m_packLoaded.assign(packCount, false);
+            m_packFile.clear();
+            for (int i = 0; i < packCount; ++i) { wchar_t nm[64]; swprintf_s(nm, L"\\technic\\g%d.wasm", i); m_packFile.push_back(dir + nm); }
             for (const Json& j : idx["parts"].a) {
                 std::string name = j["name"].str();
                 if (m_byName.count(name)) continue;
@@ -195,7 +207,59 @@ bool Library::load(const std::wstring& dir, std::string* error) {
             }
         }
     }
+    technicPacks = packCount;
+    // the whole official LDraw library (tools/brickit/build_full.mjs, optional): its parts load pack by pack, on demand;
+    // next to the exe (assets\\brickit\\full) or, out of the synced folders, in %LOCALAPPDATA%\\BrickIt\\full
+    fullDir = fullLibraryDir(dir);
+    m_alias.clear();
+    if (!fullDir.empty()) {
+        std::vector<uint8_t> at;
+        if (readFile(fullDir + L"\\aliases.txt", at)) {
+            std::string s(at.begin(), at.end());
+            size_t i = 0;
+            while (i < s.size()) {
+                size_t e = s.find('\n', i);
+                if (e == std::string::npos) e = s.size();
+                if (s[i] != '#') {
+                    const size_t sp = s.find(' ', i);
+                    if (sp != std::string::npos && sp < e) m_alias[s.substr(i, sp - i)] = s.substr(sp + 1, e - sp - 1);
+                }
+                i = e + 1;
+            }
+        }
+    }
+    if (!fullDir.empty() && readFile(fullDir + L"\\index.json", text)) {
+        Json idx;
+        if (Json::parse(std::string(text.begin(), text.end()), idx)) {
+            const int first = packCount, n = (int)idx["packs"].a.size();
+            for (const Json& pk : idx["packs"].a) {
+                wchar_t nm[64];
+                swprintf_s(nm, L"\\f%d.bin", (int)pk["no"].num());
+                m_packFile.push_back(fullDir + nm);
+            }
+            packCount += n;
+            m_packLoaded.resize(packCount, false);
+            for (const Json& j : idx["parts"].a) {
+                std::string name = j["name"].str();
+                if (m_byName.count(name)) continue;
+                Part p;
+                p.name = name;
+                p.pack = first + (int)j["pack"].num(-1);
+                readMeta(j, p);
+                if (p.category.empty()) p.category = "Autre";
+                m_byName[p.name] = (int)parts.size();
+                parts.push_back(std::move(p));
+            }
+        }
+    }
     return true;
+}
+
+void Library::unloadPack(int no) {
+    if (no < 0 || no >= packCount || !m_packLoaded[no]) return;
+    for (Part& p : parts)
+        if (p.pack == no && p.loaded) { p.mesh = decltype(p.mesh)(); p.loaded = false; }
+    m_packLoaded[no] = false;
 }
 
 bool Library::loadPack(int no, std::string* error) {
@@ -203,9 +267,7 @@ bool Library::loadPack(int no, std::string* error) {
     if (m_packLoaded[no]) return true;
     m_packLoaded[no] = true;   // tried once
     std::vector<uint8_t> z, raw;
-    wchar_t name[64];
-    swprintf_s(name, L"\\technic\\g%d.wasm", no);
-    if (!readFile(m_dir + name, z)) return fail(error, "technic pack missing");
+    if (no >= (int)m_packFile.size() || !readFile(m_packFile[no], z)) return fail(error, "pack missing");
     if (!vp3d::inflateZlibStream(z.data(), z.size(), raw, z.size() * 3) || raw.size() < 4) return fail(error, "technic pack: bad data");
     uint32_t jl;
     memcpy(&jl, raw.data(), 4);
@@ -249,13 +311,25 @@ bool Library::loadPack(int no, std::string* error) {
 
 bool Library::loadAll(std::string* error) {
     bool ok = true;
-    for (int i = 0; i < packCount; ++i) ok &= loadPack(i, error);
+    for (int i = 0; i < technicPacks; ++i) ok &= loadPack(i, error);
     return ok;
 }
 
 int Library::find(const std::string& name) const {
     auto it = m_byName.find(name);
-    return it == m_byName.end() ? -1 : it->second;
+    if (it != m_byName.end()) return it->second;
+    std::string n = name;   // LDraw models: any case, aliases and moved parts
+    for (auto& c : n) c = (char)tolower((unsigned char)c);
+    it = m_byName.find(n);
+    if (it != m_byName.end()) return it->second;
+    for (int hop = 0; hop < 4; ++hop) {
+        auto a = m_alias.find(n);
+        if (a == m_alias.end()) break;
+        n = a->second;
+        it = m_byName.find(n);
+        if (it != m_byName.end()) return it->second;
+    }
+    return -1;
 }
 
 Part* Library::get(const std::string& name) {
