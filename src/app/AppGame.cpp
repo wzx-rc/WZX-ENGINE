@@ -1,6 +1,7 @@
 // Game layer: Play mode, node graph editor hookup, builds, player mode and the local command API.
 #include "App.h"
 #include "GameHost.h"
+#include "WzxRead.h"
 #include "atelier/atelier_style.h"
 #include "atelier/ui_icons.h"
 #include <set>
@@ -134,7 +135,7 @@ void GameHost::init() {
         m_graphPath = (exe / fromUtf8(cfg["graph"].str("graph.json"))).wstring();
         m_playerFps = cfg["showFps"].b;
         m_playerPathTracing = cfg["pathTracing"].b;
-        fs::path scene = exe / fromUtf8(cfg["scene"].str("scene.v3d.json"));
+        fs::path scene = exe / fromUtf8(cfg["scene"].str("scene.wzx"));
         if (fs::exists(scene)) m_app.loadSceneFile(scene.wstring());
         m_app.m_rs.raster = true;
         m_app.m_tool = TOOL_SELECT;
@@ -597,7 +598,8 @@ bool GameHost::beginFrame() {
         std::wstring out;
         std::string err;
         saveProfiles(m_profiles);
-        m_buildFailed = !buildProfile(m_profiles[m_profileIdx], m_pendingToolbar == 4, out, err);
+        m_buildFailed = m_buildPlatform == 1 ? !exportIos(m_profiles[m_profileIdx], out, err)
+                                             : !buildProfile(m_profiles[m_profileIdx], m_pendingToolbar == 4, out, err);
         if (!m_buildFailed) {
             m_buildResult = toUtf8(out);
             toast(L"Build finished: " + out);
@@ -989,6 +991,72 @@ bool GameHost::build(const std::string& profileName, bool run, std::wstring& out
     return buildProfile(*bp, run, outDir, err);
 }
 
+// The scene of a build: the scene open in the editor written as <out>/scene.wzx, and every file it uses (meshes,
+// textures, HDRI, baked probes) copied beside it at the same path relative to the project. A file outside the project
+// goes to assets/external/. A missing file is reported and left out (the game shows its placeholder, as the editor).
+bool GameHost::exportScene(const fs::path& out, std::string& err, const std::string& skip) {
+    std::error_code ec;
+    Json scene;
+    Json::parse(m_app.wzxSceneJson(true), scene);
+    std::map<std::string, std::string> copies;   // path in the editor's file -> path in the build
+    std::set<std::string> used;
+    int missing = 0;
+    for (const std::string& rel : wzxSceneFiles(scene)) {
+        fs::path src(m_app.absPath(rel));
+        std::string dst = rel;
+        if (fs::path(fromUtf8(rel)).is_absolute()) {
+            std::string name = toUtf8(src.filename().wstring());
+            dst = "assets/external/" + name;
+            for (int k = 2; used.count(dst); ++k) dst = "assets/external/" + std::to_string(k) + "_" + name;
+        }
+        used.insert(dst);
+        copies[rel] = dst;
+        if (!skip.empty() && dst.rfind(skip, 0) == 0) continue;   // already in the player
+        if (!fs::exists(src)) {
+            if (rel.rfind("game/probes/", 0) != 0) {   // no baked probes is normal
+                m_app.log("Build: file not found, left out: " + rel, 2);
+                ++missing;
+            }
+            continue;
+        }
+        fs::path to = out / fs::path(fromUtf8(dst));
+        fs::create_directories(to.parent_path(), ec);
+        fs::copy_file(src, to, fs::copy_options::overwrite_existing, ec);
+        if (ec) { err = "copie impossible : " + rel + " (" + ec.message() + ")"; return false; }
+    }
+    std::string text = m_app.wzxSceneJson(true, [&](const std::string& p) {
+        auto it = copies.find(p);
+        return it == copies.end() ? p : it->second;
+    });
+    if (!writeFileSafe((out / "scene.wzx").wstring(), text)) { err = "écriture de la scène impossible"; return false; }
+    if (missing) toast(std::to_wstring(missing) + L" scene file(s) not found: see the log");
+    return true;
+}
+
+// iOS build: the editor writes the game data into <project>/game/export (game.json, scene.wzx, graph.json and the
+// files of the scene); the player of the GitHub Actions workflow (.github/workflows/ios-build.yml) bundles that folder
+// in the app. The houses of assets/HOUSE are already in the player, they are not copied again.
+bool GameHost::exportIos(const BuildProfile& bp, std::wstring& outDir, std::string& err) {
+    if (m_player) { err = "pas de build depuis un jeu exporté"; return false; }
+    if (m_playing) stop();
+    fs::path out = fs::path(m_projectDir) / "game" / "export";
+    std::error_code ec;
+    fs::remove_all(out, ec);
+    fs::create_directories(out, ec);
+    if (ec) { err = "création du dossier impossible : " + ec.message(); return false; }
+    if (!exportScene(out, err, "assets/HOUSE/")) return false;
+    if (!m_graph.save((out / "graph.json").wstring())) { err = "écriture du graphe impossible"; return false; }
+    {
+        std::ofstream f(out / "game.json", std::ios::binary);
+        f << "{\n  \"format\": \"wzx-game\",\n  \"platform\": \"ios\",\n  \"profile\": " << jstr(bp.name) << ",\n  \"title\": " << jstr(bp.title)
+          << ",\n  \"scene\": \"scene.wzx\",\n  \"graph\": \"graph.json\"\n}\n";
+        if (!f) { err = "écriture de game.json impossible"; return false; }
+    }
+    outDir = out.wstring() + L"  (push it: GitHub Actions builds the .ipa)";
+    m_lastBuild = toUtf8(out.wstring());
+    return true;
+}
+
 // Windows build: builds\<profile>\<Game>\ holds the game (exe, shaders, assets, scene, graph, game.json)
 // and builds\<profile>\<Game>.zip the same folder, ready to send. The exe links the C++ runtime
 // statically (build.bat /MT): nothing to install on the other PC, apart from a DirectX 12 ray tracing GPU.
@@ -1005,7 +1073,12 @@ bool GameHost::buildProfile(const BuildProfile& bp, bool run, std::wstring& outD
     fs::path out = root / fromUtf8(base);
     fs::path exeDir(m_app.m_exeDir);
     std::error_code ec;
-    fs::remove_all(out, ec);   // no file of an older build left behind
+    for (int tryNo = 0; tryNo < 4; ++tryNo) {   // no file of an older build left behind (Dropbox may hold a file a moment)
+        ec.clear();
+        fs::remove_all(out, ec);
+        if (!ec) break;
+        Sleep(500);
+    }
     if (ec) { err = "nettoyage du dossier impossible (le jeu exporté est-il ouvert ?) : " + ec.message(); return false; }
     fs::create_directories(out, ec);
     if (ec) { err = "création du dossier impossible : " + ec.message(); return false; }
@@ -1015,13 +1088,13 @@ bool GameHost::buildProfile(const BuildProfile& bp, bool run, std::wstring& outD
     if (ec) { err = "copie de l'exécutable impossible (le jeu exporté est-il ouvert ?) : " + ec.message(); return false; }
     fs::copy(exeDir / "shaders", out / "shaders", fs::copy_options::recursive | fs::copy_options::overwrite_existing, ec);
     if (ec) { err = "copie des shaders impossible : " + ec.message(); return false; }
-    if (fs::exists(exeDir / "assets")) {
-        fs::copy(exeDir / "assets", out / "assets", fs::copy_options::recursive | fs::copy_options::overwrite_existing, ec);
-        if (ec) { err = "copie des assets impossible : " + ec.message(); return false; }
+    for (const char* dir : {"assets/HOUSE", "assets/themes"}) {   // files of the game itself: village houses, UI themes
+        if (!fs::exists(exeDir / dir)) continue;
+        fs::create_directories((out / dir).parent_path(), ec);
+        fs::copy(exeDir / dir, out / dir, fs::copy_options::recursive | fs::copy_options::overwrite_existing, ec);
+        if (ec) { err = std::string("copie de ") + dir + " impossible : " + ec.message(); return false; }
     }
-    std::wstring savedStatus = m_app.m_status;
-    if (!m_app.saveSceneFile((out / "scene.v3d.json").wstring())) { err = "écriture de la scène impossible"; return false; }
-    m_app.m_status = savedStatus;
+    if (!exportScene(out, err)) return false;
     if (!m_graph.save((out / "graph.json").wstring())) { err = "écriture du graphe impossible"; return false; }
     time_t t = time(nullptr);
     tm lt;
@@ -1034,7 +1107,7 @@ bool GameHost::buildProfile(const BuildProfile& bp, bool run, std::wstring& outD
           << ",\n  \"built\": " << jstr(date) << ",\n  \"width\": " << bp.width << ",\n  \"height\": " << bp.height
           << ",\n  \"fullscreen\": " << (bp.fullscreen ? "true" : "false") << ",\n  \"pathTracing\": " << (bp.pathTracing ? "true" : "false")
           << ",\n  \"showFps\": " << (bp.showFps ? "true" : "false") << ",\n  \"commandApi\": " << (bp.commandApi ? "true" : "false")
-          << ",\n  \"scene\": \"scene.v3d.json\",\n  \"graph\": \"graph.json\"\n}\n";
+          << ",\n  \"scene\": \"scene.wzx\",\n  \"graph\": \"graph.json\"\n}\n";
         if (!f) { err = "écriture de game.json impossible"; return false; }
     }
     outDir = out.wstring();
@@ -1093,13 +1166,11 @@ void GameHost::drawBuildWindow() {
     };
 
     ImGui::SeparatorText("Platform");
-    int platform = 0;   // Windows only for now
-    ImGui::RadioButton("Windows (PC, DirectX 12)", &platform, 0);
-    ImGui::BeginDisabled();
-    ImGui::RadioButton("iOS (iPhone + iPad)  -  coming soon", &platform, 1);
-    ImGui::EndDisabled();
-    help("iOS needs Xcode on a Mac (a Mac in the cloud works: GitHub Actions, Codemagic), an Apple developer account\n"
-         "and a Metal version of the renderer.\n"
+    ImGui::RadioButton("Windows (PC, DirectX 12)", &m_buildPlatform, 0);
+    ImGui::RadioButton("iOS (iPhone + iPad)", &m_buildPlatform, 1);
+    help("Build writes the game (scene.wzx, graph, the files of the scene) into game\\export.\n"
+         "Once pushed to GitHub, the iOS workflow (GitHub Actions, a Mac in the cloud) builds the app with it:\n"
+         "artifact WZXPlayer-unsigned, installed on the iPhone with Sideloadly.\n"
          "One build runs on both iPhone and iPad: the game adapts to the screen of the device, there is no fixed resolution.");
 
     ImGui::SeparatorText("Profile");
@@ -1145,7 +1216,8 @@ void GameHost::drawBuildWindow() {
          "Nothing to install, but the PC needs a DirectX 12 GPU with ray tracing (GeForce RTX, Radeon RX 6000 or newer).");
 
     ImGui::Spacing();
-    std::string where = "builds\\" + p.name + "\\" + (p.title.empty() ? std::string("Game") : p.title) + (p.zip ? ".zip" : "\\");
+    std::string where = m_buildPlatform == 1 ? std::string("game\\export\\ (then push: GitHub Actions)")
+                                             : "builds\\" + p.name + "\\" + (p.title.empty() ? std::string("Game") : p.title) + (p.zip ? ".zip" : "\\");
     ImGui::TextDisabled("Output: %s", where.c_str());
     ImGui::Spacing();
     if (ImGui::Button("Build", ImVec2(110 * d, 0))) m_pendingToolbar = 3;
@@ -1224,7 +1296,7 @@ static const char* kHelp =
     "\"graph.connect\": \"{from:[id, sortie], to:[id, entree]} (nom ou index de broche)\", "
     "\"graph.disconnect\": \"{id, pin, output}\", \"graph.setInput\": \"{id, pin, value}\", "
     "\"graph.save\": \"{}\", \"graph.load\": \"{}\", \"graph.show\": \"{open: true|false, output?: 0|1|2}\", \"graph.compile\": \"{} -> diagnostics\", \"graph.arrange\": \"{} -> nodes deplaces\", "
-    "\"build\": \"{profile?, run?} -> dossier\", \"build.profiles\": \"{}\", "
+    "\"build\": \"{profile?, run?, platform?: ios = game/export} -> dossier\", \"build.profiles\": \"{}\", "
     "\"graph.execute\": \"{} -> Execute du Graph (essai a blanc, chemin anime)\", \"screenshot\": \"{window?: true = fenetre entiere} -> fichier PNG\", \"log\": \"{} -> journal du graphe\"}}";
 
 void GameHost::handleRequests() {
@@ -1286,13 +1358,13 @@ std::string GameHost::command(const Json& j, int& status) {
         return ok();
     }
     if (cmd == "scene.save") {
-        fs::path p = pathArg("game/scene.v3d.json");
+        fs::path p = pathArg("game/scene.wzx");
         if (!a.saveSceneFile(p.wstring())) return fail("écriture impossible : " + toUtf8(p.wstring()));
         return ok(", \"path\": " + jstr(toUtf8(p.wstring())));
     }
     if (cmd == "scene.load") {
         if (m_playing) stop();
-        fs::path p = pathArg("game/scene.v3d.json");
+        fs::path p = pathArg("game/scene.wzx");
         if (!a.loadSceneFile(p.wstring())) return fail("chargement impossible : " + toUtf8(p.wstring()));
         return ok(", \"objects\": " + std::to_string(s.objects.size()));
     }
@@ -1579,7 +1651,10 @@ std::string GameHost::command(const Json& j, int& status) {
     if (cmd == "build") {
         std::wstring out;
         std::string err;
-        if (!build(j["profile"].str(), j["run"].b, out, err)) return fail(err);
+        if (j["platform"].str() == "ios") {   // game\export for the iOS workflow
+            std::vector<BuildProfile> profiles = loadProfiles();
+            if (!exportIos(profiles[0], out, err)) return fail(err);
+        } else if (!build(j["profile"].str(), j["run"].b, out, err)) return fail(err);
         toast(L"Build finished: " + out);
         return ok(", \"path\": " + jstr(toUtf8(out)));
     }

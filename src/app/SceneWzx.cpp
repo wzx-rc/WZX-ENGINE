@@ -4,19 +4,21 @@
 // the project folder) read again on open. A missing file leaves a red placeholder box that keeps its path.
 // Also the document of the editor: current file, modified state (*), Save / Save As / Open / New and the
 // "Save changes?" prompt.
-// Version 1 reader: unknown keys are ignored and missing keys take their defaults, so fields can be added without
+// The reader is in WzxRead.cpp (shared with the player). Version 1 reader: unknown keys are ignored and missing keys take their defaults, so fields can be added without
 // a version bump. Scene Manager: a top-level "collections" array, and per object / light / sun id, parent, collection,
 // order, selectable (objects: group, collapsed); positions stay world values, groups have no geometry.
 #include "App.h"
 #include "GameHost.h"
 #include "CurveEditor.h"
 #include "Json.h"
+#include "WzxRead.h"
 #include "vp3d/AssetImport.h"
 #include <algorithm>
 #include <charconv>
 #include <commdlg.h>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <sstream>
 
 namespace app {
@@ -119,12 +121,7 @@ private:
     }
 };
 
-float3 vec3(const Json& j, const float3& def) {
-    if (j.type != Json::Array || j.a.size() < 3) return def;
-    return float3((float)j[0].num(def.x), (float)j[1].num(def.y), (float)j[2].num(def.z));
-}
 float f(const Json& j, float def) { return (float)j.num(def); }
-float angle(const Json& j, float defRadians) { return j.type == Json::Number ? (float)(j.n / kDegPerRad) : defRadians; }
 bool flag(const Json& j, bool def) { return j.type == Json::Bool ? j.b : def; }
 
 bool endsWithNoCase(const std::wstring& s, const wchar_t* suffix) {
@@ -153,16 +150,15 @@ bool writeFileSafe(const std::wstring& path, const std::string& text) {
 
 namespace {
 
-const char* kMeshFile = "file:";   // mesh name prefix of an imported mesh: "file:<path relative to the project>"
-MeshData placeholderBox() { return makeBox({-3, 0, -3}, {3, 6, 3}); }
+const char* const kMeshFile = kWzxMeshFile;   // mesh name prefix of an imported mesh (WzxRead.h)
 
 // Geometry of an object, never the mesh data: "mesh" = path of an imported file, else "shape" = a primitive and
 // its parameters. Parametric primitives (size, radius, segments, rings, subdiv) are written here, read in
 // App::loadWzxScene (shapeMesh).
-void writeGeometry(Writer& w, const Scene& sc, const Object& o) {
+void writeGeometry(Writer& w, const Scene& sc, const Object& o, const std::function<std::string(const std::string&)>& path) {
     const std::string mesh = o.mesh >= 0 && o.mesh < (int)sc.meshNames.size() ? sc.meshNames[o.mesh] : std::string();
     if (mesh.rfind(kMeshFile, 0) == 0) {
-        w.str("mesh", mesh.substr(strlen(kMeshFile)));
+        w.str("mesh", path(mesh.substr(strlen(kMeshFile))));
         return;
     }
     w.beginObject("shape");
@@ -254,8 +250,9 @@ std::wstring App::absPath(const std::string& path) const {
 
 // --------------------------------------------------------------------------- write
 
-std::string App::wzxSceneJson(bool withCamera) const {
+std::string App::wzxSceneJson(bool withCamera, const std::function<std::string(const std::string&)>& mapPath) const {
     const Scene& sc = m_scene;
+    auto path = [&](const std::string& p) { return mapPath ? mapPath(p) : p; };
     Writer w;
     w.beginObject();
     w.str("format", "wzx-scene");
@@ -300,7 +297,7 @@ std::string App::wzxSceneJson(bool withCamera) const {
     const Environment& e = sc.env;
     w.beginObject("environment");
     if (m_hdriPath.empty()) w.raw("hdri", "null");
-    else w.str("hdri", relPath(m_hdriPath));
+    else w.str("hdri", path(relPath(m_hdriPath)));
     w.num("hdriIntensity", e.hdriIntensity);
     w.deg("hdriRotation", e.hdriRotation);
     w.boolean("visible", e.visibleToCamera);
@@ -398,7 +395,7 @@ std::string App::wzxSceneJson(bool withCamera) const {
         w.str("name", m.name);
         w.vec("baseColor", m.baseColor);
         if (m.baseColorTex >= 0 && m.baseColorTex < (int)sc.textures.size() && !sc.textures[m.baseColorTex].name.empty())
-            w.str("baseColorTexture", sc.textures[m.baseColorTex].name);
+            w.str("baseColorTexture", path(sc.textures[m.baseColorTex].name));
         w.num("roughness", m.roughness);
         w.num("metallic", m.metallic);
         w.num("specular", m.specular);
@@ -435,7 +432,7 @@ std::string App::wzxSceneJson(bool withCamera) const {
             w.boolean("render", o.camRender);
             w.endObject();
         } else if (o.curve.valid()) w.value("curve", curveToJson(o.curve));   // curve: its points (CurveEditor.cpp)
-        else writeGeometry(w, sc, o);
+        else writeGeometry(w, sc, o, path);
         w.vec("position", o.position);
         w.vec4("rotation", objRot(o));
         w.vec("scale", o.scale);
@@ -461,14 +458,14 @@ std::string App::wzxSceneJson(bool withCamera) const {
     Json graph;
     if (m_game) Json::parse(m_game->graphJson(), graph);
     w.value("graph", graph);
-    w.str("probes", "game/probes/" + m_probeKey + ".probes");
+    w.str("probes", path("game/probes/" + m_probeKey + ".probes"));
     w.endObject();
     w.out += '\n';
     return w.out;
 }
 
 bool App::saveSceneFile(const std::wstring& path) {
-    if (!endsWithNoCase(path, L".wzx")) return saveLegacySceneFile(path);   // the Build and the player read .v3d.json
+    if (!endsWithNoCase(path, L".wzx")) return saveLegacySceneFile(path);   // old format, by extension only
     if (!writeFileSafe(path, wzxSceneJson(true))) return false;
     status(L"Scene saved: " + fs::path(path).filename().wstring(), 1);
     return true;
@@ -533,230 +530,25 @@ void App::loadWzxScene(const Json& j, const std::wstring& path) {
     Scene& sc = m_scene;
     int warnings = 0;
 
-    const Json& sj = j["scene"];
-    sc.name = sj["name"].str(toUtf8(fs::path(path).stem().wstring()));
-    sc.unitsPerMeter = f(sj["unitsPerMeter"], 100.0f);
-    sc.gridScale = f(sj["gridScale"], 1.0f);
-
+    WzxRead rd;
+    rd.readCurve = [](const Json& cj, Object& o) { curveFromJson(cj, o.curve); };   // curve objects (CurveEditor.cpp)
+    readWzxScene(j, sc, [this](const std::string& p) { return absPath(p); }, toUtf8(fs::path(path).stem().wstring()), rd);
+    m_placeholderMat = rd.placeholderMat;
+    for (const std::string& w : rd.warnings) log(w, 2);
+    warnings += (int)rd.warnings.size();
     const Json& ej = j["environment"];
-    Environment& e = sc.env;
-    e.top = vec3(ej["skyTop"], e.top);
-    e.horizon = vec3(ej["skyHorizon"], e.horizon);
-    e.bottom = vec3(ej["skyBottom"], e.bottom);
-    e.intensity = f(ej["skyIntensity"], e.intensity);
-    e.ambient = vec3(ej["ambient"], e.ambient);
-    e.visibleToCamera = flag(ej["visible"], true);
     if (ej["hdri"].type == Json::String && !ej["hdri"].s.empty()) {
+        const float intensity = sc.env.hdriIntensity, rotation = sc.env.hdriRotation;
         std::wstring hp = absPath(ej["hdri"].s);
         if (!setHdri(hp)) {   // kept in the scene (and the file) so that it comes back when the file is there again
             m_hdriPath = hp;
             log("HDRI not found: " + ej["hdri"].s + " (kept in the scene)", 2);
             ++warnings;
         }
+        sc.env.hdriIntensity = intensity;
+        sc.env.hdriRotation = rotation;
     }
-    e.hdriIntensity = f(ej["hdriIntensity"], 1.0f);
-    e.hdriRotation = angle(ej["hdriRotation"], 0.0f);
-
-    const Json& sun = j["sun"];
-    sc.sun.enabled = flag(sun["enabled"], false);
-    sc.sun.direction = vec3(sun["direction"], sc.sun.direction);
-    sc.sun.color = vec3(sun["color"], sc.sun.color);
-    sc.sun.intensity = f(sun["intensity"], sc.sun.intensity);
-    sc.sun.id = (uint32_t)std::max(0.0, sun["id"].num(0));
-    sc.sun.collection = (uint32_t)std::max(0.0, sun["collection"].num(0));
-    sc.sun.order = (int)sun["order"].num(0);
-    sc.sun.selectable = flag(sun["selectable"], true);
-
-    // Scene Manager collections (before the objects: their members refer to them)
-    for (const Json& cj : j["collections"].a) {
-        Collection c;
-        c.id = (uint32_t)std::max(0.0, cj["id"].num(0));
-        c.name = cj["name"].str("Collection");
-        c.color = (int)cj["color"].num(0);
-        c.collapsed = flag(cj["collapsed"], false);
-        c.order = (int)cj["order"].num(0);
-        if (c.id) sc.collections.push_back(c);
-    }
-
-    for (const Json& lj : j["lights"].a) {
-        AreaLight l;
-        l.name = lj["name"].str(l.name);
-        l.position = vec3(lj["position"], l.position);
-        l.target = vec3(lj["target"], l.target);
-        l.width = f(lj["width"], l.width);
-        l.height = f(lj["height"], l.height);
-        l.color = vec3(lj["color"], l.color);
-        l.intensity = f(lj["intensity"], l.intensity);
-        l.visibleToCamera = flag(lj["visible"], l.visibleToCamera);
-        l.enabled = flag(lj["enabled"], l.enabled);
-        l.id = (uint32_t)std::max(0.0, lj["id"].num(0));
-        l.parent = (uint32_t)std::max(0.0, lj["parent"].num(0));
-        l.collection = (uint32_t)std::max(0.0, lj["collection"].num(0));
-        l.order = (int)lj["order"].num(0);
-        l.selectable = flag(lj["selectable"], true);
-        sc.lights.push_back(l);
-    }
-
-    // textures: one per file; a missing image is a small magenta texture that keeps its path
-    std::map<std::string, int> textures;
-    auto texture = [&](const std::string& rel) {
-        auto it = textures.find(rel);
-        if (it != textures.end()) return it->second;
-        Texture t;
-        std::string err;
-        if (!loadImage(absPath(rel), t, &err, 2048)) {
-            log("Texture not found: " + rel + " (kept in the scene)", 2);
-            ++warnings;
-            t = Texture();
-            t.width = t.height = 2;
-            for (int k = 0; k < 4; ++k) t.rgba.insert(t.rgba.end(), {255, 0, 255, 255});
-        }
-        t.name = rel;
-        return textures[rel] = sc.addTexture(std::move(t));
-    };
-    for (const Json& mj : j["materials"].a) {
-        Material m;
-        m.name = mj["name"].str(m.name);
-        m.baseColor = vec3(mj["baseColor"], m.baseColor);
-        if (mj["baseColorTexture"].type == Json::String) m.baseColorTex = texture(mj["baseColorTexture"].s);
-        m.roughness = f(mj["roughness"], m.roughness);
-        m.metallic = f(mj["metallic"], m.metallic);
-        m.specular = f(mj["specular"], m.specular);
-        m.transmission = f(mj["transmission"], m.transmission);
-        m.ior = f(mj["ior"], m.ior);
-        m.subsurface = f(mj["subsurface"], m.subsurface);
-        m.sssRadius = vec3(mj["subsurfaceRadius"], m.sssRadius);
-        m.emission = vec3(mj["emission"], m.emission);
-        m.emissionStrength = f(mj["emissionStrength"], m.emissionStrength);
-        m.coat = f(mj["coat"], m.coat);
-        m.coatRoughness = f(mj["coatRoughness"], m.coatRoughness);
-        m.bevelRadius = f(mj["bevelRadius"], m.bevelRadius);
-        m.flags = (uint32_t)mj["flags"].num(0);
-        m.preset = (int)mj["preset"].num(0);
-        m.colorId = (int)mj["color"].num(-1);
-        sc.addMaterial(m);
-    }
-    const int fileMaterials = (int)sc.materials.size();
-
-    // meshes: shared by every object of the same shape or file
-    std::map<std::string, int> meshes;
-    std::map<int, bool> missing;   // mesh index -> placeholder of a missing file
-    auto shapeMesh = [&](const Json& s) {
-        const std::string prim = s["primitive"].str();
-        if (const PartDef* p = findPart(prim)) return partMesh(sc, *p);
-        std::string key;
-        MeshData mesh;
-        if (prim == "plane") {
-            float size = f(s["size"], 400.0f);
-            key = "plane " + fnum(size);
-            if (!meshes.count(key)) mesh = makePlane(size);
-        } else if (prim == "box") {
-            float3 mn = vec3(s["min"], float3(-3, 0, -3)), mx = vec3(s["max"], float3(3, 6, 3));
-            key = "box " + fnum(mn.x) + " " + fnum(mn.y) + " " + fnum(mn.z) + " " + fnum(mx.x) + " " + fnum(mx.y) + " " + fnum(mx.z);
-            if (!meshes.count(key)) mesh = makeBox(mn, mx);
-        } else {
-            key = "unknown " + prim;
-            if (!meshes.count(key)) {
-                log("Unknown primitive: " + prim + " (replaced by a box)", 2);
-                ++warnings;
-                mesh = placeholderBox();
-            }
-        }
-        auto it = meshes.find(key);
-        if (it != meshes.end()) return it->second;
-        return meshes[key] = sc.addMesh(prim == "plane" ? "ground" : prim, std::move(mesh));
-    };
-    auto fileMesh = [&](const std::string& rel) {
-        const std::string key = kMeshFile + rel;
-        auto it = meshes.find(key);
-        if (it != meshes.end()) return it->second;
-        MeshData mesh;
-        std::string err;
-        bool ok = loadObj(absPath(rel), mesh, nullptr, &err);
-        if (!ok) {
-            log("Mesh file not found: " + rel + " (red placeholder, the path is kept)", 2);
-            ++warnings;
-            mesh = placeholderBox();
-        }
-        int idx = sc.addMesh(key, std::move(mesh));
-        if (!ok) missing[idx] = true;
-        return meshes[key] = idx;
-    };
-
-    for (const Json& oj : j["objects"].a) {
-        Object o;
-        o.name = oj["name"].str("Object");
-        o.part = oj["type"].str();
-        const Json& shape = oj["shape"];
-        for (int t = PRIM_CUBE; t <= PRIM_DISK; ++t)   // parametric primitive: its mesh is built after addObject
-            if (shape["primitive"].str() == primitiveName(t)) {
-                PrimitiveParams& p = o.prim;
-                p.type = t;
-                p.size = vec3(shape["size"], p.size);
-                p.radius = f(shape["radius"], p.radius);
-                p.radius2 = f(shape["radius2"], p.radius2);
-                p.segments = (int)shape["segments"].num(p.segments);
-                p.rings = (int)shape["rings"].num(p.rings);
-                p.subdiv = (int)shape["subdiv"].num(p.subdiv);
-                o.mesh = -1;
-            }
-        o.group = flag(oj["group"], false);   // Scene Manager group node: a transform only
-        const Json& cj = oj["camera"];
-        o.camera = !o.group && cj.type == Json::Object;   // camera object: a transform and its lens
-        if (o.camera) {
-            o.mesh = -1;
-            if (o.part.empty()) o.part = "CAMERA";
-            o.camFovY = angle(cj["fov"], o.camFovY);
-            o.camOrtho = flag(cj["orthographic"], false);
-            o.camOrthoHeight = std::max(f(cj["orthoHeight"], o.camOrthoHeight), 1e-3f);
-            o.camDistance = std::max(f(cj["distance"], o.camDistance), 0.01f);
-            o.camAspect = std::clamp(f(cj["aspect"], o.camAspect), 0.1f, 10.0f);
-            o.camRender = flag(cj["render"], false);
-        }
-        if (o.group) { o.mesh = -1; if (o.part.empty()) o.part = "GROUP"; }
-        else if (o.camera) {}
-        else if (curveFromJson(oj["curve"], o.curve)) { o.mesh = -1; if (o.part.empty()) o.part = "CURVE"; }   // curve object
-        else if (o.prim.type == PRIM_NONE) o.mesh = oj["mesh"].type == Json::String ? fileMesh(oj["mesh"].s) : shapeMesh(shape);
-        o.position = vec3(oj["position"], o.position);
-        const Json& r = oj["rotation"];
-        if (r.type == Json::Array && r.a.size() == 4) {
-            o.rot = float4((float)r[0].num(), (float)r[1].num(), (float)r[2].num(), (float)r[3].num(1));
-            float len = std::sqrt(o.rot.x * o.rot.x + o.rot.y * o.rot.y + o.rot.z * o.rot.z + o.rot.w * o.rot.w);
-            if (std::fabs(len - 1.0f) > 1e-4f) o.rot = qNormalize(o.rot);   // hand-edited file
-        }
-        o.useRot = true;
-        o.scale = vec3(oj["scale"], o.scale);
-        o.pivot = vec3(oj["pivot"], o.pivot);
-        o.visible = flag(oj["visible"], true);
-        o.selectable = flag(oj["selectable"], true);
-        o.id = (uint32_t)std::max(0.0, oj["id"].num(0));   // Scene Manager (0 / missing: a new id is given)
-        o.parent = (uint32_t)std::max(0.0, oj["parent"].num(0));
-        o.collection = (uint32_t)std::max(0.0, oj["collection"].num(0));
-        o.order = (int)oj["order"].num(0);
-        o.collapsed = flag(oj["collapsed"], false);
-        int m = (int)oj["material"].num(-1);
-        if (o.group || o.camera) {
-            o.material = 0;   // never used (no geometry)
-            sc.addObject(o);
-            continue;
-        }
-        if (m < 0 || m >= fileMaterials) {
-            Material def;
-            def.name = o.name;
-            m = sc.addMaterial(def);
-        }
-        o.material = m;
-        if (missing.count(o.mesh)) {   // red placeholder: its own red material, the file keeps the object's material
-            Material red;
-            red.name = "Missing mesh";
-            red.baseColor = float3(srgbToLinear(0.95f), srgbToLinear(0.1f), srgbToLinear(0.08f));
-            red.roughness = 0.6f;
-            o.material = sc.addMaterial(red);
-            m_placeholderMat[o.material] = m;
-        }
-        int idx = sc.addObject(o);
-        if (o.prim.type != PRIM_NONE) syncPrimitiveMesh(sc, idx);
-    }
+    const Camera c = sc.camera;
 
     const Json& rj = j["render"];
     if (rj.type == Json::Object) {
@@ -783,19 +575,6 @@ void App::loadWzxScene(const Json& j, const std::wstring& path) {
         rs.rasterEnvSun = flag(rj["hdriSun"], rs.rasterEnvSun);
         rs.bakedProbes = flag(rj["bakedProbes"], rs.bakedProbes);
     }
-
-    const Json& cj = j["camera"];
-    Camera& c = sc.camera;
-    c.target = vec3(cj["target"], c.target);
-    c.yaw = angle(cj["yaw"], c.yaw);
-    c.pitch = angle(cj["pitch"], c.pitch);
-    c.distance = f(cj["distance"], c.distance);
-    c.fovY = angle(cj["fov"], c.fovY);
-    c.dof = flag(cj["dof"], c.dof);
-    c.fStop = f(cj["fStop"], c.fStop);
-    c.focalLengthMm = f(cj["focalLength"], c.focalLengthMm);
-    c.focusDistance = f(cj["focusDistance"], c.focusDistance);
-    c.sensorScale = f(cj["sensorScale"], sc.unitsPerMeter);
 
     if (m_game) m_game->loadVillage(j["village"]);   // after the objects: the houses go on the grid
     else m_pendingVillage = j["village"];             // opened from the command line, before the game layer

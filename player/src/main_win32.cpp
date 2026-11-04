@@ -19,6 +19,7 @@
 
 #include <algorithm>
 #include <cfloat>
+#include <filesystem>
 #include <string>
 
 using namespace Diligent;
@@ -185,6 +186,8 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show) {
         else if (a == L"--baked" && i + 1 < argc) opt.bakedProbes = _wtoi(argv[++i]) != 0;
     }
     LocalFree(argv);
+    if (opt.scene == "studio" && std::filesystem::exists(std::filesystem::u8path(opt.dataDir) / "game.json"))
+        opt.scene = "game";   // an exported game beside the executable
 
     WNDCLASSEXW wc = {sizeof(wc)};
     wc.style = CS_HREDRAW | CS_VREDRAW;

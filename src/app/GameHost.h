@@ -8,6 +8,7 @@
 #include "game/RtsCamera.h"
 #include "game/Runtime.h"
 #include "vp3d/Scene.h"
+#include <filesystem>
 #include <map>
 #include <string>
 #include <vector>
@@ -102,6 +103,8 @@ private:
     bool saveProfiles(const std::vector<BuildProfile>& profiles);
     bool build(const std::string& profile, bool run, std::wstring& outDir, std::string& err);
     bool buildProfile(const BuildProfile& bp, bool run, std::wstring& outDir, std::string& err);
+    bool exportScene(const std::filesystem::path& out, std::string& err, const std::string& skip = std::string());   // scene.wzx and the files it uses
+    bool exportIos(const BuildProfile& bp, std::wstring& outDir, std::string& err);   // game\export for the iOS workflow
     void drawBuildWindow();
     void handleRequests();
     std::string command(const Json& j, int& status);
@@ -183,6 +186,7 @@ private:
     // Build window (top bar Build, F7)
     bool m_showBuild = false;
     std::vector<BuildProfile> m_profiles;
+    int m_buildPlatform = 0;   // Build window: 0 Windows, 1 iOS
     int m_profileIdx = 0;
     std::string m_buildResult;
     bool m_buildFailed = false;

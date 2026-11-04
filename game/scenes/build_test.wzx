@@ -1,0 +1,770 @@
+{
+    "format":  "wzx-scene",
+    "version":  1,
+    "units":  "cm",
+    "scene":  {
+                  "name":  "Build test",
+                  "unitsPerMeter":  100,
+                  "gridScale":  1
+              },
+    "collections":  [
+
+                    ],
+    "camera":  {
+                   "target":  [
+                                  0,
+                                  1,
+                                  0
+                              ],
+                   "yaw":  30,
+                   "pitch":  28,
+                   "distance":  22,
+                   "fov":  32,
+                   "dof":  false,
+                   "fStop":  2.8,
+                   "focalLength":  50,
+                   "focusDistance":  26,
+                   "sensorScale":  100
+               },
+    "environment":  {
+                        "hdri":  null,
+                        "hdriIntensity":  1,
+                        "hdriRotation":  0,
+                        "visible":  true,
+                        "ambient":  [
+                                        0.1,
+                                        0.1,
+                                        0.11
+                                    ],
+                        "skyTop":  [
+                                       0.03,
+                                       0.032,
+                                       0.038
+                                   ],
+                        "skyHorizon":  [
+                                           0.055,
+                                           0.057,
+                                           0.062
+                                       ],
+                        "skyBottom":  [
+                                          0.02,
+                                          0.02,
+                                          0.022
+                                      ],
+                        "skyIntensity":  1
+                    },
+    "sun":  {
+                "enabled":  true,
+                "direction":  [
+                                  -0.52541065,
+                                  0.63799864,
+                                  0.56294
+                              ],
+                "color":  [
+                              1,
+                              0.95,
+                              0.88
+                          ],
+                "intensity":  4,
+                "id":  1,
+                "collection":  0,
+                "order":  0,
+                "selectable":  true
+            },
+    "lights":  [
+                   {
+                       "name":  "Top Fill",
+                       "position":  [
+                                        4,
+                                        45,
+                                        4
+                                    ],
+                       "target":  [
+                                      0,
+                                      0,
+                                      0
+                                  ],
+                       "width":  30,
+                       "height":  30,
+                       "color":  [
+                                     1,
+                                     1,
+                                     1
+                                 ],
+                       "intensity":  4,
+                       "visible":  false,
+                       "enabled":  true,
+                       "id":  3,
+                       "parent":  0,
+                       "collection":  0,
+                       "order":  0,
+                       "selectable":  true
+                   },
+                   {
+                       "name":  "Warm key",
+                       "position":  [
+                                        -14,
+                                        10,
+                                        8
+                                    ],
+                       "target":  [
+                                      0,
+                                      1,
+                                      0
+                                  ],
+                       "width":  6,
+                       "height":  6,
+                       "color":  [
+                                     1,
+                                     0.6,
+                                     0.3
+                                 ],
+                       "intensity":  12,
+                       "visible":  false,
+                       "enabled":  true,
+                       "id":  4,
+                       "parent":  0,
+                       "collection":  0,
+                       "order":  0,
+                       "selectable":  true
+                   }
+               ],
+    "render":  {
+                   "mode":  0,
+                   "quality":  1,
+                   "exposure":  1.3,
+                   "tonemapper":  0,
+                   "vignette":  0.18,
+                   "maxBounces":  10,
+                   "maxSamples":  4096,
+                   "denoise":  true,
+                   "denoiseStrength":  1,
+                   "denoisePasses":  3,
+                   "denoiseEdgeLuma":  0.5,
+                   "bevel":  true,
+                   "bevelScale":  1,
+                   "fireflyClamp":  25,
+                   "filterGlossy":  0,
+                   "indirectClamp":  0,
+                   "sssScale":  1,
+                   "lightScale":  1,
+                   "hdriSun":  true,
+                   "bakedProbes":  false
+               },
+    "materials":  [
+                      {
+                          "name":  "Grid Floor",
+                          "baseColor":  [
+                                            0.022,
+                                            0.023,
+                                            0.026
+                                        ],
+                          "roughness":  0.6,
+                          "metallic":  0,
+                          "specular":  0.25,
+                          "transmission":  0,
+                          "ior":  1.5,
+                          "subsurface":  0,
+                          "subsurfaceRadius":  [
+                                                   1,
+                                                   0.35,
+                                                   0.15
+                                               ],
+                          "emission":  [
+                                           0,
+                                           0,
+                                           0
+                                       ],
+                          "emissionStrength":  0,
+                          "coat":  0,
+                          "coatRoughness":  0.05,
+                          "bevelRadius":  0,
+                          "flags":  1,
+                          "preset":  7,
+                          "color":  -1
+                      },
+                      {
+                          "name":  "Red plastic",
+                          "baseColor":  [
+                                            0.7,
+                                            0.05,
+                                            0.04
+                                        ],
+                          "roughness":  0.35,
+                          "metallic":  0,
+                          "specular":  0.5,
+                          "transmission":  0,
+                          "ior":  1.5,
+                          "subsurface":  0,
+                          "subsurfaceRadius":  [
+                                                   1,
+                                                   0.35,
+                                                   0.15
+                                               ],
+                          "emission":  [
+                                           0,
+                                           0,
+                                           0
+                                       ],
+                          "emissionStrength":  0,
+                          "coat":  0,
+                          "coatRoughness":  0.05,
+                          "bevelRadius":  0,
+                          "flags":  0,
+                          "preset":  0,
+                          "color":  -1
+                      },
+                      {
+                          "name":  "Chrome",
+                          "baseColor":  [
+                                            0.9,
+                                            0.9,
+                                            0.92
+                                        ],
+                          "roughness":  0.08,
+                          "metallic":  1,
+                          "specular":  0.5,
+                          "transmission":  0,
+                          "ior":  1.5,
+                          "subsurface":  0,
+                          "subsurfaceRadius":  [
+                                                   1,
+                                                   0.35,
+                                                   0.15
+                                               ],
+                          "emission":  [
+                                           0,
+                                           0,
+                                           0
+                                       ],
+                          "emissionStrength":  0,
+                          "coat":  0,
+                          "coatRoughness":  0.05,
+                          "bevelRadius":  0,
+                          "flags":  0,
+                          "preset":  2,
+                          "color":  -1
+                      },
+                      {
+                          "name":  "Gold",
+                          "baseColor":  [
+                                            1,
+                                            0.66,
+                                            0.22
+                                        ],
+                          "roughness":  0.3,
+                          "metallic":  1,
+                          "specular":  0.5,
+                          "transmission":  0,
+                          "ior":  1.5,
+                          "subsurface":  0,
+                          "subsurfaceRadius":  [
+                                                   1,
+                                                   0.35,
+                                                   0.15
+                                               ],
+                          "emission":  [
+                                           0,
+                                           0,
+                                           0
+                                       ],
+                          "emissionStrength":  0,
+                          "coat":  0,
+                          "coatRoughness":  0.05,
+                          "bevelRadius":  0,
+                          "flags":  0,
+                          "preset":  0,
+                          "color":  -1
+                      },
+                      {
+                          "name":  "Neon",
+                          "baseColor":  [
+                                            0.1,
+                                            0.6,
+                                            1
+                                        ],
+                          "roughness":  0.5,
+                          "metallic":  0,
+                          "specular":  0.5,
+                          "transmission":  0,
+                          "ior":  1.5,
+                          "subsurface":  0,
+                          "subsurfaceRadius":  [
+                                                   1,
+                                                   0.35,
+                                                   0.15
+                                               ],
+                          "emission":  [
+                                           0.1,
+                                           0.6,
+                                           1
+                                       ],
+                          "emissionStrength":  6,
+                          "coat":  0,
+                          "coatRoughness":  0.05,
+                          "bevelRadius":  0,
+                          "flags":  0,
+                          "preset":  8,
+                          "color":  -1
+                      },
+                      {
+                          "name":  "House",
+                          "baseColor":  [
+                                            1,
+                                            1,
+                                            1
+                                        ],
+                          "roughness":  0.7,
+                          "metallic":  0,
+                          "specular":  0.5,
+                          "transmission":  0,
+                          "ior":  1.5,
+                          "subsurface":  0,
+                          "subsurfaceRadius":  [
+                                                   1,
+                                                   0.35,
+                                                   0.15
+                                               ],
+                          "emission":  [
+                                           0,
+                                           0,
+                                           0
+                                       ],
+                          "emissionStrength":  0,
+                          "coat":  0,
+                          "coatRoughness":  0.05,
+                          "bevelRadius":  0,
+                          "flags":  0,
+                          "preset":  7,
+                          "color":  -1,
+                          "baseColorTexture":  "assets/HOUSE/cozy+cottage+3d+model_basecolor.jpg"
+                      },
+                      {
+                          "name":  "Textured cube",
+                          "baseColor":  [
+                                            1,
+                                            1,
+                                            1
+                                        ],
+                          "roughness":  0.6,
+                          "metallic":  0,
+                          "specular":  0.5,
+                          "transmission":  0,
+                          "ior":  1.5,
+                          "subsurface":  0,
+                          "subsurfaceRadius":  [
+                                                   1,
+                                                   0.35,
+                                                   0.15
+                                               ],
+                          "emission":  [
+                                           0,
+                                           0,
+                                           0
+                                       ],
+                          "emissionStrength":  0,
+                          "coat":  0,
+                          "coatRoughness":  0.05,
+                          "bevelRadius":  0,
+                          "flags":  0,
+                          "preset":  7,
+                          "color":  -1,
+                          "baseColorTexture":  "assets/HOUSE/cozy+cottage+3d+model_basecolor.jpg"
+                      },
+                      {
+                          "name":  "Green pyramid",
+                          "baseColor":  [
+                                            0.12,
+                                            0.5,
+                                            0.15
+                                        ],
+                          "roughness":  0.5,
+                          "metallic":  0,
+                          "specular":  0.5,
+                          "transmission":  0,
+                          "ior":  1.5,
+                          "subsurface":  0,
+                          "subsurfaceRadius":  [
+                                                   1,
+                                                   0.35,
+                                                   0.15
+                                               ],
+                          "emission":  [
+                                           0,
+                                           0,
+                                           0
+                                       ],
+                          "emissionStrength":  0,
+                          "coat":  0,
+                          "coatRoughness":  0.05,
+                          "bevelRadius":  0,
+                          "flags":  0,
+                          "preset":  0,
+                          "color":  -1
+                      }
+                  ],
+    "objects":  [
+                    {
+                        "name":  "Floor",
+                        "type":  "GROUND",
+                        "shape":  {
+                                      "primitive":  "plane",
+                                      "size":  400
+                                  },
+                        "position":  [
+                                         0,
+                                         0,
+                                         0
+                                     ],
+                        "rotation":  [
+                                         0,
+                                         0,
+                                         0,
+                                         1
+                                     ],
+                        "scale":  [
+                                      1,
+                                      1,
+                                      1
+                                  ],
+                        "visible":  true,
+                        "selectable":  false,
+                        "id":  2,
+                        "parent":  0,
+                        "collection":  0,
+                        "order":  0,
+                        "collapsed":  false,
+                        "material":  0
+                    },
+                    {
+                        "name":  "Cube",
+                        "type":  "Cube",
+                        "shape":  {
+                                      "primitive":  "Cube",
+                                      "size":  [
+                                                   2.5,
+                                                   2.5,
+                                                   2.5
+                                               ],
+                                      "radius":  0.5,
+                                      "radius2":  0.15,
+                                      "segments":  32,
+                                      "rings":  16,
+                                      "subdiv":  1
+                                  },
+                        "position":  [
+                                         -6,
+                                         1.25,
+                                         -1
+                                     ],
+                        "rotation":  [
+                                         0,
+                                         0.38268343236508978,
+                                         0,
+                                         0.92387953251128674
+                                     ],
+                        "scale":  [
+                                      1,
+                                      1,
+                                      1
+                                  ],
+                        "visible":  true,
+                        "selectable":  true,
+                        "id":  11,
+                        "parent":  0,
+                        "collection":  0,
+                        "order":  11,
+                        "collapsed":  false,
+                        "material":  6
+                    },
+                    {
+                        "name":  "Sphere",
+                        "type":  "Sphere",
+                        "shape":  {
+                                      "primitive":  "Sphere",
+                                      "size":  [
+                                                   1,
+                                                   1,
+                                                   1
+                                               ],
+                                      "radius":  1.5,
+                                      "radius2":  0.15,
+                                      "segments":  48,
+                                      "rings":  24,
+                                      "subdiv":  1
+                                  },
+                        "position":  [
+                                         -1.5,
+                                         1.5,
+                                         -4
+                                     ],
+                        "rotation":  [
+                                         0,
+                                         0,
+                                         0,
+                                         1
+                                     ],
+                        "scale":  [
+                                      1,
+                                      1,
+                                      1
+                                  ],
+                        "visible":  true,
+                        "selectable":  true,
+                        "id":  12,
+                        "parent":  0,
+                        "collection":  0,
+                        "order":  12,
+                        "collapsed":  false,
+                        "material":  2
+                    },
+                    {
+                        "name":  "Torus",
+                        "type":  "Torus",
+                        "shape":  {
+                                      "primitive":  "Torus",
+                                      "size":  [
+                                                   1,
+                                                   1,
+                                                   1
+                                               ],
+                                      "radius":  1.4,
+                                      "radius2":  0.45,
+                                      "segments":  48,
+                                      "rings":  24,
+                                      "subdiv":  1
+                                  },
+                        "position":  [
+                                         2.5,
+                                         0.45,
+                                         -1
+                                     ],
+                        "rotation":  [
+                                         0,
+                                         0,
+                                         0,
+                                         1
+                                     ],
+                        "scale":  [
+                                      1,
+                                      1,
+                                      1
+                                  ],
+                        "visible":  true,
+                        "selectable":  true,
+                        "id":  13,
+                        "parent":  0,
+                        "collection":  0,
+                        "order":  13,
+                        "collapsed":  false,
+                        "material":  3
+                    },
+                    {
+                        "name":  "Cylinder",
+                        "type":  "Cylinder",
+                        "shape":  {
+                                      "primitive":  "Cylinder",
+                                      "size":  [
+                                                   1,
+                                                   3,
+                                                   1
+                                               ],
+                                      "radius":  0.6,
+                                      "radius2":  0.15,
+                                      "segments":  32,
+                                      "rings":  16,
+                                      "subdiv":  1
+                                  },
+                        "position":  [
+                                         -3,
+                                         1.5,
+                                         3
+                                     ],
+                        "rotation":  [
+                                         0,
+                                         0,
+                                         0,
+                                         1
+                                     ],
+                        "scale":  [
+                                      1,
+                                      1,
+                                      1
+                                  ],
+                        "visible":  true,
+                        "selectable":  true,
+                        "id":  14,
+                        "parent":  0,
+                        "collection":  0,
+                        "order":  14,
+                        "collapsed":  false,
+                        "material":  4
+                    },
+                    {
+                        "name":  "Red box",
+                        "type":  "Cube",
+                        "shape":  {
+                                      "primitive":  "Cube",
+                                      "size":  [
+                                                   1.5,
+                                                   1.5,
+                                                   1.5
+                                               ],
+                                      "radius":  0.5,
+                                      "radius2":  0.15,
+                                      "segments":  32,
+                                      "rings":  16,
+                                      "subdiv":  1
+                                  },
+                        "position":  [
+                                         1,
+                                         0.75,
+                                         4
+                                     ],
+                        "rotation":  [
+                                         0,
+                                         0,
+                                         0,
+                                         1
+                                     ],
+                        "scale":  [
+                                      1,
+                                      1,
+                                      1
+                                  ],
+                        "visible":  true,
+                        "selectable":  true,
+                        "id":  15,
+                        "parent":  0,
+                        "collection":  0,
+                        "order":  15,
+                        "collapsed":  false,
+                        "material":  1
+                    },
+                    {
+                        "name":  "House",
+                        "type":  "MESH",
+                        "mesh":  "assets/HOUSE/House01_low.obj",
+                        "position":  [
+                                         7,
+                                         0,
+                                         2
+                                     ],
+                        "rotation":  [
+                                         0,
+                                         0,
+                                         0,
+                                         1
+                                     ],
+                        "scale":  [
+                                      0.03,
+                                      0.03,
+                                      0.03
+                                  ],
+                        "visible":  true,
+                        "selectable":  true,
+                        "id":  16,
+                        "parent":  0,
+                        "collection":  0,
+                        "order":  16,
+                        "collapsed":  false,
+                        "material":  5
+                    },
+                    {
+                        "name":  "Pyramid",
+                        "type":  "MESH",
+                        "mesh":  "assets/test/pyramid.obj",
+                        "position":  [
+                                         5,
+                                         0,
+                                         -5
+                                     ],
+                        "rotation":  [
+                                         0,
+                                         0,
+                                         0,
+                                         1
+                                     ],
+                        "scale":  [
+                                      1,
+                                      1,
+                                      1
+                                  ],
+                        "visible":  true,
+                        "selectable":  true,
+                        "id":  17,
+                        "parent":  0,
+                        "collection":  0,
+                        "order":  17,
+                        "collapsed":  false,
+                        "material":  7
+                    },
+                    {
+                        "name":  "Hidden cube",
+                        "type":  "Cube",
+                        "shape":  {
+                                      "primitive":  "Cube",
+                                      "size":  [
+                                                   3,
+                                                   3,
+                                                   3
+                                               ],
+                                      "radius":  0.5,
+                                      "radius2":  0.15,
+                                      "segments":  32,
+                                      "rings":  16,
+                                      "subdiv":  1
+                                  },
+                        "position":  [
+                                         0,
+                                         1.5,
+                                         0
+                                     ],
+                        "rotation":  [
+                                         0,
+                                         0,
+                                         0,
+                                         1
+                                     ],
+                        "scale":  [
+                                      1,
+                                      1,
+                                      1
+                                  ],
+                        "visible":  false,
+                        "selectable":  true,
+                        "id":  18,
+                        "parent":  0,
+                        "collection":  0,
+                        "order":  18,
+                        "collapsed":  false,
+                        "material":  1
+                    }
+                ],
+    "village":  [
+
+                ],
+    "graph":  {
+                  "format":  "wzx-graph",
+                  "name":  "main",
+                  "version":  1,
+                  "groups":  [
+
+                             ],
+                  "links":  [
+
+                            ],
+                  "nodes":  [
+                                {
+                                    "id":  1,
+                                    "type":  "event.start",
+                                    "x":  0,
+                                    "y":  0,
+                                    "in":  {
+
+                                           }
+                                }
+                            ]
+              },
+    "probes":  "game/probes/build_test.probes"
+}

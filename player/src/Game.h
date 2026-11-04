@@ -3,6 +3,7 @@
 // AppRts.cpp) but without the editor. Input is read from Dear ImGui (mouse / one finger, keys), plus the
 // physical move keys and the touch gestures given by the platform file.
 #pragma once
+#include "app/Json.h"
 #include "game/Placement.h"
 #include "game/RtsCamera.h"
 #include "game/Runtime.h"
@@ -26,8 +27,12 @@ struct CameraControls {
 
 class Game : public game::World {
 public:
-    // dataDir: folder holding game/main.graph.json and assets/HOUSE. touch: no screen edge scrolling, touch buttons.
-    bool init(vp3d::Scene* scene, const std::string& dataDir, float uiScale, bool touch, std::string* error);
+    // dataDir: folder holding assets/HOUSE (and game/main.graph.json when graphText is empty). graphText: the graph of the scene
+    // (a build's graph.json). touch: no screen edge scrolling, touch buttons.
+    bool init(vp3d::Scene* scene, const std::string& dataDir, float uiScale, bool touch, std::string* error,
+              const std::string& graphText = std::string());
+    // The village of a scene file: each house on its cell and turn (GameHost::loadVillage), call after init.
+    void loadVillage(const app::Json& list);
     // Inside an ImGui frame: input, graph, camera, houses, then the HUD.
     void frame(float dt, float viewW, float viewH, const CameraControls& cam);
     const std::deque<std::string>& log() const { return m_rt.log; }   // the graph's messages and errors
