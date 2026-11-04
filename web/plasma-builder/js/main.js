@@ -303,18 +303,20 @@ function renderPrintInfo() {
   renderInfo();
   $('asmInfo').textContent = `${Math.round(t / 1000)}k triangles`;
 }
-const QUALITY = { rt: 'Temps réel', hq: 'Haute qualité', pt: 'Path tracing' };
+const QUALITY = { rt: 'Temps réel', hq: 'Haute qualité', bhq: 'HQ BrickIt', pt: 'Path tracing' };
 function renderInfo() {
   const s = vp.settings;
   let q = QUALITY[ui.quality];
+  if (ui.quality === 'bhq' && vp.gi) q += ` · GI ${vp.gi.stats.state}`;
   if (ui.quality === 'pt') q += vp.ptLoading ? ' · chargement…' : vp.spp ? ` · ${Math.floor(vp.spp)} spp` : ' · préparation…';
   $('vpInfo').textContent = `${q} · ${TONEMAPPERS[s.tonemapper].name}\n${ui.info || ''}`;
 }
-const R_FMT = { ev: v => (v > 0 ? '+' : '') + (+v).toFixed(1) + ' EV', vignette: v => (+v).toFixed(2), envIntensity: v => (+v).toFixed(2), envRotation: v => Math.round(v * 180 / Math.PI) + '°', bounces: v => v, filterGlossy: v => (+v).toFixed(2) };
+const R_FMT = { ev: v => (v > 0 ? '+' : '') + (+v).toFixed(1) + ' EV', vignette: v => (+v).toFixed(2), envIntensity: v => (+v).toFixed(2), envRotation: v => Math.round(v * 180 / Math.PI) + '°', bounces: v => v, filterGlossy: v => (+v).toFixed(2), giStrength: v => (+v).toFixed(2), aoStrength: v => (+v).toFixed(2), aoRadius: v => (+v).toFixed(2) };
 function renderRenderPanel() {
   const s = vp.settings;
   $('renderSet').querySelectorAll('[data-r]').forEach(el => { const k = el.dataset.r; if (el.type === 'checkbox') el.checked = !!s[k]; else el.value = String(s[k]); });
   $('renderSet').querySelectorAll('[data-o]').forEach(o => { o.textContent = R_FMT[o.dataset.o](s[o.dataset.o]); });
+  $('bhqSet').hidden = ui.quality !== 'bhq';
   const hdriOpt = $('renderSet').querySelector('option[value="hdri"]');
   hdriOpt.disabled = !vp.studio.hdri;
   hdriOpt.textContent = vp.studio.hdri ? 'HDRI · ' + vp.studio.hdri.name : 'HDRI (à charger)';
@@ -383,6 +385,10 @@ function removeAt(sid) {
   commit();
   renderAll();
 }
+function renderGIInfo() {
+  const g = vp.gi;
+  $('giInfo').textContent = g ? `${g.count} sondes (${g.dims.x}×${g.dims.y}×${g.dims.z}) · ${g.stats.state}` : '';
+}
 function setStep(step) {
   ui.step = step;
   if (step === 'lib') { ui.sockets = true; ui.rig = false; $('searchInput').focus(); }
@@ -395,7 +401,7 @@ function setStep(step) {
 function setQuality(q) {
   ui.quality = q;
   vp.setQuality(q).then(renderInfo, err => { console.error(err); toast('Path tracing indisponible : ' + (err.message || err)); setQuality('hq'); });
-  renderSteps(); renderPrintInfo();
+  renderSteps(); renderPrintInfo(); renderRenderPanel();
 }
 function toast(msg) {
   const t = $('toast'); t.textContent = msg; t.classList.add('show');
@@ -684,7 +690,7 @@ const tmp = new THREE.Vector3();
 let infoT = 0;
 vp.onFrame = dt => {
   hold.update(dt, applySquash);
-  if (ui.quality === 'pt' && (infoT += dt) > 0.25) { infoT = 0; renderInfo(); }
+  if ((ui.quality === 'pt' || ui.quality === 'bhq') && (infoT += dt) > 0.25) { infoT = 0; renderInfo(); renderGIInfo(); }
   if (!model || !ui.sockets) return;
   const el = $('vp'), w = el.clientWidth, h = el.clientHeight;
   for (const b of $('pins').children) {

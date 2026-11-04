@@ -97,7 +97,7 @@
                   <button type="button" id="rigBtn" class="icon" aria-pressed="false" aria-label="Squelette" title="Squelette"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="4" r="2"/><path d="M12 6v8M6 9h12M12 14l-4 7M12 14l4 7"/></svg></button>
                 </div>
                 <label class="select"><span class="sr">Qualité de rendu</span>
-                  <select id="qualitySel"><option value="rt">Temps réel</option><option value="hq">Haute qualité</option><option value="pt">Path tracing</option></select>
+                  <select id="qualitySel"><option value="rt">Temps réel</option><option value="hq">Haute qualité</option><option value="bhq">HQ BrickIt</option><option value="pt">Path tracing</option></select>
                 </label>
               </div>
             </div>
@@ -173,6 +173,14 @@
                 <label>Rotation <output data-o="envRotation"></output><input type="range" data-r="envRotation" min="0" max="6.2832" step="0.0175"></label>
                 <label class="check"><input type="checkbox" data-r="envVisible">Visible en fond</label>
                 <label class="check"><input type="checkbox" data-r="studioLights">Lumières studio (key, fill, rim)</label>
+                <div class="rset" id="bhqSet">
+                <h3>HQ BrickIt</h3>
+                <label>Intensité GI <output data-o="giStrength"></output><input type="range" data-r="giStrength" min="0" max="2" step="0.05"></label>
+                <label class="check"><input type="checkbox" data-r="giFreeze">Figer la GI pendant le déplacement</label>
+                <label>Occlusion (SSAO) <output data-o="aoStrength"></output><input type="range" data-r="aoStrength" min="0" max="1" step="0.05"></label>
+                <label>Rayon SSAO <output data-o="aoRadius"></output><input type="range" data-r="aoRadius" min="0.02" max="0.3" step="0.01"></label>
+                <p class="muted" id="giInfo"></p>
+                </div>
                 <div class="rset" id="ptSet">
                 <h3>Path tracing</h3>
                 <label>Rebonds <output data-o="bounces"></output><input type="range" data-r="bounces" min="1" max="12" step="1"></label>

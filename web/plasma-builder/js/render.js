@@ -99,6 +99,8 @@ uniform sampler2D tRaster;
 uniform float uPTMix;
 uniform sampler2D tDepth;
 uniform sampler2D tMask;
+uniform sampler2D tAO;
+uniform float uAO;
 uniform float uExposure, uVignette, uAspect, uKeepRaw;
 uniform bool uUseDenoise, uUseDepth, uUseMask, uPremult;
 uniform int uMode;
@@ -156,6 +158,8 @@ void main() {
 		color = mix( ra > 1e-4 ? r.rgb / ra : vec3( 0.0 ), color, uPTMix );
 		a = mix( ra, a, uPTMix );
 	}
+	// SSAO du mode HQ BrickIt, multiplié dans l'image avant le tonemap (comme la passe SSAO du HQ natif).
+	if ( uAO > 0.0 ) color *= mix( 1.0, texture2D( tAO, vUv ).r, uAO );
 	color *= uExposure;
 	vec2 vc = vUv - 0.5;
 	vc.x *= uAspect;
@@ -193,7 +197,7 @@ export class Post {
   constructor(bg0 = 0x1b1c21, bg1 = 0x101113) {
     this.mat = new THREE.ShaderMaterial({
       uniforms: {
-        tColor: { value: null }, tDenoised: { value: null }, tRaster: { value: null }, uPTMix: { value: 1 }, tDepth: { value: null }, tMask: { value: null },
+        tColor: { value: null }, tDenoised: { value: null }, tRaster: { value: null }, uPTMix: { value: 1 }, tDepth: { value: null }, tMask: { value: null }, tAO: { value: null }, uAO: { value: 0 },
         uExposure: { value: 1 }, uVignette: { value: 0.12 }, uAspect: { value: 1 }, uKeepRaw: { value: 1 },
         uUseDenoise: { value: false }, uUseDepth: { value: false }, uUseMask: { value: false }, uPremult: { value: true },
         uMode: { value: 0 }, uBg0: { value: srgb(bg0) }, uBg1: { value: srgb(bg1) }, uMaskTexel: { value: new THREE.Vector2() },
@@ -221,6 +225,8 @@ export class Post {
     u.tDepth.value = o.depth || null;
     u.uUseMask.value = !!o.mask;
     u.tMask.value = o.mask || null;
+    u.tAO.value = o.ao || null;
+    u.uAO.value = o.ao ? (o.aoStrength ?? 0.6) : 0;
     if (o.maskTexel) u.uMaskTexel.value.copy(o.maskTexel);
     u.uExposure.value = o.exposure;
     u.uVignette.value = o.vignette;
