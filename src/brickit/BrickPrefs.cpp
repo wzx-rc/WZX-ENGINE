@@ -68,9 +68,9 @@ void BrickApp::savePrefs() {
     { char mb[160]; snprintf(mb, sizeof(mb), "\"manual\": {\"w\": %d, \"h\": %d, \"pdfPage\": %d, \"pdfName\": ", (int)m_manW, (int)m_manH, m_pdfPage); j += mb; j += jstr(m_pdfName) + "},"; }
     { char sb[320]; snprintf(sb, sizeof(sb), "\"settings\": {\"uiScale\": %.2f, \"ssao\": %s, \"autosave\": %s, \"showVox\": %s},", m_uiScaleUser, m_ssaoOn ? "true" : "false", m_autosaveOn ? "true" : "false", m_showVox ? "true" : "false"); j += sb; }
     {   // Réglages > Lumière
-        char lb[200];
+        char lb[512];
         const uint32_t rgb = (uint32_t)std::lround(m_gridRgb.x * 255) | ((uint32_t)std::lround(m_gridRgb.y * 255) << 8) | ((uint32_t)std::lround(m_gridRgb.z * 255) << 16);
-        snprintf(lb, sizeof(lb), "\"light\": {\"rotation\": %.1f, \"intensity\": %.3f, \"gridRgb\": %u, \"gridAlpha\": %.3f, \"softGI\": %s, \"giStrength\": %.3f, \"giHold\": %s, \"sssStrength\": %.3f, \"giProbes\": %d, \"showProbes\": %s, \"hdri\": ", m_hdriRotDeg, m_hdriInt, rgb, m_gridAlpha, m_softGI ? "true" : "false", m_softGIStrength, m_softGIHold ? "true" : "false", m_hqSSSStrength, m_softGIProbes, m_showProbes ? "true" : "false");
+        snprintf(lb, sizeof(lb), "\"light\": {\"rotation\": %.1f, \"intensity\": %.3f, \"gridRgb\": %u, \"gridAlpha\": %.3f, \"softGI\": %s, \"giStrength\": %.3f, \"giHold\": %s, \"sssStrength\": %.3f, \"giProbes\": %d, \"showProbes\": %s, \"selOutline\": %.3f, \"selFill\": %.3f, \"hdri\": ", m_hdriRotDeg, m_hdriInt, rgb, m_gridAlpha, m_softGI ? "true" : "false", m_softGIStrength, m_softGIHold ? "true" : "false", m_hqSSSStrength, m_softGIProbes, m_showProbes ? "true" : "false", m_selOutline, m_selFill);
         j += lb;
         j += jstr(narrowW(m_hdriPath)) + ", \"custom\": [";
         for (size_t i = 0; i < m_hdriCustom.size(); ++i) j += (i ? ", " : "") + jstr(narrowW(m_hdriCustom[i]));
@@ -123,6 +123,8 @@ void BrickApp::loadPrefs() {
             if (lt["softGI"].type == app::Json::Bool) m_softGI = lt["softGI"].b;
         if (lt["giStrength"].type == app::Json::Number) m_softGIStrength = std::clamp((float)lt["giStrength"].n, 0.0f, 2.0f);
         if (lt["giHold"].type == app::Json::Bool) m_softGIHold = lt["giHold"].b;
+        if (lt["selOutline"].type == app::Json::Number) m_selOutline = std::clamp((float)lt["selOutline"].n, 0.0f, 1.0f);
+        if (lt["selFill"].type == app::Json::Number) m_selFill = std::clamp((float)lt["selFill"].n, 0.0f, 0.5f);
         if (lt["showProbes"].type == app::Json::Bool) m_showProbes = lt["showProbes"].b;
         if (lt["giProbes"].type == app::Json::Number) m_softGIProbes = std::clamp((int)lt["giProbes"].n, 1024, 16384);
         if (lt["sssStrength"].type == app::Json::Number) m_hqSSSStrength = std::clamp((float)lt["sssStrength"].n, 0.0f, 2.0f);

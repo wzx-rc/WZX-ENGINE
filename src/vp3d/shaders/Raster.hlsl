@@ -805,7 +805,7 @@ float4 PSWire(VSOut i) : SV_Target {
     DRAW_PS(i);
     // edge outline (Renderer::setEdgeOutline): white, or red for a blocked brick, bright enough to stay white once
     // tone mapped, at the opacity of the draw
-    if (D.flags & 16u) return float4((D.flags & 32u) ? float3(3.0, 0.25, 0.2) : 3.0.xxx, D.alpha);
+    if (D.flags & 16u) return float4((D.flags & 32u) ? float3(1.6, 0.15, 0.1) : 0.9.xxx, D.alpha);   // (a grey white, thin: Wzx)
     if (D.flags & 8u) {
         float facing = abs(dot(normalize(i.nrm), ToViewer(i.wpos)));
         return float4(D.alpha.xxx, 0.02 + 0.24 * facing * facing);

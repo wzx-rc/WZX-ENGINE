@@ -2319,6 +2319,9 @@ void BrickApp::uiSettings() {
         if (m_softGI) slider(104, "Intensité GI (HQ)", m_softGIStrength, 0.0f, 2.0f, "%.2f", m_softGIStrength);   // (live, probes kept)
         // SSS (HQ): the light under the surface of the plastic (HQ and RC), 0 = off
         slider(105, "SSS (HQ) · 0 = coupé", m_hqSSSStrength, 0.0f, 2.0f, "%.2f", m_hqSSSStrength);
+        // the highlight of the selection: its thin outline and its white veil (Wzx: tunable)
+        slider(106, "Contour de sélection", m_selOutline, 0.0f, 1.0f, "%.2f", m_selOutline);
+        slider(107, "Voile de sélection", m_selFill, 0.0f, 0.5f, "%.2f", m_selFill);
         // colour of the ground grid: swatches (Défaut = the lines of the web), then its opacity
         u.text(ImVec2(x0 + pad, ly), 11, C_DIM, "Couleur de la grille");
         ly += 16 * s;

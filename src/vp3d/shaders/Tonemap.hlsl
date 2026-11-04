@@ -131,7 +131,7 @@ void main(uint3 id : SV_DispatchThreadID) {
                     }
         }
         if (F.selStyle == 2) {   // BrickIt: a faint white fill (its edges are drawn by the edge outline, as the web build)
-            c = lerp(c, 1.0.xxx, 0.05 * cover);
+            c = lerp(c, 1.0.xxx, saturate(F.selFill) * cover);   // (Réglages › Voile de sélection)
         } else {
             c = lerp(c, float3(1.0, 0.9, 0.4), 0.08 * cover);
             c = lerp(c, yellow, 0.95 * edge);

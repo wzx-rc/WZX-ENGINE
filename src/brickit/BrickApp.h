@@ -490,6 +490,7 @@ private:
     std::unordered_map<std::string, int> m_catCount, m_techSubCount;
     int m_availCount = 0;
     bool m_allColors = false;         // Couleurs: every colour offered, even those that do not exist for the part
+    float m_selOutline = 0.22f, m_selFill = 0.15f;   // Réglages › Lumière: Contour / Voile de sélection
     float m_lumColumnH = 0.0f;        // Réglages: height of the Lumière column drawn last frame
     float m_hqSSSStrength = 1.0f;     // Réglages › Lumière › SSS (HQ): strength 0..2 (0 = off)
     bool m_softGIHold = true;   // Réglages › Lumière › Figer la GI pendant le déplacement: the probes held while a brick is carried

@@ -1103,7 +1103,9 @@ void BrickApp::frame() {
             if (fb >= 0 && fb < (int)m_bricks.size() && !m_mechOn) edge.push_back(m_firstBrickObject + fb);
             if (!m_mechOn) for (int i : m_multi) edge.push_back(m_firstBrickObject + i);
         }
-        m_renderer.setEdgeOutline(edge, m_holding && m_held.blocked, 0.45f);
+        // (Réglages › Lumière: Contour / Voile de sélection; red stays readable when the brick in hand is blocked)
+        m_renderer.setEdgeOutline(edge, m_holding && m_held.blocked, m_holding && m_held.blocked ? std::max(0.35f, m_selOutline) : m_selOutline);
+        m_rs.selectionFill = m_selFill;
     }
     const int selObj = (m_selected >= 0 && !m_holding) ? m_firstBrickObject + m_selected : -1;
     m_rs.pixelScale = scale;

@@ -98,7 +98,7 @@ struct FrameConstants {
     float3 prevCamRight; float prevAspect;
     float3 prevCamUp;    uint historyValid;     // 1 = history textures hold the previous frame
     float3 prevCamFwd;   float historyCap;      // history length in frames (exponential average window)
-    uint selCovValid; uint traceStride; uint gridLine; uint pad6;   // gridLine: Scene::gridLine (RGBA8, 0 = default lines)   // selCovValid: the selection coverage (t8 of the tonemapper) was drawn this frame; traceStride: 1 = every pixel traced, 4 = one pixel of each 2 x 2 block per frame (in turn)
+    uint selCovValid; uint traceStride; uint gridLine; float selFill;   // selFill: white veil over the selection (selStyle 2, BrickIt); gridLine: Scene::gridLine (RGBA8, 0 = default lines)   // selCovValid: the selection coverage (t8 of the tonemapper) was drawn this frame; traceStride: 1 = every pixel traced, 4 = one pixel of each 2 x 2 block per frame (in turn)
     float denoiseEdgeLuma; float selCenterX; float selCenterY; float selRadius;   // edge sensitivity of the denoiser (lower = keeps shadows); selection glow: screen centre and radius (pixels) of the selection
     // HDRI: lat-long texture (gEnvTex) and its importance sampling tables (gEnvDist, see EnvSample in PathTrace.hlsl)
     uint envW; uint envH; float envRotation; float envMapIntensity;   // table size, rotation (radians), intensity

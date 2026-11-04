@@ -69,6 +69,7 @@ struct RenderSettings {
     float selectionAge = 10.0f;
     float2 selectionCenter{0, 0};   // screen centre (viewport pixels) and radius of the selection: the glow light runs around it
     float selectionRadius = 100.0f;
+    float selectionFill = 0.15f;    // selection style 2 (BrickIt): the white veil over the selected objects (post, after the lighting)
     float pixelScale = 1.0f;        // render pixels per screen pixel (viewport supersampling): lines and the glow keep their size
     // raster: screen-space ambient occlusion (radius in scene units), multiplied into the image before the tone mapping
     bool ssao = false;
