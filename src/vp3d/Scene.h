@@ -206,6 +206,7 @@ struct Scene {
     // Lines of the ground grid (materials with MAT_FLAG_GRID): RGBA8, sRGB colour in the low bytes, opacity in the top
     // byte; 0 = the default lines (lighter than the ground)
     uint32_t gridLine = 0;
+    float3 gridFade{0, 0, 0};   // radial fade of the grid: centre x, z and radius (whole within 1.5 x, gone at 3 x; 0 = off)
     uint32_t geometryVersion = 1; // bump when meshes change
     // Revision of everything per object (transforms, materials, visibility), the materials, the lights and the
     // environment, kept by the application: 0 (default) = the renderer rebuilds and hashes its per-object data every

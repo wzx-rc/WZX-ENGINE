@@ -26,7 +26,7 @@ struct RasterConstants {
     float centreValid; float rtLights; float rtAO; uint gridLine;
     float3 envSun2Dir; float envSun2On;  // HQ: the light of the HDRI (its brightest area) as a second, ray traced soft light
     float3 envSun2E; float envSun2Tan;   // beside the scene sun (out of the SH and the probes); its cone (tan half angle)
-    float sssScale; float giSmooth, sssPad1, sssPad2;   // subsurface of the raster view: scale of the material subsurface (0 = off); giSmooth: probe GI read over the surface (radius in probe spacings, 0 = one read)   // centreValid: t14 is this frame's; rtLights: area
+    float sssScale; float giSmooth, gridFadeR; uint gridFadeC;   // subsurface of the raster view: scale of the material subsurface (0 = off); giSmooth: probe GI read over the surface (radius in probe spacings, 0 = one read)   // centreValid: t14 is this frame's; rtLights: area
                                          // lights shadowed by rays (TLAS, space2); rtAO: ambient occluded by rays; rtProbes:
                                          // gridLine: Scene::gridLine (RGBA8 colour of the ground grid lines, 0 = default)
 };
@@ -499,6 +499,10 @@ float3 GridColor(float3 base, float3 wpos, inout float3 emission) {
     float2 dm = abs(frac(pm + 0.5) - 0.5) / max(fwidth(pm), 1e-4);
     float major = 1 - saturate(min(dm.x, dm.y) - 0.3);
     float fade = saturate(1 - ViewDist(wpos) / (g * 160));
+    if (R.gridFadeR > 0) {   // radial fade around the model (Scene::gridFade)
+        const float2 c = float2(f16tof32(R.gridFadeC & 0xffffu), f16tof32(R.gridFadeC >> 16));
+        fade *= 1 - smoothstep(1.5 * R.gridFadeR, 3.0 * R.gridFadeR, length(wpos.xz - c));
+    }
     if (R.gridLine != 0u) {   // the colour of the lines (Scene::gridLine), its opacity in the top byte
         float3 lc = pow(float3(R.gridLine & 255u, (R.gridLine >> 8) & 255u, (R.gridLine >> 16) & 255u) / 255.0, 2.2);
         base = lerp(base, lc, max(minor * 0.4, major * 0.8) * fade * ((R.gridLine >> 24) / 255.0));

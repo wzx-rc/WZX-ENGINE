@@ -106,7 +106,7 @@ struct FrameConstants {
     // Orthographic camera (0 = perspective): half the height of the view (scene units) and how far behind the eye the
     // parallel rays start (the whole scene in front of them); the same for the previous frame (reprojection)
     float orthoHalfH; float orthoBack; float prevOrthoHalfH; float prevOrthoBack;
-    float sharpen; float fpad0; float fpad1; float fpad2;   // sharpening of the tone mapper (0 = off): the image rendered at a reduced scale, then enlarged
+    float sharpen; float gridFadeX; float gridFadeZ; float gridFadeR;   // gridFade: radial fade of the grid (Scene::gridFade)   // sharpening of the tone mapper (0 = off): the image rendered at a reduced scale, then enlarged
 };
 
 // DDGI probe volume (real-time GI test). Atlases: irradiance 8x8 octahedral texels per probe, distance

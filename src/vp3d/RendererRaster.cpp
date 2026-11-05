@@ -36,8 +36,19 @@ struct RasterConstants {
     float centreValid, rtLights, rtAO; uint32_t gridLine;   // centreValid: t14 holds this frame's pixel-centre depth
     float3 envSun2Dir; float envSun2On;                     // HQ: the light of the HDRI as a second soft light
     float3 envSun2E; float envSun2Tan;
-    float sssScale, giSmooth, sssPad1, sssPad2;             // subsurface of the raster view (Raster.hlsl, 0 = off); probe GI read over the surface
+    float sssScale, giSmooth, gridFadeR; uint32_t gridFadeC;             // subsurface of the raster view (Raster.hlsl, 0 = off); probe GI read over the surface
 };
+
+// float -> IEEE half (the centre of the grid fade packed in one constant)
+static uint16_t halfOf(float f) {
+    uint32_t x;
+    memcpy(&x, &f, 4);
+    const uint32_t sign = (x >> 16) & 0x8000u;
+    const int e = (int)((x >> 23) & 0xff) - 127 + 15;
+    if (e <= 0) return (uint16_t)sign;
+    if (e >= 31) return (uint16_t)(sign | 0x7c00u);
+    return (uint16_t)(sign | (e << 10) | ((x >> 13) & 0x3ffu));
+}
 
 struct DrawConstants {
     float rows[12];
@@ -735,6 +746,8 @@ void Renderer::recordRaster(const Scene& scene, const RenderSettings& rs, const 
     rc.envSun2Tan = std::tan(radians(6.0f));
     rc.sssScale = std::max(0.0f, rs.rasterSSS);
     rc.giSmooth = std::max(0.0f, rs.ddgiSmooth);
+    rc.gridFadeR = scene.gridFade.z;   // (the centre as two halves)
+    rc.gridFadeC = (uint32_t)halfOf(scene.gridFade.x) | ((uint32_t)halfOf(scene.gridFade.y) << 16);
     rc.shadowTexel = 1.0f / kShadowSize;
     rc.keyPos = keyCenter;
     rc.lightScale = rs.lightScale;

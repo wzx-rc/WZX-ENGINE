@@ -226,6 +226,7 @@ Surf MakeSurf(GpuMaterial m, Hit h) {
         float2 dm = abs(frac(pm + 0.5) - 0.5) / max(fw / 10.0, 1e-4);
         float major = 1 - saturate(min(dm.x, dm.y) - 0.3);
         float fade = saturate(1.0 - dist / (g * 160.0));
+        if (F.gridFadeR > 0) fade *= 1.0 - smoothstep(1.5 * F.gridFadeR, 3.0 * F.gridFadeR, length(h.P.xz - float2(F.gridFadeX, F.gridFadeZ)));
         if (F.gridLine != 0u) {   // the colour of the lines (Scene::gridLine), its opacity in the top byte
             float3 lc = float3(F.gridLine & 255u, (F.gridLine >> 8) & 255u, (F.gridLine >> 16) & 255u) / 255.0;
             lc = pow(lc, 2.2);
