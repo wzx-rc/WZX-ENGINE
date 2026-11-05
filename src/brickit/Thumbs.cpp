@@ -319,7 +319,7 @@ int BrickApp::setupStudio2(Scene& ts, int& glassMat) {
 ThumbLook BrickApp::thumbLook() {
     ThumbLook l;
     char b[128];
-    if (GetEnvironmentVariableA("BT_THUMB", b, sizeof(b)) > 0) sscanf_s(b, "%f %f %f %f %f", &l.key, &l.rim, &l.env, &l.exposure, &l.bevel);
+    if (GetEnvironmentVariableA("BT_THUMB", b, sizeof(b)) > 0) sscanf_s(b, "%f %f %f %f %f %d %d", &l.key, &l.rim, &l.env, &l.exposure, &l.bevel, &l.spp, &l.bounces);
     return l;
 }
 
@@ -387,14 +387,34 @@ bool BrickApp::renderThumb2(Scene& ts, int obj, const Part& p, const ThumbView& 
     const ViewRect vp{0, 0, px, px};
     std::vector<uint8_t> img, imgW;
     uint32_t w = 0, h = 0, w2 = 0, h2 = 0;
-    ts.env.top = ts.env.horizon = ts.env.bottom = float3(0);
-    ++ts.objectsVersion;
-    m_renderer.render(ts, rs, vp, -1, false);
-    bool ok = m_renderer.readViewport(img, w, h);
-    ts.env.top = ts.env.horizon = ts.env.bottom = float3(1000);
-    ++ts.objectsVersion;
-    m_renderer.render(ts, rs, vp, -1, false);
-    ok = ok && m_renderer.readViewport(imgW, w2, h2);
+    // path tracing (Wzx, 05/11/2026: « fait en rendu PathTracing »): the samples accumulated, denoised; else the raster
+    ThumbLook lk = thumbLook();
+    if (isGlassPart(p)) lk.spp = 0;   // (glass: the refraction of the black / white backgrounds breaks the alpha in path tracing)
+    RenderSettings prs = rs;
+    if (lk.spp > 0) {
+        prs.raster = false;
+        prs.maxBounces = lk.bounces;
+        prs.samplesPerFrame = std::min(lk.spp, 16);
+        prs.maxSamples = lk.spp;
+        prs.traceStride = 1;
+        prs.denoise = true;
+        prs.denoisePasses = 3;
+        prs.denoiseEdgeLuma = 4.0f;
+        prs.fireflyClamp = 8.0f;
+        prs.bevel = true;
+        prs.bevelSamples = 4;
+        prs.vignette = 0.0f;
+    }
+    auto pass = [&](float bg, std::vector<uint8_t>& out8, uint32_t& ow, uint32_t& oh) {
+        ts.env.top = ts.env.horizon = ts.env.bottom = float3(bg);
+        ++ts.objectsVersion;
+        if (lk.spp <= 0) { m_renderer.render(ts, prs, vp, -1, false); return m_renderer.readViewport(out8, ow, oh); }
+        m_renderer.resetAccumulation();
+        for (int k = 0; k < 64 && (int)m_renderer.sampleCount() < lk.spp; ++k) m_renderer.render(ts, prs, vp, -1, false);
+        return m_renderer.readViewport(out8, ow, oh);
+    };
+    bool ok = pass(0.0f, img, w, h);
+    ok = ok && pass(1000.0f, imgW, w2, h2);
     if (!ok || (int)w != px || (int)h != px || imgW.size() != img.size()) return false;
     // contact shadow: a soft ellipse under the footprint of the box
     float ex0 = 1e9f, ex1 = -1e9f, ey0 = 1e9f, ey1 = -1e9f;
@@ -458,6 +478,9 @@ int BrickApp::thumbSample() {
     }
     ++ts.geometryVersion;
     int count = 0;
+    LARGE_INTEGER q0, q1, qf;
+    QueryPerformanceFrequency(&qf);
+    QueryPerformanceCounter(&q0);
     for (auto [i, ob] : objs) {
         ts.objects[ob].visible = true;
         for (int px : {256, 128}) {
@@ -468,6 +491,13 @@ int BrickApp::thumbSample() {
             ++count;
         }
         ts.objects[ob].visible = false;
+    }
+    QueryPerformanceCounter(&q1);
+    FILE* tf = nullptr;   // the time per part (both sizes), for the estimate of the whole library
+    if (_wfopen_s(&tf, (m_opt.thumbSampleDir + L"\\timing.txt").c_str(), L"w") == 0 && tf) {
+        fprintf(tf, "parts=%d images=%d total_s=%.2f per_part_ms=%.1f spp=%d\n", (int)objs.size(), count, (q1.QuadPart - q0.QuadPart) / (double)qf.QuadPart,
+                objs.empty() ? 0.0 : (q1.QuadPart - q0.QuadPart) * 1000.0 / qf.QuadPart / objs.size(), thumbLook().spp);
+        fclose(tf);
     }
     return count;
 }
