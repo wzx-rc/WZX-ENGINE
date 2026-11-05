@@ -27,6 +27,9 @@ public:
     bool worldBounds(const Object& o, float3& mn, float3& mx) const;
     void inspector(float x, float& y, float w);   // Actor tab of a curve (AtelierUI.cpp, CurveInspector.inl)
 
+    // a curve object at pos (points local to it), selected, with undo; returns its index (also the command API)
+    int addCurveObject(const CurveData& local, const float3& pos, const std::string& name);
+
     // tools
     void startCreate(int type);
     void addPrimitive(int shape);
@@ -139,7 +142,6 @@ private:
     void insertPointAt(float mx, float my);
     void finishCreate();
     void cancelCreate();
-    int addCurveObject(const CurveData& local, const float3& pos, const std::string& name);
     void drawCurve(ImDrawList* dl, const Object& o, ImU32 col, float width) const;
     bool handlesShown(int i) const;   // Bezier: tangents of the selected anchors only
     void drawPoints(ImDrawList* dl, const Object& o) const;

@@ -1,4 +1,5 @@
 #include "App.h"
+#include "AiControl.h"
 #include "GameHost.h"
 #include "CurveEditor.h"
 #include "backends/imgui_impl_win32.h"
@@ -1237,6 +1238,7 @@ void App::generateThumbnails() {
 }
 
 void App::saveScreenshot(bool window) {
+    m_lastShot.clear();
     std::vector<uint8_t> img;
     uint32_t w, h;
     bool ok = window ? m_renderer.readBackBuffer(img, w, h) : m_renderer.readViewport(img, w, h);
@@ -1249,7 +1251,10 @@ void App::saveScreenshot(bool window) {
     wchar_t name[128];
     swprintf(name, 128, L"\\viewport_%04d%02d%02d_%02d%02d%02d_%uspp.png", lt.tm_year + 1900, lt.tm_mon + 1, lt.tm_mday,
              lt.tm_hour, lt.tm_min, lt.tm_sec, m_renderer.sampleCount());
-    if (savePng(dir + name, img, w, h)) status(L"Capture saved: captures" + std::wstring(name), 1);
+    if (savePng(dir + name, img, w, h)) {
+        m_lastShot = dir + name;
+        status(L"Capture saved: captures" + std::wstring(name), 1);
+    }
 }
 
 } // namespace app
@@ -1260,6 +1265,8 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
     app::Options opt;
     int argc = 0;
     wchar_t** argv = CommandLineToArgvW(GetCommandLineW(), &argc);
+    for (int i = 1; i < argc; ++i)   // MCP bridge of an AI app (AiControl.cpp): no window, stdin / stdout to the running editor
+        if (std::wstring(argv[i]) == L"--mcp") return app::runMcpBridge();
     for (int i = 1; i < argc; ++i) {
         std::wstring a = argv[i];
         auto next = [&]() -> std::wstring { return i + 1 < argc ? std::wstring(argv[++i]) : std::wstring(); };

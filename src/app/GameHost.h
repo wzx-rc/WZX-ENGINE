@@ -51,6 +51,7 @@ public:
     bool playing() const { return m_playing; }
     void requestPlay() { m_pendingToolbar = 1; }   // the Play button of the top bar
     void openBuildWindow();                        // the Build button of the top bar, F7
+    void openAiWindow() { m_showAi = true; }       // Tools > AI Control (MCP)
     void addHoverOutline(std::vector<int>& objects) const;   // the house under the cursor is outlined (its halo)
     void togglePlacement();                  // village mode of the editor (not during Play)
     void resetVillage();                     // a new scene: no houses
@@ -106,8 +107,15 @@ private:
     bool exportScene(const std::filesystem::path& out, std::string& err, const std::string& skip = std::string());   // scene.wzx and the files it uses
     bool exportIos(const BuildProfile& bp, std::wstring& outDir, std::string& err);   // game\export for the iOS workflow
     void drawBuildWindow();
+    // AI control (AiControl.h): the command API on the first free port from 7878, with the token of this installation
+    bool startApi();
+    void stopApi();
+    void drawAiWindow();
+    bool m_showAi = false;
+    std::string m_aiCopied;   // the AI window: what was copied last ("config", "claude", "token")
     void handleRequests();
     std::string command(const Json& j, int& status);
+    std::string extraCommand(const std::string& cmd, const Json& j, int& status, bool& handled);   // materials, curves, render, prefab... (AppAi.cpp)
     std::string sceneJson() const;
     int resolveObject(const Json& t) const;
     std::string uniqueName(const std::string& base) const;

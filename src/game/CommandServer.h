@@ -1,6 +1,8 @@
 // game - local HTTP command API (127.0.0.1 only) so tools such as Claude can drive the editor.
 // The socket runs on a background thread; requests are queued and executed on the main
 // thread by the host (pollRequests / reply), so handlers can touch the scene safely.
+// Each request must carry the token of this installation (header X-WZX-Token, or Authorization: Bearer) and a
+// local Host header: a web page open in a browser can neither read the token nor reach the API by DNS rebinding.
 #pragma once
 #include <atomic>
 #include <condition_variable>
@@ -27,6 +29,7 @@ public:
     ~CommandServer() { stop(); }
     bool start(int port);
     void stop();
+    void setToken(const std::string& token);   // required on every request (empty: every request refused)
     bool running() const { return m_running; }
     int port() const { return m_port; }
 
@@ -45,6 +48,7 @@ private:
     std::mutex m_mx;
     std::condition_variable m_cv;
     std::deque<std::shared_ptr<CommandRequest>> m_pending;
+    std::string m_token;   // (guarded by m_mx)
 };
 
 } // namespace game

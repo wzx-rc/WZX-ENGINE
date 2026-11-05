@@ -1,5 +1,6 @@
 // Game layer: Play mode, node graph editor hookup, builds, player mode and the local command API.
 #include "App.h"
+#include "AiControl.h"
 #include "GameHost.h"
 #include "WzxRead.h"
 #include "atelier/atelier_style.h"
@@ -156,8 +157,7 @@ void GameHost::init() {
         }
         std::string err;
         if (!loadGraph(&err)) toast(L"Graph not found: " + fromUtf8(err));
-        if (cfg["commandApi"].b)
-            for (int p = kApiPort; p < kApiPort + 10 && !m_server.running(); ++p) m_server.start(p);
+        if (cfg["commandApi"].b) startApi();
         play();
         return;
     }
@@ -179,9 +179,22 @@ void GameHost::init() {
     } else {
         sceneChanged(m_app.m_docPath.empty() ? m_app.m_sceneId : -2);
     }
+    if (th::settings().aiControl && startApi())
+        toast(L"AI control (MCP): 127.0.0.1:" + std::to_wstring(m_server.port()) + L"   ·   F3 graph   ·   F5 Play   ·   F7 Build");
+}
+
+bool GameHost::startApi() {
+    if (m_server.running()) return true;
+    m_server.setToken(apiToken());
     for (int p = kApiPort; p < kApiPort + 10 && !m_server.running(); ++p) m_server.start(p);
-    if (m_server.running())
-        toast(L"Command API: http://127.0.0.1:" + std::to_wstring(m_server.port()) + L"   ·   F3 graph   ·   F5 Play   ·   F7 Build");
+    if (m_server.running()) writeApiPort(m_server.port());   // the MCP bridge finds this editor there
+    return m_server.running();
+}
+
+void GameHost::stopApi() {
+    if (!m_server.running()) return;
+    m_server.stop();
+    writeApiPort(0);
 }
 
 bool GameHost::saveGraph(std::string* err) {
@@ -893,6 +906,7 @@ void GameHost::draw() {
         if (placeActive()) drawRtsHud();
     }
     if (m_showBuild) drawBuildWindow();
+    if (m_showAi) drawAiWindow();
     drawToasts();
 }
 
@@ -922,9 +936,9 @@ void GameHost::afterDraw() {
     if (!m_shotReq) return;
     m_app.m_status.clear();
     m_app.saveScreenshot(m_shotWindow);   // window: true = whole window, UI included
-    bool saved = !m_app.m_status.empty();
+    bool saved = !m_app.m_lastShot.empty();
     m_shotReq->response = saved ? "{\"ok\": true, \"status\": " + jstr(toUtf8(m_app.m_status)) + ", \"dir\": " +
-                                      jstr(toUtf8(m_app.m_exeDir + L"\\captures")) + "}"
+                                      jstr(toUtf8(m_app.m_exeDir + L"\\captures")) + ", \"path\": " + jstr(toUtf8(m_app.m_lastShot)) + "}"
                                 : "{\"ok\": false, \"error\": \"capture impossible\"}";
     m_shotReq->status = saved ? 200 : 500;
     m_server.complete(m_shotReq);
@@ -1281,8 +1295,14 @@ static const char* kHelp =
     "\"scene.get\": \"{} -> objets, camera, selection\", "
     "\"scene.new\": \"{} -> new scene (empty graph)\", "
     "\"scene.save\": \"{path}\", \"scene.load\": \"{path}\", "
-    "\"object.add\": \"{part: CUBE|SPHERE|BALL, pos:[x,y,z], yaw?, color?:[r,g,b] 0-1, name?} -> index\", "
-    "\"object.set\": \"{target: index|nom, pos?, yaw?, rotate?, scale?, color?, name?, visible?}\", "
+    "\"object.add\": \"{part: CUBE|SPHERE|BALL | primitive: cube|sphere|plane|cylinder|torus|disk, pos:[x,y,z], yaw?, scale?, color?:[r,g,b] 0-1, name?} -> index\", "
+    "\"object.set\": \"{target: index|nom, pos?, yaw?, rotate?, scale?, color?, name?, visible?, material?: index|nom}\", "
+    "\"material.list\": \"{}\", \"material.set\": \"{target: index|nom, name?, baseColor?, roughness?, metallic?, specular?, transmission?, ior?, emission?, emissionStrength?, coat?, coatRoughness?, subsurface?}\", "
+    "\"curve.add\": \"{type: linear|cv|ep|bezier, points: [[x,y,z]...], closed?, in?, out? | shape: line|circle|square|arc|helix|spiral|star, pos?, name?} -> index\", "
+    "\"curve.get\": \"{target}\", \"curve.set\": \"{target, type?, points?, closed?, in?, out?}\", "
+    "\"undo\": \"{}\", \"redo\": \"{}\", \"view.frame\": \"{target?}\", \"render.get\": \"{}\", \"render.set\": \"{mode?: lit|metal|progressive|gi|splitrc, exposure?}\", "
+    "\"workspace.set\": \"{name: scene|graph|materials|prefab}\", "
+    "\"prefab.info\": \"{}\", \"prefab.new\": \"{demo?}\", \"prefab.open\": \"{path}\", \"prefab.save\": \"{path?}\", \"prefab.place\": \"{}\", "
     "\"object.delete\": \"{target}\", \"object.select\": \"{target|null}\", "
     "\"camera.set\": \"{target?:[x,y,z], yaw?, pitch?, distance?}\", "
     "\"play\": \"{}\", \"stop\": \"{}\", "
@@ -1297,7 +1317,7 @@ static const char* kHelp =
     "\"graph.disconnect\": \"{id, pin, output}\", \"graph.setInput\": \"{id, pin, value}\", "
     "\"graph.save\": \"{}\", \"graph.load\": \"{}\", \"graph.show\": \"{open: true|false, output?: 0|1|2}\", \"graph.compile\": \"{} -> diagnostics\", \"graph.arrange\": \"{} -> nodes deplaces\", "
     "\"build\": \"{profile?, run?, platform?: ios = game/export} -> dossier\", \"build.profiles\": \"{}\", "
-    "\"graph.execute\": \"{} -> Execute du Graph (essai a blanc, chemin anime)\", \"screenshot\": \"{window?: true = fenetre entiere} -> fichier PNG\", \"log\": \"{} -> journal du graphe\"}}";
+    "\"graph.execute\": \"{} -> Execute du Graph (essai a blanc, chemin anime)\", \"screenshot\": \"{window?: true = fenetre entiere} -> fichier PNG (path)\", \"log\": \"{} -> journal du graphe\"}}";
 
 void GameHost::handleRequests() {
     for (int guard = 0; guard < 16; ++guard) {
@@ -1344,6 +1364,11 @@ std::string GameHost::command(const Json& j, int& status) {
     };
 
     if (cmd == "help") return kHelp;
+    {   // materials, curves, render mode, undo, workspaces, prefab, primitives (AppAi.cpp)
+        bool handled = false;
+        std::string r = extraCommand(cmd, j, status, handled);
+        if (handled) return r;
+    }
     if (cmd == "state")
         return ok(", \"playing\": " + std::string(m_playing ? "true" : "false") + ", \"graphOpen\": " + (showGraph() ? "true" : "false") +
                   ", \"selected\": " + std::to_string(a.m_selected) + ", \"objects\": " + std::to_string(s.objects.size()) +
@@ -1404,6 +1429,10 @@ std::string GameHost::command(const Json& j, int& status) {
         if (readVec(j["color"], v)) setColor(i, v);
         if (j["name"].type == Json::String) o.name = j["name"].s;
         if (j["visible"].type == Json::Bool) o.visible = j["visible"].b;
+        const Json& mt = j["material"];   // a material of the scene (material.list), by index or name
+        if (mt.type == Json::Number && mt.n >= 0 && mt.n < s.materials.size()) o.material = (int)mt.n;
+        else if (mt.type == Json::String)
+            for (size_t k = 0; k < s.materials.size(); ++k) if (s.materials[k].name == mt.s) { o.material = (int)k; break; }
         a.markDirty();
         return ok(", \"index\": " + std::to_string(i));
     }

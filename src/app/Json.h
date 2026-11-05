@@ -1,5 +1,6 @@
 // Minimal JSON value + parser/writer helpers for the shared scene format.
 #pragma once
+#include <cstdio>
 #include <cstdlib>
 #include <map>
 #include <memory>
@@ -45,6 +46,9 @@ private:
                 char e = t[i + 1];
                 if (e == 'n') out.push_back('\n');
                 else if (e == 't') out.push_back('\t');
+                else if (e == 'r') out.push_back('\r');
+                else if (e == 'b') out.push_back('\b');
+                else if (e == 'f') out.push_back('\f');
                 else if (e == 'u' && i + 5 < t.size()) {
                     unsigned cp = (unsigned)strtoul(t.substr(i + 2, 4).c_str(), nullptr, 16);
                     if (cp < 0x80) out.push_back((char)cp);
@@ -117,6 +121,9 @@ inline std::string jsonEscape(const std::string& s) {
     for (char c : s) {
         if (c == '"' || c == '\\') { o.push_back('\\'); o.push_back(c); }
         else if (c == '\n') o += "\\n";
+        else if (c == '\r') o += "\\r";
+        else if (c == '\t') o += "\\t";
+        else if ((unsigned char)c < 0x20) { char b[8]; snprintf(b, sizeof(b), "\\u%04x", (unsigned)c); o += b; }   // (valid JSON for the MCP clients)
         else o.push_back(c);
     }
     return o;

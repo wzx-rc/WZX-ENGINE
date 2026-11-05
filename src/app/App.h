@@ -345,6 +345,7 @@ private:
     ImTextureID makeThumb(const std::vector<uint8_t>& rgba, uint32_t w, uint32_t h);
     void clearViews();
     void saveScreenshot(bool window);
+    std::wstring m_lastShot;   // file of the last saveScreenshot (empty: it failed)
 
     // editor UI (Editor.cpp)
     void drawEditor();

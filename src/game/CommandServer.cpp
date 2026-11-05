@@ -63,10 +63,30 @@ void CommandServer::loop() {
     }
 }
 
+void CommandServer::setToken(const std::string& token) {
+    std::lock_guard<std::mutex> lk(m_mx);
+    m_token = token;
+}
+
+// Value of a header (name in lower case) in the raw header block, read case-insensitively; spaces trimmed.
+static std::string headerValue(const std::string& raw, const std::string& lower, const char* name) {
+    const std::string key = std::string("\r\n") + name + ":";
+    size_t p = lower.find(key);
+    if (p == std::string::npos) return std::string();
+    p += key.size();
+    size_t e = raw.find("\r\n", p);
+    std::string v = raw.substr(p, e == std::string::npos ? std::string::npos : e - p);
+    while (!v.empty() && (v.front() == ' ' || v.front() == '\t')) v.erase(v.begin());
+    while (!v.empty() && (v.back() == ' ' || v.back() == '\t')) v.pop_back();
+    return v;
+}
+
 static std::string statusText(int s) {
     switch (s) {
     case 200: return "OK";
     case 400: return "Bad Request";
+    case 401: return "Unauthorized";
+    case 403: return "Forbidden";
     case 404: return "Not Found";
     case 503: return "Service Unavailable";
     default: return "Error";
@@ -81,6 +101,7 @@ void CommandServer::serve(uintptr_t client) {
     char buf[8192];
     size_t headerEnd = std::string::npos;
     size_t contentLength = 0;
+    std::string raw, lower;   // the request line and headers, ending with \r\n; lower: the same in lower case
     for (;;) {
         int n = recv(c, buf, sizeof buf, 0);
         if (n <= 0) return;
@@ -88,10 +109,10 @@ void CommandServer::serve(uintptr_t client) {
         if (headerEnd == std::string::npos) {
             headerEnd = data.find("\r\n\r\n");
             if (headerEnd != std::string::npos) {
-                std::string h = data.substr(0, headerEnd);
-                for (char& ch : h) if (ch >= 'A' && ch <= 'Z') ch = (char)(ch + 32);
-                size_t p = h.find("content-length:");
-                if (p != std::string::npos) contentLength = (size_t)atoll(h.c_str() + p + 15);
+                raw = lower = data.substr(0, headerEnd) + "\r\n";
+                for (char& ch : lower) if (ch >= 'A' && ch <= 'Z') ch = (char)(ch + 32);
+                const std::string cl = headerValue(raw, lower, "content-length");
+                if (!cl.empty()) contentLength = (size_t)atoll(cl.c_str());
             }
         }
         if (headerEnd != std::string::npos && data.size() >= headerEnd + 4 + contentLength) break;
@@ -102,7 +123,26 @@ void CommandServer::serve(uintptr_t client) {
     req->method = data.substr(0, sp1);
     req->path = data.substr(sp1 + 1, sp2 - sp1 - 1);
     req->body = data.substr(headerEnd + 4, contentLength);
+    // access: a local Host (no DNS rebinding) and the token of this installation
+    std::string token;
     {
+        std::lock_guard<std::mutex> lk(m_mx);
+        token = m_token;
+    }
+    std::string host = headerValue(raw, lower, "host");
+    if (!host.empty() && host.front() != '[') host = host.substr(0, host.rfind(':'));
+    std::string given = headerValue(raw, lower, "x-wzx-token");
+    if (given.empty()) {
+        given = headerValue(raw, lower, "authorization");
+        given = given.size() > 7 && _strnicmp(given.c_str(), "bearer ", 7) == 0 ? given.substr(7) : std::string();
+    }
+    if (host != "127.0.0.1" && host != "localhost") {
+        req->status = 403;
+        req->response = "{\"ok\": false, \"error\": \"local requests only (Host: 127.0.0.1)\"}";
+    } else if (token.empty() || given != token) {
+        req->status = 401;
+        req->response = "{\"ok\": false, \"error\": \"missing or wrong token: header X-WZX-Token, see api.json in %LOCALAPPDATA%/WZX Engine\"}";
+    } else {
         std::unique_lock<std::mutex> lk(m_mx);
         m_pending.push_back(req);
         // The main thread answers within a frame; long builds may take a while.
@@ -114,7 +154,7 @@ void CommandServer::serve(uintptr_t client) {
         }
     }
     std::string out = "HTTP/1.1 " + std::to_string(req->status) + " " + statusText(req->status) +
-                      "\r\nContent-Type: application/json; charset=utf-8\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\nContent-Length: " +
+                      "\r\nContent-Type: application/json; charset=utf-8\r\nConnection: close\r\nContent-Length: " +
                       std::to_string(req->response.size()) + "\r\n\r\n" + req->response;
     send(c, out.data(), (int)out.size(), 0);
     shutdown(c, SD_SEND);

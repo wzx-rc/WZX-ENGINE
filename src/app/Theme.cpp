@@ -622,6 +622,7 @@ void loadSettings(const std::wstring& file) {
         else if (k == "graphOutlineWeight") g_settings.graphOutlineWeight = std::clamp((float)atof(v.c_str()), 0.1f, 3.0f);
         else if (k == "graphSelectColor") { if (parseVec(v, c, 4)) g_settings.graphSelectColor = ImVec4(c[0], c[1], c[2], 1); }
         else if (k == "graphOutputHeight") g_settings.graphOutputHeight = std::clamp((float)atof(v.c_str()), 70.0f, 2000.0f);
+        else if (k == "aiControl") g_settings.aiControl = v != "0";
         else if (k.rfind("snap.", 0) == 0) {   // snapping
             SnapOptions& o = g_settings.snap;
             const std::string n = k.substr(5);
@@ -700,7 +701,7 @@ void saveSettings(const std::wstring& file) {
       << "\ntextScale=" << s.textScale << "\niconScale=" << s.iconScale << "\nlayoutScale=" << s.layoutScale << "\nglobalScale=" << s.globalScale
       << "\nlockBrightness=" << (s.lockBrightness ? 1 : 0) << "\nlanguage=" << s.language
       << "\ngraphOutline=" << (s.graphOutline ? 1 : 0) << "\ngraphOutlineWeight=" << s.graphOutlineWeight
-      << "\ngraphSelectColor=" << sc << "\n";
+      << "\ngraphSelectColor=" << sc << "\naiControl=" << (s.aiControl ? 1 : 0) << "\n";
     const GridOptions& g = s.grid;   // editor grid (Grid Options)
     auto col = [](const ImVec4& v) { char b[64]; snprintf(b, sizeof(b), "%.3f %.3f %.3f %.3f", v.x, v.y, v.z, v.w); return std::string(b); };
     f << "grid.visible=" << (g.visible ? 1 : 0) << "\ngrid.sceneSpacing=" << (g.sceneSpacing ? 1 : 0) << "\ngrid.every=" << g.every
