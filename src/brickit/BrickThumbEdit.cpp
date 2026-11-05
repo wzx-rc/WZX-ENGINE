@@ -97,6 +97,7 @@ void BrickApp::renderThumbEditor() {
     const float bg[3] = {acesInverse(0x2a, 1.12f), acesInverse(0x2b, 1.12f), acesInverse(0x30, 1.12f)};   // the card colour
     m_te.env.top = m_te.env.horizon = m_te.env.bottom = float3(bg[0], bg[1], bg[2]);
     fitThumbCamera(m_te.camera, p, m_teView);
+    placeThumbLights(m_te, p);
     ++m_te.objectsVersion;
     RenderSettings rs = thumbSettings();
     rs.pixelScale = 1;

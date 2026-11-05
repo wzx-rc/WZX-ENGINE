@@ -21,6 +21,7 @@ namespace brickit {
 struct Ui;   // drawing helper of BrickUi.cpp
 // view of a thumbnail (Thumbs.cpp): angles, zoom (1 = the box at 85 % of the image), pan (fractions of the half view)
 struct ThumbView { float yaw = 0, pitch = 0, zoom = 1, panX = 0, panY = 0; };
+struct ThumbLook { float key = 32.0f, rim = 4.0f, env = 1.05f, exposure = 1.0f, bevel = 0.04f; };   // light of the thumbnails
 
 using namespace vp3d;
 
@@ -418,6 +419,8 @@ private:
     bool renderThumb2(Scene& ts, int obj, const Part& p, const ThumbView& v, int px, std::vector<uint8_t>& rgba);
     static ThumbView defaultThumbView();
     static RenderSettings thumbSettings();
+    static ThumbLook thumbLook();
+    static void placeThumbLights(Scene& ts, const Part& p);
     static void fitThumbCamera(Camera& c, const Part& p, const ThumbView& v);
     // Edit thumbnail (DEV, BrickThumbEdit.cpp): right click menu, viewer, overrides in %LOCALAPPDATA%\\BrickIt\\thumb_overrides
     std::wstring thumbOverrideDir() const;

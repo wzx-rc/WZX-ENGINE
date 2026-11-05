@@ -299,16 +299,11 @@ ThumbView BrickApp::defaultThumbView() { return ThumbView{std::atan2(1.0f, 1.3f)
 
 int BrickApp::setupStudio2(Scene& ts, int& glassMat) {
     const int mat = setupStudio(ts);
-    ts.lights[0].position = float3(28, 50, 42);   // key: larger, softer
-    ts.lights[0].width = ts.lights[0].height = 40;
-    ts.lights[0].intensity = 6.0f;
-    AreaLight fill;   // front left, low and soft: the shadows of the key opened
-    fill.position = float3(-40, 12, 35);
-    fill.width = fill.height = 45;
-    fill.color = float3(0.96f, 0.97f, 1.0f);
-    fill.intensity = 2.2f;
-    fill.visibleToCamera = false;
-    ts.lights.push_back(fill);
+    // the rig of the first thumbnails (web, outils/thumbs.mjs, Wzx 05/11/2026: « le lighting d'avant »): a warm key
+    // from the front left and above, a cool rim behind, the room as fill; placed around each part (renderThumb2)
+    ts.lights[0].color = float3(1.0f, 0.957f, 0.91f);   // 0xfff4e8
+    ts.lights[1].color = float3(0.84f, 0.89f, 1.0f);    // 0xd6e4ff
+    ts.env.hdriIntensity = thumbLook().env;
     Material g;
     g.name = "thumb glass";
     g.baseColor = float3(srgbToLinear(0.90f), srgbToLinear(0.93f), srgbToLinear(0.95f));
@@ -320,10 +315,22 @@ int BrickApp::setupStudio2(Scene& ts, int& glassMat) {
 }
 
 // One part alone in ts (object obj, visible), rendered over black then white (alpha), with its contact shadow.
+// the look of the thumbnails (tunable for the validation sheets: BT_THUMB="key rim env exposure bevel")
+ThumbLook BrickApp::thumbLook() {
+    ThumbLook l;
+    char b[128];
+    if (GetEnvironmentVariableA("BT_THUMB", b, sizeof(b)) > 0) sscanf_s(b, "%f %f %f %f %f", &l.key, &l.rim, &l.env, &l.exposure, &l.bevel);
+    return l;
+}
+
 RenderSettings BrickApp::thumbSettings() {
     RenderSettings rs;
     rs.raster = true;
-    rs.exposure = 1.12f;   // (as bright as the web / Technic images)
+    rs.exposure = thumbLook().exposure;
+    rs.bevel = rs.rasterBevel = true;   // the rounded edges of the plastic (traced in the raster view)
+    rs.bevelScale = 1.0f;
+    rs.bevelSamples = 8;
+    rs.rasterRT = true;                 // the key and the rim shadowed by rays (soft self shadows)
     rs.tonemapper = 0;
     rs.idPass = false;
     rs.vignette = 0.0f;
@@ -354,11 +361,29 @@ void BrickApp::fitThumbCamera(Camera& c, const Part& p, const ThumbView& v) {
     c.focusDistance = c.distance;
 }
 
+// the lights around the part (the web rig: key (-2.2, 4, 2.6) x radius, rim (3, 1.5, -3)), sizes in proportion
+void BrickApp::placeThumbLights(Scene& ts, const Part& p) {
+    const ThumbLook lk = thumbLook();
+    const float3 ctr = (p.bmin + p.bmax) * 0.5f;
+    const float rad = std::max(length(p.bmax - p.bmin) * 0.5f, 0.2f);
+    ts.lights[0].position = ctr + float3(-2.2f, 4.0f, 2.6f) * rad;
+    ts.lights[0].width = ts.lights[0].height = rad * 2.2f;
+    ts.lights[0].intensity = lk.key;
+    ts.lights[1].position = ctr + float3(3.0f, 1.5f, -3.0f) * rad;
+    ts.lights[1].width = ts.lights[1].height = rad * 2.0f;
+    ts.lights[1].intensity = lk.rim;
+    for (AreaLight& l : ts.lights) l.target = ctr;
+    for (size_t k = 2; k < ts.lights.size(); ++k) ts.lights[k].enabled = false;
+    ts.env.hdriIntensity = lk.env;
+    for (Material& m : ts.materials) if (m.transmission < 0.5f) m.bevelRadius = lk.bevel;
+}
+
 bool BrickApp::renderThumb2(Scene& ts, int obj, const Part& p, const ThumbView& v, int px, std::vector<uint8_t>& out) {
     (void)obj;
     const RenderSettings rs = thumbSettings();
     Camera& c = ts.camera;
     fitThumbCamera(c, p, v);
+    placeThumbLights(ts, p);
     const ViewRect vp{0, 0, px, px};
     std::vector<uint8_t> img, imgW;
     uint32_t w = 0, h = 0, w2 = 0, h2 = 0;
