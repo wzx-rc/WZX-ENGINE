@@ -268,6 +268,8 @@ private:
     // BrickAnim.cpp: animations of the web (brick in hand, drop, settle), placement preview (ghost, visor, drop
     // line, ring, glow of the aimed voxel), selection rectangle
     void updateAnim(float dt);
+    void updateFocus(float dt);             // focus distance of the depth of field (Réglages › Mise au point)
+    void updateGridFade();                  // radial fade of the ground grid around the model
     void finishDrop();
     void drawHoldOverlay();
     void placeAnimated(int brick, const float3& pos, const float4& rot, float squash, float tiltX, float tiltZ);
@@ -513,6 +515,9 @@ private:
     ImVec2 m_arcPress;
     bool m_stillAA = false;           // Réglages › Anti-aliasing au repos (HQ: jittered frames accumulated while still)
     float m_dof = 0.0f, m_bloom = 0.0f;   // Réglages › Lumière › Profondeur de champ / Bloom (0 = off)
+    int m_focusMode = 0;              // Réglages › Lumière › Mise au point: 0 auto (the selection / held brick), 1 centre of the screen, 2 manual
+    float m_focusManual = 40.0f;      // manual focus distance (cm)
+    float m_focusCur = -1.0f, m_focusAim = -1.0f;   // focus distance shown (eased towards the aim)
     float m_renderScale = 1.0f;       // Réglages › Échelle de rendu (1, 0.85, 0.75, 0.67)
     float m_selOutline = 0.22f, m_selFill = 0.15f;   // Réglages › Lumière: Contour / Voile de sélection
     float m_lumColumnH = 0.0f;        // Réglages: height of the Lumière column drawn last frame

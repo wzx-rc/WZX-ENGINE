@@ -220,7 +220,7 @@ void Renderer::recordPostFx(const Scene& scene, const RenderSettings& rs, UINT g
     if ((!dof && rs.bloom <= 0) || !m_psoPostFx) return;
     uavBarrier();
     m_cmd->SetPipelineState(m_psoPostFx.Get());
-    float focus = std::max(scene.camera.distance, 1e-3f);
+    float focus = std::max(scene.camera.focusDistance, 1e-3f);   // (BrickIt: Réglages › Mise au point)
     uint32_t pc[4] = {0u, 0u, 0u, 0u};
     const float dofPx = dof ? rs.dof * 24.0f : 0.0f;
     memcpy(&pc[1], &dofPx, 4);
@@ -2222,6 +2222,7 @@ uint32_t Renderer::sceneSignature(const Scene& s) const {
     }
     mix(&s.gridScale, sizeof(float));
     mix(&s.gridLine, sizeof(uint32_t));
+    mix(&s.gridFade, sizeof(float3));
     return h;
 }
 
@@ -2424,6 +2425,9 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
     fc.sssScale = rs.sssScale;
     fc.gridScale = scene.gridScale;
     fc.gridLine = scene.gridLine;
+    fc.gridFadeX = scene.gridFade.x;
+    fc.gridFadeZ = scene.gridFade.y;
+    fc.gridFadeR = scene.gridFade.z;
     fc.denoiseStrength = rs.denoiseStrength;
     fc.denoiseEdgeLuma = rs.denoiseEdgeLuma;
     fc.lightScale = rs.lightScale;

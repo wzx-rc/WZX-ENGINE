@@ -2514,6 +2514,23 @@ void BrickApp::uiSettings() {
         slider(107, "Voile de sélection", m_selFill, 0.0f, 0.5f, "%.2f", m_selFill);
         // the lens of the HQ: depth of field on the camera target, and the glow of the bright parts
         slider(108, "Profondeur de champ (HQ)", m_dof, 0.0f, 1.0f, "%.2f", m_dof);
+        {   // where it focuses: the selection (auto), the centre of the screen, or a distance
+            u.text(ImVec2(x0 + pad, ly), 11, C_DIM, "Mise au point");
+            ly += 16 * s;
+            static const char* kFocus[3] = {"Auto (sélection)", "Centre de l'écran", "Manuel"};
+            const float bw3 = (W - 2 * pad - 8 * s) / 3;
+            for (int k = 0; k < 3; ++k) {
+                const bool on = m_focusMode == k;
+                ImVec2 a(x0 + pad + k * (bw3 + 4 * s), ly), b(a.x + bw3, ly + rowH);
+                const bool h = u.hover(a, b);
+                u.dl->AddRectFilled(a, b, on ? C_ACCENT : (h ? C_CARD_HI : C_CARD), 7 * s);
+                const float tw = u.textW(10.5f, kFocus[k], on);
+                u.text(ImVec2((a.x + b.x) * 0.5f - tw * 0.5f, a.y + (rowH - u.fs(10.5f)) * 0.5f), 10.5f, on ? C_INK : C_TEXT, kFocus[k], on);
+                if (h && u.pressed && !on) { m_focusMode = k; if (k == 2) m_focusManual = std::clamp(m_focusCur > 0 ? m_focusCur : m_scene.camera.distance, 2.0f, 400.0f); savePrefs(); }
+            }
+            ly += rowH + gap;
+            if (m_focusMode == 2) slider(110, "Distance de mise au point", m_focusManual, 2.0f, 400.0f, "%.0f cm", m_focusManual);
+        }
         slider(109, "Bloom", m_bloom, 0.0f, 1.0f, "%.2f", m_bloom);
         // colour of the ground grid: swatches (Défaut = the lines of the web), then its opacity
         u.text(ImVec2(x0 + pad, ly), 11, C_DIM, "Couleur de la grille");

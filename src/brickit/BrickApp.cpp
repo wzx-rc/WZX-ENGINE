@@ -745,6 +745,7 @@ void BrickApp::rebuildScene() {
 // translucent when it cannot be dropped.
 void BrickApp::syncObjects() {
     if (m_cornell) return;
+    updateGridFade();
     const bool dim = m_focusDim && (m_selected >= 0 || m_holding);
     for (size_t i = 0; i < m_bricks.size(); ++i) {
         Object& o = m_scene.objects[m_firstBrickObject + i];
@@ -942,6 +943,55 @@ void BrickApp::frameAll() {
     cam.focusDistance = cam.distance;
 }
 
+// Focus of the depth of field: auto on the selection (or the brick in hand), else the orbit target; the centre of the
+// screen (picked, the aim held while the view moves so it never pumps); or a manual distance. Eased (~0.3 s).
+void BrickApp::updateFocus(float dt) {
+    Camera& cam = m_scene.camera;
+    const bool moving = ImGui::GetTime() - m_lastMove < 0.15;
+    float aim = cam.distance;
+    if (m_focusMode == 2) aim = m_focusManual;
+    else if (m_focusMode == 1) {
+        if (moving && m_focusAim > 0) aim = m_focusAim;
+        else {
+            float3 o, d;
+            const ImVec4 st = m_stage;
+            view().ray((st.x + st.z) * 0.5f, (st.y + st.w) * 0.5f, o, d);
+            const PickResult r = pick(m_scene, o, d);
+            if (r.object >= 0 && r.t < 1e20f) aim = r.t;
+        }
+    } else {
+        std::vector<int> s = selection();
+        if (m_holding) s.assign(1, m_held.brick);
+        if (!s.empty()) {
+            float3 mn(1e30f), mx(-1e30f);
+            for (int i : s) {
+                const Box b = m_build.aabbOf(m_bricks[i].part, m_bricks[i].rot, m_bricks[i].pos);
+                mn = minv(mn, b.mn);
+                mx = maxv(mx, b.mx);
+            }
+            aim = length((mn + mx) * 0.5f - cam.eye());
+        }
+    }
+    m_focusAim = std::max(aim, 0.5f);
+    if (m_focusCur <= 0 || !m_opt.shotPath.empty()) m_focusCur = m_focusAim;   // (captures: no transition)
+    else m_focusCur += (m_focusAim - m_focusCur) * (1.0f - std::exp(-dt * 10.0f));
+    cam.focusDistance = m_focusCur;
+}
+
+// Radial fade of the ground grid around the model: whole within 1.5 x its radius, gone at 3 x (Raster.hlsl, PathTrace.hlsl).
+void BrickApp::updateGridFade() {
+    float3 mn(1e30f), mx(-1e30f);
+    for (const Brick& b : m_bricks) {
+        const Part& p = m_lib.parts[b.part];
+        if (!p.loaded) continue;
+        mn = minv(mn, b.pos + p.bmin);
+        mx = maxv(mx, b.pos + p.bmax);
+    }
+    if (mn.x > mx.x) { mn = float3(-10, 0, -10); mx = float3(10, 0, 10); }
+    const float r = std::max(24.0f, 0.5f * std::sqrt((mx.x - mn.x) * (mx.x - mn.x) + (mx.z - mn.z) * (mx.z - mn.z)));
+    m_scene.gridFade = float3((mn.x + mx.x) * 0.5f, (mn.z + mx.z) * 0.5f, r);
+}
+
 // --------------------------------------------------------------------------- input
 
 void BrickApp::cameraInput() {
@@ -1047,6 +1097,7 @@ void BrickApp::frame() {
     if (m_mechOn) mechUpdate((float)ImGui::GetIO().DeltaTime);
     else editInput();
     updateAnim(std::min(0.05f, (float)ImGui::GetIO().DeltaTime));
+    updateFocus(std::min(0.05f, (float)ImGui::GetIO().DeltaTime));
     if (ImGui::IsKeyPressed(ImGuiKey_M) && !ImGui::GetIO().WantTextInput && !ImGui::GetIO().KeyCtrl) { if (m_mechOn) mechExit(); else mechEnter(); }
 
     ImVec2 ds = ImGui::GetIO().DisplaySize;
