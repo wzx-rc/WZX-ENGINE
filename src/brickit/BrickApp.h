@@ -51,6 +51,8 @@ struct Options {
     std::wstring thumbSampleDir; std::string thumbSampleParts;   // --thumb-sample <dir> <part,part,...>
     std::string thumbEdit;      // --thumb-edit <part>: the thumbnail editor open (captures); --thumb-edit-save: saved at frame 90
     bool thumbEditSave = false;
+    std::wstring bacFile;       // --bac-file <file>: the tray there (tests); --bac-test: the tray open with the selection + bricks 590..599
+    bool bacTest = false;
     std::wstring thumbDir;      // --thumb-dir <dir>: the overrides there instead of %LOCALAPPDATA% (tests)
     std::wstring fullThumbs;   // --build-full-thumbs pack: renders the thumbnails of the full library and exits
     std::wstring importPath;   // --import model.mpd: an LDraw model (OMR), the reading mode opened
@@ -431,6 +433,22 @@ private:
     void renderThumbEditor();
     void saveThumbOverride();
     void uiCtxMenu();
+    // temporary brick tray (BrickBac.cpp): thumbnails in their colour, placed freely, kept in bac.json
+    struct BacItem { int part = -1, color = 0; float x = 0, y = 0; ImTextureID tex = 0; };
+    std::vector<BacItem> m_bac;
+    bool m_bacOpen = false, m_bacDirty = false, m_bacBuilt = false, m_bacDragMoved = false, m_bacPanning = false, m_bacPanned = false;
+    ImVec4 m_bacRect{0, 0, 0, 0};                // x, y, w, h
+    float m_bacZoom = 1.0f;
+    ImVec2 m_bacPan{0, 0}, m_bacGrab, m_bacPress;
+    int m_bacMove = 0, m_bacDrag = -1, m_bacMat = -1, m_bacGlass = -1;
+    Scene m_bacScene;
+    std::wstring bacFile() const;
+    void bacAdd(int part, int color, float x, float y);
+    void bacAddSelection();
+    void bacRenderPending();
+    void loadBac();
+    void saveBac();
+    void uiBac();
     void uiThumbEditor();
     std::map<int, ImTextureID> m_thumbOverride;   // part -> its saved thumbnail
     int m_ctxPart = -1;                          // right click menu (DEV) on this part

@@ -162,6 +162,7 @@ bool BrickApp::init(HINSTANCE inst, const Options& opt) {
     loadFullThumbIndex();
     loadThumbOverrides();
     loadHudIcons();
+    loadBac();
     buildNav();
     if (opt.shotPath.empty()) loadPrefs();   // captures stay reproducible
     else if (opt.useDefaults) { std::string dt; if (readDefaultPrefs(dt)) applyPrefs(dt); }   // (--use-defaults: a capture with the default settings)
@@ -1041,6 +1042,7 @@ void BrickApp::frame() {
     if (m_last.QuadPart) m_frameMs = m_frameMs * 0.9 + 0.1 * (t0.QuadPart - m_last.QuadPart) * 1000.0 / m_qpf.QuadPart;
     m_last = t0;
     if (m_teSave) saveThumbOverride();   // (Edit thumbnail: before anything is drawn this frame)
+    bacRenderPending();                  // (the thumbnails of the tray, likewise)
 
     m_gui.newFrame();
     if (m_frame == 2 && !m_opt.spawnPart.empty()) {   // scripted test: a part in hand at a point of the view
@@ -1098,6 +1100,17 @@ void BrickApp::frame() {
     if (m_frame == 24 && !m_opt.infoPart.empty()) m_infoPart = m_lib.find(m_opt.infoPart);   // scripted test: part sheet
     if (m_frame == 24 && !m_opt.thumbEdit.empty()) { openThumbEditor(m_lib.find(m_opt.thumbEdit)); m_teView.yaw += 0.6f; m_teView.zoom = 1.15f; }   // scripted test: Edit thumbnail
     if (m_frame == 90 && m_opt.thumbEditSave) m_teSave = true;
+    if (m_frame == 20 && m_opt.bacTest) {   // scripted test: the tray open, ten bricks of the scene added (one thumbnail each)
+        m_bacOpen = true;
+        const int sel = m_selected;
+        m_multi.clear();
+        m_selected = std::min(590, (int)m_bricks.size() - 1);
+        for (int i = 1; i < 10 && m_selected + i < (int)m_bricks.size(); ++i) m_multi.push_back(m_selected + i);
+        bacAddSelection();
+        m_multi.clear();
+        m_selected = sel;
+        syncObjects();
+    }
     if (!m_opt.noUi) drawUi();
     cameraInput();
     if (m_mechOn) mechUpdate((float)ImGui::GetIO().DeltaTime);
@@ -1391,6 +1404,8 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         else if (a == L"--thumb-edit") { std::wstring w = next(); opt.thumbEdit.assign(w.begin(), w.end()); }
         else if (a == L"--thumb-edit-save") opt.thumbEditSave = true;
         else if (a == L"--thumb-dir") opt.thumbDir = next();
+        else if (a == L"--bac-file") opt.bacFile = next();
+        else if (a == L"--bac-test") opt.bacTest = true;
         else if (a == L"--thumb-sample") { opt.thumbSampleDir = next(); std::wstring w = next(); opt.thumbSampleParts.assign(w.begin(), w.end()); }
         else if (a == L"--import") opt.importPath = next();
         else if (a == L"--read-step") opt.readStep = _wtoi(next().c_str());

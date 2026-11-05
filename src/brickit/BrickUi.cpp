@@ -224,6 +224,7 @@ void BrickApp::uiHeader() {
         {3, svg::I_UNDO, "DEV", "Mode développeur : connecteurs LDraw, export / réimport Maya des pièces", m_dev, true, 17},
         {0, svg::I_WINDOWS, nullptr, "Fenêtres : afficher / masquer les panneaux", m_popup == 3, true, 18},
         {0, svg::I_FILE, nullptr, "Scène : ouvrir / enregistrer (.v3d.json)", m_popup == 4, true, 19},
+        {3, svg::I_UNDO, "Bac", "Bac à briques temporaire : garde des pièces sous la main (glisse-les depuis la bibliothèque)", m_bacOpen, true, 21},
         {0, svg::I_SETTINGS, nullptr, "Réglages : échelle de l'interface, miniatures, qualité, transformation de vue…", m_popup == 5, true, 20},
     };
     auto width = [&](const B& b) {
@@ -281,6 +282,7 @@ void BrickApp::uiHeader() {
         case 17: devSetOn(!m_dev); break;
         case 18: m_popup = m_popup == 3 ? 0 : 3; m_popupAt = ImVec2(d.x - 220 * s, y1 + 4 * s); break;
         case 19: m_popup = 0; m_sheetOpen = true; m_sheetText = m_build.toJson(m_scene.camera); break;
+        case 21: m_bacOpen = !m_bacOpen; m_bacDirty = true; break;
         case 20: m_popup = m_popup == 5 ? 0 : 5; m_popupAt = ImVec2(d.x - 330 * s, y1 + 4 * s); break;
         }
     }
@@ -643,6 +645,154 @@ void BrickApp::uiSelHud() {
         }
         if (u.pressed && !hot(pMore, R)) m_moreOpen = false;
     }
+}
+
+// ------------------------------------------------------------------ temporary brick tray (BrickBac.cpp)
+// A glass window: the view behind it shows through (a dark veil at half opacity, a thin light border, round corners;
+// no blur, it would cost a copy of the view). Its title bar moves it, its corner resizes it. Inside, the thumbnails
+// placed freely: drag one to move it (out of the window: the part in hand, in its colour), click one to take it, right
+// click or Suppr on one removes it; the wheel zooms around the cursor, a right / middle drag on the empty space pans.
+// A card of the library (the brick in hand) released over it is added.
+
+void BrickApp::uiBac() {
+    if (!m_bacOpen) return;
+    Ui u = ui(m_ui);
+    if (m_gui.fontBold) u.bold = m_gui.fontBold;
+    const float s = m_ui;
+    const ImVec2 d = ImGui::GetIO().DisplaySize;
+    ImGuiIO& io = ImGui::GetIO();
+    if (m_bacRect.z <= 0) m_bacRect = ImVec4(d.x - 470 * s, 120 * s, 340 * s, 300 * s);   // first opening: right, under the colours
+    m_bacRect.z = std::clamp(m_bacRect.z, 220 * s, d.x - 20 * s);
+    m_bacRect.w = std::clamp(m_bacRect.w, 160 * s, d.y - 60 * s);
+    m_bacRect.x = std::clamp(m_bacRect.x, 0.0f, d.x - 80 * s);
+    m_bacRect.y = std::clamp(m_bacRect.y, 30 * s, d.y - 40 * s);
+    const ImVec2 p0(m_bacRect.x, m_bacRect.y), p1(p0.x + m_bacRect.z, p0.y + m_bacRect.w);
+    const float hb = 34 * s, rr = 16 * s;
+    // glass
+    u.dl->AddRectFilled(ImVec2(p0.x, p0.y + 6 * s), ImVec2(p1.x, p1.y + 8 * s), IM_COL32(0, 0, 0, 40), rr);   // soft shadow
+    u.dl->AddRectFilled(p0, p1, IM_COL32(24, 26, 32, 128), rr);
+    u.dl->AddRectFilledMultiColor(ImVec2(p0.x + 1, p0.y + 1), ImVec2(p1.x - 1, p0.y + hb), IM_COL32(255, 255, 255, 22), IM_COL32(255, 255, 255, 22), IM_COL32(255, 255, 255, 6), IM_COL32(255, 255, 255, 6));
+    u.dl->AddRect(p0, p1, IM_COL32(255, 255, 255, 60), rr, 0, 1.2f * s);
+    m_uiRects.push_back(ImVec4(p0.x, p0.y, p1.x, p1.y));
+    const bool overWin = u.hover(p0, p1);
+    // a library card released over it (the new brick in hand): added in its colour where it is dropped
+    if (m_holding && m_held.isNew && overWin && ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
+        const int part = m_bricks[m_held.brick].part, color = m_bricks[m_held.brick].color;
+        cancelHeld();
+        bacAdd(part, color, (u.mouse.x - p0.x - m_bacPan.x) / m_bacZoom - 42, (u.mouse.y - p0.y - hb - m_bacPan.y) / m_bacZoom - 42);
+        m_dragStarted = false;
+        m_pressed = false;
+    }
+    // title bar: grip (move), title, « Ajouter la sélection », close
+    u.text(ImVec2(p0.x + 14 * s, p0.y + 9 * s), 12, IM_COL32(236, 236, 238, 235), "Bac à briques", true);
+    {
+        const char* lab = "+ Ajouter la sélection";
+        const float bw = u.textW(11, lab) + 18 * s;
+        ImVec2 ba(p1.x - 36 * s - bw, p0.y + 6 * s), bb(p1.x - 36 * s, p0.y + 28 * s);
+        const bool h = u.hover(ba, bb);
+        u.dl->AddRectFilled(ba, bb, h ? IM_COL32(255, 255, 255, 60) : IM_COL32(255, 255, 255, 28), 11 * s);
+        u.text(ImVec2(ba.x + 9 * s, ba.y + 4 * s), 11, IM_COL32(245, 245, 247, 255), lab);
+        if (h) ImGui::SetTooltip("Une vignette par brique sélectionnée, avec sa couleur");
+        if (h && u.pressed) { bacAddSelection(); u.pressed = false; }
+        ImVec2 ca(p1.x - 30 * s, p0.y + 6 * s), cb(p1.x - 8 * s, p0.y + 28 * s);
+        const bool hc = u.hover(ca, cb);
+        if (hc) u.dl->AddCircleFilled(ImVec2((ca.x + cb.x) * 0.5f, (ca.y + cb.y) * 0.5f), 11 * s, IM_COL32(255, 255, 255, 40), 24);
+        svg::path(u.dl, "M-5 -5 L5 5 M5 -5 L-5 5", ImVec2((ca.x + cb.x) * 0.5f, (ca.y + cb.y) * 0.5f), s, IM_COL32(240, 240, 242, 230), 2.0f * s);
+        if (hc && u.pressed) { m_bacOpen = false; m_bacDirty = true; u.pressed = false; }
+        const bool onBar = u.hover(p0, ImVec2(ba.x - 4 * s, p0.y + hb));
+        if (onBar && u.pressed) { m_bacMove = 1; m_bacGrab = ImVec2(u.mouse.x - p0.x, u.mouse.y - p0.y); }
+    }
+    // resize corner
+    {
+        const ImVec2 ka(p1.x - 16 * s, p1.y - 16 * s);
+        for (int k = 0; k < 3; ++k) u.dl->AddLine(ImVec2(p1.x - 5 * s - k * 4 * s, p1.y - 5 * s), ImVec2(p1.x - 5 * s, p1.y - 5 * s - k * 4 * s), IM_COL32(255, 255, 255, 70), 1.2f * s);
+        if (u.hover(ka, p1) && u.pressed) { m_bacMove = 2; m_bacGrab = ImVec2(p1.x - u.mouse.x, p1.y - u.mouse.y); u.pressed = false; }
+    }
+    if (m_bacMove && !ImGui::IsMouseDown(ImGuiMouseButton_Left)) { m_bacMove = 0; m_bacDirty = true; }
+    if (m_bacMove == 1) { m_bacRect.x = u.mouse.x - m_bacGrab.x; m_bacRect.y = u.mouse.y - m_bacGrab.y; }
+    if (m_bacMove == 2) { m_bacRect.z = u.mouse.x + m_bacGrab.x - p0.x; m_bacRect.w = u.mouse.y + m_bacGrab.y - p0.y; }
+    // content
+    const ImVec2 c0(p0.x + 6 * s, p0.y + hb), c1(p1.x - 6 * s, p1.y - 6 * s);
+    const bool overContent = u.hover(c0, c1) && !m_bacMove;
+    u.dl->PushClipRect(c0, c1, true);
+    const float cs = 84 * m_bacZoom * s;   // card size
+    auto cardAt = [&](const BacItem& it) { return ImVec2(c0.x + m_bacPan.x + it.x * m_bacZoom * s, c0.y + m_bacPan.y + it.y * m_bacZoom * s); };
+    int hover = -1;
+    for (int i = (int)m_bac.size() - 1; i >= 0 && overContent; --i) {
+        const ImVec2 a = cardAt(m_bac[i]);
+        if (u.hover(a, ImVec2(a.x + cs, a.y + cs))) { hover = i; break; }
+    }
+    if (m_bac.empty()) {
+        const char* t1 = "Glisse ici une pièce de la bibliothèque,";
+        const char* t2 = "ou « Ajouter la sélection »";
+        u.text(ImVec2((c0.x + c1.x) * 0.5f - u.textW(11, t1) * 0.5f, (c0.y + c1.y) * 0.5f - 16 * s), 11, IM_COL32(255, 255, 255, 140), t1);
+        u.text(ImVec2((c0.x + c1.x) * 0.5f - u.textW(11, t2) * 0.5f, (c0.y + c1.y) * 0.5f + 2 * s), 11, IM_COL32(255, 255, 255, 140), t2);
+    }
+    for (int i = 0; i < (int)m_bac.size(); ++i) {
+        const BacItem& it = m_bac[i];
+        const ImVec2 a = cardAt(it), b(a.x + cs, a.y + cs);
+        if (b.x < c0.x || a.x > c1.x || b.y < c0.y || a.y > c1.y) continue;
+        const bool h = i == hover || i == m_bacDrag;
+        u.dl->AddRectFilled(a, b, h ? IM_COL32(255, 255, 255, 34) : IM_COL32(255, 255, 255, 14), 12 * s * m_bacZoom);
+        if (it.tex && it.tex != (ImTextureID)1) u.dl->AddImage(it.tex, ImVec2(a.x + 3 * s, a.y + 3 * s), ImVec2(b.x - 3 * s, b.y - 3 * s));
+        else if (!it.tex) u.text(ImVec2(a.x + cs * 0.5f - 6 * s, a.y + cs * 0.5f - 8 * s), 12, IM_COL32(255, 255, 255, 110), "…");
+        if (h) u.dl->AddRect(a, b, IM_COL32(255, 255, 255, 120), 12 * s * m_bacZoom, 0, 1.2f * s);
+    }
+    u.dl->PopClipRect();
+    if (hover >= 0 && m_bacDrag < 0) {
+        const BacItem& it = m_bac[hover];
+        ImGui::SetTooltip("%s · %s", m_lib.parts[it.part].label.c_str(), m_lib.palette[it.color].name.c_str());
+    }
+    // a card: press, then move (in the window: placed; out of it: the part in hand) or release (taken)
+    if (hover >= 0 && u.pressed && !m_bacMove) { m_bacDrag = hover; m_bacPress = u.mouse; m_bacDragMoved = false; }
+    if (m_bacDrag >= 0) {
+        BacItem& it = m_bac[m_bacDrag];
+        const ImVec2 dm(u.mouse.x - m_bacPress.x, u.mouse.y - m_bacPress.y);
+        if (dm.x * dm.x + dm.y * dm.y > 36 * s * s) m_bacDragMoved = true;
+        if (m_bacDragMoved && ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+            if (overWin) { it.x += io.MouseDelta.x / (m_bacZoom * s); it.y += io.MouseDelta.y / (m_bacZoom * s); m_bacDirty = true; }
+            else {   // out of the tray: the part in hand, its colour (drop on release, as from the library)
+                const int part = it.part;
+                m_color = it.color;
+                m_bacDrag = -1;
+                spawn(part, u.mouse.x, u.mouse.y);
+                m_dragStarted = true;
+                m_pressed = false;
+            }
+        } else if (!ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+            if (!m_bacDragMoved) {   // a click: the part in hand in the middle of the view
+                m_color = it.color;
+                spawn(it.part, (m_stage.x + m_stage.z) * 0.5f, (m_stage.y + m_stage.w) * 0.5f);
+            } else {   // dropped: on top of the others
+                BacItem moved = it;
+                m_bac.erase(m_bac.begin() + m_bacDrag);
+                m_bac.push_back(moved);
+            }
+            m_bacDrag = -1;
+        }
+    }
+    // remove: right click or Suppr on a card
+    if (hover >= 0 && m_bacDrag < 0 && (ImGui::IsMouseReleased(ImGuiMouseButton_Right) && !m_bacPanned || ImGui::IsKeyPressed(ImGuiKey_Delete))) {
+        if (m_bac[hover].tex && m_bac[hover].tex != (ImTextureID)1) m_gui.releaseTexture(m_bac[hover].tex);
+        m_bac.erase(m_bac.begin() + hover);
+        m_bacDirty = true;
+    }
+    // zoom around the cursor, pan with a right / middle drag
+    if (overContent && io.MouseWheel != 0) {
+        const float z0 = m_bacZoom, z1 = std::clamp(z0 * std::pow(1.12f, io.MouseWheel), 0.4f, 3.0f);
+        const ImVec2 m(u.mouse.x - c0.x, u.mouse.y - c0.y);
+        m_bacPan = ImVec2(m.x - (m.x - m_bacPan.x) * z1 / z0, m.y - (m.y - m_bacPan.y) * z1 / z0);
+        m_bacZoom = z1;
+        m_bacDirty = true;
+    }
+    if (overContent && (ImGui::IsMouseClicked(ImGuiMouseButton_Right) || ImGui::IsMouseClicked(ImGuiMouseButton_Middle))) { m_bacPanning = true; m_bacPanned = false; }
+    if (m_bacPanning) {
+        if (ImGui::IsMouseDown(ImGuiMouseButton_Right) || ImGui::IsMouseDown(ImGuiMouseButton_Middle)) {
+            if (std::fabs(io.MouseDelta.x) + std::fabs(io.MouseDelta.y) > 0) { m_bacPan.x += io.MouseDelta.x; m_bacPan.y += io.MouseDelta.y; m_bacPanned = true; m_bacDirty = true; }
+        } else m_bacPanning = false;
+    }
+    if (!ImGui::IsMouseDown(ImGuiMouseButton_Right) && !ImGui::IsMouseReleased(ImGuiMouseButton_Right)) m_bacPanned = false;
+    if (m_bacDirty && !m_bacMove && m_bacDrag < 0 && !m_bacPanning) saveBac();
 }
 
 // ------------------------------------------------------------------ colours panel (right)
@@ -1638,6 +1788,7 @@ void BrickApp::drawUi() {
     uiPopups();
     uiManual();
     uiDevPanel();
+    uiBac();
     uiInfoSheet();
     uiThumbEditor();
     uiCtxMenu();

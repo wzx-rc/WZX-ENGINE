@@ -379,7 +379,6 @@ void BrickApp::placeThumbLights(Scene& ts, const Part& p) {
 }
 
 bool BrickApp::renderThumb2(Scene& ts, int obj, const Part& p, const ThumbView& v, int px, std::vector<uint8_t>& out) {
-    (void)obj;
     const RenderSettings rs = thumbSettings();
     Camera& c = ts.camera;
     fitThumbCamera(c, p, v);
@@ -389,7 +388,7 @@ bool BrickApp::renderThumb2(Scene& ts, int obj, const Part& p, const ThumbView& 
     uint32_t w = 0, h = 0, w2 = 0, h2 = 0;
     // path tracing (Wzx, 05/11/2026: « fait en rendu PathTracing »): the samples accumulated, denoised; else the raster
     ThumbLook lk = thumbLook();
-    if (isGlassPart(p)) lk.spp = 0;   // (glass: the refraction of the black / white backgrounds breaks the alpha in path tracing)
+    if (isGlassPart(p) || (obj >= 0 && obj < (int)ts.objects.size() && ts.materials[ts.objects[obj].material].transmission > 0.5f)) lk.spp = 0;   // (glass: the refraction of the black / white backgrounds breaks the alpha in path tracing)
     RenderSettings prs = rs;
     if (lk.spp > 0) {
         prs.raster = false;
