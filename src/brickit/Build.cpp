@@ -140,6 +140,7 @@ void Builder::buildCache(Held& H) const {
         const Brick& b = bricks[i];
         if (b.part < 0 || !m_lib.parts[b.part].loaded) continue;
         H.boxes.insert(i, bodyBox(b.part, b.rot, b.pos));
+        if (b.free) continue;   // a brick at a free angle: its connectors are off the lattice, no target
         const Part& p = m_lib.parts[b.part];
         for (size_t v = 0; v < p.voxels.size(); ++v) {
             float3 w = worldVoxel(b, p.voxels[v]);
@@ -377,6 +378,7 @@ std::string Builder::toJson(const Camera& c) const {
                  i ? "," : "", jsonEscape(p.name).c_str(), col.id, col.srgb.x, col.srgb.y, col.srgb.z, mat, b.pos.x, b.pos.y, b.pos.z, yaw,
                  b.rot.x, b.rot.y, b.rot.z, b.rot.w, g.x, g.y, g.z);
         out += buf;
+        if (b.free) { out.pop_back(); out += ", \"free\": true}"; }   // (rot holds the exact angle)
         if (b.step >= 0) { out.pop_back(); out += ", \"step\": " + std::to_string(b.step) + "}"; }
         if (!b.path.empty()) {   // , "groups": [ids] before the closing brace
             out.pop_back();
@@ -408,7 +410,8 @@ bool Builder::fromJson(const std::string& text, Camera* cam, std::string* messag
         if (s["rot"].type == app::Json::Array && s["rot"].a.size() == 4)
             b.rot = float4((float)s["rot"][0].num(), (float)s["rot"][1].num(), (float)s["rot"][2].num(), (float)s["rot"][3].num(1));
         else b.rot = qAxisAngle(float3(0, 1, 0), (float)s["yaw"].num() * kPi / 180.0f);
-        b.rot = snapQuat(b.rot);
+        b.free = s["free"].type == app::Json::Bool && s["free"].b;
+        if (!b.free) b.rot = snapQuat(b.rot);
         if (s["grabVoxel"].type == app::Json::Array) {
             float3 g((float)s["grabVoxel"][0].num(), (float)s["grabVoxel"][1].num(), (float)s["grabVoxel"][2].num());
             const Part& p = m_lib.parts[pi];

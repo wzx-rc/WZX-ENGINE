@@ -225,6 +225,9 @@ bool BrickApp::init(HINSTANCE inst, const Options& opt) {
     if (opt.pivotEdit) m_pivotEdit = true;
     if (opt.selectBrick >= 0 && opt.selectBrick < (int)m_bricks.size()) select(opt.selectBrick);
     if (opt.duplicate) duplicateSelected();   // scripted test of Ctrl+D
+    for (int k = 0; k < std::abs(opt.freeRot); ++k) turnSelectedFree(opt.freeRot > 0 ? 1 : -1);
+    if (opt.touchHud >= 0) m_touchHud = opt.touchHud != 0;
+    if (opt.colorArc) m_arcOpen = true;
     if (opt.mech) {
         mechEnter();
         if (opt.motor != 0 && !m_mm.cmds.empty()) {   // scripted test: the first motor turned by --motor degrees, in steps
@@ -1332,6 +1335,9 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         else if (a == L"--import-report") opt.importReport = next();
         else if (a == L"--group-test") opt.groupTest = next();
         else if (a == L"--still-aa") opt.stillAA = _wtoi(next().c_str());
+        else if (a == L"--touch-hud") opt.touchHud = _wtoi(next().c_str());
+        else if (a == L"--free-rot") opt.freeRot = _wtoi(next().c_str());
+        else if (a == L"--color-arc") opt.colorArc = true;
         else if (a == L"--use-defaults") opt.useDefaults = true;
         else if (a == L"--dof") opt.dof = (float)_wtof(next().c_str());
         else if (a == L"--bloom") opt.bloom = (float)_wtof(next().c_str());

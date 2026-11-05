@@ -70,7 +70,8 @@
   "autosave": true,
   "showVox": false,
   "renderScale": 1.0,
-  "stillAA": false
+  "stillAA": false,
+  "touchHud": true
  },
  "light": {
   "rotation": 232.6,

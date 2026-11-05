@@ -17,7 +17,8 @@ struct Brick {
     int part = -1;            // index in Library::parts
     int color = 0;            // index in Library::palette
     float3 pos;               // origin of the part (its minimum corner when not turned)
-    float4 rot{0, 0, 0, 1};   // quaternion, multiples of 90 degrees
+    float4 rot{0, 0, 0, 1};   // quaternion, multiples of 90 degrees (any angle when free)
+    bool free = false;        // turned by a free angle (15 degree steps of the touch HUD): no stud snapping on it
     int grab = -1;            // pivot voxel (-1 = default)
     std::vector<int> path;    // the groups holding the brick, outermost first (ids in Builder::groups)
     int step = -1;            // step of the instructions of an imported model (reading mode), -1 = none

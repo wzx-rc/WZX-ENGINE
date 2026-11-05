@@ -52,6 +52,9 @@ struct Options {
     std::wstring groupTest;   // --group-test file: the groups checked (BrickGroups.cpp)
     bool useDefaults = false;   // --use-defaults: a capture with the default settings (assets / %LOCALAPPDATA%)
     int stillAA = -1;   // --still-aa 0 / 1
+    int touchHud = -1;  // --touch-hud 0 / 1
+    int freeRot = 0;    // --free-rot n: the selection turned n x 15 degrees at start (captures)
+    bool colorArc = false;   // --color-arc: the colour arc of the touch HUD open (captures)
     float dof = -1, bloom = -1;   // --dof s, --bloom s (-1: the settings)
     float renderScale = -1;  // --render-scale s: the image rendered at s of the window (-1: the setting)
     int giSoft = 1;          // --gi-soft 0: the sharp visibility weights of the probes (comparison)
@@ -239,6 +242,8 @@ private:
     std::vector<int> visibleParts() const;  // parts of the current family / category / search
     const std::string& partCat(int part) const;    // LDraw category of a part
     void tiltSelected(int dir);             // radial: tilt towards the viewer (up / down)
+    void turnSelectedFree(int dir);         // touch HUD: 15 degrees about the vertical axis through the centre
+    void uiSelHud();                        // touch HUD around the selection: turn 15 degrees, duplicate, colour arc
     void drawVoxels();                      // voxel display (studs yellow, pins cyan, axles magenta)
 
     // Mechanical mode (BrickMech.cpp)
@@ -502,6 +507,10 @@ private:
     std::unordered_map<std::string, int> m_catCount, m_techSubCount;
     int m_availCount = 0;
     bool m_allColors = false;         // Couleurs: every colour offered, even those that do not exist for the part
+    bool m_touchHud = true;           // Réglages › HUD tactile (iPad): the radial ring and the HUD around the selection
+    bool m_arcOpen = false, m_arcDrag = false;   // colour arc of the touch HUD open; opened by a press still held (marking menu)
+    int m_arcPage = 0;
+    ImVec2 m_arcPress;
     bool m_stillAA = false;           // Réglages › Anti-aliasing au repos (HQ: jittered frames accumulated while still)
     float m_dof = 0.0f, m_bloom = 0.0f;   // Réglages › Lumière › Profondeur de champ / Bloom (0 = off)
     float m_renderScale = 1.0f;       // Réglages › Échelle de rendu (1, 0.85, 0.75, 0.67)

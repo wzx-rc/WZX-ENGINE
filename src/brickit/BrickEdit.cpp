@@ -280,6 +280,51 @@ void BrickApp::tiltSelected(int dir) {
     syncObjects();
 }
 
+// Touch HUD (as Tiny Glade): 15 degrees about the vertical axis through the centre of the selection (a group as one
+// block), the bricks kept where they are. Off the quarter turns they are free (no stud snapping, the exact angle saved);
+// back on a quarter turn they snap to the stud lattice again. Safety on: a turn more than 50 % into another brick is refused.
+void BrickApp::turnSelectedFree(int dir) {
+    if (m_holding) return;
+    std::vector<int> s = selection();
+    if (s.empty()) return;
+    float3 mn(1e30f), mx(-1e30f);
+    for (int i : s) {
+        const Box b = m_build.aabbOf(m_bricks[i].part, m_bricks[i].rot, m_bricks[i].pos);
+        mn = minv(mn, b.mn);
+        mx = maxv(mx, b.mx);
+    }
+    const float3 c = (mn + mx) * 0.5f;
+    pushUndo();
+    const float4 q = qAxisAngle(float3(0, 1, 0), dir * kPi / 12.0f);
+    for (int i : s) {
+        Brick& b = m_bricks[i];
+        b.rot = qNormalize(qMul(q, b.rot));
+        b.pos = c + qRot(q, b.pos - c);
+    }
+    const float4 r0 = m_bricks[s[0]].rot, sq = snapQuat(r0);
+    if (std::fabs(r0.x * sq.x + r0.y * sq.y + r0.z * sq.z + r0.w * sq.w) > 0.9999f) {   // a quarter turn: on the lattice again
+        for (int i : s) m_bricks[i].rot = snapQuat(m_bricks[i].rot);
+        const Brick& b0 = m_bricks[s[0]];
+        const float3 w = m_build.worldVoxel(b0, m_build.grabOf(b0));
+        const float3 t(std::round((w.x - 0.4f) / kPitch) * kPitch + 0.4f, w.y, std::round((w.z - 0.4f) / kPitch) * kPitch + 0.4f);
+        for (int i : s) { m_bricks[i].pos = m_bricks[i].pos + (t - w); m_bricks[i].free = false; }
+    } else for (int i : s) m_bricks[i].free = true;
+    if (m_build.safety) {
+        BoxHash others;
+        for (int j = 0; j < (int)m_bricks.size(); ++j)
+            if (std::find(s.begin(), s.end(), j) == s.end()) others.insert(j, m_build.bodyBox(m_bricks[j].part, m_bricks[j].rot, m_bricks[j].pos));
+        float worst = 0;
+        for (int i : s) worst = std::max(worst, others.worstOverlap(m_build.bodyBox(m_bricks[i].part, m_bricks[i].rot, m_bricks[i].pos)));
+        if (worst > 0.5f) {
+            m_bricks = m_undo.back();
+            m_undo.pop_back();
+            toast("Rotation refusée : la brique entrerait dans une autre (Sécurité)");
+            return;
+        }
+    }
+    syncObjects();
+}
+
 // Voxels shown as dots: studs and anti-studs yellow, pins and pin holes cyan, axles and axle holes magenta.
 void BrickApp::drawVoxels() {
     if (!m_showVox) return;
