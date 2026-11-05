@@ -161,6 +161,7 @@ bool BrickApp::init(HINSTANCE inst, const Options& opt) {
     loadFullThumbIndex();
     buildNav();
     if (opt.shotPath.empty()) loadPrefs();   // captures stay reproducible
+    else if (opt.useDefaults) { std::string dt; if (readDefaultPrefs(dt)) applyPrefs(dt); }   // (--use-defaults: a capture with the default settings)
     if (m_uiScaleUser != 1.0f) { m_ui *= m_uiScaleUser; th::apply(m_ui); }   // settings: UI scale over the screen scale
     if (opt.dev) m_dev = true;
     devLoadAll();   // DEV replacements kept next to the exe
@@ -588,6 +589,12 @@ void BrickApp::setLookdev(bool on) {
     }
     ++m_scene.objectsVersion;   // (the materials are uploaded again, the accumulations restart)
     m_renderer.resetAccumulation();
+}
+
+void BrickApp::openOfficialHouse() {   // Dossier › Ouvrir la maison officielle (31153)
+    const std::wstring path = m_exeDir + L"\\..\\..\\docs\\brickit\\tests\\maison_officielle_31153.v3d.json";
+    if (GetFileAttributesW(path.c_str()) == INVALID_FILE_ATTRIBUTES) { toast("Maison officielle introuvable (docs\\brickit\\tests)"); return; }
+    openScene(path);
 }
 
 void BrickApp::openTestHouse() {
@@ -1325,6 +1332,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         else if (a == L"--import-report") opt.importReport = next();
         else if (a == L"--group-test") opt.groupTest = next();
         else if (a == L"--still-aa") opt.stillAA = _wtoi(next().c_str());
+        else if (a == L"--use-defaults") opt.useDefaults = true;
         else if (a == L"--dof") opt.dof = (float)_wtof(next().c_str());
         else if (a == L"--bloom") opt.bloom = (float)_wtof(next().c_str());
         else if (a == L"--render-scale") opt.renderScale = (float)_wtof(next().c_str());

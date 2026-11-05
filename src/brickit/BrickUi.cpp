@@ -963,7 +963,8 @@ void BrickApp::uiPopups() {
                                     {"Couleurs", m_pColors.visible, 2}, {"Actions de la brique", m_pOpts.visible, 1}, {"Groupes", m_pGroups.visible, 6},
                                     {"Réinitialiser la disposition", false, 5}};
     else {
-        items = {{"Nouvelle scène", false, 0}, {"Ouvrir… (.v3d.json, .ldr, .mpd)", false, 1}, {"Enregistrer… (.v3d.json)", false, 2}, {"Ouvrir la maison test (GI)", false, 3}};
+        items = {{"Nouvelle scène", false, 0}, {"Ouvrir… (.v3d.json, .ldr, .mpd)", false, 1}, {"Enregistrer… (.v3d.json)", false, 2}, {"Ouvrir la maison test (GI)", false, 3},
+                 {"Ouvrir la maison officielle (31153)", false, 5}};
         if (hasSteps()) items.push_back({m_reading ? "Fermer la notice" : "Lire la notice (étapes du modèle)", false, 4});
     }
     const bool checks = m_popup == 3;
@@ -1011,6 +1012,7 @@ void BrickApp::uiPopups() {
                 else if (it.id == 1) openDialog();
                 else if (it.id == 3) openTestHouse();
                 else if (it.id == 4) { if (m_reading) stopReading(); else startReading(1); }
+                else if (it.id == 5) openOfficialHouse();
                 else saveDialog();
             }
         }
@@ -2121,6 +2123,7 @@ void BrickApp::uiSettings() {
     for (int i = 0; i < 5; ++i) { snprintf(scaleLab[i], sizeof(scaleLab[i]), "%d %%", (int)std::lround(kScales[i] * 100)); scales.push_back({scaleLab[i], std::fabs(m_uiScaleUser - kScales[i]) < 0.01f}); }
     std::vector<Row> rows = {
         {"Échelle de l'interface", scales, 0},
+        {"Réglages par défaut", {{"Enregistrer ceux-ci", false}, {"Rétablir", false}}, 13},
         {"Taille des miniatures", {{"Petites", m_thumbSize == 0}, {"Moyennes", m_thumbSize == 1}, {"Grandes", m_thumbSize == 2}}, 1},
         {"Rendu", {{"Rapide", m_rs.raster && m_quality == 0}, {"HQ", m_rs.raster && m_quality == 1}, {"PT", pathTraced()}, {"RC", m_rcMode}}, 2},
         {"Anti-aliasing (Radiance Cascades)", {{"MSAA 4x", m_rs.aaQuality == 0}, {"MSAA 8x", m_rs.aaQuality == 1}, {"AAA", m_rs.aaQuality == 2}}, 9},
@@ -2387,6 +2390,7 @@ void BrickApp::uiSettings() {
         case 9: m_rs.aaQuality = clickOpt; break;
         case 10: m_rs.shadowQuality = clickOpt == 0 ? 0 : clickOpt + 1; break;
         case 12: m_stillAA = clickOpt == 0; break;
+        case 13: if (clickOpt == 0) saveDefaultPrefs(); else resetToDefaultPrefs(); break;
         case 11: { static const float k[4] = {1.0f, 0.85f, 0.75f, 0.67f}; m_renderScale = k[std::clamp(clickOpt, 0, 3)]; break; }
         }
         m_renderer.resetAccumulation();

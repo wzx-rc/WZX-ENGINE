@@ -51,8 +51,44 @@ bool BrickApp::userSession() const {
            !m_opt.mech && !m_opt.cornell && m_opt.mouseTest.empty();
 }
 
+// The defaults of a first launch (no brickit_prefs.json): those saved by Réglages › « Enregistrer comme réglages par
+// défaut » (%LOCALAPPDATA%\\BrickIt\\default_prefs.json), else the built-in ones (assets\\brickit\\default_prefs.json, the
+// look Wzx chose)
+static std::wstring userDefaultsPath() {
+    wchar_t la[MAX_PATH];
+    const DWORD n = GetEnvironmentVariableW(L"LOCALAPPDATA", la, MAX_PATH);
+    return (n == 0 || n >= MAX_PATH) ? std::wstring() : std::wstring(la) + L"\\BrickIt\\default_prefs.json";
+}
+
+bool BrickApp::readDefaultPrefs(std::string& t) {
+    const std::wstring u = userDefaultsPath();
+    return (!u.empty() && readText(u, t)) || readText(m_exeDir + L"\\assets\\brickit\\default_prefs.json", t);
+}
+
+void BrickApp::saveDefaultPrefs() {
+    const std::wstring u = userDefaultsPath();
+    if (u.empty()) return;
+    CreateDirectoryW(u.substr(0, u.find_last_of(L'\\')).c_str(), nullptr);
+    writeText(u, prefsJson());
+    toast("Réglages enregistrés comme réglages par défaut");
+}
+
+void BrickApp::resetToDefaultPrefs() {
+    std::string t;
+    if (!readDefaultPrefs(t)) { toast("Pas de réglages par défaut"); return; }
+    applyPrefs(t);
+    applyLook();
+    m_renderer.resetAccumulation();
+    savePrefs();
+    toast("Réglages par défaut rétablis");
+}
+
 void BrickApp::savePrefs() {
     if (!userSession()) return;   // tests and captures never touch the preferences of the user
+    writeText(m_exeDir + L"\\brickit_prefs.json", prefsJson());
+}
+
+std::string BrickApp::prefsJson() {
     std::string j = "{";
     char b[256];
     snprintf(b, sizeof(b), "\"safety50\": %s, \"gridSnap\": %s, \"autoPivot\": %s, \"animOn\": %s, \"focusDim\": %s, \"mode\": %d, \"quality\": %d, \"tonemap\": %d, \"colorId\": %d, \"thumbSize\": %d,",
@@ -77,13 +113,18 @@ void BrickApp::savePrefs() {
         j += "]},";
     }
     j += "\"recentParts\": " + names(m_recent) + ", \"favParts\": " + names(m_fav) + "}\n";
-    writeText(m_exeDir + L"\\brickit_prefs.json", j);
+    return j;
 }
 
 void BrickApp::loadPrefs() {
     std::string t;
+    if (!readText(m_exeDir + L"\\brickit_prefs.json", t) && !readDefaultPrefs(t)) return;   // a first launch: the defaults
+    applyPrefs(t);
+}
+
+void BrickApp::applyPrefs(const std::string& t) {
     app::Json p;
-    if (!readText(m_exeDir + L"\\brickit_prefs.json", t) || !app::Json::parse(t, p)) return;
+    if (!app::Json::parse(t, p)) return;
     auto flag = [&](const char* k, bool& v) { if (p[k].type == app::Json::Bool) v = p[k].b; };
     flag("safety50", m_build.safety);
     flag("gridSnap", m_build.gridSnap);
@@ -171,7 +212,8 @@ void BrickApp::autosave() {
 
 bool BrickApp::restoreAutosave() {
     std::string t, msg;
-    if (!readText(m_exeDir + L"\\brickit_scene.v3d.json", t)) return false;
+    // no scene of a last session: the default scene (assets\\brickit\\default_scene.v3d.json, the official house 31153)
+    if (!readText(m_exeDir + L"\\brickit_scene.v3d.json", t) && !readText(m_exeDir + L"\\assets\\brickit\\default_scene.v3d.json", t)) return false;
     if (!m_build.fromJson(t, &m_scene.camera, &msg) || m_bricks.empty()) return false;
     toast(msg);
     return true;

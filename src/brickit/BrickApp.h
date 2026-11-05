@@ -50,6 +50,7 @@ struct Options {
     int readStep = -1;         // --read-step n: the page read for the capture
     std::wstring importReport; // --import-report file: pieces, steps, parts not found
     std::wstring groupTest;   // --group-test file: the groups checked (BrickGroups.cpp)
+    bool useDefaults = false;   // --use-defaults: a capture with the default settings (assets / %LOCALAPPDATA%)
     int stillAA = -1;   // --still-aa 0 / 1
     float dof = -1, bloom = -1;   // --dof s, --bloom s (-1: the settings)
     float renderScale = -1;  // --render-scale s: the image rendered at s of the window (-1: the setting)
@@ -184,6 +185,12 @@ private:
     void endGroupDrag();
     void uiGroups();   // the outliner of the groups (BrickUi.cpp)
     void groupTest();  // --group-test file
+    std::string prefsJson();
+    void applyPrefs(const std::string& text);
+    bool readDefaultPrefs(std::string& text);
+    void saveDefaultPrefs();     // Réglages › Enregistrer comme réglages par défaut
+    void resetToDefaultPrefs();  // Réglages › Rétablir
+    void openOfficialHouse();
     // LDraw models and the reading of their instructions (BrickLDraw.cpp, BrickRead.cpp)
     bool importLDraw(const std::wstring& path);
     bool hasSteps() const;

@@ -1,0 +1,95 @@
+{
+ "safety50": true,
+ "gridSnap": true,
+ "autoPivot": true,
+ "animOn": true,
+ "focusDim": false,
+ "mode": 1,
+ "quality": 1,
+ "tonemap": 0,
+ "colorId": 14,
+ "thumbSize": 1,
+ "nav": {
+  "fam": "Véhicules",
+  "cat": "",
+  "sub": ""
+ },
+ "optsRight": false,
+ "panels": {
+  "tray": {
+   "visible": true,
+   "collapsed": false,
+   "floating": false,
+   "x": 0,
+   "y": 0
+  },
+  "opts": {
+   "visible": true,
+   "collapsed": false,
+   "floating": true,
+   "x": 175,
+   "y": 825
+  },
+  "colors": {
+   "visible": true,
+   "collapsed": false,
+   "floating": false,
+   "x": 0,
+   "y": 0
+  },
+  "hud": {
+   "visible": false,
+   "collapsed": false,
+   "floating": false,
+   "x": 0,
+   "y": 0
+  },
+  "manual": {
+   "visible": false,
+   "collapsed": true,
+   "floating": false,
+   "x": 0,
+   "y": 0
+  }
+ },
+ "dev": {
+  "on": false,
+  "showVox": true,
+  "showEdges": true,
+  "useOverrides": true
+ },
+ "manual": {
+  "w": 0,
+  "h": 0,
+  "pdfPage": 1,
+  "pdfName": ""
+ },
+ "settings": {
+  "uiScale": 1.25,
+  "ssao": false,
+  "autosave": true,
+  "showVox": false,
+  "renderScale": 1.0,
+  "stillAA": false
+ },
+ "light": {
+  "rotation": 232.6,
+  "intensity": 1.136,
+  "gridRgb": 16777215,
+  "gridAlpha": 0.134,
+  "softGI": false,
+  "giStrength": 1.318,
+  "giHold": true,
+  "sssStrength": 2.0,
+  "giProbes": 16384,
+  "showProbes": false,
+  "selOutline": 0.116,
+  "selFill": 0.19,
+  "dof": 0.839,
+  "bloom": 0.506,
+  "hdri": "",
+  "custom": []
+ },
+ "recentParts": [],
+ "favParts": []
+}
