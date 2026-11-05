@@ -871,6 +871,7 @@ void BrickApp::uiTray() {
             snprintf(tip, sizeof(tip), "%s · %s", m_lib.parts[part].label.c_str(), m_lib.parts[part].name.c_str());
             if (m_libPress < 0) ImGui::SetTooltip("%s", tip);
             if (u.pressed) { m_libPress = part; m_libPressPos = u.mouse; m_libPressTime = now; m_libLong = false; }
+            if (m_dev && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) { m_ctxPart = part; m_ctxPos = u.mouse; }   // DEV: Edit thumbnail
         }
     }
     u.dl->PopClipRect();
@@ -1548,6 +1549,8 @@ void BrickApp::drawUi() {
     uiManual();
     uiDevPanel();
     uiInfoSheet();
+    uiThumbEditor();
+    uiCtxMenu();
     uiDevReview();
     uiManualBig();
     drawDropzone();
@@ -2601,6 +2604,82 @@ void BrickApp::uiSettings() {
     }
     if (u.pressed && clickRow < 0 && !u.hover(p0, p1) && u.mouse.y > 30 * s) m_popup = 0;
     if (ImGui::IsKeyPressed(ImGuiKey_Escape)) m_popup = 0;
+}
+
+// ------------------------------------------------------------------ Edit thumbnail (DEV, BrickThumbEdit.cpp)
+
+// DEV: the menu of a right click (scene brick or library card)
+void BrickApp::uiCtxMenu() {
+    if (m_ctxPart < 0) return;
+    Ui u = ui(m_ui);
+    const float s = m_ui;
+    const char* item = "Modifier la miniature";
+    const float w = u.textW(12, item) + 28 * s, h = 30 * s;
+    ImVec2 a(m_ctxPos.x, m_ctxPos.y), b(a.x + w, a.y + h + 22 * s);
+    const ImVec2 d = ImGui::GetIO().DisplaySize;
+    if (b.x > d.x) { a.x -= b.x - d.x; b.x = d.x; }
+    if (b.y > d.y) { a.y -= b.y - d.y; b.y = d.y; }
+    u.dl->AddRectFilled(ImVec2(a.x, a.y + 4 * s), ImVec2(b.x, b.y + 4 * s), IM_COL32(0, 0, 0, 70), 9 * s);
+    u.dl->AddRectFilled(a, b, IM_COL32(0x1d, 0x1e, 0x22, 250), 9 * s);
+    u.dl->AddRect(a, b, IM_COL32(0x3a, 0x3b, 0x42, 255), 9 * s);
+    m_uiRects.push_back(ImVec4(a.x, a.y, b.x, b.y));
+    std::string nm = m_lib.parts[m_ctxPart].name;
+    u.text(ImVec2(a.x + 12 * s, a.y + 5 * s), 10, IM_COL32(0x8a, 0x8c, 0x96, 255), nm.c_str());
+    ImVec2 ia(a.x + 4 * s, a.y + 22 * s), ib(b.x - 4 * s, ia.y + h - 4 * s);
+    const bool hov = u.hover(ia, ib);
+    if (hov) u.dl->AddRectFilled(ia, ib, IM_COL32(0x2e, 0x30, 0x36, 255), 6 * s);
+    u.text(ImVec2(ia.x + 10 * s, ia.y + 5 * s), 12, IM_COL32(0xec, 0xec, 0xee, 255), item);
+    if (u.pressed) {
+        if (hov) openThumbEditor(m_ctxPart);
+        m_ctxPart = -1;
+    }
+    if (ImGui::IsKeyPressed(ImGuiKey_Escape)) m_ctxPart = -1;
+}
+
+// the editor: viewer (orbit / zoom / pan), the 85 % frame drawn, Réinitialiser, Annuler, Enregistrer comme miniature
+void BrickApp::uiThumbEditor() {
+    if (m_teditPart < 0) return;
+    Ui u = ui(m_ui);
+    if (m_gui.fontBold) u.bold = m_gui.fontBold;
+    const float s = m_ui;
+    const ImVec2 d = ImGui::GetIO().DisplaySize;
+    u.dl->AddRectFilled(ImVec2(0, 0), d, IM_COL32(0, 0, 0, 128));
+    m_uiRects.push_back(ImVec4(0, 0, d.x, d.y));
+    const Part& p = m_lib.parts[m_teditPart];
+    const float pad = 18 * s, vw = std::min(420 * s, d.y * 0.6f);
+    const float W = vw + 2 * pad, H = pad + 24 * s + vw + 10 * s + 16 * s + 12 * s + 30 * s + pad;
+    ImVec2 p0((d.x - W) * 0.5f, (d.y - H) * 0.5f), p1(p0.x + W, p0.y + H);
+    u.dl->AddRectFilled(p0, p1, IM_COL32(0x1d, 0x1e, 0x22, 255), 14 * s);
+    u.dl->AddRect(p0, p1, IM_COL32(0x3a, 0x3b, 0x42, 255), 14 * s);
+    std::string title = "Miniature · " + p.label;
+    if (title.size() > 52) title = title.substr(0, 51) + "…";
+    u.text(ImVec2(p0.x + pad, p0.y + pad - 2 * s), 14, IM_COL32(0xec, 0xec, 0xee, 255), title.c_str(), true);
+    ImVec2 va(p0.x + pad, p0.y + pad + 24 * s), vb(va.x + vw, va.y + vw);
+    m_teRect = ImVec4(va.x, va.y, vb.x, vb.y);
+    if (m_frozenTex) u.dl->AddImageRounded(m_gui.viewportTexture(), va, vb, ImVec2(0, 0), ImVec2(1, 1), IM_COL32_WHITE, 12 * s);
+    ImGuiIO& io = ImGui::GetIO();
+    const bool over = u.hover(va, vb);
+    if (over && (ImGui::IsMouseClicked(ImGuiMouseButton_Left) || ImGui::IsMouseClicked(ImGuiMouseButton_Right) || ImGui::IsMouseClicked(ImGuiMouseButton_Middle))) m_teDrag = true;
+    if (!ImGui::IsMouseDown(ImGuiMouseButton_Left) && !ImGui::IsMouseDown(ImGuiMouseButton_Right) && !ImGui::IsMouseDown(ImGuiMouseButton_Middle)) m_teDrag = false;
+    if (m_teDrag) {
+        if (ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+            m_teView.yaw -= io.MouseDelta.x * 0.01f;
+            m_teView.pitch = std::clamp(m_teView.pitch + io.MouseDelta.y * 0.01f, radians(-89.0f), radians(89.0f));
+        } else {
+            m_teView.panX -= io.MouseDelta.x / (vw * 0.5f) / m_teView.zoom;
+            m_teView.panY += io.MouseDelta.y / (vw * 0.5f) / m_teView.zoom;
+        }
+    }
+    if (over && io.MouseWheel != 0) m_teView.zoom = std::clamp(m_teView.zoom * std::pow(1.1f, io.MouseWheel), 0.3f, 6.0f);
+    char hint[96];
+    snprintf(hint, sizeof(hint), "Glisser : tourner · clic droit : déplacer · molette : zoom (x%.2f)", m_teView.zoom);
+    u.text(ImVec2(va.x, vb.y + 8 * s), 10.5f, IM_COL32(0x8a, 0x8c, 0x96, 255), hint);
+    float y = vb.y + 10 * s + 16 * s + 12 * s, bw = 0;
+    const ImVec2 bp(p0.x + pad, y);
+    if (webButton(u, bp, "Réinitialiser", bw)) m_teView = defaultThumbView();
+    float sw = u.textW(12, "Enregistrer comme miniature", true) + 20 * s, cw = u.textW(12, "Annuler") + 20 * s;
+    if (webButton(u, ImVec2(p1.x - pad - sw, y), "Enregistrer comme miniature", sw, true)) m_teSave = true;
+    if (webButton(u, ImVec2(p1.x - pad - sw - 8 * s - cw, y), "Annuler", cw) || ImGui::IsKeyPressed(ImGuiKey_Escape)) m_teditPart = -1;
 }
 
 } // namespace brickit

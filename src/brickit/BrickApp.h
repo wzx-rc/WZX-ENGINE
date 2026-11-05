@@ -1,4 +1,4 @@
-﻿// BrickIt - native brick builder (PC, DirectX 12) on the vp3d renderer, with the WZX Engine Dear ImGui theme.
+// BrickIt - native brick builder (PC, DirectX 12) on the vp3d renderer, with the WZX Engine Dear ImGui theme.
 //   BrickApp.cpp  window, loop, stage, scene sync, test scenes
 //   BrickEdit.cpp mouse and keys: brick in hand, selection, undo, files
 //   BrickUi.cpp   panels: toolbar, library (two rows at the bottom), colours (right), stats
@@ -19,6 +19,8 @@
 namespace brickit {
 
 struct Ui;   // drawing helper of BrickUi.cpp
+// view of a thumbnail (Thumbs.cpp): angles, zoom (1 = the box at 85 % of the image), pan (fractions of the half view)
+struct ThumbView { float yaw = 0, pitch = 0, zoom = 1, panX = 0, panY = 0; };
 
 using namespace vp3d;
 
@@ -45,6 +47,10 @@ struct Options {
     float softGIMargin = 1.0f;  // --soft-gi-margin k (measures: the margin of the probe volume around the bricks, x k)
     int giAgeCap = 400;   // --gi-age-cap n: updates after which a probe is converged and left alone (0: always updated)
     float hqSSS = -1;   // --hq-sss s: subsurface of the HQ view (0 = off, -1: the setting)
+    std::wstring thumbSampleDir; std::string thumbSampleParts;   // --thumb-sample <dir> <part,part,...>
+    std::string thumbEdit;      // --thumb-edit <part>: the thumbnail editor open (captures); --thumb-edit-save: saved at frame 90
+    bool thumbEditSave = false;
+    std::wstring thumbDir;      // --thumb-dir <dir>: the overrides there instead of %LOCALAPPDATA% (tests)
     std::wstring fullThumbs;   // --build-full-thumbs pack: renders the thumbnails of the full library and exits
     std::wstring importPath;   // --import model.mpd: an LDraw model (OMR), the reading mode opened
     int readStep = -1;         // --read-step n: the page read for the capture
@@ -407,6 +413,30 @@ private:
     int m_lazyThumbBudget = 0;
     static bool decodeImage(const uint8_t* data, size_t size, std::vector<uint8_t>& rgba, int& w, int& h);
     int setupStudio(Scene& ts);
+    int setupStudio2(Scene& ts, int& glassMat);   // thumbnails v2: + a soft fill light, a glass material
+    bool renderThumb2(Scene& ts, int obj, const Part& p, const ThumbView& v, int px, std::vector<uint8_t>& rgba);
+    static ThumbView defaultThumbView();
+    static RenderSettings thumbSettings();
+    static void fitThumbCamera(Camera& c, const Part& p, const ThumbView& v);
+    // Edit thumbnail (DEV, BrickThumbEdit.cpp): right click menu, viewer, overrides in %LOCALAPPDATA%\\BrickIt\\thumb_overrides
+    std::wstring thumbOverrideDir() const;
+    ImTextureID overrideTexture(const std::vector<uint8_t>& rgba, int w, int h);
+    void loadThumbOverrides();
+    bool readThumbView(int part, ThumbView& v);
+    void openThumbEditor(int part);
+    void renderThumbEditor();
+    void saveThumbOverride();
+    void uiCtxMenu();
+    void uiThumbEditor();
+    std::map<int, ImTextureID> m_thumbOverride;   // part -> its saved thumbnail
+    int m_ctxPart = -1;                          // right click menu (DEV) on this part
+    ImVec2 m_ctxPos;
+    int m_teditPart = -1, m_teMat = -1, m_teGlass = -1, m_teObj = -1;   // thumbnail editor
+    ThumbView m_teView;
+    bool m_teSave = false, m_teBuilt = false, m_teDrag = false;
+    Scene m_te;
+    ImVec4 m_teRect{0, 0, 0, 0};
+    int thumbSample();           // --thumb-sample dir parts
     // 3D viewer of the part sheet (web: partViewer): the part alone in the thumbnail studio, turned by dragging. While the
     // sheet is open the main view is frozen (its last image) and the renderer draws the viewer instead.
     void renderPreview();

@@ -518,6 +518,7 @@ void BrickApp::editInput() {
     if (ImGui::IsMouseDown(ImGuiMouseButton_Right) && (std::fabs(mp.x - m_rmbPos.x) + std::fabs(mp.y - m_rmbPos.y)) > 4) m_rmbMoved = true;
     if (ImGui::IsMouseReleased(ImGuiMouseButton_Right) && !m_rmbMoved && inView) {
         if (m_holding) cancelHeld();
+        else if (m_dev) { const int b = pickBrick(mp.x, mp.y); if (b >= 0) { m_ctxPart = m_bricks[b].part; m_ctxPos = mp; } }   // DEV: Edit thumbnail
     }
     if (!inView) return;
     if (io.KeyAlt) return;   // Alt + left drag orbits

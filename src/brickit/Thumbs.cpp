@@ -228,6 +228,8 @@ void BrickApp::buildThumbs() {
 }
 
 bool BrickApp::thumbUv(int part, ImTextureID& tex, ImVec2& uv0, ImVec2& uv1) {
+    auto ov = m_thumbOverride.find(part);   // Edit thumbnail (DEV): the saved image first
+    if (ov != m_thumbOverride.end()) { tex = ov->second; uv0 = ImVec2(0, 0); uv1 = ImVec2(1, 1); return true; }
     if (part < 0 || part >= (int)m_thumbSlot.size() || m_thumbSlot[part] < 0) {   // the full library: on demand
         if (!lazyThumb(part, tex)) return false;
         uv0 = ImVec2(0, 0);
@@ -249,7 +251,7 @@ bool BrickApp::thumbUv(int part, ImTextureID& tex, ImVec2& uv0, ImVec2& uv1) {
 // assets/brickit/full/thumbs.pack (PNG per part, "BTF1"), then decoded on demand, a few per frame, for the cards on
 // screen (one texture each, the least recently used released beyond 900).
 
-static bool encodePng(const std::vector<uint8_t>& rgba, uint32_t w, uint32_t h, std::vector<uint8_t>& out) {
+bool encodePng(const std::vector<uint8_t>& rgba, uint32_t w, uint32_t h, std::vector<uint8_t>& out) {
     ComPtr<IWICImagingFactory> f;
     if (FAILED(CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&f)))) return false;
     ComPtr<IStream> mem;
@@ -278,6 +280,171 @@ static bool encodePng(const std::vector<uint8_t>& rgba, uint32_t w, uint32_t h, 
     ULONG got = 0;
     mem->Read(out.data(), (ULONG)out.size(), &got);
     return got == out.size();
+}
+
+// ------------------------------------------------------------------------------------------------- thumbnails v2
+// Wzx (05/11/2026): the same look for every part: the grey of the studio (glass parts stay glass, prints kept), a
+// consistent 3/4 view, the part framed close (its box fills ~85 % of the image), key + fill + rim lights and a soft
+// contact shadow under it, on a transparent background. A view can be given (Edit thumbnail, DEV).
+
+bool isGlassPart(const Part& p) {
+    std::string l = p.label;
+    for (char& c : l) c = (char)std::tolower((unsigned char)c);
+    for (const char* k : {"glass", "windscreen", "windshield", "canopy", "lens", "transparent"})
+        if (l.find(k) != std::string::npos) return true;
+    return false;
+}
+
+ThumbView BrickApp::defaultThumbView() { return ThumbView{std::atan2(1.0f, 1.3f), radians(27.0f), 1.0f, 0.0f, 0.0f}; }
+
+int BrickApp::setupStudio2(Scene& ts, int& glassMat) {
+    const int mat = setupStudio(ts);
+    ts.lights[0].position = float3(28, 50, 42);   // key: larger, softer
+    ts.lights[0].width = ts.lights[0].height = 40;
+    ts.lights[0].intensity = 6.0f;
+    AreaLight fill;   // front left, low and soft: the shadows of the key opened
+    fill.position = float3(-40, 12, 35);
+    fill.width = fill.height = 45;
+    fill.color = float3(0.96f, 0.97f, 1.0f);
+    fill.intensity = 2.2f;
+    fill.visibleToCamera = false;
+    ts.lights.push_back(fill);
+    Material g;
+    g.name = "thumb glass";
+    g.baseColor = float3(srgbToLinear(0.90f), srgbToLinear(0.93f), srgbToLinear(0.95f));
+    g.transmission = 1.0f;
+    g.roughness = 0.03f;
+    g.specular = 0.5f;
+    glassMat = ts.addMaterial(g);
+    return mat;
+}
+
+// One part alone in ts (object obj, visible), rendered over black then white (alpha), with its contact shadow.
+RenderSettings BrickApp::thumbSettings() {
+    RenderSettings rs;
+    rs.raster = true;
+    rs.exposure = 1.12f;   // (as bright as the web / Technic images)
+    rs.tonemapper = 0;
+    rs.idPass = false;
+    rs.vignette = 0.0f;
+    rs.msaaSamples = 4;
+    return rs;
+}
+
+// the camera of a thumbnail: the view's angles, the box of the part within 85 % of the frame, then zoom and pan
+void BrickApp::fitThumbCamera(Camera& c, const Part& p, const ThumbView& v) {
+    c.fovY = radians(20.0f);
+    c.yaw = v.yaw;
+    c.pitch = v.pitch;
+    c.target = (p.bmin + p.bmax) * 0.5f;
+    c.distance = 1.0f;
+    float3 r, u, f;
+    c.basis(r, u, f);
+    const float t = std::tan(c.fovY * 0.5f) * 0.85f;
+    float d = 0.5f;
+    for (int k = 0; k < 8; ++k) {
+        const float3 q((k & 1) ? p.bmax.x : p.bmin.x, (k & 2) ? p.bmax.y : p.bmin.y, (k & 4) ? p.bmax.z : p.bmin.z);
+        const float3 o = q - c.target;
+        const float z = dot(o, f);
+        d = std::max(d, std::max(std::fabs(dot(o, r)), std::fabs(dot(o, u))) / t - z);
+    }
+    c.distance = d / std::max(v.zoom, 0.05f);
+    const float ht = std::tan(c.fovY * 0.5f);
+    c.target = c.target + r * (v.panX * c.distance * ht) + u * (v.panY * c.distance * ht);
+    c.focusDistance = c.distance;
+}
+
+bool BrickApp::renderThumb2(Scene& ts, int obj, const Part& p, const ThumbView& v, int px, std::vector<uint8_t>& out) {
+    (void)obj;
+    const RenderSettings rs = thumbSettings();
+    Camera& c = ts.camera;
+    fitThumbCamera(c, p, v);
+    const ViewRect vp{0, 0, px, px};
+    std::vector<uint8_t> img, imgW;
+    uint32_t w = 0, h = 0, w2 = 0, h2 = 0;
+    ts.env.top = ts.env.horizon = ts.env.bottom = float3(0);
+    ++ts.objectsVersion;
+    m_renderer.render(ts, rs, vp, -1, false);
+    bool ok = m_renderer.readViewport(img, w, h);
+    ts.env.top = ts.env.horizon = ts.env.bottom = float3(1000);
+    ++ts.objectsVersion;
+    m_renderer.render(ts, rs, vp, -1, false);
+    ok = ok && m_renderer.readViewport(imgW, w2, h2);
+    if (!ok || (int)w != px || (int)h != px || imgW.size() != img.size()) return false;
+    // contact shadow: a soft ellipse under the footprint of the box
+    float ex0 = 1e9f, ex1 = -1e9f, ey0 = 1e9f, ey1 = -1e9f;
+    for (int k = 0; k < 4; ++k) {
+        const float3 q((k & 1) ? p.bmax.x : p.bmin.x, p.bmin.y, (k & 2) ? p.bmax.z : p.bmin.z);
+        float2 ndc;
+        float depth;
+        if (!c.project(q, 1.0f, ndc, &depth)) continue;
+        const float sx = (ndc.x * 0.5f + 0.5f) * px, sy = (0.5f - ndc.y * 0.5f) * px;
+        ex0 = std::min(ex0, sx); ex1 = std::max(ex1, sx); ey0 = std::min(ey0, sy); ey1 = std::max(ey1, sy);
+    }
+    const float ecx = (ex0 + ex1) * 0.5f, ecy = (ey0 + ey1) * 0.5f + px * 0.01f;
+    const float erx = std::max(2.0f, (ex1 - ex0) * 0.5f), ery = std::max(1.5f, (ey1 - ey0) * 0.5f);
+    out.resize(img.size());
+    for (int y = 0; y < px; ++y)
+        for (int x = 0; x < px; ++x) {
+            const size_t q = ((size_t)y * px + x) * 4;
+            int diff = 0;
+            for (int ch = 0; ch < 3; ++ch) diff = std::max(diff, (int)imgW[q + ch] - (int)img[q + ch]);
+            const float a = 1.0f - std::clamp(diff, 0, 255) / 255.0f;
+            const float dx = (x + 0.5f - ecx) / erx, dy = (y + 0.5f - ecy) / ery;
+            const float sa = ex1 > ex0 ? 0.30f * std::exp(-(dx * dx + dy * dy) * 1.6f) : 0.0f;   // shadow (black)
+            const float oa = a + sa * (1.0f - a);
+            for (int ch = 0; ch < 3; ++ch) {
+                const float col = a > 0 ? img[q + ch] / a : 0.0f;   // (un-premultiplied over black)
+                out[q + ch] = (uint8_t)std::clamp(oa > 0 ? col * a / oa + 0.5f : 0.0f, 0.0f, 255.0f);
+            }
+            out[q + 3] = (uint8_t)std::clamp(oa * 255.0f + 0.5f, 0.0f, 255.0f);
+        }
+    return true;
+}
+
+static bool writeFile(const std::wstring& path, const std::vector<uint8_t>& data) {
+    FILE* f = nullptr;
+    if (_wfopen_s(&f, path.c_str(), L"wb") != 0 || !f) return false;
+    const bool ok = fwrite(data.data(), 1, data.size(), f) == data.size();
+    fclose(f);
+    return ok;
+}
+
+// --thumb-sample <dir> <part,part,...>: the new thumbnails of a few parts, 256 and 128 px PNG (validation sheet)
+int BrickApp::thumbSample() {
+    Scene ts;
+    int glass = -1;
+    const int mat = setupStudio2(ts, glass);
+    ts.geometryVersion = 0x70000000u;
+    std::vector<std::string> names;
+    {
+        std::string cur;
+        for (char ch : m_opt.thumbSampleParts + ",") { if (ch == ',') { if (!cur.empty()) names.push_back(cur); cur.clear(); } else cur += ch; }
+    }
+    std::vector<std::pair<int, int>> objs;
+    for (const std::string& n : names) {
+        const int i = m_lib.find(n);
+        if (i < 0 || !m_lib.get(m_lib.parts[i].name)) continue;
+        Object o;
+        o.mesh = ts.addMesh(m_lib.parts[i].name, m_lib.parts[i].mesh);
+        o.material = isGlassPart(m_lib.parts[i]) ? glass : mat;
+        o.visible = false;
+        objs.push_back({i, ts.addObject(o)});
+    }
+    ++ts.geometryVersion;
+    int count = 0;
+    for (auto [i, ob] : objs) {
+        ts.objects[ob].visible = true;
+        for (int px : {256, 128}) {
+            std::vector<uint8_t> rgba, png;
+            if (!renderThumb2(ts, ob, m_lib.parts[i], defaultThumbView(), px, rgba) || !encodePng(rgba, px, px, png)) continue;
+            const std::string& nm = m_lib.parts[i].name;
+            writeFile(m_opt.thumbSampleDir + L"\\" + std::wstring(nm.begin(), nm.end()) + (px == 256 ? L"_256.png" : L"_128.png"), png);
+            ++count;
+        }
+        ts.objects[ob].visible = false;
+    }
+    return count;
 }
 
 // --build-full-thumbs: every part of the full library, pack by pack (the geometry freed after each), in the studio of
