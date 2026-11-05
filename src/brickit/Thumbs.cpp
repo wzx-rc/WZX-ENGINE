@@ -91,7 +91,8 @@ void BrickApp::buildThumbs() {
     std::vector<std::vector<uint8_t>> pix(atlases, std::vector<uint8_t>((size_t)atlasPx * atlasPx * 4, 0));
 
     wchar_t name[128];
-    swprintf_s(name, L"\\cache\\thumbs7web_%d_%d.bin", px, slots);   // 7: the thumbnails of the web (thumbs_web.pack)   // 5: transparent background (alpha)   // 2: neutral grey studio of the web
+    const bool v3 = GetFileAttributesW((m_exeDir + L"\\assets\\brickit\\thumbs_v3.pack").c_str()) != INVALID_FILE_ATTRIBUTES;   // the thumbnails v3 (--build-full-thumbs)
+    swprintf_s(name, v3 ? L"\\cache\\thumbs8v3_%d_%d.bin" : L"\\cache\\thumbs7web_%d_%d.bin", px, slots);   // 7: the thumbnails of the web (thumbs_web.pack)   // 5: transparent background (alpha)   // 2: neutral grey studio of the web
     const std::wstring cacheDir = m_exeDir + L"\\cache", cacheFile = m_exeDir + name;
     bool cached = false;
     FILE* f = nullptr;
@@ -110,7 +111,7 @@ void BrickApp::buildThumbs() {
         {
             std::vector<uint8_t> pack;
             FILE* pf = nullptr;
-            if (_wfopen_s(&pf, (m_exeDir + L"\\assets\\brickit\\thumbs_web.pack").c_str(), L"rb") == 0 && pf) {
+            if (_wfopen_s(&pf, (m_exeDir + (v3 ? L"\\assets\\brickit\\thumbs_v3.pack" : L"\\assets\\brickit\\thumbs_web.pack")).c_str(), L"rb") == 0 && pf) {
                 fseek(pf, 0, SEEK_END);
                 pack.resize((size_t)ftell(pf));
                 fseek(pf, 0, SEEK_SET);
@@ -501,69 +502,107 @@ int BrickApp::thumbSample() {
     return count;
 }
 
-// --build-full-thumbs: every part of the full library, pack by pack (the geometry freed after each), in the studio of
-// the thumbnails; writes the pack and returns the number of images
+// --build-full-thumbs <pack>: the thumbnails v3 (Wzx, validated 05/11/2026: path traced, tight 3/4 framing, the light of
+// the first thumbnails, bevels, contact shadow) of every part: the base and Technic parts into <pack dir>\thumbs_base_v3.pack
+// ("BTW1", read by buildThumbs: copy it to assets\brickit\thumbs_v3.pack), the full library into <pack> ("BTF1"). Each
+// image is padded to 1.4 x (the cards zoom the thumbnails x 1.4). Resumable: every image is first written into
+// <pack dir>\thumbs_v3_parts\<id>.png and skipped when it is there; the packs are assembled at the end. Progress and
+// failures in <pack>.txt.
+static void padThumb(const std::vector<uint8_t>& rgba, int px, std::vector<uint8_t>& out, int& W) {
+    W = (int)std::lround(px * 1.4f);
+    const int o = (W - px) / 2;
+    out.assign((size_t)W * W * 4, 0);
+    for (int y = 0; y < px; ++y) memcpy(&out[((size_t)(y + o) * W + o) * 4], &rgba[(size_t)y * px * 4], (size_t)px * 4);
+}
+
+static bool readAll(const std::wstring& path, std::vector<uint8_t>& data) {
+    FILE* f = nullptr;
+    if (_wfopen_s(&f, path.c_str(), L"rb") != 0 || !f) return false;
+    fseek(f, 0, SEEK_END);
+    data.resize((size_t)ftell(f));
+    fseek(f, 0, SEEK_SET);
+    const bool ok = fread(data.data(), 1, data.size(), f) == data.size();
+    fclose(f);
+    return ok;
+}
+
 int BrickApp::buildFullThumbs() {
     const int px = m_thumbPx;
-    std::vector<uint8_t> pack = {'B', 'T', 'F', '1', 0, 0, 0, 0};
-    uint32_t count = 0;
+    const std::wstring packPath = m_opt.fullThumbs, dir = packPath.substr(0, packPath.find_last_of(L"\\/"));
+    const std::wstring tmp = dir + L"\\thumbs_v3_parts";
+    CreateDirectoryW(tmp.c_str(), nullptr);
     Scene ts;
-    const int mat = setupStudio(ts);
+    int glass = -1;
+    const int mat = setupStudio2(ts, glass);
     ts.geometryVersion = 0x60000000u;
-    RenderSettings rs;
-    rs.raster = true;
-    rs.exposure = 0.92f;
-    rs.tonemapper = 0;
-    rs.idPass = false;
-    rs.vignette = 0.0f;
-    rs.msaaSamples = 4;
-    ViewRect vp{0, 0, px, px};
-    for (int pk = m_lib.technicPacks; pk < m_lib.packCount; ++pk) {
-        m_lib.loadPack(pk);
+    LARGE_INTEGER q0, q1, qf;
+    QueryPerformanceFrequency(&qf);
+    QueryPerformanceCounter(&q0);
+    int done = 0, skipped = 0, failed = 0;
+    std::string failures;
+    auto log = [&](bool final) {
+        FILE* lf = nullptr;
+        if (_wfopen_s(&lf, (packPath + L".txt").c_str(), L"w") != 0 || !lf) return;
+        QueryPerformanceCounter(&q1);
+        fprintf(lf, "%s rendered=%d resumed=%d failed=%d elapsed_s=%.0f\n%s", final ? "done" : "running", done, skipped, failed,
+                (q1.QuadPart - q0.QuadPart) / (double)qf.QuadPart, failures.c_str());
+        fclose(lf);
+    };
+    auto pngOf = [&](const Part& p) { return tmp + L"\\" + std::wstring(p.name.begin(), p.name.end()) + L".png"; };
+    // the parts of one set (loaded), rendered into the temporary folder
+    auto renderSet = [&](const std::vector<int>& set) {
         ts.meshes.clear();
         ts.objects.clear();
-        std::vector<std::pair<int, int>> objs;   // part, object
-        for (int i = 0; i < (int)m_lib.parts.size(); ++i) {
+        std::vector<std::pair<int, int>> objs;
+        for (int i : set) {
             const Part& p = m_lib.parts[i];
-            if (p.pack != pk || !p.loaded) continue;
+            if (!p.loaded || GetFileAttributesW(pngOf(p).c_str()) != INVALID_FILE_ATTRIBUTES) { if (p.loaded) ++skipped; continue; }
             Object o;
             o.mesh = ts.addMesh(p.name, p.mesh);
-            o.material = mat;
+            o.material = isGlassPart(p) ? glass : mat;
             o.visible = false;
             objs.push_back({i, ts.addObject(o)});
         }
+        if (objs.empty()) return;
         ++ts.geometryVersion;
         for (auto [i, ob] : objs) {
             const Part& p = m_lib.parts[i];
             ts.objects[ob].visible = true;
-            Camera& c = ts.camera;
-            c.fovY = radians(24.0f);
-            c.yaw = std::atan2(1.0f, 1.3f);
-            c.pitch = std::atan2(0.8f, std::sqrt(1.0f + 1.69f));
-            c.target = (p.bmin + p.bmax) * 0.5f;
-            const float r = std::max(length(p.bmax - p.bmin) * 0.5f, 0.2f);
-            c.distance = r / std::sin(c.fovY * 0.5f) * 1.4f;
-            std::vector<uint8_t> img, imgW;
-            uint32_t w = 0, h = 0, w2 = 0, h2 = 0;
-            ts.env.top = ts.env.horizon = ts.env.bottom = float3(0);
-            ++ts.objectsVersion;
-            m_renderer.render(ts, rs, vp, -1, false);
-            bool ok = m_renderer.readViewport(img, w, h);
-            ts.env.top = ts.env.horizon = ts.env.bottom = float3(1000);
-            ++ts.objectsVersion;
-            m_renderer.render(ts, rs, vp, -1, false);
-            ok = ok && m_renderer.readViewport(imgW, w2, h2);
+            std::vector<uint8_t> rgba, big, png;
+            int W = 0;
+            bool ok = renderThumb2(ts, ob, p, defaultThumbView(), px, rgba);
+            if (ok) { padThumb(rgba, px, big, W); ok = encodePng(big, W, W, png); }
             ts.objects[ob].visible = false;
-            if (!ok || (int)w != px || (int)h != px || imgW.size() != img.size()) continue;
-            for (size_t q = 0; q + 3 < img.size(); q += 4) {
-                int diff = 0;
-                for (int ch = 0; ch < 3; ++ch) diff = std::max(diff, (int)imgW[q + ch] - (int)img[q + ch]);
-                const int a = 255 - std::clamp(diff, 0, 255);
-                for (int ch = 0; ch < 3; ++ch) img[q + ch] = a > 0 ? (uint8_t)std::min(255, img[q + ch] * 255 / a) : 0;
-                img[q + 3] = (uint8_t)a;
-            }
+            if (!ok) { ++failed; failures += "failed " + p.name + "\n"; continue; }
+            FILE* f = nullptr;
+            if (_wfopen_s(&f, pngOf(p).c_str(), L"wb") == 0 && f) { fwrite(png.data(), 1, png.size(), f); fclose(f); ++done; }
+            else { ++failed; failures += "unwritten " + p.name + "\n"; }
+        }
+    };
+    // 1) base + Technic (loaded at start)
+    std::vector<int> base;
+    for (int i = 0; i < (int)m_lib.parts.size(); ++i)
+        if (m_lib.parts[i].loaded && (m_lib.parts[i].pack < m_lib.technicPacks)) base.push_back(i);
+    renderSet(base);
+    log(false);
+    // 2) the full library, pack by pack (the geometry freed after each)
+    for (int pk = m_lib.technicPacks; pk < m_lib.packCount; ++pk) {
+        m_lib.loadPack(pk);
+        std::vector<int> set;
+        for (int i = 0; i < (int)m_lib.parts.size(); ++i)
+            if (m_lib.parts[i].pack == pk) set.push_back(i);
+        renderSet(set);
+        m_lib.unloadPack(pk);
+        if (pk % 10 == 0) log(false);
+    }
+    // 3) the packs, from the images
+    auto assemble = [&](const char* magic, const std::vector<int>& set, const std::wstring& out) {
+        std::vector<uint8_t> pack = {(uint8_t)magic[0], (uint8_t)magic[1], (uint8_t)magic[2], (uint8_t)magic[3], 0, 0, 0, 0};
+        uint32_t count = 0;
+        for (int i : set) {
+            const Part& p = m_lib.parts[i];
             std::vector<uint8_t> png;
-            if (!encodePng(img, w, h, png)) continue;
+            if (!readAll(pngOf(p), png)) continue;
             const uint16_t nl = (uint16_t)p.name.size();
             const uint32_t pl = (uint32_t)png.size();
             pack.insert(pack.end(), (const uint8_t*)&nl, (const uint8_t*)&nl + 2);
@@ -572,12 +611,18 @@ int BrickApp::buildFullThumbs() {
             pack.insert(pack.end(), png.begin(), png.end());
             ++count;
         }
-        m_lib.unloadPack(pk);
-    }
-    memcpy(&pack[4], &count, 4);
-    FILE* f = nullptr;
-    if (_wfopen_s(&f, m_opt.fullThumbs.c_str(), L"wb") == 0 && f) { fwrite(pack.data(), 1, pack.size(), f); fclose(f); }
-    return (int)count;
+        memcpy(&pack[4], &count, 4);
+        FILE* f = nullptr;
+        if (_wfopen_s(&f, out.c_str(), L"wb") == 0 && f) { fwrite(pack.data(), 1, pack.size(), f); fclose(f); }
+        return (int)count;
+    };
+    std::vector<int> fullSet;
+    for (int i = 0; i < (int)m_lib.parts.size(); ++i)
+        if (m_lib.parts[i].pack >= m_lib.technicPacks) fullSet.push_back(i);
+    assemble("BTW1", base, dir + L"\\thumbs_base_v3.pack");
+    const int n = assemble("BTF1", fullSet, packPath);
+    log(true);
+    return n;
 }
 
 // the index of the pack (read once, the images stay in memory compressed)
