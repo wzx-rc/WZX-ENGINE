@@ -61,6 +61,7 @@ struct Options {
     int touchHud = -1;  // --touch-hud 0 / 1
     int freeRot = 0;    // --free-rot n: the selection turned n x 15 degrees at start (captures)
     bool colorArc = false;   // --color-arc: the colour arc of the touch HUD open (captures)
+    float arcPhase = -1;     // --arc-phase t: the arrival of the swatches frozen at t (0..1, captures of the animation)
     float dof = -1, bloom = -1;   // --dof s, --bloom s (-1: the settings)
     float renderScale = -1;  // --render-scale s: the image rendered at s of the window (-1: the setting)
     int giSoft = 1;          // --gi-soft 0: the sharp visibility weights of the probes (comparison)
@@ -541,6 +542,15 @@ private:
     bool m_allColors = false;         // Couleurs: every colour offered, even those that do not exist for the part
     bool m_touchHud = true;           // Réglages › HUD tactile (iPad): the radial ring and the HUD around the selection
     bool m_arcOpen = false, m_arcDrag = false;   // colour arc of the touch HUD open; opened by a press still held (marking menu)
+    static constexpr int HUD_ICONS = 7;          // turn left / right, duplicate, move, more, colour drop, hexagon (assets/brickit/hud)
+    ImTextureID m_hudTex[HUD_ICONS] = {};
+    void loadHudIcons();
+    int m_hudKey = -1;                           // the selection the HUD eased in for
+    double m_hudT0 = 0, m_arcT0 = 0, m_arcPickT = 0, m_moreT0 = 0;
+    ImVec2 m_hudA, m_hudB;                       // the frame, following the selection smoothly
+    float m_hudHover[8] = {}, m_arcHover[64] = {};
+    int m_arcPick = -1;                          // the swatch picked (popping, the arc folding back)
+    bool m_arcApplied = false, m_moreOpen = false;
     int m_arcPage = 0;
     ImVec2 m_arcPress;
     bool m_stillAA = false;           // Réglages › Anti-aliasing au repos (HQ: jittered frames accumulated while still)

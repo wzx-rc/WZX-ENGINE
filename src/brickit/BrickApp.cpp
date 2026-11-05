@@ -161,6 +161,7 @@ bool BrickApp::init(HINSTANCE inst, const Options& opt) {
     buildThumbs();
     loadFullThumbIndex();
     loadThumbOverrides();
+    loadHudIcons();
     buildNav();
     if (opt.shotPath.empty()) loadPrefs();   // captures stay reproducible
     else if (opt.useDefaults) { std::string dt; if (readDefaultPrefs(dt)) applyPrefs(dt); }   // (--use-defaults: a capture with the default settings)
@@ -1399,6 +1400,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         else if (a == L"--touch-hud") opt.touchHud = _wtoi(next().c_str());
         else if (a == L"--free-rot") opt.freeRot = _wtoi(next().c_str());
         else if (a == L"--color-arc") opt.colorArc = true;
+        else if (a == L"--arc-phase") opt.arcPhase = (float)_wtof(next().c_str());
         else if (a == L"--use-defaults") opt.useDefaults = true;
         else if (a == L"--dof") opt.dof = (float)_wtof(next().c_str());
         else if (a == L"--bloom") opt.bloom = (float)_wtof(next().c_str());

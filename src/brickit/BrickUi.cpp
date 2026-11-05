@@ -373,18 +373,52 @@ void BrickApp::uiRadial() {
 }
 
 // ------------------------------------------------------------------ touch HUD around the selection (Tiny Glade)
-// Anchored to the projected bounds of the selection, at a fixed screen size: a thin dashed white frame, white line
-// icons with a soft shadow and no panel: turn 15° left / right (sides), duplicate (below), the colour swatch (above).
-// The swatch opens an arc of round swatches around the selection, the real colours of the part (Rebrickable) unless
-// « Toutes les couleurs », 12 per page; a click applies and closes, or press on the swatch, slide, release (marking menu).
+// Wzx (05/11/2026), cosy as Tiny Glade: bold rounded white icons with a soft shadow (assets/brickit/hud, drawn by
+// tools/brickit/hud_icons.py), no panel, a dashed rounded frame on the projected bounds of the selection, fixed screen
+// size. Above: the colour button; left: « … » (tilt up / down, delete); right: duplicate; below: turn 15° left, move
+// (press and drag: the brick in hand, dropped on release), turn 15° right. Everything eases in (scale + fade, slight
+// overshoot), follows the selection smoothly and grows on hover. The colour button opens an arc of round swatches
+// (the real colours of the part, 12 per page) arriving one after another; a click (or press, slide, release) picks,
+// the chosen swatch pops and the arc folds back.
+
+static float easeOutBack(float t) {
+    t = std::clamp(t, 0.0f, 1.0f);
+    const float c1 = 1.70158f, c3 = c1 + 1.0f, u = t - 1.0f;
+    return 1.0f + c3 * u * u * u + c1 * u * u;
+}
+static float easeOut(float t) { t = std::clamp(t, 0.0f, 1.0f); return 1.0f - (1.0f - t) * (1.0f - t) * (1.0f - t); }
+
+void BrickApp::loadHudIcons() {
+    static const wchar_t* kNames[HUD_ICONS] = {L"turn_left", L"turn_right", L"duplicate", L"move", L"more", L"colour", L"hexagon"};
+    for (int i = 0; i < HUD_ICONS; ++i) {
+        FILE* f = nullptr;
+        if (_wfopen_s(&f, (m_exeDir + L"\\assets\\brickit\\hud\\" + kNames[i] + L".png").c_str(), L"rb") != 0 || !f) continue;
+        std::vector<uint8_t> data;
+        fseek(f, 0, SEEK_END);
+        data.resize((size_t)ftell(f));
+        fseek(f, 0, SEEK_SET);
+        const bool ok = fread(data.data(), 1, data.size(), f) == data.size();
+        fclose(f);
+        std::vector<uint8_t> rgba;
+        int w = 0, h = 0;
+        if (ok && decodeImage(data.data(), data.size(), rgba, w, h)) m_hudTex[i] = m_gui.createTexture(rgba.data(), (uint32_t)w, (uint32_t)h);
+    }
+}
 
 void BrickApp::uiSelHud() {
     const std::vector<int> sel = selection();
-    if (!m_touchHud || sel.empty() || m_holding || m_mechOn || m_reading || (m_pressed && m_dragStarted)) { m_arcOpen = m_arcDrag = false; return; }
+    const float dt = std::min(0.05f, ImGui::GetIO().DeltaTime);
+    const bool shot = !m_opt.shotPath.empty();
+    if (!m_touchHud || sel.empty() || m_holding || m_mechOn || m_reading || (m_pressed && m_dragStarted)) {
+        m_arcOpen = m_arcDrag = m_moreOpen = false;
+        m_hudKey = -1;
+        return;
+    }
     if (m_opt.colorArc) m_arcOpen = true;   // (captures)
     Ui u = ui(m_ui);
     const float s = m_ui;
     const ImVec2 d = ImGui::GetIO().DisplaySize;
+    const double now = ImGui::GetTime();
     // screen bounds of the selection
     float3 mn(1e30f), mx(-1e30f);
     for (int i : sel) {
@@ -396,63 +430,104 @@ void BrickApp::uiSelHud() {
     ImVec2 a(1e30f, 1e30f), b(-1e30f, -1e30f);
     for (int k = 0; k < 8; ++k) {
         float x, y;
-        if (!v.project(float3((k & 1) ? mx.x : mn.x, (k & 2) ? mx.y : mn.y, (k & 4) ? mx.z : mn.z), x, y)) { m_arcOpen = false; return; }
+        if (!v.project(float3((k & 1) ? mx.x : mn.x, (k & 2) ? mx.y : mn.y, (k & 4) ? mx.z : mn.z), x, y)) { m_arcOpen = m_moreOpen = false; return; }
         a = ImVec2(std::min(a.x, x), std::min(a.y, y));
         b = ImVec2(std::max(b.x, x), std::max(b.y, y));
     }
     const float top = 30 * s;   // under the header
-    if (b.x < 0 || a.x > d.x || b.y < top || a.y > d.y) { m_arcOpen = false; return; }
-    a = ImVec2(a.x - 8 * s, a.y - 8 * s);
-    b = ImVec2(b.x + 8 * s, b.y + 8 * s);
+    if (b.x < 0 || a.x > d.x || b.y < top || a.y > d.y) { m_arcOpen = m_moreOpen = false; return; }
+    a = ImVec2(a.x - 10 * s, a.y - 10 * s);
+    b = ImVec2(b.x + 10 * s, b.y + 10 * s);
+    // a new selection: the HUD eases in; the frame follows smoothly (no lag in captures)
+    if (sel[0] != m_hudKey) { m_hudKey = sel[0]; m_hudT0 = now; m_hudA = a; m_hudB = b; m_arcOpen = m_moreOpen = false; }
+    const float follow = shot ? 1.0f : 1.0f - std::exp(-dt * 22.0f);
+    m_hudA = ImVec2(m_hudA.x + (a.x - m_hudA.x) * follow, m_hudA.y + (a.y - m_hudA.y) * follow);
+    m_hudB = ImVec2(m_hudB.x + (b.x - m_hudB.x) * follow, m_hudB.y + (b.y - m_hudB.y) * follow);
+    a = m_hudA;
+    b = m_hudB;
     const ImVec2 c((a.x + b.x) * 0.5f, (a.y + b.y) * 0.5f);
-    const ImU32 white = IM_COL32(255, 255, 255, 240), shade = IM_COL32(0, 0, 0, 80);
-    const ImVec2 sh(1.0f * s, 1.5f * s);   // offset of the soft shadow
-    // dashed frame (on screen)
+    const float appear = shot ? 1.0f : (float)((now - m_hudT0) / 0.22);
+    const float fade = easeOut(appear);
+    auto alpha = [&](ImU32 col, float k) { return (col & 0x00FFFFFF) | ((ImU32)(((col >> 24) & 0xFF) * std::clamp(k, 0.0f, 1.0f)) << 24); };
+    // dashed rounded frame
     {
         const ImVec2 fa(std::max(a.x, 2.0f), std::max(a.y, top + 2)), fb(std::min(b.x, d.x - 2), std::min(b.y, d.y - 2));
-        auto dashes = [&](ImVec2 p, ImVec2 q, ImU32 col, float w) {
-            const float len = std::sqrt((q.x - p.x) * (q.x - p.x) + (q.y - p.y) * (q.y - p.y)), dash = 7 * s, gap = 5 * s;
-            for (float t = 0; t < len; t += dash + gap) {
-                const float t1 = std::min(len, t + dash);
-                u.dl->AddLine(ImVec2(p.x + (q.x - p.x) * t / len, p.y + (q.y - p.y) * t / len), ImVec2(p.x + (q.x - p.x) * t1 / len, p.y + (q.y - p.y) * t1 / len), col, w);
-            }
-        };
+        const float r = std::min(14 * s, std::min(fb.x - fa.x, fb.y - fa.y) * 0.3f);
+        std::vector<ImVec2> pts;
+        auto corner = [&](float cx, float cy, float a0) { for (int k = 0; k <= 6; ++k) { const float t = a0 + k * 1.5708f / 6; pts.push_back(ImVec2(cx + std::cos(t) * r, cy + std::sin(t) * r)); } };
+        corner(fb.x - r, fa.y + r, -1.5708f);
+        corner(fb.x - r, fb.y - r, 0.0f);
+        corner(fa.x + r, fb.y - r, 1.5708f);
+        corner(fa.x + r, fa.y + r, 3.14159f);
+        pts.push_back(pts[0]);
+        const float dash = 9 * s, gap = 6 * s;
         for (int pass = 0; pass < 2; ++pass) {
-            const ImVec2 o = pass ? ImVec2(0, 0) : sh;
-            const ImU32 col = pass ? IM_COL32(255, 255, 255, 210) : IM_COL32(0, 0, 0, 60);
-            const float w = (pass ? 1.4f : 2.2f) * s;
-            dashes(ImVec2(fa.x + o.x, fa.y + o.y), ImVec2(fb.x + o.x, fa.y + o.y), col, w);
-            dashes(ImVec2(fb.x + o.x, fa.y + o.y), ImVec2(fb.x + o.x, fb.y + o.y), col, w);
-            dashes(ImVec2(fb.x + o.x, fb.y + o.y), ImVec2(fa.x + o.x, fb.y + o.y), col, w);
-            dashes(ImVec2(fa.x + o.x, fb.y + o.y), ImVec2(fa.x + o.x, fa.y + o.y), col, w);
+            const ImVec2 o = pass ? ImVec2(0, 0) : ImVec2(0, 2 * s);
+            const ImU32 col = alpha(pass ? IM_COL32(255, 255, 255, 235) : IM_COL32(10, 12, 18, 70), fade);
+            const float w = (pass ? 2.6f : 4.0f) * s;
+            float acc = 0;
+            bool on = true;
+            for (size_t k = 1; k < pts.size(); ++k) {
+                ImVec2 p = pts[k - 1];
+                const ImVec2 q = pts[k];
+                float len = std::sqrt((q.x - p.x) * (q.x - p.x) + (q.y - p.y) * (q.y - p.y));
+                while (len > 1e-3f) {
+                    const float step = std::min(len, (on ? dash : gap) - acc);
+                    const ImVec2 e(p.x + (q.x - p.x) * step / len, p.y + (q.y - p.y) * step / len);
+                    if (on) u.dl->AddLine(ImVec2(p.x + o.x, p.y + o.y), ImVec2(e.x + o.x, e.y + o.y), col, w);
+                    acc += step;
+                    if (acc >= (on ? dash : gap) - 1e-3f) { acc = 0; on = !on; }
+                    len -= step;
+                    p = e;
+                }
+            }
         }
     }
-    const float R = 20 * s, M = R + 6 * s;   // button radius, margin to the screen edges
+    const float R = 26 * s, M = R + 6 * s;   // buttons of ~52 px
     auto place = [&](ImVec2 p) { return ImVec2(std::clamp(p.x, M, d.x - M), std::clamp(p.y, top + M, d.y - M)); };
     auto hot = [&](ImVec2 p, float r) { return (u.mouse.x - p.x) * (u.mouse.x - p.x) + (u.mouse.y - p.y) * (u.mouse.y - p.y) <= r * r; };
-    auto lineIcon = [&](const char* path, ImVec2 p, bool h) {
-        const float k = (h ? 1.45f : 1.25f) * s;
-        svg::path(u.dl, path, ImVec2(p.x + sh.x, p.y + sh.y), k, shade, 3.6f * k);
-        svg::path(u.dl, path, p, k, white, 2.0f * k);
+    // a button: its icon eased in (delay k), its hover grown smoothly; returns true on press
+    auto button = [&](int slot, ImVec2 p, int icon, float delay, const char* tip) {
+        const float t = shot ? 1.0f : (float)((now - m_hudT0 - delay) / 0.2);
+        const float sc = easeOutBack(t), al = easeOut(t * 1.4f);
+        const bool h = hot(p, R) && !m_arcOpen;
+        float& hv = m_hudHover[slot];
+        hv += ((h ? 1.0f : 0.0f) - hv) * (shot ? 1.0f : 1.0f - std::exp(-dt * 18.0f));
+        const float half = R * 1.08f * sc * (1.0f + 0.12f * hv);
+        if (icon >= 0 && m_hudTex[icon]) u.dl->AddImage(m_hudTex[icon], ImVec2(p.x - half, p.y - half), ImVec2(p.x + half, p.y + half), ImVec2(0, 0), ImVec2(1, 1), alpha(IM_COL32_WHITE, al));
         m_uiRects.push_back(ImVec4(p.x - R, p.y - R, p.x + R, p.y + R));
+        if (h && tip) ImGui::SetTooltip("%s", tip);
+        return h && u.pressed;
     };
-    const ImVec2 pSw = place(ImVec2(c.x, a.y - 30 * s));
     const int part = m_bricks[sel[0]].part;
     const int curColor = m_bricks[sel[0]].color;
-    // the colour swatch: a disc of the colour of the selection, thin white ring
+    const Color& cc = m_lib.palette[std::clamp(curColor, 0, (int)m_lib.palette.size() - 1)];
+    const ImU32 curCol = IM_COL32((int)(cc.srgb.x * 255), (int)(cc.srgb.y * 255), (int)(cc.srgb.z * 255), 255);
+    // the colour button (above): a light disc, the drop of the current colour on it
+    const ImVec2 pSw = place(ImVec2(c.x, a.y - 34 * s));
     {
+        const float t = shot ? 1.0f : (float)((now - m_hudT0) / 0.2);
+        const float sc = easeOutBack(t);
         const bool h = hot(pSw, R);
-        const float r = (h ? 13.0f : 11.5f) * s;
-        const Color& cc = m_lib.palette[std::clamp(curColor, 0, (int)m_lib.palette.size() - 1)];
-        u.dl->AddCircleFilled(ImVec2(pSw.x + sh.x, pSw.y + sh.y), r + 2.5f * s, shade, 32);
-        u.dl->AddCircleFilled(pSw, r, IM_COL32((int)(cc.srgb.x * 255), (int)(cc.srgb.y * 255), (int)(cc.srgb.z * 255), 255), 32);
-        u.dl->AddCircle(pSw, r + 1.0f * s, white, 32, 2.0f * s);
+        float& hv = m_hudHover[0];
+        hv += ((h || m_arcOpen ? 1.0f : 0.0f) - hv) * (shot ? 1.0f : 1.0f - std::exp(-dt * 18.0f));
+        const float r = 21 * s * sc * (1.0f + 0.1f * hv);
+        u.dl->AddCircleFilled(ImVec2(pSw.x, pSw.y + 3 * s), r + 2 * s, alpha(IM_COL32(10, 12, 18, 60), fade), 40);
+        u.dl->AddCircleFilled(pSw, r, alpha(IM_COL32(0xee, 0xec, 0xe8, 245), fade), 40);
+        if (m_hudTex[5]) {
+            const float q = r * 0.78f;
+            u.dl->AddImage(m_hudTex[5], ImVec2(pSw.x - q, pSw.y - q), ImVec2(pSw.x + q, pSw.y + q), ImVec2(0, 0), ImVec2(1, 1), alpha(curCol, fade));
+        }
+        u.dl->AddCircle(pSw, r, alpha(IM_COL32(255, 255, 255, 255), fade), 40, 2.0f * s);
         m_uiRects.push_back(ImVec4(pSw.x - R, pSw.y - R, pSw.x + R, pSw.y + R));
         if (h && !m_arcOpen) ImGui::SetTooltip("Couleur");
         if (h && u.pressed) {
             m_arcOpen = !m_arcOpen;
             m_arcDrag = m_arcOpen;
             m_arcPress = u.mouse;
+            m_arcT0 = now;
+            m_arcPick = -1;
+            m_moreOpen = false;
             u.pressed = false;
         }
     }
@@ -465,93 +540,140 @@ void BrickApp::uiSelHud() {
         m_arcPage = std::clamp(m_arcPage, 0, pages - 1);
         const int first = m_arcPage * per, n = std::min(per, (int)cols.size() - first);
         const int slots = n + (pages > 1 ? 1 : 0);   // (+ the next page)
-        const float rs = 22 * s;                    // swatches of 44 px
-        const float halfDiag = 0.5f * std::sqrt((b.x - a.x) * (b.x - a.x) + (b.y - a.y) * (b.y - a.y));
-        const float rad = std::clamp(halfDiag + 34 * s, slots * 54 * s / 6.2832f, 0.45f * std::min(d.x, d.y - top));
-        float step = 54 * s / rad;
-        if (step * slots > 6.2832f) step = 6.2832f / slots;
-        const ImVec2 ac(std::clamp(c.x, rad + rs + 4 * s, std::max(rad + rs + 4 * s, d.x - rad - rs - 4 * s)),
-                        std::clamp(c.y, top + rad + rs + 4 * s, std::max(top + rad + rs + 4 * s, d.y - rad - rs - 4 * s)));
+        const float rs = 30 * s;                    // swatches of 60 px
+        const float rad = std::max(118 * s, slots * 66 * s / 6.2832f);
+        const float step = std::min(66 * s / rad, 6.2832f / std::max(1, slots));
+        // the arc around the colour button, opening downwards over the selection (a loose ring, the button at its top)
+        const ImVec2 ac(std::clamp(pSw.x, rad + rs + 4 * s, std::max(rad + rs + 4 * s, d.x - rad - rs - 4 * s)),
+                        std::clamp(pSw.y + rad * 0.55f, top + rad + rs + 4 * s, std::max(top + rad + rs + 4 * s, d.y - rad - rs - 4 * s)));
         m_uiRects.push_back(ImVec4(0, 0, d.x, d.y));   // open: a click outside closes it, nothing else
+        const float picked = m_arcPick >= 0 ? (float)((now - m_arcPickT) / 0.24) : 0.0f;   // after a pick: pop, then fold back
         int hit = -1;
         std::vector<ImVec2> at(slots);
+        std::vector<float> sc(slots);
         for (int k = 0; k < slots; ++k) {
-            const float ang = -1.5708f + (k - (slots - 1) * 0.5f) * step;
-            at[k] = ImVec2(ac.x + std::cos(ang) * rad, ac.y + std::sin(ang) * rad);
-            if (hot(at[k], rs + 3 * s)) hit = k;
+            const float ang = -1.5708f - 0.9f + k * step;   // from upper left, clockwise
+            float t = shot && m_opt.arcPhase >= 0 ? (m_opt.arcPhase * 0.48f - k * 0.025f) / 0.18f : shot ? 1.0f : (float)((now - m_arcT0 - k * 0.025) / 0.18);
+            float e = easeOutBack(t);
+            if (m_arcPick >= 0 && k != m_arcPick) e *= 1.0f - easeOut(picked * 1.6f);   // the others fold back
+            const float rr = rad * (0.55f + 0.45f * e);
+            at[k] = ImVec2(ac.x + std::cos(ang) * rr, ac.y + std::sin(ang) * rr);
+            sc[k] = std::max(0.0f, e);
+            if (m_arcPick < 0 && sc[k] > 0.6f && hot(at[k], rs + 4 * s)) hit = k;
         }
         for (int k = 0; k < slots; ++k) {
-            const bool h = k == hit;
-            const float r = rs * (h ? 1.18f : 1.0f);
+            float& hv = m_arcHover[std::min(k, 63)];
+            hv += ((k == hit ? 1.0f : 0.0f) - hv) * (shot ? 1.0f : 1.0f - std::exp(-dt * 16.0f));
+            float grow = 1.0f + 0.12f * hv;
+            if (k == m_arcPick) grow *= 1.0f + 0.35f * std::sin(std::clamp(picked, 0.0f, 1.0f) * 3.14159f);   // the pick pops
+            const float r = rs * sc[k] * grow;
+            if (r < 0.5f) continue;
+            const float al = std::clamp(sc[k] * 1.3f, 0.0f, 1.0f) * (k == m_arcPick ? 1.0f - easeOut(picked - 0.6f) : 1.0f);
             const ImVec2 p = at[k];
-            u.dl->AddCircleFilled(ImVec2(p.x + 1.5f * s, p.y + 2.5f * s), r + 1.5f * s, IM_COL32(0, 0, 0, 70), 40);
+            u.dl->AddCircleFilled(ImVec2(p.x, p.y + 4 * s), r + 2 * s, alpha(IM_COL32(10, 12, 18, 70), al), 48);
             if (k == n) {   // next page
-                u.dl->AddCircleFilled(p, r, IM_COL32(30, 31, 36, 200), 40);
-                u.dl->AddCircle(p, r, IM_COL32(255, 255, 255, 150), 40, 1.5f * s);
+                u.dl->AddCircleFilled(p, r, alpha(IM_COL32(0xee, 0xec, 0xe8, 240), al), 48);
                 char t[16];
                 snprintf(t, sizeof(t), "%d/%d", m_arcPage + 1, pages);
-                const float tw = u.textW(10, t, true);
-                u.text(ImVec2(p.x - tw * 0.5f, p.y - 7 * s), 10, white, t, true);
-                if (h) ImGui::SetTooltip("Autres couleurs");
+                const float tw = u.textW(11, t, true);
+                u.text(ImVec2(p.x - tw * 0.5f, p.y - 8 * s), 11, alpha(IM_COL32(0x55, 0x58, 0x66, 255), al), t, true);
+                if (k == hit) ImGui::SetTooltip("Autres couleurs");
                 continue;
             }
             const Color& col = m_lib.palette[cols[first + k]];
             const bool trans = col.group == "transparent";
-            u.dl->AddCircleFilled(p, r, IM_COL32((int)(col.srgb.x * 255), (int)(col.srgb.y * 255), (int)(col.srgb.z * 255), trans ? 170 : 255), 40);
-            if (trans || col.group == "metallic")   // a sheen, as the swatches of the panel
-                u.dl->AddCircleFilled(ImVec2(p.x - r * 0.3f, p.y - r * 0.3f), r * 0.35f, IM_COL32(255, 255, 255, trans ? 90 : 70), 24);
-            if (cols[first + k] == curColor) u.dl->AddCircle(p, r + 2.0f * s, IM_COL32(255, 255, 255, 255), 40, 4.0f * s);
-            else u.dl->AddCircle(p, r, IM_COL32(255, 255, 255, 140), 40, 1.5f * s);
+            const ImU32 fill = IM_COL32((int)(col.srgb.x * 255), (int)(col.srgb.y * 255), (int)(col.srgb.z * 255), trans ? 180 : 255);
+            const ImU32 pale = IM_COL32((int)(150 + col.srgb.x * 105), (int)(150 + col.srgb.y * 105), (int)(150 + col.srgb.z * 105), 235);   // a soft pale ring, tinted
+            u.dl->AddCircleFilled(p, r, alpha(fill, al), 48);
+            if (trans || col.group == "metallic") u.dl->AddCircleFilled(ImVec2(p.x - r * 0.32f, p.y - r * 0.32f), r * 0.3f, alpha(IM_COL32(255, 255, 255, 90), al), 24);
+            if (cols[first + k] == curColor) u.dl->AddCircle(p, r + 1.5f * s, alpha(IM_COL32(255, 255, 255, 255), al), 48, 5.0f * s);
+            else u.dl->AddCircle(p, r - 1.5f * s, alpha(pale, al), 48, 3.0f * s);
         }
-        if (hit >= 0 && hit < n) {   // the name of the colour under the cursor, at the centre of the arc
+        if (hit >= 0 && hit < n) {   // the name of the colour under the cursor, in the middle of the ring
             const Color& col = m_lib.palette[cols[first + hit]];
-            const float tw = u.textW(12, col.name.c_str(), true);
-            const ImVec2 tp(ac.x - tw * 0.5f, ac.y - rad + rs + 14 * s);
-            u.text(ImVec2(tp.x + sh.x, tp.y + sh.y), 12, IM_COL32(0, 0, 0, 150), col.name.c_str(), true);
-            u.text(tp, 12, white, col.name.c_str(), true);
+            const float tw = u.textW(13, col.name.c_str(), true);
+            const ImVec2 tp(ac.x - tw * 0.5f, ac.y - 9 * s);
+            u.text(ImVec2(tp.x, tp.y + 2 * s), 13, IM_COL32(0, 0, 0, 150), col.name.c_str(), true);
+            u.text(tp, 13, IM_COL32_WHITE, col.name.c_str(), true);
+        }
+        if (m_arcPick >= 0) {   // the pick done: apply once popped, close once folded
+            if (picked >= 0.35f && !m_arcApplied) { applyColor(cols[first + m_arcPick]); m_arcApplied = true; }
+            if (picked >= 1.0f) { m_arcOpen = false; m_arcPick = -1; }
+            return;
         }
         const bool slid = (u.mouse.x - m_arcPress.x) * (u.mouse.x - m_arcPress.x) + (u.mouse.y - m_arcPress.y) * (u.mouse.y - m_arcPress.y) > 64 * s * s;
         auto choose = [&](int k) {
-            if (k == n) { m_arcPage = (m_arcPage + 1) % pages; return; }
-            applyColor(cols[first + k]);
-            m_arcOpen = false;
+            if (k == n) { m_arcPage = (m_arcPage + 1) % pages; m_arcT0 = now; return; }
+            m_arcPick = k;
+            m_arcPickT = now;
+            m_arcApplied = false;
+            if (shot) { applyColor(cols[first + k]); m_arcOpen = false; m_arcPick = -1; }
         };
         if (u.pressed) {
             if (hit >= 0) choose(hit);
             else if (!hot(pSw, R)) m_arcOpen = false;
         }
-        if (u.released && m_arcDrag) {   // marking menu: pressed on the swatch, released on a colour
+        if (u.released && m_arcDrag) {   // marking menu: pressed on the button, released on a colour
             m_arcDrag = false;
             if (slid && hit >= 0) choose(hit);
         }
         if (ImGui::IsKeyPressed(ImGuiKey_Escape)) m_arcOpen = false;
         return;   // (the other buttons hidden while the arc is open)
     }
-    // turn 15° left / right, on the sides
-    static const char* kTurnL = "M6 -7 A9 9 0 1 0 8 3 M6 -7 L6 -1 M6 -7 L0 -7";
-    static const char* kTurnR = "M-6 -7 A9 9 0 1 1 -8 3 M-6 -7 L-6 -1 M-6 -7 L0 -7";
-    static const char* kDup = "M-3 -9 h10 a2 2 0 0 1 2 2 v10 a2 2 0 0 1 -2 2 h-10 a2 2 0 0 1 -2 -2 v-10 a2 2 0 0 1 2 -2 z M-9 -3 v10 a2 2 0 0 0 2 2 h10 M2 -6 v8 M-2 -2 h8";
-    const ImVec2 pL = place(ImVec2(a.x - 28 * s, c.y)), pR = place(ImVec2(b.x + 28 * s, c.y)), pD = place(ImVec2(c.x, b.y + 30 * s));
-    struct Btn { ImVec2 p; const char* path; const char* tip; int id; };
-    const Btn btns[3] = {{pL, kTurnL, "Tourner de 15° à gauche", 0}, {pR, kTurnR, "Tourner de 15° à droite", 1}, {pD, kDup, "Dupliquer", 2}};
-    for (const Btn& bt : btns) {
-        const bool h = hot(bt.p, R);
-        lineIcon(bt.path, bt.p, h);
-        if (h) ImGui::SetTooltip("%s", bt.tip);
-        if (h && u.pressed) {
-            if (bt.id == 2) duplicateSelected();
-            else turnSelectedFree(bt.id == 0 ? 1 : -1);
-        }
+    // the buttons around the frame
+    const bool group = unitGroup(m_selected) >= 0;
+    const float by = b.y + 34 * s;
+    const ImVec2 pMore = place(ImVec2(a.x - 34 * s, c.y)), pDup = place(ImVec2(b.x + 34 * s, c.y));
+    const ImVec2 pMove = place(ImVec2(c.x, by)), pL = place(ImVec2(c.x - 62 * s, by)), pR = place(ImVec2(c.x + 62 * s, by));
+    if (button(1, pMore, 4, 0.03f, "Plus d'actions")) { m_moreOpen = !m_moreOpen; m_moreT0 = now; u.pressed = false; }
+    if (button(2, pDup, 2, 0.06f, "Dupliquer")) duplicateSelected();
+    if (button(3, pL, 0, 0.09f, "Tourner de 15° à gauche")) turnSelectedFree(1);
+    if (!group && button(4, pMove, 3, 0.12f, "Déplacer : appuie et glisse")) {
+        m_pressPoint = gizmoPivot(m_selected);
+        const bool ap = m_autoPivot;
+        m_autoPivot = false;
+        beginMove(m_selected, u.mouse.x, u.mouse.y);
+        m_autoPivot = ap;
+        m_dragStarted = true;   // released over the view = dropped (editInput)
+        m_pressed = false;
+        return;
     }
-    if (m_bricks[sel[0]].free) {   // the free angle, next to the swatch
+    if (button(5, pR, 1, 0.15f, "Tourner de 15° à droite")) turnSelectedFree(-1);
+    if (m_bricks[sel[0]].free) {   // the free angle, next to the colour button
         const float3 f = qRot(m_bricks[sel[0]].rot, float3(1, 0, 0));
         float deg = std::fmod(std::atan2(-f.z, f.x) * 57.29578f + 360.0f, 90.0f);
         if (deg > 45) deg -= 90;
         char t[16];
         snprintf(t, sizeof(t), "%+d°", (int)std::lround(deg));
-        const ImVec2 tp(pSw.x + R + 2 * s, pSw.y - 10 * s);
-        u.text(ImVec2(tp.x + sh.x, tp.y + sh.y), 13, IM_COL32(0, 0, 0, 170), t, true);
-        u.text(tp, 13, white, t, true);
+        const ImVec2 tp(pSw.x + R + 4 * s, pSw.y - 10 * s);
+        u.text(ImVec2(tp.x, tp.y + 2 * s), 14, alpha(IM_COL32(0, 0, 0, 150), fade), t, true);
+        u.text(tp, 14, alpha(IM_COL32_WHITE, fade), t, true);
+    }
+    // « … »: three round buttons fanning out from it (tilt up, tilt down, delete)
+    if (m_moreOpen) {
+        static const char* kTips[3] = {"Basculer vers le haut", "Basculer vers le bas", "Supprimer"};
+        static const char* kPath[3] = {"M-8 4 L0 -5 L8 4", "M-8 -4 L0 5 L8 -4", "M-7 -6 L7 8 M7 -6 L-7 8"};
+        for (int k = 0; k < 3; ++k) {
+            const float t = shot ? 1.0f : (float)((now - m_moreT0 - k * 0.03) / 0.18);
+            const float e = easeOutBack(t);
+            const float ang = 3.14159f + (k - 1) * 0.75f;
+            const ImVec2 p(pMore.x + std::cos(ang) * 64 * s * e, pMore.y + std::sin(ang) * 64 * s * e);
+            const bool h = hot(p, 20 * s);
+            const float r = 19 * s * std::max(0.0f, e) * (h ? 1.12f : 1.0f);
+            if (r < 0.5f) continue;
+            u.dl->AddCircleFilled(ImVec2(p.x, p.y + 3 * s), r + 2 * s, IM_COL32(10, 12, 18, 60), 32);
+            u.dl->AddCircleFilled(p, r, k == 2 ? IM_COL32(0xf2, 0xb8, 0xb0, 245) : IM_COL32(0xee, 0xec, 0xe8, 245), 32);
+            svg::path(u.dl, kPath[k], p, 1.2f * s * std::max(0.0f, e), IM_COL32(0x55, 0x58, 0x66, 255), 3.4f * s);
+            m_uiRects.push_back(ImVec4(p.x - 20 * s, p.y - 20 * s, p.x + 20 * s, p.y + 20 * s));
+            if (h) ImGui::SetTooltip("%s", kTips[k]);
+            if (h && u.pressed) {
+                m_moreOpen = false;
+                if (k == 0) tiltSelected(-1);
+                else if (k == 1) tiltSelected(1);
+                else { deleteSelected(); return; }
+            }
+        }
+        if (u.pressed && !hot(pMore, R)) m_moreOpen = false;
     }
 }
 
