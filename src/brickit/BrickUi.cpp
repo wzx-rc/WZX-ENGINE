@@ -374,8 +374,8 @@ void BrickApp::uiRadial() {
 
 // ------------------------------------------------------------------ touch HUD around the selection (Tiny Glade)
 // Wzx (05/11/2026), cosy as Tiny Glade: bold rounded white icons with a soft shadow (assets/brickit/hud, drawn by
-// tools/brickit/hud_icons.py), no panel, a dashed rounded frame on the projected bounds of the selection, fixed screen
-// size. Above: the colour button; left: « … » (tilt up / down, delete); right: duplicate; below: turn 15° left, move
+// tools/brickit/hud_icons.py), no panel, no frame (Wzx), 40 % transparent but under the cursor, around the projected
+// bounds of the selection, fixed screen size. Above: the colour button; left: « … » (tilt up / down, delete); right: duplicate; below: turn 15° left, move
 // (press and drag: the brick in hand, dropped on release), turn 15° right. Everything eases in (scale + fade, slight
 // overshoot), follows the selection smoothly and grows on hover. The colour button opens an arc of round swatches
 // (the real colours of the part, 12 per page) arriving one after another; a click (or press, slide, release) picks,
@@ -449,40 +449,7 @@ void BrickApp::uiSelHud() {
     const float appear = shot ? 1.0f : (float)((now - m_hudT0) / 0.22);
     const float fade = easeOut(appear);
     auto alpha = [&](ImU32 col, float k) { return (col & 0x00FFFFFF) | ((ImU32)(((col >> 24) & 0xFF) * std::clamp(k, 0.0f, 1.0f)) << 24); };
-    // dashed rounded frame
-    {
-        const ImVec2 fa(std::max(a.x, 2.0f), std::max(a.y, top + 2)), fb(std::min(b.x, d.x - 2), std::min(b.y, d.y - 2));
-        const float r = std::min(14 * s, std::min(fb.x - fa.x, fb.y - fa.y) * 0.3f);
-        std::vector<ImVec2> pts;
-        auto corner = [&](float cx, float cy, float a0) { for (int k = 0; k <= 6; ++k) { const float t = a0 + k * 1.5708f / 6; pts.push_back(ImVec2(cx + std::cos(t) * r, cy + std::sin(t) * r)); } };
-        corner(fb.x - r, fa.y + r, -1.5708f);
-        corner(fb.x - r, fb.y - r, 0.0f);
-        corner(fa.x + r, fb.y - r, 1.5708f);
-        corner(fa.x + r, fa.y + r, 3.14159f);
-        pts.push_back(pts[0]);
-        const float dash = 9 * s, gap = 6 * s;
-        for (int pass = 0; pass < 2; ++pass) {
-            const ImVec2 o = pass ? ImVec2(0, 0) : ImVec2(0, 2 * s);
-            const ImU32 col = alpha(pass ? IM_COL32(255, 255, 255, 235) : IM_COL32(10, 12, 18, 70), fade);
-            const float w = (pass ? 2.6f : 4.0f) * s;
-            float acc = 0;
-            bool on = true;
-            for (size_t k = 1; k < pts.size(); ++k) {
-                ImVec2 p = pts[k - 1];
-                const ImVec2 q = pts[k];
-                float len = std::sqrt((q.x - p.x) * (q.x - p.x) + (q.y - p.y) * (q.y - p.y));
-                while (len > 1e-3f) {
-                    const float step = std::min(len, (on ? dash : gap) - acc);
-                    const ImVec2 e(p.x + (q.x - p.x) * step / len, p.y + (q.y - p.y) * step / len);
-                    if (on) u.dl->AddLine(ImVec2(p.x + o.x, p.y + o.y), ImVec2(e.x + o.x, e.y + o.y), col, w);
-                    acc += step;
-                    if (acc >= (on ? dash : gap) - 1e-3f) { acc = 0; on = !on; }
-                    len -= step;
-                    p = e;
-                }
-            }
-        }
-    }
+    const float kHud = 0.6f;   // Wzx: the whole HUD white, 40 % transparent (opaque under the cursor)
     const float R = 26 * s, M = R + 6 * s;   // buttons of ~52 px
     auto place = [&](ImVec2 p) { return ImVec2(std::clamp(p.x, M, d.x - M), std::clamp(p.y, top + M, d.y - M)); };
     auto hot = [&](ImVec2 p, float r) { return (u.mouse.x - p.x) * (u.mouse.x - p.x) + (u.mouse.y - p.y) * (u.mouse.y - p.y) <= r * r; };
@@ -494,7 +461,7 @@ void BrickApp::uiSelHud() {
         float& hv = m_hudHover[slot];
         hv += ((h ? 1.0f : 0.0f) - hv) * (shot ? 1.0f : 1.0f - std::exp(-dt * 18.0f));
         const float half = R * 1.08f * sc * (1.0f + 0.12f * hv);
-        if (icon >= 0 && m_hudTex[icon]) u.dl->AddImage(m_hudTex[icon], ImVec2(p.x - half, p.y - half), ImVec2(p.x + half, p.y + half), ImVec2(0, 0), ImVec2(1, 1), alpha(IM_COL32_WHITE, al));
+        if (icon >= 0 && m_hudTex[icon]) u.dl->AddImage(m_hudTex[icon], ImVec2(p.x - half, p.y - half), ImVec2(p.x + half, p.y + half), ImVec2(0, 0), ImVec2(1, 1), alpha(IM_COL32_WHITE, al * (kHud + (1 - kHud) * hv)));
         m_uiRects.push_back(ImVec4(p.x - R, p.y - R, p.x + R, p.y + R));
         if (h && tip) ImGui::SetTooltip("%s", tip);
         return h && u.pressed;
@@ -512,13 +479,13 @@ void BrickApp::uiSelHud() {
         float& hv = m_hudHover[0];
         hv += ((h || m_arcOpen ? 1.0f : 0.0f) - hv) * (shot ? 1.0f : 1.0f - std::exp(-dt * 18.0f));
         const float r = 21 * s * sc * (1.0f + 0.1f * hv);
-        u.dl->AddCircleFilled(ImVec2(pSw.x, pSw.y + 3 * s), r + 2 * s, alpha(IM_COL32(10, 12, 18, 60), fade), 40);
-        u.dl->AddCircleFilled(pSw, r, alpha(IM_COL32(0xee, 0xec, 0xe8, 245), fade), 40);
+        const float ka = fade * (kHud + (1 - kHud) * hv);
+        u.dl->AddCircleFilled(ImVec2(pSw.x, pSw.y + 3 * s), r + 2 * s, alpha(IM_COL32(10, 12, 18, 60), ka), 40);
+        u.dl->AddCircleFilled(pSw, r, alpha(IM_COL32(0xff, 0xff, 0xff, 245), ka), 40);
         if (m_hudTex[5]) {
             const float q = r * 0.78f;
-            u.dl->AddImage(m_hudTex[5], ImVec2(pSw.x - q, pSw.y - q), ImVec2(pSw.x + q, pSw.y + q), ImVec2(0, 0), ImVec2(1, 1), alpha(curCol, fade));
+            u.dl->AddImage(m_hudTex[5], ImVec2(pSw.x - q, pSw.y - q), ImVec2(pSw.x + q, pSw.y + q), ImVec2(0, 0), ImVec2(1, 1), alpha(curCol, ka));
         }
-        u.dl->AddCircle(pSw, r, alpha(IM_COL32(255, 255, 255, 255), fade), 40, 2.0f * s);
         m_uiRects.push_back(ImVec4(pSw.x - R, pSw.y - R, pSw.x + R, pSw.y + R));
         if (h && !m_arcOpen) ImGui::SetTooltip("Couleur");
         if (h && u.pressed) {
@@ -540,26 +507,26 @@ void BrickApp::uiSelHud() {
         m_arcPage = std::clamp(m_arcPage, 0, pages - 1);
         const int first = m_arcPage * per, n = std::min(per, (int)cols.size() - first);
         const int slots = n + (pages > 1 ? 1 : 0);   // (+ the next page)
-        const float rs = 30 * s;                    // swatches of 60 px
-        const float rad = std::max(118 * s, slots * 66 * s / 6.2832f);
-        const float step = std::min(66 * s / rad, 6.2832f / std::max(1, slots));
+        const float rs = 15 * s;                    // swatches of 30 px (Wzx: twice smaller, a bit more spaced)
+        const float rad = std::max(84 * s, slots * 44 * s / 6.2832f);
+        const float step = std::min(44 * s / rad, 6.2832f / std::max(1, slots));
         // the arc around the colour button, opening downwards over the selection (a loose ring, the button at its top)
         const ImVec2 ac(std::clamp(pSw.x, rad + rs + 4 * s, std::max(rad + rs + 4 * s, d.x - rad - rs - 4 * s)),
                         std::clamp(pSw.y + rad * 0.55f, top + rad + rs + 4 * s, std::max(top + rad + rs + 4 * s, d.y - rad - rs - 4 * s)));
         m_uiRects.push_back(ImVec4(0, 0, d.x, d.y));   // open: a click outside closes it, nothing else
-        const float picked = m_arcPick >= 0 ? (float)((now - m_arcPickT) / 0.24) : 0.0f;   // after a pick: pop, then fold back
+        const float picked = m_arcPick >= 0 ? (float)((now - m_arcPickT) / 0.12) : 0.0f;   // after a pick: pop, then fold back
         int hit = -1;
         std::vector<ImVec2> at(slots);
         std::vector<float> sc(slots);
         for (int k = 0; k < slots; ++k) {
             const float ang = -1.5708f - 0.9f + k * step;   // from upper left, clockwise
-            float t = shot && m_opt.arcPhase >= 0 ? (m_opt.arcPhase * 0.48f - k * 0.025f) / 0.18f : shot ? 1.0f : (float)((now - m_arcT0 - k * 0.025) / 0.18);
+            float t = shot && m_opt.arcPhase >= 0 ? (m_opt.arcPhase * 0.24f - k * 0.0125f) / 0.09f : shot ? 1.0f : (float)((now - m_arcT0 - k * 0.0125) / 0.09);   // (twice faster)
             float e = easeOutBack(t);
             if (m_arcPick >= 0 && k != m_arcPick) e *= 1.0f - easeOut(picked * 1.6f);   // the others fold back
             const float rr = rad * (0.55f + 0.45f * e);
             at[k] = ImVec2(ac.x + std::cos(ang) * rr, ac.y + std::sin(ang) * rr);
             sc[k] = std::max(0.0f, e);
-            if (m_arcPick < 0 && sc[k] > 0.6f && hot(at[k], rs + 4 * s)) hit = k;
+            if (m_arcPick < 0 && sc[k] > 0.6f && hot(at[k], rs + 6 * s)) hit = k;
         }
         for (int k = 0; k < slots; ++k) {
             float& hv = m_arcHover[std::min(k, 63)];
@@ -570,13 +537,13 @@ void BrickApp::uiSelHud() {
             if (r < 0.5f) continue;
             const float al = std::clamp(sc[k] * 1.3f, 0.0f, 1.0f) * (k == m_arcPick ? 1.0f - easeOut(picked - 0.6f) : 1.0f);
             const ImVec2 p = at[k];
-            u.dl->AddCircleFilled(ImVec2(p.x, p.y + 4 * s), r + 2 * s, alpha(IM_COL32(10, 12, 18, 70), al), 48);
+            u.dl->AddCircleFilled(ImVec2(p.x, p.y + 2.5f * s), r + 1.5f * s, alpha(IM_COL32(10, 12, 18, 70), al), 32);
             if (k == n) {   // next page
                 u.dl->AddCircleFilled(p, r, alpha(IM_COL32(0xee, 0xec, 0xe8, 240), al), 48);
                 char t[16];
                 snprintf(t, sizeof(t), "%d/%d", m_arcPage + 1, pages);
-                const float tw = u.textW(11, t, true);
-                u.text(ImVec2(p.x - tw * 0.5f, p.y - 8 * s), 11, alpha(IM_COL32(0x55, 0x58, 0x66, 255), al), t, true);
+                const float tw = u.textW(8.5f, t, true);
+                u.text(ImVec2(p.x - tw * 0.5f, p.y - 6 * s), 8.5f, alpha(IM_COL32(0x55, 0x58, 0x66, 255), al), t, true);
                 if (k == hit) ImGui::SetTooltip("Autres couleurs");
                 continue;
             }
@@ -586,8 +553,8 @@ void BrickApp::uiSelHud() {
             const ImU32 pale = IM_COL32((int)(150 + col.srgb.x * 105), (int)(150 + col.srgb.y * 105), (int)(150 + col.srgb.z * 105), 235);   // a soft pale ring, tinted
             u.dl->AddCircleFilled(p, r, alpha(fill, al), 48);
             if (trans || col.group == "metallic") u.dl->AddCircleFilled(ImVec2(p.x - r * 0.32f, p.y - r * 0.32f), r * 0.3f, alpha(IM_COL32(255, 255, 255, 90), al), 24);
-            if (cols[first + k] == curColor) u.dl->AddCircle(p, r + 1.5f * s, alpha(IM_COL32(255, 255, 255, 255), al), 48, 5.0f * s);
-            else u.dl->AddCircle(p, r - 1.5f * s, alpha(pale, al), 48, 3.0f * s);
+            if (cols[first + k] == curColor) u.dl->AddCircle(p, r + 1.5f * s, alpha(IM_COL32(255, 255, 255, 255), al), 32, 3.0f * s);
+            else u.dl->AddCircle(p, r - 1.0f * s, alpha(pale, al), 32, 2.0f * s);
         }
         if (hit >= 0 && hit < n) {   // the name of the colour under the cursor, in the middle of the ring
             const Color& col = m_lib.palette[cols[first + hit]];
@@ -646,8 +613,8 @@ void BrickApp::uiSelHud() {
         char t[16];
         snprintf(t, sizeof(t), "%+d°", (int)std::lround(deg));
         const ImVec2 tp(pSw.x + R + 4 * s, pSw.y - 10 * s);
-        u.text(ImVec2(tp.x, tp.y + 2 * s), 14, alpha(IM_COL32(0, 0, 0, 150), fade), t, true);
-        u.text(tp, 14, alpha(IM_COL32_WHITE, fade), t, true);
+        u.text(ImVec2(tp.x, tp.y + 2 * s), 14, alpha(IM_COL32(0, 0, 0, 150), fade * kHud), t, true);
+        u.text(tp, 14, alpha(IM_COL32_WHITE, fade * kHud), t, true);
     }
     // « … »: three round buttons fanning out from it (tilt up, tilt down, delete)
     if (m_moreOpen) {
@@ -661,8 +628,9 @@ void BrickApp::uiSelHud() {
             const bool h = hot(p, 20 * s);
             const float r = 19 * s * std::max(0.0f, e) * (h ? 1.12f : 1.0f);
             if (r < 0.5f) continue;
-            u.dl->AddCircleFilled(ImVec2(p.x, p.y + 3 * s), r + 2 * s, IM_COL32(10, 12, 18, 60), 32);
-            u.dl->AddCircleFilled(p, r, k == 2 ? IM_COL32(0xf2, 0xb8, 0xb0, 245) : IM_COL32(0xee, 0xec, 0xe8, 245), 32);
+            const float ka = h ? 1.0f : kHud;
+            u.dl->AddCircleFilled(ImVec2(p.x, p.y + 3 * s), r + 2 * s, alpha(IM_COL32(10, 12, 18, 60), ka), 32);
+            u.dl->AddCircleFilled(p, r, alpha(k == 2 ? IM_COL32(0xf2, 0xb8, 0xb0, 245) : IM_COL32(0xff, 0xff, 0xff, 245), ka), 32);
             svg::path(u.dl, kPath[k], p, 1.2f * s * std::max(0.0f, e), IM_COL32(0x55, 0x58, 0x66, 255), 3.4f * s);
             m_uiRects.push_back(ImVec4(p.x - 20 * s, p.y - 20 * s, p.x + 20 * s, p.y + 20 * s));
             if (h) ImGui::SetTooltip("%s", kTips[k]);
