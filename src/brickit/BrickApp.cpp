@@ -947,23 +947,22 @@ void BrickApp::frameAll() {
     cam.focusDistance = cam.distance;
 }
 
-// Focus of the depth of field: auto on the selection (or the brick in hand), else the orbit target; the centre of the
-// screen (picked, the aim held while the view moves so it never pumps); or a manual distance. Eased (~0.3 s).
+// Focus of the depth of field (Réglages › Mise au point): Auto = a reticle in the middle of the view (Wzx, 06/11/2026):
+// a ray from the centre of the screen, the focus on the first brick or the floor it touches (nothing touched: the last
+// distance kept); Sélection = the selection (or the brick in hand), else the orbit target; Manuel = a distance. Eased
+// (~0.3 s), so the focus glides while the view moves.
 void BrickApp::updateFocus(float dt) {
     Camera& cam = m_scene.camera;
-    const bool moving = ImGui::GetTime() - m_lastMove < 0.15;
-    float aim = cam.distance;
+    float aim = m_focusAim > 0 ? m_focusAim : cam.distance;
     if (m_focusMode == 2) aim = m_focusManual;
-    else if (m_focusMode == 1) {
-        if (moving && m_focusAim > 0) aim = m_focusAim;
-        else {
-            float3 o, d;
-            const ImVec4 st = m_stage;
-            view().ray((st.x + st.z) * 0.5f, (st.y + st.w) * 0.5f, o, d);
-            const PickResult r = pick(m_scene, o, d);
-            if (r.object >= 0 && r.t < 1e20f) aim = r.t;
-        }
+    else if (m_focusMode == 0) {
+        float3 o, d;
+        const ImVec4 st = m_stage;
+        view().ray((st.x + st.z) * 0.5f, (st.y + st.w) * 0.5f, o, d);
+        const PickResult r = pick(m_scene, o, d);
+        if (r.object >= 0 && r.t < 1e20f) aim = r.t;
     } else {
+        aim = cam.distance;
         std::vector<int> s = selection();
         if (m_holding) s.assign(1, m_held.brick);
         if (!s.empty()) {

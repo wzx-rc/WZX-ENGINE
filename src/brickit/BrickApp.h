@@ -582,6 +582,7 @@ private:
     float m_dof = 0.0f, m_bloom = 0.0f;   // Réglages › Lumière › Profondeur de champ / Bloom (0 = off)
     int m_focusMode = 0;              // Réglages › Lumière › Mise au point: 0 auto (the selection / held brick), 1 centre of the screen, 2 manual
     float m_focusManual = 40.0f;      // manual focus distance (cm)
+    bool m_focusReticle = true;       // the reticle of the Auto focus shown in the middle of the view
     float m_focusCur = -1.0f, m_focusAim = -1.0f;   // focus distance shown (eased towards the aim)
     float m_renderScale = 1.0f;       // Réglages › Échelle de rendu (1, 0.85, 0.75, 0.67)
     float m_selOutline = 0.22f, m_selFill = 0.15f;   // Réglages › Lumière: Contour / Voile de sélection

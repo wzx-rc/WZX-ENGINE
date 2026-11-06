@@ -106,7 +106,7 @@ std::string BrickApp::prefsJson() {
     {   // Réglages > Lumière
         char lb[512];
         const uint32_t rgb = (uint32_t)std::lround(m_gridRgb.x * 255) | ((uint32_t)std::lround(m_gridRgb.y * 255) << 8) | ((uint32_t)std::lround(m_gridRgb.z * 255) << 16);
-        snprintf(lb, sizeof(lb), "\"light\": {\"rotation\": %.1f, \"intensity\": %.3f, \"gridRgb\": %u, \"gridAlpha\": %.3f, \"softGI\": %s, \"giStrength\": %.3f, \"giHold\": %s, \"sssStrength\": %.3f, \"giProbes\": %d, \"showProbes\": %s, \"selOutline\": %.3f, \"selFill\": %.3f, \"dof\": %.3f, \"bloom\": %.3f, \"focusMode\": %d, \"focusCm\": %.1f, \"hdri\": ", m_hdriRotDeg, m_hdriInt, rgb, m_gridAlpha, m_softGI ? "true" : "false", m_softGIStrength, m_softGIHold ? "true" : "false", m_hqSSSStrength, m_softGIProbes, m_showProbes ? "true" : "false", m_selOutline, m_selFill, m_dof, m_bloom, m_focusMode, m_focusManual);
+        snprintf(lb, sizeof(lb), "\"light\": {\"rotation\": %.1f, \"intensity\": %.3f, \"gridRgb\": %u, \"gridAlpha\": %.3f, \"softGI\": %s, \"giStrength\": %.3f, \"giHold\": %s, \"sssStrength\": %.3f, \"giProbes\": %d, \"showProbes\": %s, \"selOutline\": %.3f, \"selFill\": %.3f, \"dof\": %.3f, \"bloom\": %.3f, \"focusMode\": %d, \"focusCm\": %.1f, \"focusReticle\": %s, \"hdri\": ", m_hdriRotDeg, m_hdriInt, rgb, m_gridAlpha, m_softGI ? "true" : "false", m_softGIStrength, m_softGIHold ? "true" : "false", m_hqSSSStrength, m_softGIProbes, m_showProbes ? "true" : "false", m_selOutline, m_selFill, m_dof, m_bloom, m_focusMode, m_focusManual, m_focusReticle ? "true" : "false");
         j += lb;
         j += jstr(narrowW(m_hdriPath)) + ", \"custom\": [";
         for (size_t i = 0; i < m_hdriCustom.size(); ++i) j += (i ? ", " : "") + jstr(narrowW(m_hdriCustom[i]));
@@ -166,6 +166,7 @@ void BrickApp::applyPrefs(const std::string& t) {
         if (lt["giHold"].type == app::Json::Bool) m_softGIHold = lt["giHold"].b;
         if (lt["dof"].type == app::Json::Number) m_dof = std::clamp((float)lt["dof"].n, 0.0f, 1.0f);
         if (lt["focusMode"].type == app::Json::Number) m_focusMode = std::clamp((int)lt["focusMode"].n, 0, 2);
+        if (lt["focusReticle"].type == app::Json::Bool) m_focusReticle = lt["focusReticle"].b;
         if (lt["focusCm"].type == app::Json::Number) m_focusManual = std::clamp((float)lt["focusCm"].n, 2.0f, 400.0f);
         if (lt["bloom"].type == app::Json::Number) m_bloom = std::clamp((float)lt["bloom"].n, 0.0f, 1.0f);
         if (lt["selOutline"].type == app::Json::Number) m_selOutline = std::clamp((float)lt["selOutline"].n, 0.0f, 1.0f);

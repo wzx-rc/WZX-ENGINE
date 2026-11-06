@@ -1778,6 +1778,13 @@ void BrickApp::drawUi() {
                  ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav);
     uiHeader();      // m_uiRects[0]
     uiTray();        // m_uiRects[1]
+    if (m_focusReticle && m_focusMode == 0 && m_rs.dof > 0 && !m_opt.noUi) {   // the focus reticle (DOF Auto): a thin white circle in the middle of the view
+        const ImVec2 c((m_stage.x + m_stage.z) * 0.5f, (m_stage.y + m_stage.w) * 0.5f);
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        dl->AddCircle(ImVec2(c.x, c.y + 1), 9 * m_ui, IM_COL32(0, 0, 0, 60), 32, 2.4f * m_ui);
+        dl->AddCircle(c, 9 * m_ui, IM_COL32(255, 255, 255, 150), 32, 1.2f * m_ui);
+        dl->AddCircleFilled(c, 1.4f * m_ui, IM_COL32(255, 255, 255, 170), 8);
+    }
     uiRadial();
     uiSelHud();
     uiColors();
@@ -2761,7 +2768,7 @@ void BrickApp::uiSettings() {
         {   // where it focuses: the selection (auto), the centre of the screen, or a distance
             u.text(ImVec2(x0 + pad, ly), 11, C_DIM, "Mise au point");
             ly += 16 * s;
-            static const char* kFocus[3] = {"Auto (sélection)", "Centre de l'écran", "Manuel"};
+            static const char* kFocus[3] = {"Auto (viseur)", "Sélection", "Manuel"};
             const float bw3 = (W - 2 * pad - 8 * s) / 3;
             for (int k = 0; k < 3; ++k) {
                 const bool on = m_focusMode == k;
@@ -2774,6 +2781,22 @@ void BrickApp::uiSettings() {
             }
             ly += rowH + gap;
             if (m_focusMode == 2) slider(110, "Distance de mise au point", m_focusManual, 2.0f, 400.0f, "%.0f cm", m_focusManual);
+            if (m_focusMode == 0) {   // the reticle in the middle of the view, shown or not
+                u.text(ImVec2(x0 + pad, ly), 11, C_DIM, "Viseur de mise au point");
+                ly += 16 * s;
+                const float bw2 = (W - 2 * pad - 4 * s) / 2;
+                for (int k = 0; k < 2; ++k) {
+                    const bool on = (k == 0) == m_focusReticle;
+                    ImVec2 a(x0 + pad + k * (bw2 + 4 * s), ly), b(a.x + bw2, ly + rowH);
+                    const bool h = u.hover(a, b);
+                    u.dl->AddRectFilled(a, b, on ? C_ACCENT : (h ? C_CARD_HI : C_CARD), 7 * s);
+                    const char* lab = k == 0 ? "Affiché" : "Masqué";
+                    const float tw = u.textW(12, lab, on);
+                    u.text(ImVec2((a.x + b.x) * 0.5f - tw * 0.5f, a.y + (rowH - u.fs(12)) * 0.5f), 12, on ? C_INK : C_TEXT, lab, on);
+                    if (h && u.pressed && !on) { m_focusReticle = k == 0; savePrefs(); }
+                }
+                ly += rowH + gap;
+            }
         }
         slider(109, "Bloom", m_bloom, 0.0f, 1.0f, "%.2f", m_bloom);
         // colour of the ground grid: swatches (Défaut = the lines of the web), then its opacity
