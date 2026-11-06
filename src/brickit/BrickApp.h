@@ -21,7 +21,7 @@ namespace brickit {
 struct Ui;   // drawing helper of BrickUi.cpp
 // view of a thumbnail (Thumbs.cpp): angles, zoom (1 = the box at 85 % of the image), pan (fractions of the half view)
 struct ThumbView { float yaw = 0, pitch = 0, zoom = 1, panX = 0, panY = 0; };
-struct ThumbLook { float key = 32.0f, rim = 4.0f, env = 1.05f, exposure = 1.0f, bevel = 0.04f; int spp = 256, bounces = 4; };   // light of the thumbnails (spp > 0: path traced)   // light of the thumbnails
+struct ThumbLook { float key = 32.0f, rim = 4.0f, env = 1.05f, exposure = 1.0f, bevel = 0.04f; int spp = 256, bounces = 4, neutral = 0; float base = 0.77f; int tm = 0; };   // light of the thumbnails (spp > 0: path traced)   // light of the thumbnails
 
 using namespace vp3d;
 

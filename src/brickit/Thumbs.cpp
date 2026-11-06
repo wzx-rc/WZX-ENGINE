@@ -305,6 +305,11 @@ int BrickApp::setupStudio2(Scene& ts, int& glassMat) {
     ts.lights[0].color = float3(1.0f, 0.957f, 0.91f);   // 0xfff4e8
     ts.lights[1].color = float3(0.84f, 0.89f, 1.0f);    // 0xd6e4ff
     ts.env.hdriIntensity = thumbLook().env;
+    if (thumbLook().neutral) {   // neutral: white lights, a pure grey / white plastic (Wzx: « un peu jaune »)
+        ts.lights[0].color = ts.lights[1].color = float3(1.0f);
+        const float g = srgbToLinear(thumbLook().base);
+        ts.materials[mat].baseColor = float3(g);
+    }
     Material g;
     g.name = "thumb glass";
     g.baseColor = float3(srgbToLinear(0.90f), srgbToLinear(0.93f), srgbToLinear(0.95f));
@@ -320,7 +325,7 @@ int BrickApp::setupStudio2(Scene& ts, int& glassMat) {
 ThumbLook BrickApp::thumbLook() {
     ThumbLook l;
     char b[128];
-    if (GetEnvironmentVariableA("BT_THUMB", b, sizeof(b)) > 0) sscanf_s(b, "%f %f %f %f %f %d %d", &l.key, &l.rim, &l.env, &l.exposure, &l.bevel, &l.spp, &l.bounces);
+    if (GetEnvironmentVariableA("BT_THUMB", b, sizeof(b)) > 0) sscanf_s(b, "%f %f %f %f %f %d %d %d %f %d", &l.key, &l.rim, &l.env, &l.exposure, &l.bevel, &l.spp, &l.bounces, &l.neutral, &l.base, &l.tm);
     return l;
 }
 
@@ -332,7 +337,7 @@ RenderSettings BrickApp::thumbSettings() {
     rs.bevelScale = 1.0f;
     rs.bevelSamples = 8;
     rs.rasterRT = true;                 // the key and the rim shadowed by rays (soft self shadows)
-    rs.tonemapper = 0;
+    rs.tonemapper = thumbLook().tm;
     rs.idPass = false;
     rs.vignette = 0.0f;
     rs.msaaSamples = 4;
