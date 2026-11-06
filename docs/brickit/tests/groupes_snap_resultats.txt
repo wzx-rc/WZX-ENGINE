@@ -1,0 +1,6 @@
+[OK] Briques (tenons) : 3 connecteur(s) du groupe sur la cible (pièce menée à y = 0.96)
+[OK] Briques (tenons) : le groupe reste rigide
+[OK] Technic (pins dans une poutre) : 2 connecteur(s) du groupe sur la cible (pièce menée à y = 0.49)
+[OK] Technic (pins dans une poutre) : le groupe reste rigide
+
+4 / 4 réussis

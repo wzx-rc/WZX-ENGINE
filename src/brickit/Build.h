@@ -76,6 +76,7 @@ struct Held {
     std::vector<uint8_t> conn;
     BoxHash boxes;
     bool cacheValid = false;
+    std::vector<char> skip;   // bricks left out of the targets too (the other members of a group carried)
     // animation of the web (updateHold): the brick floats above its target on a spring, tilts with its speed, squashes
     float3 vpos, vvel;
     float4 vrot{0, 0, 0, 1};

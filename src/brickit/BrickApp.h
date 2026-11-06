@@ -58,6 +58,7 @@ struct Options {
     std::wstring importPath;   // --import model.mpd: an LDraw model (OMR), the reading mode opened
     int readStep = -1;         // --read-step n: the page read for the capture
     std::wstring importReport; // --import-report file: pieces, steps, parts not found
+    std::wstring groupSnapTest;   // --group-snap-test file
     std::wstring groupTest;   // --group-test file: the groups checked (BrickGroups.cpp)
     bool useDefaults = false;   // --use-defaults: a capture with the default settings (assets / %LOCALAPPDATA%)
     int stillAA = -1;   // --still-aa 0 / 1
@@ -193,11 +194,14 @@ private:
     std::vector<float3> m_groupDragPos;
     float3 m_groupDragStart;
     float m_groupDragY = 0;
+    int m_groupLead = -1;                // the member grabbed: the group snaps through its connectors (its own Held)
+    Held m_groupHeld;
     void beginGroupDrag(const std::vector<int>& s, float sx, float sy);
     void updateGroupDrag(float sx, float sy);
     void endGroupDrag();
     void uiGroups();   // the outliner of the groups (BrickUi.cpp)
     void groupTest();  // --group-test file
+    void groupSnapTest();   // --group-snap-test file: a group dragged onto studs / into Technic holes
     std::string prefsJson();
     void applyPrefs(const std::string& text);
     bool readDefaultPrefs(std::string& text);

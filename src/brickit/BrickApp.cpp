@@ -1295,6 +1295,7 @@ void BrickApp::frame() {
     ++m_frame;
     // GI hold test: a brick carried in the air (swinging), then put down on the ground 3.5 cm in front of where it was
     if (!m_opt.groupTest.empty() && m_frame == 5) groupTest();
+    if (!m_opt.groupSnapTest.empty() && m_frame == 5) groupSnapTest();
     if (!m_opt.importPath.empty() && m_frame == 3) {   // an LDraw model, then the page asked
         const auto t0 = GetTickCount64();
         importLDraw(m_opt.importPath);
@@ -1411,6 +1412,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         else if (a == L"--read-step") opt.readStep = _wtoi(next().c_str());
         else if (a == L"--import-report") opt.importReport = next();
         else if (a == L"--group-test") opt.groupTest = next();
+        else if (a == L"--group-snap-test") opt.groupSnapTest = next();
         else if (a == L"--still-aa") opt.stillAA = _wtoi(next().c_str());
         else if (a == L"--touch-hud") opt.touchHud = _wtoi(next().c_str());
         else if (a == L"--free-rot") opt.freeRot = _wtoi(next().c_str());

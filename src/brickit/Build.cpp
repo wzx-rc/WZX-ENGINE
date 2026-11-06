@@ -136,7 +136,7 @@ void Builder::buildCache(Held& H) const {
     std::unordered_map<int64_t, Owner> owners;
     owners.reserve(bricks.size() * 8);
     for (int i = 0; i < (int)bricks.size(); ++i) {
-        if (i == H.brick) continue;
+        if (i == H.brick || (i < (int)H.skip.size() && H.skip[i])) continue;
         const Brick& b = bricks[i];
         if (b.part < 0 || !m_lib.parts[b.part].loaded) continue;
         H.boxes.insert(i, bodyBox(b.part, b.rot, b.pos));

@@ -182,13 +182,27 @@ bool BrickApp::duplicateGroup(const std::vector<int>& s) {
     return true;
 }
 
-// Selection mode, a drag on a group: the whole group slides over the plane of the point grabbed, on the stud lattice
+// Selection mode, a drag on a group: the whole group carried as one block, snapped as a brick in hand would be through
+// the member grabbed (Wzx, 06/11/2026: studs on studs, pins and axles in holes, the floor lattice), the other members
+// left out of the targets; the group keeps its shape and orientation.
 void BrickApp::beginGroupDrag(const std::vector<int>& s, float sx, float sy) {
     pushUndo();
     m_groupDrag = true;
     m_groupDragBricks = s;
     m_groupDragPos.clear();
     for (int i : s) m_groupDragPos.push_back(m_bricks[i].pos);
+    m_groupLead = std::find(s.begin(), s.end(), m_pressBrick) != s.end() ? m_pressBrick : s[0];
+    m_build.beginHold(m_groupHeld, m_groupLead, false);
+    m_groupHeld.rot = m_bricks[m_groupLead].rot;   // (the group keeps its orientation)
+    m_groupHeld.skip.assign(m_bricks.size(), 0);
+    for (int i : s) m_groupHeld.skip[i] = 1;
+    // the pivot: the connector of the lead nearest to the point grabbed
+    const Part& p = m_lib.parts[m_bricks[m_groupLead].part];
+    float best = 1e30f;
+    for (const float3& v : p.voxels) {
+        const float d = length(m_build.worldVoxel(m_bricks[m_groupLead], v) - m_pressPoint);
+        if (d < best) { best = d; m_groupHeld.grab = v; }
+    }
     m_groupDragY = m_pressPoint.y;
     float3 o, d;
     view().ray(sx, sy, o, d);
@@ -197,20 +211,20 @@ void BrickApp::beginGroupDrag(const std::vector<int>& s, float sx, float sy) {
 }
 
 void BrickApp::updateGroupDrag(float sx, float sy) {
-    float3 o, d;
-    view().ray(sx, sy, o, d);
-    if (std::fabs(d.y) < 1e-6f) return;
-    const float t = (m_groupDragY - o.y) / d.y;
-    if (t <= 0) return;
-    float3 delta = o + d * t - m_groupDragStart;
-    delta.y = 0;
-    if (m_build.gridSnap) { delta.x = std::round(delta.x / 0.8f) * 0.8f; delta.z = std::round(delta.z / 0.8f) * 0.8f; }
+    if (m_groupLead < 0) return;
+    float3 hit;
+    const int over = pickBrick(sx, sy, &hit, m_groupLead);
+    const bool own = over >= 0 && std::find(m_groupDragBricks.begin(), m_groupDragBricks.end(), over) != m_groupDragBricks.end();
+    m_build.computeTarget(m_groupHeld, view(), sx, sy, over >= 0 && !own ? &hit : nullptr);
+    const size_t li = std::find(m_groupDragBricks.begin(), m_groupDragBricks.end(), m_groupLead) - m_groupDragBricks.begin();
+    const float3 delta = m_groupHeld.target - m_groupDragPos[li];
     for (size_t k = 0; k < m_groupDragBricks.size(); ++k) m_bricks[m_groupDragBricks[k]].pos = m_groupDragPos[k] + delta;
     syncObjects();
 }
 
 void BrickApp::endGroupDrag() {
     m_groupDrag = false;
+    m_groupLead = -1;
     rebuildScene();
     autosave();
 }
@@ -276,6 +290,83 @@ void BrickApp::groupTest() {
     log += t;
     FILE* f = nullptr;
     if (_wfopen_s(&f, m_opt.groupTest.c_str(), L"wb") == 0 && f) { fwrite(log.data(), 1, log.size(), f); fclose(f); }
+}
+
+// --group-snap-test file: a group dragged onto other bricks (Wzx, 05/11/2026: « un objet groupé a-t-il bien les points de
+// snap ? »): two stacked 2 x 4 bricks onto a 2 x 4 brick (studs into anti-studs), then two Technic pins into the holes of
+// a beam. Each case: the group dragged (beginGroupDrag / updateGroupDrag at the screen point of the target connector),
+// checked (connectors coincident with the target's, the group kept rigid), dropped. Results in the file.
+void BrickApp::groupSnapTest() {
+    std::string log;
+    int pass = 0, total = 0;
+    auto check = [&](bool ok, const std::string& what) { ++total; pass += ok; log += std::string(ok ? "[OK] " : "[ECHEC] ") + what + "\n"; };
+    auto part = [&](std::initializer_list<const char*> names) {
+        for (const char* n : names) { const int i = m_lib.find(n); if (i >= 0 && m_lib.get(m_lib.parts[i].name)) return i; }
+        return -1;
+    };
+    // connectors of brick a coinciding with connectors of brick b (stud / anti-stud, pin / hole...)
+    auto joined = [&](int a, int b) {
+        int n = 0;
+        const Part& pa = m_lib.parts[m_bricks[a].part];
+        const Part& pb = m_lib.parts[m_bricks[b].part];
+        for (const float3& va : pa.voxels)
+            for (const float3& vb : pb.voxels)
+                if (length(m_build.worldVoxel(m_bricks[a], va) - m_build.worldVoxel(m_bricks[b], vb)) < 0.03f) ++n;
+        return n;
+    };
+    auto scenario = [&](const char* title, int target, int lead, int other, float3 leadPos, float3 otherPos, int targetVoxel, bool stack) {
+        if (target < 0 || lead < 0 || other < 0) { check(false, std::string(title) + " : pièces introuvables"); return; }
+        m_bricks.clear();
+        m_build.groups.clear();
+        Brick t; t.part = target; t.pos = float3(0, 0, 0);
+        Brick a; a.part = lead; a.pos = leadPos; a.path = {0};
+        Brick b; b.part = other; b.pos = otherPos; b.path = {0};
+        m_bricks = {t, a, b};
+        Group g;
+        g.name = "Groupe test";
+        m_build.groups.push_back(g);
+        m_groupCtx.clear();
+        rebuildScene();
+        Camera& c = m_scene.camera;
+        c.target = float3(3, 1, 1);
+        c.distance = 26;
+        c.yaw = radians(35.0f);
+        c.pitch = radians(40.0f);
+        const View v = view();
+        const float3 rel = m_bricks[2].pos - m_bricks[1].pos;
+        // press on the lead brick (its top centre), drag to the target connector
+        const Box lb = m_build.aabbOf(lead, m_bricks[1].rot, m_bricks[1].pos);
+        m_pressPoint = float3((lb.mn.x + lb.mx.x) * 0.5f, lb.mx.y, (lb.mn.z + lb.mx.z) * 0.5f);
+        m_pressBrick = 1;
+        float sx, sy, tx, ty;
+        v.project(m_pressPoint, sx, sy);
+        const Part& tp = m_lib.parts[target];
+        const float3 tw = m_build.worldVoxel(m_bricks[0], tp.voxels[std::clamp(targetVoxel, 0, (int)tp.voxels.size() - 1)]);
+        v.project(tw, tx, ty);
+        beginGroupDrag(unitOf(1), sx, sy);
+        for (int k = 1; k <= 8; ++k) updateGroupDrag(sx + (tx - sx) * k / 8, sy + (ty - sy) * k / 8);
+        endGroupDrag();
+        const int j = joined(1, 0) + joined(2, 0);
+        char buf[200];
+        snprintf(buf, sizeof(buf), "%s : %d connecteur(s) du groupe sur la cible (pièce menée à y = %.2f)", title, j, m_bricks[1].pos.y);
+        check(j > 0 && (!stack || m_bricks[1].pos.y > 0.9f), buf);
+        check(length((m_bricks[2].pos - m_bricks[1].pos) - rel) < 1e-3f, std::string(title) + " : le groupe reste rigide");
+    };
+    const int b24 = part({"3001"});
+    // 1. two 2 x 4 bricks stacked (a group), far away, onto a 2 x 4 brick: aimed at one of its studs
+    int stud = 0;
+    if (b24 >= 0) for (size_t k = 0; k < m_lib.parts[b24].voxels.size(); ++k) if (m_lib.parts[b24].conn[k] == CONN_STUD) { stud = (int)k; break; }
+    scenario("Briques (tenons)", b24, b24, b24, float3(9.6f, 0, 4.8f), float3(9.6f, 0.96f, 4.8f), stud, true);
+    // 2. Technic: two pins side by side (a group) into the holes of a beam lying on the floor
+    const int beam = part({"32524"}), pin = part({"2780", "3673"});
+    int hole = 0;
+    if (beam >= 0) for (size_t k = 0; k < m_lib.parts[beam].voxels.size(); ++k) if (m_lib.parts[beam].conn[k] == CONN_PINHOLE) { hole = (int)k; break; }
+    scenario("Technic (pins dans une poutre)", beam, pin, pin, float3(9.6f, 2.0f, 4.8f), float3(10.4f, 2.0f, 4.8f), hole, false);
+    char t[64];
+    snprintf(t, sizeof(t), "\n%d / %d réussis\n", pass, total);
+    log += t;
+    FILE* f = nullptr;
+    if (_wfopen_s(&f, m_opt.groupSnapTest.c_str(), L"wb") == 0 && f) { fwrite(log.data(), 1, log.size(), f); fclose(f); }
 }
 
 } // namespace brickit
