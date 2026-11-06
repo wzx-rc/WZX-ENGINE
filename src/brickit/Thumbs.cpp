@@ -92,7 +92,7 @@ void BrickApp::buildThumbs() {
 
     wchar_t name[128];
     const bool v3 = GetFileAttributesW((m_exeDir + L"\\assets\\brickit\\thumbs_v3.pack").c_str()) != INVALID_FILE_ATTRIBUTES;   // the thumbnails v3 (--build-full-thumbs)
-    swprintf_s(name, v3 ? L"\\cache\\thumbs8v3_%d_%d.bin" : L"\\cache\\thumbs7web_%d_%d.bin", px, slots);   // 7: the thumbnails of the web (thumbs_web.pack)   // 5: transparent background (alpha)   // 2: neutral grey studio of the web
+    swprintf_s(name, v3 ? L"\\cache\\thumbs9v3n_%d_%d.bin" : L"\\cache\\thumbs7web_%d_%d.bin", px, slots);   // 7: the thumbnails of the web (thumbs_web.pack)   // 5: transparent background (alpha)   // 2: neutral grey studio of the web
     const std::wstring cacheDir = m_exeDir + L"\\cache", cacheFile = m_exeDir + name;
     bool cached = false;
     FILE* f = nullptr;
