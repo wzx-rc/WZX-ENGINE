@@ -53,8 +53,17 @@ paquets et de coffres, Plasma Library (compteurs ×N par pièce, par rareté et 
 - **Coffre** : trois coups pour l'ouvrir, il donne toujours commune + rare + extrême.
 - Les pièces volent vers la bibliothèque, les compteurs s'animent ; les doublons se recyclent en dents (monnaie
   provisoire).
-- Tout est provisoire : catalogue de noms, pictos de catégorie, taux et prix sont en tête de `js/hub.js` (`RULES`,
-  `NAMES`, `KIT`) ; l'état du joueur est dans le navigateur (`localStorage` `plasmaork.hub`), en attendant le serveur.
+- Tout est provisoire : catalogue de noms, pictos de catégorie, taux et prix sont en tête de `js/loot.js` (`RULES`,
+  `NAMES`, `KIT`), partagé avec la Library ; l'état du joueur est dans le navigateur (`localStorage` `plasmaork.hub`),
+  en attendant le serveur.
+
+## Plasma Library (`library.html`)
+
+Toutes les pièces : catégories à gauche (compteur et barre de progression), filtres au centre (débloquées,
+manquantes, doublons, rareté, recherche, pièces du kit en cours) et grille avec compteur ×N ; à droite la pièce
+sélectionnée (aperçu, provenance, couleurs de faction, poser sur l'ork, export STL à brancher, recyclage de ses
+doublons). Une pièce manquante dit où la trouver et renvoie vers le Hub (`hub.html#pack`, `#chest`, `#shop`).
+Lien direct : `library.html#cat=weapon` ou `#piece=back_10`.
 
 ## Importeur (`import.html`)
 
@@ -112,7 +121,8 @@ Le projet est sauvegardé dans le navigateur (localStorage), avec annuler / rét
 - `js/main.js` : le builder (état, historique, interface, briques accrochées aux sockets, export)
 - `js/sockets.js` : sockets de l'ork, noms des locators
 - `js/bricks.js` : format des briques, stockage IndexedDB, construction des objets 3D, export / import de la bibliothèque
-- `hub.html`, `js/hub.js`, `css/hub.css`, `assets/hub/` : le hub de déblocage
+- `hub.html`, `js/hub.js`, `css/hub.css`, `assets/hub/` : le hub de déblocage ; `library.html`, `js/library.js`,
+  `css/library.css` : la Plasma Library ; `js/loot.js` : catalogue, règles et état du joueur partagés
 - `import.html`, `js/importer.js`, `css/importer.css` : l'importeur
 - `js/viewport.js` : viewport (passes HDR, masque de sélection, aides, caméra, gizmo) et moteur de vignettes hors écran
 - `js/render.js` : portage du renderer Viewport3D (shading raster, passe Tonemap, environnements, studio, HDRI)

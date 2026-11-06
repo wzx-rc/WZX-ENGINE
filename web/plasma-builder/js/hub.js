@@ -6,117 +6,7 @@
 // - CATALOGUE : pièces factices (nom + picto de catégorie). À remplacer par les briques de la bibliothèque.
 // - Achats : les boutons [PRIX] ajoutent le pack pour la démo ; le paiement sera branché sur le site.
 // - État du joueur : localStorage 'plasmaork.hub' (à remplacer par le compte en ligne).
-import { CATEGORIES } from './categories.js';
-
-const $ = id => document.getElementById(id);
-const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const KEY = 'plasmaork.hub';
-
-// ---------------------------------------------------------------- réglages (à équilibrer)
-const RULES = {
-  extremeChance: 0.25,   // 3e carte d'un pack : extrême avec cette probabilité, sinon rare
-  pity: 5,               // extrême garantie au plus tard au 5e pack sans extrême
-  recycle: { c: 10, r: 30, x: 100 },   // dents par doublon recyclé
-  packInDents: 300,
-  start: { dents: 120, packs: 3, chests: 1 },
-};
-const RARITY = { c: 'Commune', r: 'Rare', x: 'Extrême' };
-const RCOL = { c: '#b9c0c8', r: '#3e8ef7', x: '#ff2e88' };
-const ICON = { head: 'assets/ui/icon_head.png', weapon: 'assets/ui/icon_weapon.png', back: 'assets/ui/icon_back.png', shoulder: 'assets/ui/icon_shoulder.png', chest: 'assets/ui/icon_chest.png', belt: 'assets/ui/icon_belt.png', base: 'assets/ui/icon_base.png' };
-const FACTIONS = [
-  { id: 'rose', label: 'Klan rose', img: 'assets/hub/faction_rose.png', col: '#ff2e88' },
-  { id: 'bleu', label: 'Klan bleu', img: 'assets/hub/faction_bleu.png', col: '#3e8ef7' },
-  { id: 'jaune', label: 'Klan jaune', img: 'assets/hub/faction_jaune.png', col: '#f2c230' },
-  { id: 'vert', label: 'Klan vert', img: 'assets/hub/faction_vert.png', col: '#6bbf3a' },
-];
-
-// ---------------------------------------------------------------- catalogue provisoire
-const NAMES = {
-  head: [['Kasque cabossé', 'c'], ['Mâchoire basique', 'c'], ['Kasque à cornes', 'c'], ['Bandana du klan', 'c'], ['Tête balafrée', 'c'], ['Kasque riveté', 'c'], ['Kasque de Nob', 'r'], ['Lunettes de Mek', 'r'], ['Krâne bioniK', 'r'], ['Kasque à pointes', 'r'], ['Mâchoire d’acier', 'x'], ['Kouronne de Warboss', 'x']],
-  weapon: [['Choppa rouillée', 'c'], ['Slugga', 'c'], ['Kosto', 'c'], ['Kikoup’', 'c'], ['Slugga double', 'c'], ['Matraque', 'c'], ['Kustom Shoota', 'r'], ['Big Choppa', 'r'], ['Pince énergétique', 'r'], ['Lance-rokkit', 'r'], ['Big Shoota plasma', 'x'], ['Kustom Méga-Blasta', 'x']],
-  back: [['Sac à butin', 'c'], ['Bidon de fuel', 'c'], ['Fanion', 'c'], ['Tuyaux', 'c'], ['Réservoir', 'c'], ['Pot d’échappement', 'c'], ['Rokkit Pack', 'r'], ['Générateur', 'r'], ['Bannière du klan', 'r'], ['Antenne', 'r'], ['Bannière de Warboss', 'x'], ['Rokkit Pack plasma', 'x']],
-  shoulder: [['Épaulière simple', 'c'], ['Épaulière à pointes', 'c'], ['Plaque rivetée', 'c'], ['Épaulière en pneu', 'c'], ['Épaulière à crâne', 'c'], ['Épaulière dentée', 'c'], ['Épaulière gauche Rokkit', 'r'], ['Épaulière de Nob', 'r'], ['Épaulière à chaîne', 'r'], ['Épaulière à cornes', 'r'], ['Épaulière Warboss', 'x'], ['Épaulière plasma', 'x']],
-  chest: [['Plastron riveté', 'c'], ['Gilet en cuir', 'c'], ['Plaques de fer', 'c'], ['Bandoulière', 'c'], ['Harnais', 'c'], ['Torse nu', 'c'], ['Torse de Mek', 'r'], ['Cuirasse de Nob', 'r'], ['Plastron à crânes', 'r'], ['Torse rokkit', 'r'], ['Méga-armure', 'x'], ['Cœur de plasma', 'x']],
-  belt: [['Bourse à dents', 'c'], ['Grenades stikk', 'c'], ['Ceinture simple', 'c'], ['Cartouchière', 'c'], ['Pochette', 'c'], ['Chaîne', 'c'], ['Ceinture à crânes', 'r'], ['Trophées', 'r'], ['Boucle du klan', 'r'], ['Ceinture de Mek', 'r'], ['Ceinture de Warboss', 'x'], ['Bombe plasma', 'x']],
-  base: [['Socle rond', 'c'], ['Socle en terre', 'c'], ['Socle rocheux', 'c'], ['Socle de ferraille', 'c'], ['Socle en ruines', 'c'], ['Socle de rouille', 'c'], ['Socle de tranchée', 'r'], ['Socle d’épave', 'r'], ['Socle de crânes', 'r'], ['Socle de lave', 'r'], ['Socle plasma', 'x'], ['Trône de Warboss', 'x']],
-};
-const CATALOG = Object.entries(NAMES).flatMap(([cat, list]) => list.map(([name, rk], i) => ({ id: cat + '_' + i, cat, name, rk })));
-const byId = Object.fromEntries(CATALOG.map(p => [p.id, p]));
-const KIT = { name: 'Kit Rokkit', pieces: ['back_6', 'shoulder_6', 'chest_9', 'weapon_9', 'belt_1'], reward: 'skin plasma offert' };
-const catLabel = id => CATEGORIES.find(c => c.id === id)?.label || id;
-const catSingular = { head: 'Tête', weapon: 'Arme', back: 'Dos', shoulder: 'Épaulière', chest: 'Torse', belt: 'Ceinture', base: 'Socle' };
-
-// ---------------------------------------------------------------- état
-function fresh() {
-  const owned = {};
-  ['head_0', 'weapon_0', 'weapon_1', 'back_0', 'shoulder_1', 'chest_0', 'belt_0', 'belt_1', 'base_0', 'weapon_6', 'back_6', 'chest_9'].forEach(id => { owned[id] = 1; });
-  owned.belt_0 = 3; owned.chest_0 = 2;
-  return { v: 1, ...RULES.start, owned, last: [], lastAt: 0, dropAt: 0, faction: 'rose', sinceX: 0 };
-}
-let S;
-try { S = JSON.parse(localStorage.getItem(KEY)) || fresh(); } catch { S = fresh(); }
-if (S.v !== 1) S = fresh();
-const save = () => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch { /* stockage indisponible */ } };
-const ownedCount = () => Object.keys(S.owned).filter(k => S.owned[k] > 0).length;
-const dupes = () => Object.entries(S.owned).reduce((n, [, c]) => n + Math.max(0, c - 1), 0);
-
-// ---------------------------------------------------------------- tirage
-function pick(rk) {
-  const pool = CATALOG.filter(p => p.rk === rk);
-  // les pièces manquantes ont deux fois plus de chances de tomber
-  const w = pool.map(p => (S.owned[p.id] ? 1 : 2));
-  let t = Math.random() * w.reduce((a, b) => a + b, 0);
-  for (let i = 0; i < pool.length; i++) { t -= w[i]; if (t <= 0) return pool[i]; }
-  return pool[pool.length - 1];
-}
-function draw(kind) {
-  let third = 'r';
-  if (kind === 'chest') third = 'x';
-  else if (Math.random() < RULES.extremeChance || S.sinceX + 1 >= RULES.pity) third = 'x';
-  S.sinceX = third === 'x' ? 0 : S.sinceX + 1;
-  const got = [pick('c'), pick('r'), pick(third)];
-  return got.map(p => {
-    const before = S.owned[p.id] || 0;
-    S.owned[p.id] = before + 1;
-    return { ...p, isNew: before === 0, count: before + 1 };
-  });
-}
-function commit(kind, got) {
-  if (kind === 'pack') S.packs--; else S.chests--;
-  S.last = got.map(g => g.id); S.lastAt = Date.now();
-  save();
-}
-
-// ---------------------------------------------------------------- petites animations
-function tween(el, from, to, ms = 900) {
-  if (!el) return;
-  const t0 = performance.now(), fmt = n => Math.round(n).toLocaleString('fr-FR');
-  if (from === to || matchMedia('(prefers-reduced-motion: reduce)').matches) { el.textContent = fmt(to); return; }
-  const step = now => {
-    const k = Math.min(1, (now - t0) / ms), e = 1 - Math.pow(1 - k, 3);
-    el.textContent = fmt(from + (to - from) * e);
-    if (k < 1) requestAnimationFrame(step);
-  };
-  requestAnimationFrame(step);
-}
-const shown = {};   // dernières valeurs affichées, pour animer les compteurs
-function setNum(id, v) { tween($(id), shown[id] ?? 0, v); shown[id] = v; }
-function sparks(x, y, color, n = 26) {
-  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-  for (let i = 0; i < n; i++) {
-    const s = document.createElement('i');
-    s.className = 'spark';
-    const a = Math.random() * Math.PI * 2, d = 80 + Math.random() * 160;
-    s.style.cssText = `left:${x}px;top:${y}px;background:${i % 3 ? color : '#fff4d6'};--dx:${Math.cos(a) * d}px;--dy:${Math.sin(a) * d}px;--dr:${Math.random() * 360}deg`;
-    $('fx').appendChild(s);
-    setTimeout(() => s.remove(), 1000);
-  }
-}
-function toast(msg) {
-  const t = $('toast'); t.textContent = msg; t.classList.add('show');
-  clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove('show'), 2800);
-}
-const center = el => { const r = el.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; };
+import { $, esc, RULES, RARITY, RCOL, ICON, FACTIONS, NAMES, CATALOG, byId, KIT, catLabel, catSingular, S, save, ownedCount, dupes, pick, draw, commit, sparks, toast, center, setNum } from './loot.js';
 
 // ---------------------------------------------------------------- tableau de bord
 function pieceCard(p, opts = {}) {
@@ -355,20 +245,6 @@ $('chest').addEventListener('click', e => {
 });
 $('chestCollect').addEventListener('click', () => collect('chest'));
 
-// ---------------------------------------------------------------- toute la library
-let filter = 'all';
-function renderLibrary() {
-  const list = CATALOG.filter(p => {
-    const c = S.owned[p.id] || 0;
-    return filter === 'all' || (filter === 'own' && c) || (filter === 'miss' && !c) || (filter === 'dup' && c > 1);
-  });
-  $('libOvSub').textContent = `${ownedCount()} / ${CATALOG.length} pièces débloquées`;
-  $('libGrid2').innerHTML = list.map(p => pieceCard(p)).join('') || '<p class="muted2">Rien ici.</p>';
-  $('libFilters').querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.f === filter)));
-}
-$('libAll').addEventListener('click', () => { renderLibrary(); showOverlay('libOv'); });
-$('libFilters').addEventListener('click', e => { const b = e.target.closest('[data-f]'); if (b) { filter = b.dataset.f; renderLibrary(); } });
-
 // ---------------------------------------------------------------- boutique, recyclage, drop du jour, factions
 document.querySelector('.shop').addEventListener('click', e => {
   const b = e.target.closest('[data-buy]'); if (!b) return;
@@ -410,7 +286,9 @@ function tickDrop() {
 $('dropBtn').addEventListener('click', () => {
   if (nextDrop() > Date.now()) return;
   const p = pick('c'), before = S.owned[p.id] || 0;
-  S.owned[p.id] = before + 1; S.dropAt = Date.now(); save();
+  S.owned[p.id] = before + 1; S.dropAt = Date.now();
+  if (!before) S.got[p.id] = { at: Date.now(), src: 'drop' };
+  save();
   const [x, y] = center($('dropBtn')); sparks(x, y, '#f2c230', 30);
   toast(`Drop du jour : ${p.name} (${before ? 'doublon' : 'nouvelle pièce'})`);
   render(); tickDrop();
@@ -419,3 +297,8 @@ $('dropBtn').addEventListener('click', () => {
 render();
 tickDrop();
 setInterval(tickDrop, 1000);
+// hub.html#pack / #chest (lien depuis la Plasma Library) : ouvre directement
+if (location.hash === '#pack' && S.packs) openPack();
+else if (location.hash === '#chest' && S.chests) openChest();
+else if (location.hash === '#shop') setTimeout(() => $('shopTop').click(), 300);
+if (location.hash) history.replaceState(null, '', location.pathname);

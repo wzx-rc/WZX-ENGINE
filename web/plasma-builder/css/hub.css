@@ -254,8 +254,6 @@ body.hub {
 .chips { display: flex; gap: 6px; flex-wrap: wrap; }
 .chips button { min-height: 36px; padding: 0 14px; border-radius: 18px; border: 1px solid #2e2e35; background: transparent; color: #c9c6ce; font-size: 13px; }
 .chips button[aria-pressed="true"] { background: #ecebe6; color: #141417; border-color: #ecebe6; font-weight: 600; }
-.libgrid2 { flex: 1 1 auto; overflow: auto; padding: 14px 24px 40px; display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 18px 16px; align-content: start; }
-.libgrid2 .pc { min-height: 160px; justify-content: center; }
 
 .hub .toast { position: fixed; left: 50%; bottom: 28px; transform: translate(-50%, 20px); z-index: 70; padding: 12px 18px; border-radius: 14px; background: #141417; border: 1px solid var(--ln); box-shadow: 0 20px 50px rgba(0,0,0,.6); opacity: 0; transition: opacity .25s, transform .25s; pointer-events: none; font-size: 14px; }
 .hub .toast.show { opacity: 1; transform: translate(-50%, 0); }
