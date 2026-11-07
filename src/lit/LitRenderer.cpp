@@ -119,7 +119,8 @@ bool LitRenderer::createPipelines(std::string* error) {
     // same for the whole draw anyway.
     // VP3D_DDGI_PROBES: Shade can read the DDGI probes (R.giMode); DDGI_NO_RT: the DDGI compute passes without the
     // path tracer (probe rays from the raster captures, blend).
-    std::vector<ShaderMacro> macros = {{"VP3D_ATTRIB_SEMANTICS", "1"}, {"VP3D_DDGI_PROBES", "1"}, {"DDGI_NO_RT", "1"}};
+    std::vector<ShaderMacro> macros = {{"VP3D_ATTRIB_SEMANTICS", "1"}, {"VP3D_LIT_INSTANCED", "1"}, {"VP3D_DDGI_PROBES", "1"},
+                                       {"DDGI_NO_RT", "1"}};
     if (!m_device->GetDeviceInfo().IsD3DDevice()) macros.push_back({"NonUniformResourceIndex(x)", "(x)"});
 
     auto shader = [&](const char* file, const char* entry, SHADER_TYPE type, RefCntAutoPtr<IShader>& out) {
@@ -418,7 +419,8 @@ void LitRenderer::bindFrameResources() {
         IShaderResourceBinding* srb = m_srb[p];
         for (SHADER_TYPE st : {SHADER_TYPE_VERTEX, SHADER_TYPE_PIXEL}) {
             setVar(srb, st, "R", m_rasterCB);
-            setVar(srb, st, "D", m_drawCB);
+            setVar(srb, st, "DrawBase", m_drawCB);
+            if (m_drawBuf) setVar(srb, st, "gDraws", m_drawBuf->GetDefaultView(BUFFER_VIEW_SHADER_RESOURCE));
             setVar(srb, st, "PF", m_probeCB);
             setVar(srb, st, "G", m_giCB);
         }
@@ -436,19 +438,48 @@ void LitRenderer::bindFrameResources() {
     setVar(m_srb[P_POST], SHADER_TYPE_PIXEL, "gHdr", m_hdr->GetDefaultView(TEXTURE_VIEW_SHADER_RESOURCE));
 }
 
-void LitRenderer::drawOne(const vp3d::lit::Draw& d) {
-    const vp3d::lit::MeshInfo& g = m_geo.meshes[d.mesh];
+void LitRenderer::sortDraws() {
+    // counting sort by mesh: the draws of one mesh become consecutive slots of m_drawBuf
+    const uint32_t n = (uint32_t)m_data.draws.size();
+    std::vector<uint32_t> start(m_geo.meshes.size() + 1, 0);
+    for (const vp3d::lit::Draw& d : m_data.draws) ++start[d.mesh + 1];
+    for (size_t k = 1; k < start.size(); ++k) start[k] += start[k - 1];
+    m_drawOrder.resize(n);
+    for (uint32_t k = 0; k < n; ++k) m_drawOrder[start[m_data.draws[k].mesh]++] = k;
+    m_drawSorted.resize(std::max<uint32_t>(n, 1));
+    for (uint32_t k = 0; k < n; ++k) m_drawSorted[k] = vp3d::lit::drawConstants(m_data.draws[m_drawOrder[k]]);
+    updateBuffer(m_drawBuf, m_drawSorted.data(), (uint32_t)(m_drawSorted.size() * sizeof(vp3d::lit::DrawConstants)),
+                 sizeof(vp3d::lit::DrawConstants), "Lit draws");
+}
+
+void LitRenderer::drawRange(int mesh, uint32_t first, uint32_t count) {
+    const vp3d::lit::MeshInfo& g = m_geo.meshes[mesh];
     {
-        MapHelper<vp3d::lit::DrawConstants> dc(m_ctx, m_drawCB, MAP_WRITE, MAP_FLAG_DISCARD);
-        *dc = vp3d::lit::drawConstants(d);
+        MapHelper<uint32_t> base(m_ctx, m_drawCB, MAP_WRITE, MAP_FLAG_DISCARD);
+        *base = first;
     }
     DrawIndexedAttribs a;
     a.NumIndices = g.indexCount;
     a.IndexType = VT_UINT32;
     a.FirstIndexLocation = g.indexOffset;
     a.BaseVertex = g.vertexOffset;
+    a.NumInstances = count;
     a.Flags = DRAW_FLAG_VERIFY_ALL;
     m_ctx->DrawIndexed(a);
+    ++m_drawCalls;
+}
+
+template <class F> void LitRenderer::drawRuns(F&& pass) {
+    const uint32_t n = (uint32_t)m_drawOrder.size();
+    uint32_t k = 0;
+    while (k < n) {
+        if (!pass(m_data.draws[m_drawOrder[k]])) { ++k; continue; }
+        const int mesh = m_data.draws[m_drawOrder[k]].mesh;
+        uint32_t e = k + 1;
+        while (e < n && m_data.draws[m_drawOrder[e]].mesh == mesh && pass(m_data.draws[m_drawOrder[e]])) ++e;
+        drawRange(mesh, k, e - k);
+        k = e;
+    }
 }
 
 void LitRenderer::render(const vp3d::Scene& scene, const Settings& settings, ITextureView* output, uint32_t width,
@@ -465,6 +496,8 @@ void LitRenderer::render(const vp3d::Scene& scene, const Settings& settings, ITe
                  sizeof(vp3d::gpu::GpuMaterial), "Lit materials");
     updateBuffer(m_lights, m_data.lights.data(), (uint32_t)(m_data.lights.size() * sizeof(vp3d::gpu::GpuLight)),
                  sizeof(vp3d::gpu::GpuLight), "Lit lights");
+    sortDraws();
+    m_drawCalls = 0;
 
     vp3d::lit::FrameSettings fs;
     fs.lightScale = settings.lightScale;
@@ -501,8 +534,7 @@ void LitRenderer::render(const vp3d::Scene& scene, const Settings& settings, ITe
     m_ctx->SetViewports(1, nullptr, kShadowSize, kShadowSize);
     if (castShadows) {
         usePipeline(P_SHADOW);
-        for (const vp3d::lit::Draw& d : m_data.draws)
-            if (!(d.flags & 7u) && !vp3d::lit::isTransparent(scene, d)) drawOne(d);
+        drawRuns([&](const vp3d::lit::Draw& d) { return !(d.flags & 7u) && !vp3d::lit::isTransparent(scene, d); });
     }
 
     // DDGI: probe captures (lit like the main pass, shadow map included), rays, blend; the main pass then reads the probes.
@@ -529,14 +561,11 @@ void LitRenderer::render(const vp3d::Scene& scene, const Settings& settings, ITe
     bg.NumVertices = 3;
     m_ctx->Draw(bg);
     usePipeline(P_MAIN);
-    for (const vp3d::lit::Draw& d : m_data.draws)
-        if (!(d.flags & 5u) && !vp3d::lit::isTransparent(scene, d)) drawOne(d);
-    usePipeline(P_TRANS);
-    for (const vp3d::lit::Draw& d : m_data.draws)
-        if (!(d.flags & 5u) && vp3d::lit::isTransparent(scene, d)) drawOne(d);
+    drawRuns([&](const vp3d::lit::Draw& d) { return !(d.flags & 5u) && !vp3d::lit::isTransparent(scene, d); });
+    usePipeline(P_TRANS);   // (transparent parts in mesh order, not sorted by depth)
+    drawRuns([&](const vp3d::lit::Draw& d) { return !(d.flags & 5u) && vp3d::lit::isTransparent(scene, d); });
     usePipeline(P_GHOST);
-    for (const vp3d::lit::Draw& d : m_data.draws)
-        if (d.flags & 1u) drawOne(d);
+    drawRuns([&](const vp3d::lit::Draw& d) { return (d.flags & 1u) != 0; });
 
     // 3) resolve
     if (m_msaa > 1) {
@@ -675,8 +704,7 @@ void LitRenderer::recordProbes(const vp3d::Scene& scene, const Settings& setting
     for (uint32_t s = 0; s < m_capSlots; ++s)
         for (uint32_t face = 0; face < 6; ++face) {
             faceConstants(s, face);
-            for (const vp3d::lit::Draw& d : m_data.draws)
-                if (!(d.flags & 7u) && !vp3d::lit::isTransparent(scene, d)) drawOne(d);
+            drawRuns([&](const vp3d::lit::Draw& d) { return !(d.flags & 7u) && !vp3d::lit::isTransparent(scene, d); });
         }
     m_ctx->SetRenderTargets(0, nullptr, nullptr, RESOURCE_STATE_TRANSITION_MODE_NONE);
 

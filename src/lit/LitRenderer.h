@@ -55,6 +55,7 @@ public:
                 uint32_t height);
 
     uint32_t msaaSamples() const { return m_msaa; }
+    uint32_t drawCalls() const { return m_drawCalls; }   // instanced draw calls of the last frame (all passes)
     // Probes baked by the editor (vp3d::lit::loadBakedProbes): read by the main pass as they are (Settings::bakedProbes).
     void setBakedProbes(const vp3d::lit::BakedProbes& probes);
     bool hasBakedProbes() const { return m_baked; }
@@ -67,7 +68,11 @@ private:
     void updateBuffer(RefCntAutoPtr<Diligent::IBuffer>& buf, const void* data, uint32_t size, uint32_t stride,
                       const char* name);
     void bindFrameResources();
-    void drawOne(const vp3d::lit::Draw& d);   // one mesh with its draw constants (vertex and index buffers bound)
+    // Instancing: the draw constants of the frame are uploaded once (m_drawBuf), sorted by mesh; drawRuns draws the
+    // runs of consecutive draws of one mesh that pass the filter with one instanced call each.
+    void sortDraws();
+    template <class F> void drawRuns(F&& pass);
+    void drawRange(int mesh, uint32_t first, uint32_t count);
     // DDGI: probe grid and atlases (on geometry or budget change), cube captures, then the two compute passes.
     void ensureProbes(const vp3d::Scene& scene, const Settings& settings);
     void recordProbes(const vp3d::Scene& scene, const Settings& settings);
@@ -92,6 +97,10 @@ private:
     vp3d::lit::SceneData m_data;
     RefCntAutoPtr<Diligent::IBuffer> m_vb, m_ib, m_materials, m_lights;
     RefCntAutoPtr<Diligent::IBuffer> m_rasterCB, m_drawCB, m_postCB;
+    RefCntAutoPtr<Diligent::IBuffer> m_drawBuf;        // DrawConstants of the frame, sorted by mesh (gDraws)
+    std::vector<uint32_t> m_drawOrder;                 // sorted slot -> index in m_data.draws
+    std::vector<vp3d::lit::DrawConstants> m_drawSorted;
+    uint32_t m_drawCalls = 0;
     std::vector<RefCntAutoPtr<Diligent::ITexture>> m_textures;   // MAX_TEXTURES slots (white when unused)
     std::vector<bool> m_textureValid;
     RefCntAutoPtr<Diligent::ITexture> m_white;

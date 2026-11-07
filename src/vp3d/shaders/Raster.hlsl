@@ -46,15 +46,21 @@ struct DrawConstants {
     float alpha;
     uint flags;
 };
-#ifdef VP3D_ATTRIB_SEMANTICS
+#if defined(VP3D_ATTRIB_SEMANTICS) && !defined(VP3D_LIT_INSTANCED)
 ConstantBuffer<DrawConstants> D : register(b1);
 #define DRAW_VS(iid)
 #define DRAW_PS(v)
 #else
-// Instanced draws (DirectX 12 viewport): the per-object constants of the frame sit in a buffer (t7), sorted by mesh;
-// a draw covers a run of instances starting at gDrawBase. D is set at the top of each entry point.
+// Instanced draws (DirectX 12 viewport, and Lit with VP3D_LIT_INSTANCED): the per-object constants of the frame sit
+// in a buffer, sorted by mesh; a draw covers a run of instances starting at gDrawBase. D is set at the top of each
+// entry point.
+#define VP3D_INSTANCED 1
 cbuffer DrawBase : register(b1) { uint gDrawBase; };
+#ifdef VP3D_ATTRIB_SEMANTICS
+StructuredBuffer<DrawConstants> gDraws : register(t24);   // (Lit: t4..t19 material textures, t20..t22 probes)
+#else
 StructuredBuffer<DrawConstants> gDraws : register(t7);
+#endif
 static DrawConstants D;
 #define DRAW_VS(iid) D = gDraws[gDrawBase + (iid)]
 #define DRAW_PS(v) D = gDraws[(v).inst]
@@ -294,8 +300,10 @@ struct VSOut {
     float2 uv : TEXCOORD;
     float3 opos : OBJPOS;   // object space position and normal (roughness mask projection)
     float3 onrm : OBJNRM;
-#ifndef VP3D_ATTRIB_SEMANTICS
+#ifdef VP3D_INSTANCED
     nointerpolation uint inst : INSTIDX;   // index in gDraws
+#endif
+#ifndef VP3D_ATTRIB_SEMANTICS
     // the position inside the triangle under MSAA (the pixel centre can be past an edge): where the bevel rays start
     centroid float3 cwpos : CWORLDPOS;
 #endif
@@ -309,7 +317,7 @@ float3 ToWorld(float3 p) {
 VSOut VSMain(VSIn i) {
     DRAW_VS(i.iid);
     VSOut o;
-#ifndef VP3D_ATTRIB_SEMANTICS
+#ifdef VP3D_INSTANCED
     o.inst = gDrawBase + i.iid;
 #endif
     o.wpos = ToWorld(i.pos);
@@ -845,7 +853,7 @@ float4 PSWire(VSOut i) : SV_Target {
 VSOut VSProbe(VSIn i) {
     DRAW_VS(i.iid);
     VSOut o;
-#ifndef VP3D_ATTRIB_SEMANTICS
+#ifdef VP3D_INSTANCED
     o.inst = gDrawBase + i.iid;
 #endif
     o.wpos = ToWorld(i.pos);
