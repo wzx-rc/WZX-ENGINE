@@ -33,6 +33,17 @@ static std::wstring wide(const std::string& s) {
     MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), w.data(), n);
     return w;
 }
+// file streams: wide paths on Windows (MSVC), UTF-8 with '/' elsewhere (BrickIt on the iPad)
+#ifdef _WIN32
+static const std::wstring& fsPath(const std::wstring& p) { return p; }
+#else
+static std::string fsPath(const std::wstring& p) {
+    std::string s = utf8(p);
+    for (char& c : s)
+        if (c == '\\') c = '/';
+    return s;
+}
+#endif
 
 // --------------------------------------------------------------------------- built-in values
 
@@ -303,7 +314,7 @@ static void derivePalette(ThemeDef& t, const bool given[13]) {
 }
 
 static bool loadThemeFile(const std::wstring& path, ThemeDef& t) {
-    std::ifstream f(path, std::ios::binary);
+    std::ifstream f(fsPath(path), std::ios::binary);
     if (!f) return false;
     t.style = editorStyle();
     std::string line;
@@ -537,7 +548,7 @@ void apply(float dpi) {
 // --------------------------------------------------------------------------- settings
 
 void loadSettings(const std::wstring& file) {
-    std::ifstream f(file);
+    std::ifstream f(fsPath(file));
     std::string line;
     while (std::getline(f, line)) {
         size_t eq = line.find('=');
@@ -623,7 +634,7 @@ void loadSettings(const std::wstring& file) {
 }
 
 void saveSettings(const std::wstring& file) {
-    std::ofstream f(file, std::ios::binary);
+    std::ofstream f(fsPath(file), std::ios::binary);
     if (!f) return;
     const UiSettings& s = g_settings;
     char a[64], m[64], sc[64], cm[64], ca[64];
