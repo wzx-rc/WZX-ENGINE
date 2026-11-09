@@ -1,0 +1,1 @@
+{ "name": "mb-mesh-tools", "private": true, "type": "module", "dependencies": { "meshoptimizer": "0.22.0" } }
