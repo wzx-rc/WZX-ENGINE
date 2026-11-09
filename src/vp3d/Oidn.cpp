@@ -1,4 +1,4 @@
-#include "Oidn.h"
+﻿#include "Oidn.h"
 #include <windows.h>
 #include <chrono>
 #include <cstring>
@@ -168,7 +168,7 @@ bool Oidn::ensureDevice(ID3D12Device* device) {
     else
         for (int i = 0; i < n; ++i)   // OIDN's own choice: its first physical device of that type
             if (g.GetPhysicalDeviceInt(i, "type") == type) { const char* s = g.GetPhysicalDeviceString(i, "name"); name = s ? s : ""; break; }
-    m_deviceName = std::string(typeName(type)) + (name.empty() ? "" : " · " + name);
+    m_deviceName = std::string(typeName(type)) + (name.empty() ? "" : " Â· " + name);
     const unsigned ext = (unsigned)g.GetDeviceInt(m_device, "externalMemoryTypes");
     m_importable = pick >= 0 && type != OIDN_DEVICE_TYPE_CPU &&
                    (ext & (OIDN_EXTERNAL_MEMORY_TYPE_FLAG_D3D12_RESOURCE | OIDN_EXTERNAL_MEMORY_TYPE_FLAG_OPAQUE_WIN32)) != 0;
@@ -260,6 +260,9 @@ bool Oidn::resize(ID3D12Device* device, uint32_t w, uint32_t h) {
     g.SetFilterImage(m_filter, "normal", m_inBuf, OIDN_FORMAT_FLOAT3, w, h, (size_t)plane * 2, 12, (size_t)w * 12);
     g.SetFilterImage(m_filter, "output", m_outBuf, OIDN_FORMAT_FLOAT3, w, h, 0, 12, (size_t)w * 12);
     g.SetFilterBool(m_filter, "hdr", true);
+    // the albedo and normal guides are accumulated like the colour (anti-aliased, nearly noise-free): cleanAux keeps the
+    // fine detail they show (thin lines, texture edges); VP3D_OIDN_CLEANAUX set turns it off (comparisons)
+    g.SetFilterBool(m_filter, "cleanAux", GetEnvironmentVariableA("VP3D_OIDN_CLEANAUX", nullptr, 0) == 0);
     g.SetFilterInt(m_filter, "quality", OIDN_QUALITY_HIGH);
     g.CommitFilter(m_filter);
     if (!check("filter")) { release(); return false; }

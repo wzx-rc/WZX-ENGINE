@@ -153,6 +153,15 @@ bool App::init(HINSTANCE inst, const Options& opt) {
     if (!opt.shotPath.empty() && opt.shotSeq == 0 && !m_rs.raster && !m_rs.ddgi) {
         m_rs.maxSamples = std::max(1, opt.shotSpp);
         m_rs.oidnBlendFrames = 0;
+        m_rs.dlss = false;   // (the still image: no DLSS frames at the start unless --dlss asks for them)
+    }
+    if (opt.adaptive >= 0) m_rs.adaptive = opt.adaptive != 0;
+    if (opt.adaptThreshold > 0) m_rs.adaptThreshold = opt.adaptThreshold;
+    if (opt.sppMap) m_rs.sppMap = true;
+    if (opt.shotGpuMs > 0) m_rs.maxSamples = 1 << 20;   // equal GPU time captures: no samples cap
+    if (opt.dlss >= 0) {   // --dlss 0 a-trous while moving, 1 DLSS Ray Reconstruction (optimal input), 2 DLSS at full size (DLAA)
+        m_rs.dlss = opt.dlss != 0;
+        m_rs.dlssInput = opt.dlss == 2 ? 1 : 0;
     }
     if (opt.camDist > 0) m_scene.camera.distance *= opt.camDist;   // test: camera closer (< 1) or further
     if (opt.camPitch > -100) m_scene.camera.pitch = radians(opt.camPitch);
@@ -654,7 +663,10 @@ void App::frame() {
             m_swayBase = m_scene.camera.yaw;
             if (!m_scene.objects.empty()) m_animBase = m_scene.objects[0].position.y;
         }
-        if (m_opt.sway > 0) m_scene.camera.yaw = m_swayBase + m_opt.sway * std::sin(t);
+        if (m_opt.sway > 0 && (m_opt.swayStop <= 0 || m_frameCounter <= m_opt.swayStop)) {   // (--sway-stop N: still from frame N)
+            m_scene.camera.yaw = m_swayBase + m_opt.sway * std::sin(t);
+            if (!m_rs.raster && !m_rs.ddgi) markDirty();   // progressive: a moving camera restarts the accumulation, as in use
+        }
         if (m_opt.anim && !m_scene.objects.empty()) {
             m_scene.objects[0].position.y = m_animBase + 3.0f * (0.5f - 0.5f * std::cos(t));
             markDirty();
@@ -724,7 +736,11 @@ void App::frame() {
         m_renderer.present(true);
         return;
     }
-    if (!m_opt.shotPath.empty() && (moving ? m_frameCounter >= m_opt.shotSpp : ((int)m_renderer.sampleCount() >= m_opt.shotSpp || !m_viewportRendered)) && m_frameCounter > (m_opt.gizmoDemo.empty() && m_opt.openMenu.empty() ? 6 : 12)) {   // (a menu opened at frame 10: captured after)
+    // --shot-gpu-ms: equal GPU time captures (adaptive sampling tests), the GPU time of the accumulation summed
+    if (m_opt.shotGpuMs > 0 && m_renderer.sampleCount() > 0 && m_frameCounter > 6) m_shotGpuAcc += m_renderer.gpuFrameMs();
+    const bool shotReady = m_opt.shotGpuMs > 0 ? m_shotGpuAcc >= m_opt.shotGpuMs
+                                               : ((int)m_renderer.sampleCount() >= m_opt.shotSpp || !m_viewportRendered);
+    if (!m_opt.shotPath.empty() && (moving ? m_frameCounter >= m_opt.shotSpp : shotReady) && m_frameCounter > (m_opt.gizmoDemo.empty() && m_opt.openMenu.empty() ? 6 : 12)) {   // (a menu opened at frame 10: captured after)
         std::vector<uint8_t> img;
         uint32_t w, h;
         bool ok = m_opt.shotViewport ? m_renderer.readViewport(img, w, h) : m_renderer.readBackBuffer(img, w, h);
@@ -740,6 +756,8 @@ void App::frame() {
             if (m_renderer.oidnRuns() > 0 || m_renderer.oidnFailed())   // Open Image Denoise of the progressive view
                 fprintf(tf, "oidn_device=%s oidn_ms=%.1f oidn_runs=%d oidn_spp=%u status=%s\n", m_renderer.oidnDevice().c_str(),
                         m_renderer.oidnMs(), m_renderer.oidnRuns(), m_renderer.oidnSamples(), m_renderer.oidnStatus().c_str());
+            fprintf(tf, "spp=%u gpu_total_ms=%.0f dlss=%d dlss_input=%ux%u dlss_status=%s\n", m_renderer.sampleCount(), m_shotGpuAcc,
+                    m_renderer.dlssActive() ? 1 : 0, m_renderer.dlssInputW(), m_renderer.dlssInputH(), m_renderer.dlssStatus().c_str());
             fclose(tf);
         }
         if (const char* dump = getenv("VP3D_DUMP_CAPTURE")) {   // debug: the probe cube captures of the last frame
@@ -1308,6 +1326,11 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         else if (a == L"--shot-viewport") { opt.shotPath = next(); opt.shotViewport = true; }
         else if (a == L"--spp") opt.shotSpp = _wtoi(next().c_str());
         else if (a == L"--denoiser") opt.denoiser = _wtoi(next().c_str());
+        else if (a == L"--dlss") opt.dlss = _wtoi(next().c_str());
+        else if (a == L"--adaptive") opt.adaptive = _wtoi(next().c_str());
+        else if (a == L"--adapt-threshold") opt.adaptThreshold = (float)_wtof(next().c_str());
+        else if (a == L"--spp-map") opt.sppMap = _wtoi(next().c_str()) != 0;
+        else if (a == L"--shot-gpu-ms") opt.shotGpuMs = (float)_wtof(next().c_str());
         else if (a == L"--view") opt.view = _wtoi(next().c_str());
         else if (a == L"--select") opt.select = _wtoi(next().c_str());
         else if (a == L"--curve-test") opt.curveTest = next();
@@ -1360,6 +1383,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         else if (a == L"--show-probes") opt.showProbes = _wtoi(next().c_str()) != 0;
         else if (a == L"--baked") opt.baked = _wtoi(next().c_str()) != 0;
         else if (a == L"--sway") opt.sway = (float)_wtof(next().c_str());
+        else if (a == L"--sway-stop") opt.swayStop = _wtoi(next().c_str());
         else if (a == L"--anim") opt.anim = _wtoi(next().c_str()) != 0;
         else if (a == L"--stat") opt.statPath = next();
         else if (a == L"--stat-from") opt.statFrom = _wtoi(next().c_str());

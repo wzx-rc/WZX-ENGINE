@@ -356,6 +356,11 @@ std::string App::wzxSceneJson(bool withCamera, const std::function<std::string(c
     w.num("denoiseEdgeLuma", rs.denoiseEdgeLuma);
     w.boolean("oidn", rs.oidn);
     w.integer("oidnInterval", rs.oidnInterval);
+    w.boolean("dlss", rs.dlss);
+    w.integer("dlssInput", rs.dlssInput);
+    w.boolean("adaptive", rs.adaptive);
+    w.num("adaptThreshold", rs.adaptThreshold);
+    w.integer("adaptMinSpp", rs.adaptMinSpp);
     w.boolean("bevel", rs.bevel);
     w.num("bevelScale", rs.bevelScale);
     w.num("fireflyClamp", rs.fireflyClamp);
@@ -571,6 +576,11 @@ void App::loadWzxScene(const Json& j, const std::wstring& path) {
         rs.denoiseEdgeLuma = f(rj["denoiseEdgeLuma"], rs.denoiseEdgeLuma);
         rs.oidn = flag(rj["oidn"], rs.oidn);
         rs.oidnInterval = std::max(1, (int)rj["oidnInterval"].num(rs.oidnInterval));
+        rs.dlss = flag(rj["dlss"], rs.dlss);
+        rs.dlssInput = std::clamp((int)rj["dlssInput"].num(rs.dlssInput), 0, 1);
+        rs.adaptive = flag(rj["adaptive"], rs.adaptive);
+        rs.adaptThreshold = f(rj["adaptThreshold"], rs.adaptThreshold);
+        rs.adaptMinSpp = std::max(2, (int)rj["adaptMinSpp"].num(rs.adaptMinSpp));
         rs.bevel = flag(rj["bevel"], rs.bevel);
         rs.bevelScale = f(rj["bevelScale"], rs.bevelScale);
         rs.fireflyClamp = f(rj["fireflyClamp"], rs.fireflyClamp);

@@ -103,6 +103,11 @@ struct Options {
     bool shotViewport = false;  // the auto screenshot is the 3D viewport only (--shot-viewport)
     int shotSpp = 256;
     int denoiser = -1;          // --denoiser: 0 off, 1 a-trous, 2 Open Image Denoise (-1: the default of the mode)
+    int dlss = -1;              // --dlss: 0 a-trous while the view moves, 1 DLSS Ray Reconstruction, 2 DLAA input (-1: default)
+    int adaptive = -1;          // --adaptive 0/1: adaptive sampling of the progressive mode (-1: default)
+    float adaptThreshold = -1;  // --adapt-threshold: its noise threshold
+    bool sppMap = false;        // --spp-map 1: heat map of the samples per pixel
+    float shotGpuMs = 0;        // --shot-gpu-ms: capture once the accumulation used this much GPU time (equal-time tests)
     int view = -1;
     int select = -1;
     int tool = -1;              // test: start with this tool (1 move, 2 rotate)
@@ -144,6 +149,7 @@ struct Options {
     // Stability tests: camera yaw oscillation (radians, 2 s period), first object bobbing, and the flicker statistics
     // (per-pixel standard deviation of the luminance over statFrames frames from statFrom, written to statPath).
     float sway = 0.0f;
+    int swayStop = 0;           // --sway-stop N: the sway stops at frame N (the view still after a move)
     bool anim = false;
     std::wstring statPath;
     int statFrom = 60, statFrames = 120;
@@ -757,6 +763,7 @@ private:
     RenderSettings m_rs;
     int m_quality = 1;          // 0 interactive, 1 final
     int m_adaptiveSpp = 1;
+    float m_shotGpuAcc = 0.0f;   // GPU time of the accumulation so far (--shot-gpu-ms)
     bool m_interacting = false;
     ViewRect m_vpPx;            // viewport image size in pixels
     ScreenRect m_rcView;        // viewport image rectangle on screen

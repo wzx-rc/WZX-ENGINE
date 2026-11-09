@@ -788,6 +788,23 @@ float3 TracePath(float3 o, float3 d, inout uint rng, inout Guides g) {
 }
 
 #ifndef VP3D_NO_MAIN   // the DDGI shaders include this file for its helpers
+// Adaptive sampling: per pixel, the sum of the squared luminance of its samples (with the sum and the count of
+// TEX_ACCUM, the variance of its mean)
+RWTexture2D<float> gLumSq : register(u28);
+
+// Estimated error of the pixel's mean: its standard error over the square root of its luminance (perceptual: the same
+// absolute noise matters more in the dark). 0 for a pixel without samples.
+float PixelError(int2 q) {
+    q = clamp(q, int2(0, 0), int2(F.resolution) - 1);
+    float4 a = gTex[SLOT_ACCUM][q];
+    if (a.w < 2.0) return 1e9;
+    float mean = Luminance(a.rgb) / a.w;
+    float var = max(gLumSq[q] / a.w - mean * mean, 0.0);
+    return sqrt(var / a.w) / sqrt(max(mean, 1e-3));
+}
+
+groupshared uint gsTileNeeds;   // adaptive sampling: a pixel of this 8 x 8 tile still needs samples
+
 [numthreads(8, 8, 1)]
 void main(uint3 tid : SV_DispatchThreadID) {
     // traceStride 4: a quarter-resolution dispatch, each thread traces one pixel of its 2 x 2 block, the block pixel
@@ -795,10 +812,33 @@ void main(uint3 tid : SV_DispatchThreadID) {
     uint2 px = tid.xy;
     if (F.traceStride == 4) { uint k = F.frameIndex & 3u; px = tid.xy * 2u + uint2((k == 1u || k == 2u) ? 1u : 0u, k >> 1); }
     const uint3 id = uint3(px, 0);
-    if (id.x >= F.resolution.x || id.y >= F.resolution.y) return;
+    const bool inside = id.x < F.resolution.x && id.y < F.resolution.y;
+    // Adaptive sampling, per 8 x 8 tile (the GPU runs a tile as a whole: a tile skips only when all its pixels can):
+    // after adaptMinSpp samples, a pixel needs more while its error is over adaptThreshold * sqrt(minSpp * n) / N
+    // (n its samples, N the frame's): tightening with N as the noise of uniform sampling does, so no pixel stops for
+    // good, and lower for a pixel that lags, so the samples go to each pixel in proportion to its noise. A skipped
+    // tile keeps its accumulation and guides as they are.
+    if (F.flags & FRAME_FLAG_ADAPTIVE) {
+        if (all(tid.xy % 8u == 0u)) gsTileNeeds = 0u;
+        GroupMemoryBarrierWithGroupSync();
+        bool needs = false;
+        if (inside) {
+            const float n = F.sampleIndex == 0 ? 0.0 : gTex[SLOT_ACCUM][id.xy].w;
+            needs = n < (float)F.adaptMinSpp;
+            if (!needs) {
+                const float N = max((float)F.sampleIndex, (float)F.adaptMinSpp);
+                needs = PixelError(int2(id.xy)) >= F.adaptThreshold * sqrt((float)F.adaptMinSpp * n) / N;
+            }
+        }
+        if (needs) InterlockedOr(gsTileNeeds, 1u);
+        GroupMemoryBarrierWithGroupSync();
+        if (gsTileNeeds == 0u) return;
+    }
+    if (!inside) return;
     uint rng = Hash(id.x + id.y * 65521u + Hash(F.frameIndex * 9781u + 1u));
 
     float3 sum = 0;
+    float lumSq = 0;
     Guides gAcc = (Guides)0;
     float3 albedoSum = 0, normalSum = 0;
     float depthSum = 0;
@@ -806,6 +846,7 @@ void main(uint3 tid : SV_DispatchThreadID) {
 
     for (uint sIdx = 0; sIdx < F.samplesPerFrame; ++sIdx) {
         float2 jitter = (F.sampleIndex == 0 && sIdx == 0) ? float2(0.5, 0.5) : Rnd2(rng);
+        if (F.jitterOn != 0u && sIdx == 0) jitter = float2(F.jitterX, F.jitterY);   // DLSS: its jitter sequence
         float2 uv = (float2(id.xy) + jitter) / float2(F.resolution);
         float2 ndc = float2(2.0 * uv.x - 1.0, 1.0 - 2.0 * uv.y);
         float3 org, dir;
@@ -822,6 +863,7 @@ void main(uint3 tid : SV_DispatchThreadID) {
         float lum = Luminance(L);
         if (lum > F.fireflyClamp) L *= F.fireflyClamp / lum;
         sum += L;
+        lumSq += Luminance(L) * Luminance(L);
         albedoSum += g.albedo;
         normalSum += g.normal;
         depthSum += g.depth;
@@ -831,8 +873,10 @@ void main(uint3 tid : SV_DispatchThreadID) {
     float n = (float)F.samplesPerFrame;
     float4 acc = F.sampleIndex == 0 ? 0 : gTex[SLOT_ACCUM][id.xy];
     gTex[SLOT_ACCUM][id.xy] = acc + float4(sum, n);
+    gLumSq[id.xy] = (F.sampleIndex == 0 ? 0.0 : gLumSq[id.xy]) + lumSq;
 
-    float prevN = (float)F.sampleIndex;
+    // the guides are averaged over the samples of this pixel (its own count: adaptive sampling, trace stride)
+    float prevN = acc.w;
     float4 alb = gTex[SLOT_ALBEDO][id.xy];
     float4 nd = gTex[SLOT_NORMAL][id.xy];
     if (F.sampleIndex == 0) {

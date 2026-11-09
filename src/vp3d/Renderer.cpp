@@ -137,7 +137,8 @@ bool Renderer::init(HWND hwnd, uint32_t width, uint32_t height, const std::wstri
 
     D3D12_DESCRIPTOR_HEAP_DESC hd = {};
     hd.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-    hd.NumDescriptors = kViewHeapBase + kMaxViews * kViewHeapStride;  // (extra views last) + shadow map SRV + material textures + DDGI UAVs + history UAVs + HDRI SRV + capture UAVs + probe SRVs + screen GI, sun shadow and reflection views + selection, depth, bevel
+    static_assert(kMaxViewsHeap == (uint32_t)kMaxViews, "kDlssHeapBase follows the extra views");
+    hd.NumDescriptors = kDlssHeapBase + 6;  // (extra views, then the DLSS guides and the adaptive sampling texture) + shadow map SRV + material textures + DDGI UAVs + history UAVs + HDRI SRV + capture UAVs + probe SRVs + screen GI, sun shadow and reflection views + selection, depth, bevel
     hd.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
     m_device->CreateDescriptorHeap(&hd, IID_PPV_ARGS(&m_heap));
     m_descSize = m_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
@@ -262,7 +263,15 @@ bool Renderer::createPipelines(std::string* error) {
     selRange.NumDescriptors = 2;   // t8 coverage of the selection, t9 viewport depth (ambient occlusion)
     selRange.BaseShaderRegister = 8;
 
-    D3D12_ROOT_PARAMETER p[24] = {};
+    D3D12_DESCRIPTOR_RANGE dlssRange = {};   // u23..u27 guide images of DLSS Ray Reconstruction (DlssPack.hlsl)
+    dlssRange.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_UAV;
+    dlssRange.NumDescriptors = 6;   // + u28 squared luminance of the adaptive sampling (PathTrace.hlsl)
+    dlssRange.BaseShaderRegister = 23;
+
+    D3D12_ROOT_PARAMETER p[25] = {};
+    p[24].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+    p[24].DescriptorTable.NumDescriptorRanges = 1;
+    p[24].DescriptorTable.pDescriptorRanges = &dlssRange;
     p[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
     p[0].Descriptor.ShaderRegister = 0;
     p[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
@@ -321,7 +330,7 @@ bool Renderer::createPipelines(std::string* error) {
     ss.ShaderRegister = 0;
 
     D3D12_ROOT_SIGNATURE_DESC rsd = {};
-    rsd.NumParameters = 24;
+    rsd.NumParameters = 25;
     rsd.pParameters = p;
     rsd.NumStaticSamplers = 1;
     rsd.pStaticSamplers = &ss;
@@ -353,6 +362,7 @@ bool Renderer::createPipelines(std::string* error) {
         error = &ignore;
         if (!make(L"SSAO.cso", m_psoSSAO) || !make(L"SSAO_MS.cso", m_psoSSAOMS) || !make(L"SSAOBlur.cso", m_psoSSAOBlur)) { m_psoSSAO.Reset(); m_psoSSAOMS.Reset(); m_psoSSAOBlur.Reset(); }
         if (!make(L"OidnPack.cso", m_psoOidn)) m_psoOidn.Reset();   // Open Image Denoise passes: optional too
+        if (!make(L"DlssPack.cso", m_psoDlssPack)) m_psoDlssPack.Reset();   // DLSS guide images: optional too
         error = keep;
     }
     return make(L"PathTrace.cso", m_psoTrace) && make(L"Denoise.cso", m_psoDenoise) && make(L"Tonemap.cso", m_psoTonemap) && make(L"GIFade.cso", m_psoGIFade) &&
@@ -424,6 +434,26 @@ void Renderer::createTargets(uint32_t w, uint32_t h) {
         m_device->CreateUnorderedAccessView(m_hist[i].Get(), nullptr, &u, hnd);
     }
     m_historyValid = false;
+    {   // adaptive sampling: squared luminance per pixel (UAV u28, after the DLSS guides)
+        D3D12_RESOURCE_DESC d = {};
+        d.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+        d.Width = w;
+        d.Height = h;
+        d.DepthOrArraySize = 1;
+        d.MipLevels = 1;
+        d.Format = DXGI_FORMAT_R32_FLOAT;
+        d.SampleDesc.Count = 1;
+        d.Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
+        m_lumSq.Reset();
+        m_device->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &d, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, nullptr,
+                                          IID_PPV_ARGS(&m_lumSq));
+        D3D12_UNORDERED_ACCESS_VIEW_DESC u = {};
+        u.Format = d.Format;
+        u.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
+        D3D12_CPU_DESCRIPTOR_HANDLE hnd = cpu;
+        hnd.ptr += (SIZE_T)(kDlssHeapBase + 5) * m_descSize;
+        m_device->CreateUnorderedAccessView(m_lumSq.Get(), nullptr, &u, hnd);
+    }
     {   // screen GI texture of the screen-space cascades (UAV u17, SRV t7 of the raster pass)
         D3D12_RESOURCE_DESC d = {};
         d.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
@@ -500,6 +530,7 @@ void Renderer::createTargets(uint32_t w, uint32_t h) {
 void Renderer::shutdown() {
     if (!m_device) return;
     waitIdle();
+    m_dlss.shutdown(m_device.Get());
     if (m_fenceEvent) CloseHandle(m_fenceEvent);
     m_fenceEvent = nullptr;
 }
@@ -2381,7 +2412,12 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
     fc.flags = (cam.dof ? FRAME_FLAG_DOF : 0) | (rs.bevel ? FRAME_FLAG_BEVEL : 0) | (rs.denoise ? FRAME_FLAG_DENOISE : 0) |
                (scene.env.visibleToCamera ? FRAME_FLAG_ENV_VISIBLE : 0) | (rs.ddgi && !rs.raster ? FRAME_FLAG_ID_EDGES : 0) |
                (rs.ddgi && !rs.raster && rs.historyFixes ? FRAME_FLAG_CENTRE_VALID : 0u) |
-               (envMap ? FRAME_FLAG_ENV_MAP : 0u);
+               (envMap ? FRAME_FLAG_ENV_MAP : 0u) |
+               (rs.adaptive && !rs.raster && !rs.ddgi ? FRAME_FLAG_ADAPTIVE : 0u) |
+               (rs.sppMap && !rs.raster && !rs.ddgi ? FRAME_FLAG_SPP_MAP : 0u);
+    fc.adaptThreshold = rs.adaptThreshold;
+    fc.adaptMinSpp = (uint32_t)std::max(2, rs.adaptMinSpp);
+    fc.maxSamplesPx = (uint32_t)std::max(1, rs.maxSamples);
     fc.envTop = scene.env.top;
     fc.envIntensity = scene.env.intensity;
     fc.envHorizon = scene.env.horizon;
@@ -2576,6 +2612,53 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
 
     bool traced = false;
     m_cmd->EndQuery(m_queryHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 0);
+    // DLSS Ray Reconstruction while the view moves (rs.dlss): the app restarts the accumulation at each change of the
+    // view (m_sampleIndex 0). DLSS frames follow (one sample per pixel at its input size, upscaled and denoised) until
+    // the view stayed still rs.dlssHold seconds; then the full-size accumulation starts, the last DLSS image shown until
+    // OIDN's first one fades in (m_dlssHandoff). A DLSS frame leaves m_sampleIndex at 1: not an accumulation sample,
+    // only the mark that no new change came.
+    const bool dlssOn = rs.denoise && rs.dlss && !rs.ddgi && toBackBuffer && m_psoDlssPack && dlssAvailable() && !m_dlss.failed();
+    bool dlssFrame = false;
+    const bool prevWasDlss = m_dlssLastFrame;   // the last frame was a DLSS frame (m_sampleIndex holds its mark)
+    m_dlssLastFrame = false;
+    if (dlssOn) {
+        LARGE_INTEGER qc, qf;
+        QueryPerformanceCounter(&qc);
+        QueryPerformanceFrequency(&qf);
+        const double now = (double)qc.QuadPart / (double)qf.QuadPart;
+        if (m_sampleIndex == 0) { m_dlssMoveT = now; m_dlssMoving = true; }
+        if (m_dlssMoving) {
+            if (now - m_dlssMoveT < rs.dlssHold) dlssFrame = true;
+            else {
+                m_dlssMoving = false;
+                m_dlssHandoff = m_dlssHistory;   // a DLSS image is in TEX_DENOISE_A
+            }
+        }
+    } else {
+        m_dlssMoving = m_dlssHandoff = m_dlssHistory = false;
+    }
+    // A new full-size accumulation after DLSS frames (their mark m_sampleIndex 1 is in the constants already sent): the
+    // constants of this frame say sample 0 again, so the path tracer overwrites TEX_ACCUM instead of adding to what it
+    // holds (the last DLSS sample in the input rectangle, the accumulation from before the move elsewhere)
+    auto restartAccumulation = [&]() {
+        m_sampleIndex = 0;
+        fc.sampleIndex = 0;
+        fc.traceStride = 1;
+        memcpy(m_constants.mapped, &fc, sizeof(fc));
+        memcpy(m_lastFc, &fc, sizeof(fc));
+    };
+    if (!dlssFrame && prevWasDlss) restartAccumulation();   // (also when DLSS was just turned off)
+    uint32_t shownSlot = 0xFFFFFFFFu;   // the slot of an image that is radiance itself (OIDN, DLSS), not demodulated
+    if (dlssFrame && renderDlss(scene, rs, vp, fc)) {
+        shownSlot = TEX_DENOISE_A;
+        m_denoisedSlot = 0xFFFFFFFFu;
+        m_oidnShown = false;
+        m_oidnLast = 0;
+        m_dlssLastFrame = true;
+        m_sampleIndex = 1;
+        traced = true;
+    } else {
+    if (dlssFrame) { m_dlssMoving = m_dlssHandoff = false; restartAccumulation(); }   // DLSS failed: the usual frame
     // Open Image Denoise (rs.oidn): a new accumulation drops its image (the a-trous filter shows the moving view);
     // once the view stayed still a frame, OIDN denoises at the samples of the schedule (oidnDue), its image faded in
     // (not in the offscreen renders, the camera thumbnails: their size would reallocate OIDN's buffers each time)
@@ -2594,7 +2677,7 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
                                       D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
         m_cmd->SetPipelineState(m_psoOidn.Get());
         m_cmd->SetComputeRootUnorderedAccessView(22, m_oidnFrom.va());
-        const uint32_t from = m_oidnShown ? (0x80000000u | (uint32_t)TEX_DENOISE_A)
+        const uint32_t from = (m_oidnShown || m_dlssHandoff) ? (0x80000000u | (uint32_t)TEX_DENOISE_A)
                                           : (rs.denoise && m_denoisedSlot != 0xFFFFFFFFu ? m_denoisedSlot : 0xFFFFFFFFu);
         uint32_t c[4] = {1u, from, 0u, 0u};
         m_cmd->SetComputeRoot32BitConstants(1, 4, c, 0);
@@ -2624,8 +2707,9 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
     // The denoised image shown: OIDN's, faded in from the last image; else the edge-aware a-trous denoiser
     // (rs.denoisePasses passes), only when new samples arrived.
     uint32_t& denoisedSlot = m_denoisedSlot;
-    uint32_t shownSlot = 0xFFFFFFFFu;   // OIDN: the slot of its image (radiance, not demodulated)
+    if (!oidnOn) m_dlssHandoff = false;
     if (oidnOn && m_oidnShown) {
+        m_dlssHandoff = false;
         m_cmd->SetPipelineState(m_psoOidn.Get());
         m_cmd->SetComputeRootUnorderedAccessView(19, m_oidn.output()->GetGPUVirtualAddress());
         m_cmd->SetComputeRootUnorderedAccessView(22, m_oidnFrom.va());
@@ -2638,6 +2722,9 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
         uavBarrier();
         shownSlot = TEX_DENOISE_A;
         denoisedSlot = 0xFFFFFFFFu;   // the a-trous image is gone: redone when it is shown again
+    } else if (m_dlssHandoff) {      // the last DLSS image, until OIDN's first one
+        shownSlot = TEX_DENOISE_A;
+        denoisedSlot = 0xFFFFFFFFu;
     } else if (rs.denoise) {
         if (traced || denoisedSlot == 0xFFFFFFFF) {
             m_cmd->SetPipelineState(m_psoDenoise.Get());
@@ -2655,6 +2742,8 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
     } else {
         denoisedSlot = 0xFFFFFFFF;
     }
+    }   // (not a DLSS frame)
+    uint32_t& denoisedSlot = m_denoisedSlot;
 
     // editor overlay (grid, wireframe) drawn by the raster pass into the denoise slot not holding the image
     uint32_t overlay = 0;
@@ -2740,6 +2829,9 @@ void Renderer::bindCompute() {
     envTable.ptr += (UINT64)kEnvHeapSlot * m_descSize;
     m_cmd->SetComputeRootShaderResourceView(13, m_envDist.va());
     m_cmd->SetComputeRootDescriptorTable(14, envTable);
+    D3D12_GPU_DESCRIPTOR_HANDLE dlssTable = m_heap->GetGPUDescriptorHandleForHeapStart();
+    dlssTable.ptr += (UINT64)kDlssHeapBase * m_descSize;
+    m_cmd->SetComputeRootDescriptorTable(24, dlssTable);   // u23..u27 DLSS guides, u28 adaptive sampling
 }
 
 bool Renderer::oidnAvailable() {
@@ -2782,6 +2874,157 @@ bool Renderer::runOidn(UINT gx, UINT gy, uint32_t w, uint32_t h) {
         transition(m_oidn.output(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
     }
     return ok;
+}
+
+bool Renderer::dlssAvailable() {
+    static const bool present = [] {
+        if (!Dlss::compiled()) return false;
+        wchar_t exe[MAX_PATH] = {};
+        GetModuleFileNameW(nullptr, exe, MAX_PATH);
+        std::wstring dir = exe;
+        dir = dir.substr(0, dir.find_last_of(L"\\/"));
+        return GetFileAttributesW((dir + L"\\nvngx_dlssd.dll").c_str()) != INVALID_FILE_ATTRIBUTES;
+    }();
+    return present;
+}
+
+namespace {
+float halton(uint32_t i, uint32_t b) {
+    float f = 1.0f, r = 0.0f;
+    while (i > 0) { f /= (float)b; r += f * (float)(i % b); i /= b; }
+    return r;
+}
+} // namespace
+
+// One DLSS Ray Reconstruction frame of the moving view: the path tracer at DLSS's input size (one jittered sample per
+// pixel, TEX_ACCUM top-left), its guide images (DlssPack.hlsl), then DLSS into TEX_DENOISE_A at the viewport size.
+// False when DLSS cannot run (its status says why): the caller renders the usual frame.
+bool Renderer::renderDlss(const Scene& scene, const RenderSettings& rs, const ViewRect& vp, const gpu::FrameConstants& fc) {
+    if (!m_dlss.ensure(m_device.Get())) return false;
+    const uint32_t outW = (uint32_t)vp.w, outH = (uint32_t)vp.h;
+    uint32_t inW = outW, inH = outH;
+    m_dlss.inputSize(outW, outH, rs.dlssInput, inW, inH);
+    inW = std::max(1u, std::min(inW, outW));
+    inH = std::max(1u, std::min(inH, outH));
+    if (m_dlss.needsFeature(inW, inH, outW, outH, rs.dlssInput)) {   // the GPU may still use the old one
+        waitIdle();
+        m_dlss.releaseFeature();
+        m_dlssHistory = false;
+    }
+    if (m_dlssTexW != outW || m_dlssTexH != outH) {   // guide images, the viewport size (DLSS reads the input subrect)
+        waitIdle();
+        const DXGI_FORMAT fm[5] = {DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_R16G16B16A16_FLOAT, DXGI_FORMAT_R16G16B16A16_FLOAT,
+                                   DXGI_FORMAT_R32_FLOAT, DXGI_FORMAT_R16G16_FLOAT};
+        auto hp = heapProps(D3D12_HEAP_TYPE_DEFAULT);
+        D3D12_CPU_DESCRIPTOR_HANDLE cpu = m_heap->GetCPUDescriptorHandleForHeapStart();
+        for (int k = 0; k < 5; ++k) {
+            D3D12_RESOURCE_DESC d = {};
+            d.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+            d.Width = outW;
+            d.Height = outH;
+            d.DepthOrArraySize = 1;
+            d.MipLevels = 1;
+            d.Format = fm[k];
+            d.SampleDesc.Count = 1;
+            d.Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
+            m_dlssTex[k].Reset();
+            if (FAILED(m_device->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &d, D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+                                                         nullptr, IID_PPV_ARGS(&m_dlssTex[k]))))
+                return false;
+            D3D12_UNORDERED_ACCESS_VIEW_DESC u = {};
+            u.Format = fm[k];
+            u.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
+            D3D12_CPU_DESCRIPTOR_HANDLE h = cpu;
+            h.ptr += (SIZE_T)(kDlssHeapBase + k) * m_descSize;
+            m_device->CreateUnorderedAccessView(m_dlssTex[k].Get(), nullptr, &u, h);
+        }
+        m_dlssTexW = outW;
+        m_dlssTexH = outH;
+        m_dlssHistory = false;
+    }
+    if (!m_dlssConstants.res)
+        m_dlssConstants = createBuffer(256 * 4, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ);
+
+    // the frame constants of the input size: one sample per pixel at the jitter of the Halton (2, 3) sequence
+    gpu::FrameConstants d = fc;
+    d.resolution = {inW, inH};
+    d.sampleIndex = 0;
+    d.samplesPerFrame = 1;
+    d.traceStride = 1;
+    const uint32_t j = (m_dlssFrame % 32u) + 1u;
+    d.jitterX = halton(j, 2);
+    d.jitterY = halton(j, 3);
+    d.jitterOn = 1u;
+    if (!m_dlssHistory) {   // the first DLSS frame: no previous camera of its own
+        d.prevCamPos = fc.camPos; d.prevCamRight = fc.camRight; d.prevCamUp = fc.camUp; d.prevCamFwd = fc.camFwd;
+        d.prevTanHalfFovY = fc.tanHalfFovY; d.prevAspect = fc.aspect; d.prevOrthoHalfH = fc.orthoHalfH; d.prevOrthoBack = fc.orthoBack;
+    }
+    memcpy(m_dlssConstants.mapped, &d, sizeof(d));
+    const uint32_t xf = transformSig(scene);
+    const bool reset = !m_dlssHistory || xf != m_dlssXfSig;   // (moved objects have no motion vectors of their own)
+    m_dlssXfSig = xf;
+
+    m_cmd->SetComputeRootConstantBufferView(0, m_dlssConstants.va());
+    m_cmd->SetPipelineState(m_psoTrace.Get());
+    m_cmd->Dispatch((inW + 7) / 8, (inH + 7) / 8, 1);
+    uavBarrier();
+    m_cmd->SetPipelineState(m_psoDlssPack.Get());
+    D3D12_GPU_DESCRIPTOR_HANDLE dt = m_heap->GetGPUDescriptorHandleForHeapStart();
+    dt.ptr += (UINT64)kDlssHeapBase * m_descSize;
+    m_cmd->SetComputeRootDescriptorTable(24, dt);
+    m_cmd->Dispatch((inW + 7) / 8, (inH + 7) / 8, 1);
+    uavBarrier();
+
+    ID3D12Resource* inputs[6] = {m_tex[TEX_ACCUM].Get(), m_dlssTex[0].Get(), m_dlssTex[1].Get(), m_dlssTex[2].Get(),
+                                 m_dlssTex[3].Get(), m_dlssTex[4].Get()};
+    for (ID3D12Resource* r : inputs)
+        transition(r, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+
+    Dlss::Eval e = {};
+    e.color = m_tex[TEX_ACCUM].Get();
+    e.diffuseAlbedo = m_dlssTex[0].Get();
+    e.specularAlbedo = m_dlssTex[1].Get();
+    e.normalRoughness = m_dlssTex[2].Get();
+    e.depth = m_dlssTex[3].Get();
+    e.motion = m_dlssTex[4].Get();
+    e.output = m_tex[TEX_DENOISE_A].Get();
+    e.inW = inW; e.inH = inH; e.outW = outW; e.outH = outH;
+    e.mode = rs.dlssInput;
+    e.jitterX = d.jitterX - 0.5f;
+    e.jitterY = d.jitterY - 0.5f;
+    e.reset = reset;
+    // world to view (x right, y up, z forward: the linear depth of DlssPack.hlsl) and view to clip, row-major
+    const float3 r = fc.camRight, u = fc.camUp, f = fc.camFwd;
+    const float3 eye = fc.orthoHalfH > 0 ? fc.camPos - f * fc.orthoBack : fc.camPos;
+    const float V[16] = {r.x, r.y, r.z, -dot(r, eye), u.x, u.y, u.z, -dot(u, eye), f.x, f.y, f.z, -dot(f, eye), 0, 0, 0, 1};
+    memcpy(e.worldToView, V, sizeof(V));
+    const float zn = std::max(m_sceneRadius * 1e-3f, 1e-3f), zf = std::max(m_sceneRadius * 100.0f, 100.0f);
+    if (fc.orthoHalfH > 0) {
+        const float P[16] = {1.0f / (fc.orthoHalfH * fc.aspect), 0, 0, 0, 0, 1.0f / fc.orthoHalfH, 0, 0,
+                             0, 0, 1.0f / (zf - zn), -zn / (zf - zn), 0, 0, 0, 1};
+        memcpy(e.viewToClip, P, sizeof(P));
+    } else {
+        const float P[16] = {1.0f / (fc.tanHalfFovY * fc.aspect), 0, 0, 0, 0, 1.0f / fc.tanHalfFovY, 0, 0,
+                             0, 0, zf / (zf - zn), -zn * zf / (zf - zn), 0, 0, 1, 0};
+        memcpy(e.viewToClip, P, sizeof(P));
+    }
+    LARGE_INTEGER qc, qf;
+    QueryPerformanceCounter(&qc);
+    QueryPerformanceFrequency(&qf);
+    const double now = (double)qc.QuadPart / (double)qf.QuadPart;
+    e.frameMs = m_dlssPrevT > 0 ? (float)std::min(1000.0, (now - m_dlssPrevT) * 1000.0) : 16.0f;
+    m_dlssPrevT = now;
+    const bool ok = m_dlss.evaluate(m_cmd.Get(), e);
+    for (ID3D12Resource* rr : inputs)
+        transition(rr, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+    bindCompute();   // NGX set its own heaps and root signature
+    if (!ok) return false;
+    m_prevCam = {fc.camPos, fc.camRight, fc.camUp, fc.camFwd, fc.tanHalfFovY, fc.aspect, fc.orthoHalfH, fc.orthoBack};
+    m_dlssHistory = true;
+    ++m_dlssFrame;
+    m_dlssInW = inW;
+    m_dlssInH = inH;
+    return true;
 }
 
 float Renderer::orthoBack(const Camera& cam) const {

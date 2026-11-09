@@ -36,6 +36,8 @@ struct uint4 { uint x, y, z, w; };
 #define FRAME_FLAG_NO_JITTER 64u      // anti-aliasing off: no sub-pixel jitter
 #define FRAME_FLAG_CENTRE_VALID 128u  // stable edges: the pixel-centre surface validates the history
 #define FRAME_FLAG_ENV_MAP   512u     // HDRI environment (gEnvTex + gEnvDist) instead of the gradient
+#define FRAME_FLAG_ADAPTIVE  1024u    // progressive: adaptive sampling (pixels below the noise threshold stop)
+#define FRAME_FLAG_SPP_MAP   2048u    // progressive: the tonemapper shows the samples per pixel (heat map)
 
 #define NO_LIGHT 0xFFFFFFFFu
 
@@ -106,6 +108,12 @@ struct FrameConstants {
     // Orthographic camera (0 = perspective): half the height of the view (scene units) and how far behind the eye the
     // parallel rays start (the whole scene in front of them); the same for the previous frame (reprojection)
     float orthoHalfH; float orthoBack; float prevOrthoHalfH; float prevOrthoBack;
+    // DLSS Ray Reconstruction (moving view of the progressive mode, Renderer::render): the sub-pixel position of the
+    // single sample of each pixel (0..1, jitterOn = 1) instead of the pixel centre of a first sample
+    float jitterX; float jitterY; uint jitterOn; float padJitter;
+    // Adaptive sampling (FRAME_FLAG_ADAPTIVE): a pixel with at least adaptMinSpp samples whose estimated error is under
+    // adaptThreshold gets no more samples; maxSamplesPx: the samples cap (heat map scale)
+    float adaptThreshold; uint adaptMinSpp; uint maxSamplesPx; float padAdapt;
 };
 
 // DDGI probe volume (real-time GI test). Atlases: irradiance 8x8 octahedral texels per probe, distance
