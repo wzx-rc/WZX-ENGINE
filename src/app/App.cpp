@@ -663,7 +663,10 @@ void App::frame() {
             m_swayBase = m_scene.camera.yaw;
             if (!m_scene.objects.empty()) m_animBase = m_scene.objects[0].position.y;
         }
-        if (m_opt.sway > 0) m_scene.camera.yaw = m_swayBase + m_opt.sway * std::sin(t);
+        if (m_opt.sway > 0) {
+            m_scene.camera.yaw = m_swayBase + m_opt.sway * std::sin(t);
+            if (!m_rs.raster && !m_rs.ddgi) markDirty();   // progressive: a moving camera restarts the accumulation, as in use
+        }
         if (m_opt.anim && !m_scene.objects.empty()) {
             m_scene.objects[0].position.y = m_animBase + 3.0f * (0.5f - 0.5f * std::cos(t));
             markDirty();

@@ -14,7 +14,7 @@ if (-not (Test-Path $dll)) { Copy-Item (Join-Path $root 'third_party\dlss\bin\nv
 function Shot($name, $scene, $dlss) {
     $png = Join-Path $out "$name.png"
     $p = Start-Process -FilePath $exe -WorkingDirectory $bin -PassThru -ArgumentList '--scene', $scene, '--raster', '0',
-        '--size', '1280x720', '--shot-viewport', "`"$png`"", '--spp', '90', '--sway', '0.4', '--denoiser', '2', '--dlss', "$dlss"
+        '--size', '1280x720', '--shot-viewport', "`"$png`"", '--spp', '90', '--sway', $(if ($scene -eq 'cornell') { '0.12' } else { '0.4' }), '--denoiser', '2', '--dlss', "$dlss"
     if (-not $p.WaitForExit(300000)) { Stop-Process -Id $p.Id; throw "$name : timeout" }
     $txt = Get-Content "$png.txt"
     $ms = [double](($txt[0] -split ' ')[0] -replace 'gpu_ms=', '')
