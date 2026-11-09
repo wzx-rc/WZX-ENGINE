@@ -2779,6 +2779,43 @@ void App::atlInspectorRender(float x, float y, float w, float) {
                 Text(x, y, "OIDN: OpenImageDenoise.dll not found next to the editor", P().muted, 11);
                 y += 22 * s;
             }
+            if (k != 0) {   // while the view moves: the a-trous filter or DLSS Ray Reconstruction (NVIDIA RTX)
+                const bool dlssAvail = vp3d::Renderer::dlssAvailable();
+                static const char* moving[] = {"While moving: A-trous", "While moving: DLSS Ray Reconstruction (RTX)"};
+                static const char* movingNo[] = {"While moving: A-trous", "While moving: DLSS (not installed)"};
+                int mv = m_rs.dlss && dlssAvail && !m_renderer.dlssFailed() ? 1 : 0;
+                if (Combo("##dnmove", R{x, y, w - 22 * s, 28 * s}, mv, dlssAvail ? moving : movingNo, 2, Icon::Cube)) {
+                    m_rs.dlss = mv == 1 && dlssAvail;
+                    ch = true;
+                }
+                info("##dnmove_i", x + w - 18 * s, y + 5 * s,
+                     "Image shown while the camera moves (every frame restarts the accumulation).\n"
+                     "A-trous: the edge-aware filter on the fresh samples.\n"
+                     "DLSS Ray Reconstruction: NVIDIA's AI denoiser and upscaler (RTX GPUs): one sample per pixel at a\n"
+                     "lower resolution, reconstructed over the frames. When the camera stops (0.2 s), the full-size\n"
+                     "accumulation starts and the denoiser above takes over from the last DLSS image.");
+                y += 36 * s;
+                if (mv == 1) {
+                    static const char* sizes[] = {"DLSS input size: Optimal (faster)", "DLSS input size: Max (DLAA, full size)"};
+                    int sz = std::clamp(m_rs.dlssInput, 0, 1);
+                    if (Combo("##dlsssize", R{x, y, w - 22 * s, 28 * s}, sz, sizes, 2, Icon::Cube)) { m_rs.dlssInput = sz; ch = true; }
+                    y += 36 * s;
+                }
+                std::string st;
+                if (!dlssAvail) st = "DLSS: nvngx_dlssd.dll or the DLSS SDK missing (build.bat)";
+                else if (m_renderer.dlssFailed()) st = "DLSS unavailable: " + m_renderer.dlssStatus();
+                else if (mv == 1 && m_renderer.dlssFrames() == 0) st = "DLSS starts when the camera moves";
+                else if (mv == 1) {
+                    char b[160];
+                    snprintf(b, sizeof(b), "DLSS %s  ·  input %ux%u  ·  frame %.1f ms", m_renderer.dlssActive() ? "active" : "ready",
+                             m_renderer.dlssInputW(), m_renderer.dlssInputH(), m_renderer.gpuFrameMs());
+                    st = b;
+                }
+                if (!st.empty()) {
+                    Text(x, y, st.c_str(), m_renderer.dlssFailed() ? P().accent : P().muted, 11);
+                    y += 22 * s;
+                }
+            }
             if (k == 1) {
                 sliderF("##dns", "Strength", m_rs.denoiseStrength, 0, 2, "%.2f", "Overall strength of the denoiser. 0 does nothing; above 1 starts to blur fine detail.");
                 sliderI("##dpass", "Passes", m_rs.denoisePasses, 1, 5, "%.0f", "Number of filter passes (steps 1, 2, 4, ...). More = smoother but blurrier, and more GPU time.");

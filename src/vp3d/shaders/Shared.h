@@ -106,6 +106,9 @@ struct FrameConstants {
     // Orthographic camera (0 = perspective): half the height of the view (scene units) and how far behind the eye the
     // parallel rays start (the whole scene in front of them); the same for the previous frame (reprojection)
     float orthoHalfH; float orthoBack; float prevOrthoHalfH; float prevOrthoBack;
+    // DLSS Ray Reconstruction (moving view of the progressive mode, Renderer::render): the sub-pixel position of the
+    // single sample of each pixel (0..1, jitterOn = 1) instead of the pixel centre of a first sample
+    float jitterX; float jitterY; uint jitterOn; float padJitter;
 };
 
 // DDGI probe volume (real-time GI test). Atlases: irradiance 8x8 octahedral texels per probe, distance

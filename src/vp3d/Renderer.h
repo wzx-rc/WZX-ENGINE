@@ -8,6 +8,7 @@
 //               r.present();
 #pragma once
 #include "LitPrep.h"
+#include "Dlss.h"
 #include "Oidn.h"
 #include "Scene.h"
 #include <d3d12.h>
@@ -50,6 +51,13 @@ struct RenderSettings {
     bool oidn = true;
     int oidnInterval = 64;
     int oidnBlendFrames = 10;
+    // ... and while the view moves (denoise on): NVIDIA DLSS Ray Reconstruction instead of the a-trous filter (RTX GPUs,
+    // the editor built with the DLSS SDK): one sample per pixel at DLSS's input size (dlssInput 0 = its optimal size,
+    // 1 = the full size, DLAA), upscaled and denoised. Once the view is still for dlssHold seconds, the full-size
+    // accumulation starts and OIDN takes over from the last DLSS image (faded).
+    bool dlss = true;
+    int dlssInput = 0;
+    float dlssHold = 0.2f;
     bool bevel = true;
     bool rasterBevel = false;       // the bevel in the raster view too (inline ray queries: builds the TLAS in raster)
     // Raster view closer to the path tracer (BrickIt HQ; builds the TLAS): every area light shadowed by rays, the
@@ -270,6 +278,15 @@ public:
     float oidnMs() const { return m_oidn.lastMs(); }
     int oidnRuns() const { return m_oidn.runs(); }
     uint32_t oidnSamples() const { return m_oidnShown ? m_oidnLast : 0u; }
+    // DLSS Ray Reconstruction (RenderSettings::dlss): built with the SDK and nvngx_dlssd.dll next to the editor; its
+    // state once started; the last frame was a DLSS frame (moving view) and its input size
+    static bool dlssAvailable();
+    bool dlssFailed() const { return m_dlss.failed(); }
+    const std::string& dlssStatus() const { return m_dlss.status(); }
+    bool dlssActive() const { return m_dlssLastFrame; }
+    uint32_t dlssInputW() const { return m_dlssInW; }
+    uint32_t dlssInputH() const { return m_dlssInH; }
+    uint32_t dlssFrames() const { return m_dlssFrame; }
 
     // Reads back the last tonemapped viewport image (RGBA8).
     bool readViewport(std::vector<uint8_t>& rgba, uint32_t& w, uint32_t& h);
@@ -452,6 +469,8 @@ private:
     // scene of the raster bevel (t0..t3 space2 of the raster pass: TLAS, vertices, indices, instances)
     static constexpr uint32_t kBevelSrvSlot = kDepthSrvSlot + 1;
     static constexpr uint32_t kViewHeapBase = kBevelSrvSlot + 4, kViewHeapStride = kTexCount + 1;
+    static constexpr uint32_t kMaxViewsHeap = 20;   // (= kMaxViews, declared below)
+    static constexpr uint32_t kDlssHeapBase = kViewHeapBase + kMaxViewsHeap * kViewHeapStride;   // DLSS guides u23..u27
     static constexpr uint32_t kProbeFace = 16;   // texels per cube face of a probe capture
     std::vector<ComPtr<ID3D12Resource>> m_materialTex;
     ComPtr<ID3D12PipelineState> m_psoSSAO, m_psoSSAOMS, m_psoSSAOBlur;   // ambient occlusion of the raster viewport (optional)
@@ -489,7 +508,19 @@ private:
     int m_oidnFade = 0;
     bool oidnDue(uint32_t samples, const RenderSettings& rs) const;
     bool runOidn(UINT gx, UINT gy, uint32_t w, uint32_t h);   // pack, wait, denoise, reopen the command list
-    void bindCompute();                                       // root signature and the tables after a reopened list
+    // DLSS Ray Reconstruction: NGX, its guide images (diffuse albedo, specular albedo, normal + roughness, depth,
+    // motion; UAVs u23..u27 at kDlssHeapBase, full viewport size, used at the input size), the frame constants of its
+    // input size, the view state: moving (since m_dlssMoveT), the DLSS image kept until OIDN's first one (handoff)
+    Dlss m_dlss;
+    ComPtr<ID3D12Resource> m_dlssTex[5];
+    uint32_t m_dlssTexW = 0, m_dlssTexH = 0;
+    Buffer m_dlssConstants;
+    ComPtr<ID3D12PipelineState> m_psoDlssPack;
+    bool m_dlssMoving = false, m_dlssHandoff = false, m_dlssHistory = false, m_dlssLastFrame = false;
+    double m_dlssMoveT = 0.0, m_dlssPrevT = 0.0;
+    uint32_t m_dlssFrame = 0, m_dlssInW = 0, m_dlssInH = 0, m_dlssXfSig = 0;
+    bool renderDlss(const Scene& scene, const RenderSettings& rs, const ViewRect& vp, const gpu::FrameConstants& fc);
+    void bindCompute();                                     // root signature and the tables after a reopened list
 
     ComPtr<ID3D12QueryHeap> m_queryHeap;
     Buffer m_queryReadback;

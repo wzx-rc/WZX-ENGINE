@@ -28,7 +28,7 @@ if not exist build\lib mkdir build\lib
 
 echo [1/5] Shaders
 set "DXC=%WindowsSdkVerBinPath%x64\dxc.exe"
-for %%S in (PathTrace Denoise Tonemap DDGIUpdate DDGIRaster DDGIBlend GIShade GIFade RCVisibility RCTrace RCGather RCSProbes RCSTrace RCSProbeSH RCSGather SunShadowTrace SunShadowFilter ReflectTrace ReflectFilter SRCClear SRCInsert SRCAlloc SRCCount SRCTrace SRCMerge SRCIrradiance SRCFilter SRCGather ResolveTM OidnPack) do (
+for %%S in (PathTrace Denoise Tonemap DDGIUpdate DDGIRaster DDGIBlend GIShade GIFade RCVisibility RCTrace RCGather RCSProbes RCSTrace RCSProbeSH RCSGather SunShadowTrace SunShadowFilter ReflectTrace ReflectFilter SRCClear SRCInsert SRCAlloc SRCCount SRCTrace SRCMerge SRCIrradiance SRCFilter SRCGather ResolveTM OidnPack DlssPack) do (
     "%DXC%" -nologo -T cs_6_5 -E main -HV 2021 -O3 -I src\vp3d\shaders src\vp3d\shaders\%%S.hlsl -Fo "%OUT%\shaders\%%S.cso" || exit /b 1
 )
 rem screen-space ambient occlusion of the raster viewport (depth multisampled or not) and its blur
@@ -50,6 +50,15 @@ rem the editor, which loads them at run time (src\vp3d\Oidn.cpp). Without them (
 rem OIDN denoiser is greyed out in the Render tab.
 if not exist third_party\oidn\bin\OpenImageDenoise.dll powershell -NoProfile -ExecutionPolicy Bypass -File tools\fetch_oidn.ps1
 if exist third_party\oidn\bin\OpenImageDenoise.dll xcopy /Y /Q /D third_party\oidn\bin\*.dll "%OUT%\" >nul
+rem NVIDIA DLSS Ray Reconstruction (NGX, DLSS SDK, NVIDIA RTX SDKs license): headers, static library and
+rem nvngx_dlssd.dll fetched once into third_party\dlss (git-ignored). Found: the editor is built with DLSS (WZX_DLSS)
+rem and the DLL copied next to it; not found (no network) or debug build: built without, the option greyed out.
+set "DLSSDEF="
+set "DLSSLIB="
+if not exist third_party\dlss\lib\nvsdk_ngx_s.lib powershell -NoProfile -ExecutionPolicy Bypass -File tools\fetch_dlss.ps1
+if /i not "%1"=="debug" if exist third_party\dlss\lib\nvsdk_ngx_s.lib set "DLSSDEF=/DWZX_DLSS /Ithird_party\dlss\include"
+if defined DLSSDEF set "DLSSLIB=third_party\dlss\lib\nvsdk_ngx_s.lib advapi32.lib"
+if defined DLSSDEF xcopy /Y /Q /D third_party\dlss\bin\nvngx_dlssd.dll "%OUT%\" >nul
 
 set "CFLAGS=/nologo /std:c++17 /EHsc /W3 /utf-8 /DUNICODE /D_UNICODE /DNOMINMAX /DWIN32_LEAN_AND_MEAN /DIMGUI_DEFINE_MATH_OPERATORS %CFG% /Isrc /Ithird_party\imgui"
 
@@ -57,7 +66,7 @@ rem stale objects of deleted sources would be linked by the wildcards below
 del /q build\obj\vp3d\*.obj build\obj\app\*.obj 2>nul
 
 echo [2/5] vp3d module
-cl %CFLAGS% /c src\vp3d\*.cpp /Fo:build\obj\vp3d\ || exit /b 1
+cl %CFLAGS% %DLSSDEF% /c src\vp3d\*.cpp /Fo:build\obj\vp3d\ || exit /b 1
 lib /nologo /OUT:build\lib\vp3d.lib build\obj\vp3d\*.obj || exit /b 1
 
 echo [3/5] Dear ImGui (third_party\imgui, built once)
@@ -78,12 +87,12 @@ cl %CFLAGS% /c src\game\*.cpp /Fo:build\obj\game\ || exit /b 1
 echo [5/5] WZX Engine editor
 cl %CFLAGS% /Isrc\app\atelier /c src\app\*.cpp src\app\atelier\*.cpp /Fo:build\obj\app\ || exit /b 1
 rc /nologo /fo build\obj\app\wzx.res src\app\res\wzx.rc || exit /b 1
-link /nologo /OUT:%OUT%\Viewport3D.exe build\obj\app\*.obj build\obj\app\wzx.res build\obj\game\*.obj build\lib\vp3d.lib build\lib\imgui_te_mt.lib ws2_32.lib d3d12.lib dxgi.lib d3dcompiler.lib windowscodecs.lib user32.lib gdi32.lib ole32.lib shell32.lib shcore.lib comdlg32.lib dwmapi.lib /SUBSYSTEM:WINDOWS || exit /b 1
+link /nologo /OUT:%OUT%\Viewport3D.exe build\obj\app\*.obj build\obj\app\wzx.res build\obj\game\*.obj build\lib\vp3d.lib build\lib\imgui_te_mt.lib %DLSSLIB% ws2_32.lib d3d12.lib dxgi.lib d3dcompiler.lib windowscodecs.lib user32.lib gdi32.lib ole32.lib shell32.lib shcore.lib comdlg32.lib dwmapi.lib /SUBSYSTEM:WINDOWS || exit /b 1
 
 rem Radiance Cascades viewer (src\rcviewer, branch claude/project-thread-0x1y2n)
 if not exist build\obj\rcviewer mkdir build\obj\rcviewer
 del /q build\obj\rcviewer\*.obj 2>nul
 cl %CFLAGS% /c src\rcviewer\*.cpp src\app\ImGuiLayer.cpp src\app\Theme.cpp src\app\Content.cpp /Fo:build\obj\rcviewer\ || exit /b 1
-link /nologo /OUT:%OUT%\RCViewer.exe build\obj\rcviewer\*.obj build\obj\app\wzx.res build\lib\vp3d.lib build\lib\imgui_te_mt.lib d3d12.lib dxgi.lib d3dcompiler.lib windowscodecs.lib user32.lib gdi32.lib ole32.lib shell32.lib shcore.lib comdlg32.lib dwmapi.lib /SUBSYSTEM:WINDOWS || exit /b 1
+link /nologo /OUT:%OUT%\RCViewer.exe build\obj\rcviewer\*.obj build\obj\app\wzx.res build\lib\vp3d.lib build\lib\imgui_te_mt.lib %DLSSLIB% d3d12.lib dxgi.lib d3dcompiler.lib windowscodecs.lib user32.lib gdi32.lib ole32.lib shell32.lib shcore.lib comdlg32.lib dwmapi.lib /SUBSYSTEM:WINDOWS || exit /b 1
 
 echo Build OK: %OUT%\Viewport3D.exe %OUT%\RCViewer.exe

@@ -153,6 +153,11 @@ bool App::init(HINSTANCE inst, const Options& opt) {
     if (!opt.shotPath.empty() && opt.shotSeq == 0 && !m_rs.raster && !m_rs.ddgi) {
         m_rs.maxSamples = std::max(1, opt.shotSpp);
         m_rs.oidnBlendFrames = 0;
+        m_rs.dlss = false;   // (the still image: no DLSS frames at the start unless --dlss asks for them)
+    }
+    if (opt.dlss >= 0) {   // --dlss 0 a-trous while moving, 1 DLSS Ray Reconstruction (optimal input), 2 DLSS at full size (DLAA)
+        m_rs.dlss = opt.dlss != 0;
+        m_rs.dlssInput = opt.dlss == 2 ? 1 : 0;
     }
     if (opt.camDist > 0) m_scene.camera.distance *= opt.camDist;   // test: camera closer (< 1) or further
     if (opt.camPitch > -100) m_scene.camera.pitch = radians(opt.camPitch);
@@ -1308,6 +1313,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         else if (a == L"--shot-viewport") { opt.shotPath = next(); opt.shotViewport = true; }
         else if (a == L"--spp") opt.shotSpp = _wtoi(next().c_str());
         else if (a == L"--denoiser") opt.denoiser = _wtoi(next().c_str());
+        else if (a == L"--dlss") opt.dlss = _wtoi(next().c_str());
         else if (a == L"--view") opt.view = _wtoi(next().c_str());
         else if (a == L"--select") opt.select = _wtoi(next().c_str());
         else if (a == L"--curve-test") opt.curveTest = next();

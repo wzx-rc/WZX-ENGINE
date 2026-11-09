@@ -103,6 +103,7 @@ struct Options {
     bool shotViewport = false;  // the auto screenshot is the 3D viewport only (--shot-viewport)
     int shotSpp = 256;
     int denoiser = -1;          // --denoiser: 0 off, 1 a-trous, 2 Open Image Denoise (-1: the default of the mode)
+    int dlss = -1;              // --dlss: 0 a-trous while the view moves, 1 DLSS Ray Reconstruction, 2 DLAA input (-1: default)
     int view = -1;
     int select = -1;
     int tool = -1;              // test: start with this tool (1 move, 2 rotate)

@@ -16,6 +16,7 @@ _archive/
 
 # Intel Open Image Denoise : DLL précompilées téléchargées par build.bat (tools\fetch_oidn.ps1), ~80 Mo
 third_party/oidn/
+third_party/dlss/
 
 # Fichiers de préférences générés à l'exécution
 *.ini

@@ -806,6 +806,7 @@ void main(uint3 tid : SV_DispatchThreadID) {
 
     for (uint sIdx = 0; sIdx < F.samplesPerFrame; ++sIdx) {
         float2 jitter = (F.sampleIndex == 0 && sIdx == 0) ? float2(0.5, 0.5) : Rnd2(rng);
+        if (F.jitterOn != 0u && sIdx == 0) jitter = float2(F.jitterX, F.jitterY);   // DLSS: its jitter sequence
         float2 uv = (float2(id.xy) + jitter) / float2(F.resolution);
         float2 ndc = float2(2.0 * uv.x - 1.0, 1.0 - 2.0 * uv.y);
         float3 org, dir;
