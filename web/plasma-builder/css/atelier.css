@@ -6,7 +6,6 @@ button.icon.framed[aria-expanded="true"] { border-color: var(--accent); color: v
 .menu-title { font-family: var(--head); font-size: 17px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
 .settings-menu .seg button { text-align: center; }
 .settings-menu .muted { margin: 0; line-height: 1.45; }
-.seg button[aria-checked="true"] { background: var(--accent-bg); color: var(--accent); }
 .drawer-only { display: none !important; }
 .pin b { display: none; }
 

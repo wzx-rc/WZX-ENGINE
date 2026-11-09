@@ -521,15 +521,12 @@ document.addEventListener('click', e => {
   const t = e.target.closest('button');
   if (!t || t.disabled) {
     if (!e.target.closest('.export')) { $('exportMenu').hidden = true; $('exportMenuBtn').setAttribute('aria-expanded', 'false'); }
-    if (!e.target.closest('.settings')) { $('settingsMenu').hidden = true; $('settingsBtn').setAttribute('aria-expanded', 'false'); }
     return;
   }
-  if (!t.closest('.settings')) { $('settingsMenu').hidden = true; $('settingsBtn').setAttribute('aria-expanded', 'false'); }
   const d = t.dataset;
   if (d.cat) { ui.cat = d.cat; renderRail(); renderLibrary(); }
   else if (d.brick) { if (dragTile.suppress) { dragTile.suppress = false; return; } if (model) startHold(rec(d.brick), true); }
   else if (d.theme) { ui.theme = d.theme; applyTheme(ui.theme); renderAll(); }
-  else if (t.id === 'settingsBtn') { const m = $('settingsMenu'); m.hidden = !m.hidden; t.setAttribute('aria-expanded', String(!m.hidden)); }
   else if (t.id === 'drawerClose') { ui.drawer = false; renderEquip(); }
   else if (t.id === 'drawerOpen') { ui.drawer = true; renderEquip(); }
   else if (d.socket) { if (t.classList.contains('equip-row')) ui.drawer = true; select(d.socket); if (t.classList.contains('pin')) hold.flash(socketWorld(d.socket)); }
