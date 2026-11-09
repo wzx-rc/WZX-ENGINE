@@ -25,6 +25,8 @@ void main(uint3 id : SV_DispatchThreadID) {
     if (T.raster) {
         color = gTex[T.denoisedSlot][p].rgb;
         if (T.auxSlot != 0) color = 0.5 * (color + gTex[T.auxSlot - 1][p].rgb);   // the other sub-pixel offset
+    } else if (T.denoisedSlot != 0xFFFFFFFFu && (T.denoisedSlot & 0x80000000u)) {
+        color = gTex[T.denoisedSlot & 0xFu][p].rgb;   // Open Image Denoise: the radiance itself (OidnPack.hlsl)
     } else if (T.denoisedSlot != 0xFFFFFFFFu) {
         float3 den = gTex[T.denoisedSlot][p].rgb * max(alb.rgb, 0.01);
         float keepRaw = saturate((spp - 64.0) / 768.0);

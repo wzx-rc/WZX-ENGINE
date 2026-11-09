@@ -2740,7 +2740,52 @@ void App::atlInspectorRender(float x, float y, float w, float) {
         y += 24 * s;
         sliderI("##msp", "Max samples", m_rs.maxSamples, 16, 16384, "%.0f", "Samples per pixel of the progressive image before it stops. More = cleaner, slower.");
         y += 8 * s;
-        denoiser();
+        // Denoiser of the progressive image: off, the a-trous filter, or Intel Open Image Denoise while the view is still
+        // (the a-trous filter while it moves). OIDN needs OpenImageDenoise.dll next to the editor (build.bat).
+        {
+            Label(x, y, "DENOISER");
+            y += 24 * s;
+            const bool avail = vp3d::Renderer::oidnAvailable();
+            static const char* kinds[] = {"Off", "A-trous (edge-aware filter)", "Open Image Denoise (Intel)"};
+            static const char* kindsNo[] = {"Off", "A-trous (edge-aware filter)", "Open Image Denoise (not installed)"};
+            int k = !m_rs.denoise ? 0 : (m_rs.oidn && avail ? 2 : 1);
+            if (Combo("##dnkind", R{x, y, w - 22 * s, 28 * s}, k, avail ? kinds : kindsNo, 3, Icon::Sun)) {
+                m_rs.denoise = k != 0;
+                m_rs.oidn = k == 2 && avail;
+                ch = true;
+            }
+            info("##dnkind_i", x + w - 18 * s, y + 5 * s,
+                 "Off: the image as rendered.\n"
+                 "A-trous: fast edge-aware filter, every frame.\n"
+                 "Open Image Denoise: Intel's AI denoiser on the accumulated image, guided by its albedo and normals,\n"
+                 "once the view is still (2, 4, 8, 16, 32 samples, then every interval, and the final image), faded in.\n"
+                 "While the view moves, the a-trous filter is shown. Runs on the GPU when OIDN supports it, else the CPU.");
+            y += 36 * s;
+            if (k == 2) {
+                sliderI("##oidnint", "OIDN interval", m_rs.oidnInterval, 8, 512, "%.0f spp",
+                        "After 32 samples, OIDN denoises again every this many samples per pixel (and once on the final image).");
+                std::string st;
+                if (m_renderer.oidnFailed()) st = "OIDN unavailable: " + m_renderer.oidnStatus();
+                else if (m_renderer.oidnRuns() == 0) st = "OIDN starts when the view is still";
+                else {
+                    char b[160];
+                    snprintf(b, sizeof(b), "%s  ·  %.0f ms  ·  %u spp", m_renderer.oidnDevice().c_str(), m_renderer.oidnMs(),
+                             m_renderer.oidnSamples());
+                    st = b;
+                }
+                Text(x, y, st.c_str(), m_renderer.oidnFailed() ? P().accent : P().muted, 11);
+                y += 22 * s;
+            } else if (!avail) {
+                Text(x, y, "OIDN: OpenImageDenoise.dll not found next to the editor", P().muted, 11);
+                y += 22 * s;
+            }
+            if (k == 1) {
+                sliderF("##dns", "Strength", m_rs.denoiseStrength, 0, 2, "%.2f", "Overall strength of the denoiser. 0 does nothing; above 1 starts to blur fine detail.");
+                sliderI("##dpass", "Passes", m_rs.denoisePasses, 1, 5, "%.0f", "Number of filter passes (steps 1, 2, 4, ...). More = smoother but blurrier, and more GPU time.");
+                sliderF("##dedge", "Edge sensitivity", m_rs.denoiseEdgeLuma, 0.05f, 4, "%.2f", "Lower = the filter stops at light and shadow edges, so shadows stay sharp. Higher = smoother, softer shadows.");
+            }
+            y += 8 * s;
+        }
         Label(x, y, "LIGHT");
         y += 24 * s;
         sliderI("##bnc", "Bounces", m_rs.maxBounces, 1, 16, "%.0f", "Light bounces per path. More = more indirect light, slower.");
