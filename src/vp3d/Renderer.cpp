@@ -2578,7 +2578,8 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
     m_cmd->EndQuery(m_queryHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 0);
     // Open Image Denoise (rs.oidn): a new accumulation drops its image (the a-trous filter shows the moving view);
     // once the view stayed still a frame, OIDN denoises at the samples of the schedule (oidnDue), its image faded in
-    const bool oidnOn = rs.denoise && rs.oidn && !rs.ddgi && m_psoOidn && !m_oidn.failed() && oidnAvailable();
+    // (not in the offscreen renders, the camera thumbnails: their size would reallocate OIDN's buffers each time)
+    const bool oidnOn = rs.denoise && rs.oidn && !rs.ddgi && toBackBuffer && m_psoOidn && !m_oidn.failed() && oidnAvailable();
     const uint32_t before = m_sampleIndex;
     if (before == 0 || !oidnOn) { m_oidnShown = false; m_oidnLast = 0; }
     bool oidnRun = false;
