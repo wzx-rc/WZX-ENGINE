@@ -23,7 +23,7 @@ const marks = new Map();
 export function applyTheme(theme) {
   const atelier = theme === 'atelier';
   try { localStorage.setItem(KEY, theme); } catch { /* stockage indisponible */ }
-  document.body.classList.toggle('ui-atelier', atelier);
+  document.documentElement.classList.toggle('ui-atelier', atelier);
   $('equip').hidden = !atelier;
   $('floatbar').hidden = !atelier;
   for (const [el, to] of MOVES()) {

@@ -1,6 +1,6 @@
 /* Réglages (les deux interfaces) */
 .settings { position: relative; }
-button.icon.framed { width: 44px; height: 44px; border: 1px solid var(--line); background: var(--panel); border-radius: 8px; }
+button.icon.framed { width: 40px; height: 40px; border: 1px solid var(--line); background: var(--panel); border-radius: 8px; }
 button.icon.framed[aria-expanded="true"] { border-color: var(--accent); color: var(--accent); }
 .settings-menu { min-width: 280px; gap: 10px; padding: 12px; }
 .menu-title { font-family: var(--head); font-size: 17px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
@@ -11,8 +11,13 @@ button.icon.framed[aria-expanded="true"] { border-color: var(--accent); color: v
 .pin b { display: none; }
 
 /* ===================== Interface Atelier ===================== */
-body.ui-atelier { --rail-w: 264px; --drawer-w: 300px; }
+.ui-atelier { --rail-w: 264px; --drawer-w: 300px; }
 .ui-atelier .app { height: calc(100vh - var(--wintitle-h, 0px)); min-height: 560px; overflow: hidden; }
+
+/* Avant que atelier.js ait déplacé les éléments : rien ne s'affiche à l'ancienne place, les panneaux Atelier
+   sont déjà là (la classe ui-atelier est posée par early.js avant le premier affichage). */
+.ui-atelier .viewport-panel > #tools, .ui-atelier .vp-foot > #shading, .ui-atelier .vp-right > #qualityBox, .ui-atelier .vp-bar > #steps { display: none !important; }
+.ui-atelier #equip, .ui-atelier #floatbar { display: flex !important; }
 
 /* Barre du haut : la même que sur les autres pages ; les étapes flottent en haut de la vue */
 .ui-atelier .vp-steps { position: absolute; z-index: 4; top: 12px; left: 50%; transform: translateX(-50%); }
@@ -55,7 +60,7 @@ body.ui-atelier { --rail-w: 264px; --drawer-w: 300px; }
 
 /* Bibliothèque en tiroir */
 .ui-atelier .library { width: var(--drawer-w); max-width: none; min-width: 0; flex: none; background: #121418; border-right: 1px solid var(--line); padding: 16px 14px; overflow: hidden; }
-.ui-atelier.drawer-closed .library { display: none; }
+.ui-atelier .drawer-closed .library { display: none; }
 .ui-atelier .drawer-only { display: inline-flex !important; }
 .ui-atelier .libgrid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; max-height: none; flex: 1 1 auto; min-height: 0; }
 .ui-atelier .tile { border-radius: 10px; border-width: 1px; border-color: var(--line2); background: #0e0f12; font-size: 12px; padding-bottom: 8px; }
@@ -105,11 +110,11 @@ body.ui-atelier { --rail-w: 264px; --drawer-w: 300px; }
 /* Bandeaux : l'assemblage est dans Équipement ; les poses seulement à l'étape Pose */
 .ui-atelier .row-bottom { gap: 0; border-top: 1px solid var(--line); }
 .ui-atelier .strip[aria-label="Assemblage"] { display: none; }
-.ui-atelier:not([data-step="pose"]) .row-bottom { display: none; }
+.ui-atelier body:not([data-step="pose"]) .row-bottom { display: none; }
 .ui-atelier .strip { padding: 10px 16px; background: #0e0f12; }
 
 @media (max-width: 1100px) {
-  body.ui-atelier { --rail-w: 220px; --drawer-w: 260px; }
+  .ui-atelier { --rail-w: 220px; --drawer-w: 260px; }
   .ui-atelier .rightcol { width: 270px; }
   .ui-atelier .steps button { padding: 0 10px 0 8px; font-size: 13px; }
 }

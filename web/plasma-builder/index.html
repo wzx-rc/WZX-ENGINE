@@ -35,6 +35,7 @@
       <a href="rig.html" title="Rig Lab"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="4" r="2"/><path d="M12 6v8M6 9h12M12 14l-4 7M12 14l4 7"/></svg><span class="navlbl">Rig Lab</span></a>
       <a href="import.html" title="Importer"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M4 20h16"/></svg><span class="navlbl">Importer</span></a>
     </nav>
+    <script src="js/early.js"></script>
     <div class="topbar-right">
       <label class="projname"><span class="sr">Nom du projet</span><input id="projName" type="text" value="Da_Big_Boy_01" spellcheck="false">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16zM14 6l4 4"/></svg></label>
@@ -54,7 +55,7 @@
         </div>
       </div>
       <div class="export">
-        <button type="button" id="exportBtn" class="primary"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M4 20h16"/></svg>Exporter STL</button>
+        <button type="button" id="exportBtn" class="primary" title="Exporter en STL"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M4 20h16"/></svg>Exporter</button>
         <button type="button" id="exportMenuBtn" class="primary caret" aria-label="Options d'export" aria-expanded="false" aria-controls="exportMenu"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button>
         <div id="exportMenu" class="menu" hidden>
           <button type="button" data-export="merged">Un seul STL (figurine fusionnée)</button>
