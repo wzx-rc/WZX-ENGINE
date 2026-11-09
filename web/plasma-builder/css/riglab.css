@@ -31,7 +31,7 @@ button.icon.tiny { width: 34px; height: 34px; }
 
 /* Sur grand écran, la page tient dans la fenêtre : le viewport prend toute la hauteur restante. */
 @media (min-width: 1100px) and (min-height: 700px) {
-  body.riglab .app { height: 100vh; min-height: 0; }
+  body.riglab .app { height: calc(100vh - var(--wintitle-h, 0px)); min-height: 0; }
   body.riglab .body { min-height: 0; flex-wrap: nowrap; }
   body.riglab .work, body.riglab .row-top { flex: 1 1 auto; min-height: 0; }
   body.riglab .row-top { flex-wrap: nowrap; }

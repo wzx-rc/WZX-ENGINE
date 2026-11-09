@@ -26,19 +26,26 @@ svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width:
 .muted { color: var(--muted); font-size: 12px; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-.app { min-height: 100vh; display: flex; flex-direction: column; }
+.app { min-height: calc(100vh - var(--wintitle-h, 0px)); display: flex; flex-direction: column; }
 
 /* Barre du haut */
-.topbar { display: flex; flex-wrap: wrap; align-items: center; gap: 18px; padding-block: 10px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); background: var(--bar); border-bottom: 1px solid var(--line); }
-.brand { display: flex; align-items: center; gap: 10px; margin-right: 18px; }
+.topbar { display: grid; grid-template-columns: minmax(max-content, 1fr) auto minmax(max-content, 1fr); align-items: center; gap: 18px; padding-block: 10px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); background: var(--bar); border-bottom: 1px solid var(--line); }
+.topbar > .brand { justify-self: start; }
+.topbar > .mainnav { justify-self: center; }
+.topbar > .topbar-right { justify-self: end; }
+.brand { display: flex; align-items: center; gap: 10px; }
 .brand svg { width: 40px; height: 40px; stroke: none; }
 .brand-skull { fill: var(--accent); }
 .brand-name { font-family: var(--head); font-weight: 800; font-size: 22px; line-height: .92; letter-spacing: .02em; }
-.mainnav { display: flex; flex-wrap: wrap; gap: 6px; flex: 1 1 420px; }
+.mainnav { display: flex; flex-wrap: nowrap; gap: 6px; }
 .mainnav a { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 0 16px; border-radius: 8px; border: 1px solid transparent; color: var(--text2); text-decoration: none; font-size: 14px; font-weight: 500; }
 .mainnav a.active { border-color: var(--accent); background: var(--accent-bg); color: var(--accent); }
-.mainnav a[aria-disabled="true"] { color: #8e9097; }
-.topbar-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.mainnav a:not(.active):hover { background: var(--panel); color: var(--text); }
+.navbadge { min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; background: #ff2e88; color: #1a0610; font-size: 11px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; }
+/* Fenêtre étroite : le menu passe en icônes (le nom reste en info-bulle) */
+@media (max-width: 1380px) { .mainnav a { padding: 0 12px; gap: 6px; } .mainnav .navlbl { display: none; } }
+@media (max-width: 900px) { .topbar { grid-template-columns: 1fr; justify-items: center; } .topbar > * { justify-self: center !important; } }
+.topbar-right { display: flex; align-items: center; gap: 10px; flex-wrap: nowrap; }
 .projname { display: flex; align-items: center; gap: 8px; padding: 0 12px; min-height: 44px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--muted); }
 .projname input { width: 130px; border: 0; background: transparent; color: var(--text); outline: none; }
 .btngroup { display: flex; gap: 2px; padding: 3px; border-radius: 8px; background: var(--panel); border: 1px solid var(--line); }
@@ -48,7 +55,7 @@ button.icon[aria-pressed="true"], button.icon.on { background: var(--accent-bg);
 button.icon.small { width: 36px; height: 36px; border: 1px solid var(--line2); background: var(--raised); }
 button.icon:disabled { color: #55575d; cursor: default; background: none; }
 .export { position: relative; display: flex; }
-button.primary { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 0 16px; border: 0; border-radius: 8px 0 0 8px; background: var(--accent); color: #fff; font-family: var(--head); font-size: 19px; font-weight: 700; }
+button.primary { display: flex; white-space: nowrap; align-items: center; gap: 10px; min-height: 44px; padding: 0 16px; border: 0; border-radius: 8px 0 0 8px; background: var(--accent); color: #fff; font-family: var(--head); font-size: 19px; font-weight: 700; }
 button.primary.caret { border-radius: 0 8px 8px 0; padding: 0 10px; border-left: 1px solid rgba(0,0,0,.25); }
 button.primary:hover { filter: brightness(1.08); }
 .menu { position: absolute; right: 0; top: calc(100% + 6px); z-index: 20; min-width: 290px; display: flex; flex-direction: column; padding: 6px; border-radius: 8px; background: var(--raised); border: 1px solid var(--line2); box-shadow: 0 12px 30px rgba(0,0,0,.45); }
@@ -227,3 +234,11 @@ a.icon.small.btnlink:hover { color: var(--accent); }
 .pin:not(.free) i { background: #8e9097; }
 .pin:not(.free)[aria-pressed="true"] i { background: var(--accent); }
 .pin.free { opacity: .78; }
+
+/* App Windows : barre de titre maison (32 px), déplaçable ; les boutons de fenêtre natifs sont à droite */
+html.desktop { --wintitle-h: 32px; }
+.wintitle { height: 32px; display: flex; align-items: center; gap: 8px; padding: 0 150px 0 12px; background: #0b0c0e; border-bottom: 1px solid #1a1c20; color: var(--text2); font-size: 12px; -webkit-app-region: drag; user-select: none; }
+.wintitle svg { width: 16px; height: 16px; stroke: none; }
+.wintitle b { font-family: var(--head); font-size: 14px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--text); }
+.wintitle span { color: var(--muted); }
+.wintitle span::before { content: '·'; margin-right: 8px; }

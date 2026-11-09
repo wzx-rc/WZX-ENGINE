@@ -1,6 +1,6 @@
 // Interface « Atelier » (réglage Interface, enregistré) : la maquette UI/UX du 4/11 sur le vrai builder.
 // La vue d'abord : liste Équipement (sockets de l'ork, icônes Recraft) à gauche, bibliothèque en tiroir filtrée par
-// le socket choisi, étapes dans la barre du haut, outils / affichage / qualité dans une barre flottante sur la vue,
+// le socket choisi, étapes en haut de la vue, outils / affichage / qualité dans une barre flottante sur la vue,
 // pastilles numérotées. Les mêmes éléments que l'interface Classique sont déplacés (leurs événements restent),
 // puis remis à leur place quand on revient au Classique.
 const $ = id => document.getElementById(id);
@@ -13,7 +13,7 @@ export function savedTheme() {
 
 // [élément, nouveau parent] : déplacé dans l'Atelier, remis avant son repère (commentaire) au Classique.
 const MOVES = () => [
-  [$('steps'), document.querySelector('.topbar .mainnav')],
+  [$('steps'), $('vpSteps')],
   [$('tools'), $('floatbar')],
   [$('shading'), $('floatbar')],
   [$('qualityBox'), $('floatbar')],

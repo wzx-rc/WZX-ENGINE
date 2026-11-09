@@ -1,6 +1,6 @@
 /* Plasma Library (maquette C) : catégories à gauche, pièces au centre, pièce sélectionnée à droite.
    Reprend les variables et les cartes .pc de hub.css. */
-.plib .app { height: 100vh; height: 100dvh; display: flex; flex-direction: column; }
+.plib .app { height: calc(100vh - var(--wintitle-h, 0px)); display: flex; flex-direction: column; }
 .libpage { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: 250px minmax(0, 1fr) 340px; background: #0e0e10; }
 
 /* ---- catégories */

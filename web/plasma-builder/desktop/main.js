@@ -14,6 +14,11 @@ function createWindow() {
   const win = new BrowserWindow({
     width: 1600, height: 1000, minWidth: 1100, minHeight: 700,
     backgroundColor: '#0e0f11', title: 'Plasma Orks Builder', autoHideMenuBar: true,
+    icon: path.join(__dirname, 'app', 'assets', 'icon', 'plasma-orks.ico'),
+    // Barre de titre maison (dessinée par la page, voir js/chrome.js) : on garde les boutons natifs de Windows,
+    // aux couleurs de l'app, par-dessus la barre de 32 px.
+    titleBarStyle: 'hidden',
+    titleBarOverlay: { color: '#0b0c0e', symbolColor: '#c9cace', height: 32 },
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, sandbox: true },
   });
   win.loadURL('app://builder/index.html');
