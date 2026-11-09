@@ -9,6 +9,20 @@ if (badge && !/hub|library/.test(document.body.className)) {
   badge.hidden = !n; badge.textContent = n;
 }
 
+// Barre du haut centrée : si elle déborde (fenêtre étroite, zoom Windows, police plus large), le menu passe
+// en icônes, puis le logo et les boutons se resserrent.
+const tb = document.querySelector('.topbar');
+if (tb) {
+  const over = () => tb.scrollWidth > tb.clientWidth + 1;
+  const fit = () => {
+    tb.classList.remove('compact', 'tight');
+    if (over()) tb.classList.add('compact');
+    if (over()) tb.classList.add('tight');
+  };
+  new ResizeObserver(fit).observe(tb);
+  document.fonts?.ready.then(fit);
+}
+
 if (window.plasmaDesktop) {
   document.documentElement.classList.add('desktop');
   const page = document.title.split('·')[0].trim();

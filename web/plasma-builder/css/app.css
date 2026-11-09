@@ -43,7 +43,14 @@ svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width:
 .mainnav a:not(.active):hover { background: var(--panel); color: var(--text); }
 .navbadge { min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; background: #ff2e88; color: #1a0610; font-size: 11px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; }
 /* Fenêtre étroite : le menu passe en icônes (le nom reste en info-bulle) */
-@media (max-width: 1380px) { .mainnav a { padding: 0 12px; gap: 6px; } .mainnav .navlbl { display: none; } }
+.topbar { min-width: 0; }
+/* Pas assez de place (voir js/chrome.js) : le menu passe en icônes (le nom reste en info-bulle), puis tout se resserre */
+.topbar.compact .mainnav a { padding: 0 12px; gap: 6px; }
+.topbar.compact .mainnav .navlbl { display: none; }
+.topbar.tight { gap: 10px; }
+.topbar.tight .brand-name { display: none; }
+.topbar.tight .projname input { width: 90px; }
+.topbar.tight button.primary { font-size: 16px; padding: 0 12px; }
 @media (max-width: 900px) { .topbar { grid-template-columns: 1fr; justify-items: center; } .topbar > * { justify-self: center !important; } }
 .topbar-right { display: flex; align-items: center; gap: 10px; flex-wrap: nowrap; }
 .projname { display: flex; align-items: center; gap: 8px; padding: 0 12px; min-height: 44px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--muted); }
