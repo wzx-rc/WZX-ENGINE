@@ -138,7 +138,7 @@ bool Renderer::init(HWND hwnd, uint32_t width, uint32_t height, const std::wstri
     D3D12_DESCRIPTOR_HEAP_DESC hd = {};
     hd.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
     static_assert(kMaxViewsHeap == (uint32_t)kMaxViews, "kDlssHeapBase follows the extra views");
-    hd.NumDescriptors = kDlssHeapBase + 5;  // (extra views, then the DLSS guides) + shadow map SRV + material textures + DDGI UAVs + history UAVs + HDRI SRV + capture UAVs + probe SRVs + screen GI, sun shadow and reflection views + selection, depth, bevel
+    hd.NumDescriptors = kDlssHeapBase + 6;  // (extra views, then the DLSS guides and the adaptive sampling texture) + shadow map SRV + material textures + DDGI UAVs + history UAVs + HDRI SRV + capture UAVs + probe SRVs + screen GI, sun shadow and reflection views + selection, depth, bevel
     hd.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
     m_device->CreateDescriptorHeap(&hd, IID_PPV_ARGS(&m_heap));
     m_descSize = m_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
@@ -265,7 +265,7 @@ bool Renderer::createPipelines(std::string* error) {
 
     D3D12_DESCRIPTOR_RANGE dlssRange = {};   // u23..u27 guide images of DLSS Ray Reconstruction (DlssPack.hlsl)
     dlssRange.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_UAV;
-    dlssRange.NumDescriptors = 5;
+    dlssRange.NumDescriptors = 6;   // + u28 squared luminance of the adaptive sampling (PathTrace.hlsl)
     dlssRange.BaseShaderRegister = 23;
 
     D3D12_ROOT_PARAMETER p[25] = {};
@@ -434,6 +434,26 @@ void Renderer::createTargets(uint32_t w, uint32_t h) {
         m_device->CreateUnorderedAccessView(m_hist[i].Get(), nullptr, &u, hnd);
     }
     m_historyValid = false;
+    {   // adaptive sampling: squared luminance per pixel (UAV u28, after the DLSS guides)
+        D3D12_RESOURCE_DESC d = {};
+        d.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+        d.Width = w;
+        d.Height = h;
+        d.DepthOrArraySize = 1;
+        d.MipLevels = 1;
+        d.Format = DXGI_FORMAT_R32_FLOAT;
+        d.SampleDesc.Count = 1;
+        d.Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
+        m_lumSq.Reset();
+        m_device->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &d, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, nullptr,
+                                          IID_PPV_ARGS(&m_lumSq));
+        D3D12_UNORDERED_ACCESS_VIEW_DESC u = {};
+        u.Format = d.Format;
+        u.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
+        D3D12_CPU_DESCRIPTOR_HANDLE hnd = cpu;
+        hnd.ptr += (SIZE_T)(kDlssHeapBase + 5) * m_descSize;
+        m_device->CreateUnorderedAccessView(m_lumSq.Get(), nullptr, &u, hnd);
+    }
     {   // screen GI texture of the screen-space cascades (UAV u17, SRV t7 of the raster pass)
         D3D12_RESOURCE_DESC d = {};
         d.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
@@ -2392,7 +2412,12 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
     fc.flags = (cam.dof ? FRAME_FLAG_DOF : 0) | (rs.bevel ? FRAME_FLAG_BEVEL : 0) | (rs.denoise ? FRAME_FLAG_DENOISE : 0) |
                (scene.env.visibleToCamera ? FRAME_FLAG_ENV_VISIBLE : 0) | (rs.ddgi && !rs.raster ? FRAME_FLAG_ID_EDGES : 0) |
                (rs.ddgi && !rs.raster && rs.historyFixes ? FRAME_FLAG_CENTRE_VALID : 0u) |
-               (envMap ? FRAME_FLAG_ENV_MAP : 0u);
+               (envMap ? FRAME_FLAG_ENV_MAP : 0u) |
+               (rs.adaptive && !rs.raster && !rs.ddgi ? FRAME_FLAG_ADAPTIVE : 0u) |
+               (rs.sppMap && !rs.raster && !rs.ddgi ? FRAME_FLAG_SPP_MAP : 0u);
+    fc.adaptThreshold = rs.adaptThreshold;
+    fc.adaptMinSpp = (uint32_t)std::max(2, rs.adaptMinSpp);
+    fc.maxSamplesPx = (uint32_t)std::max(1, rs.maxSamples);
     fc.envTop = scene.env.top;
     fc.envIntensity = scene.env.intensity;
     fc.envHorizon = scene.env.horizon;
@@ -2793,6 +2818,9 @@ void Renderer::bindCompute() {
     envTable.ptr += (UINT64)kEnvHeapSlot * m_descSize;
     m_cmd->SetComputeRootShaderResourceView(13, m_envDist.va());
     m_cmd->SetComputeRootDescriptorTable(14, envTable);
+    D3D12_GPU_DESCRIPTOR_HANDLE dlssTable = m_heap->GetGPUDescriptorHandleForHeapStart();
+    dlssTable.ptr += (UINT64)kDlssHeapBase * m_descSize;
+    m_cmd->SetComputeRootDescriptorTable(24, dlssTable);   // u23..u27 DLSS guides, u28 adaptive sampling
 }
 
 bool Renderer::oidnAvailable() {

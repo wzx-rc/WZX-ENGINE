@@ -50,6 +50,11 @@ void main(uint3 id : SV_DispatchThreadID) {
     else if (T.tonemapper == 3) mapped = saturate(color);
     else mapped = ACESFitted(color);
     float3 c = ToSRGB(mapped);
+    if (!T.raster && (F.flags & FRAME_FLAG_SPP_MAP)) {   // samples per pixel (adaptive sampling): blue few ... red as many as the frame
+        float t = saturate(acc.w / max((float)min(F.sampleIndex, F.maxSamplesPx), 1.0));
+        float3 heat = saturate(float3(1.5 - abs(4.0 * t - 3.0), 1.5 - abs(4.0 * t - 2.0), 1.5 - abs(4.0 * t - 1.0)));
+        c = lerp(heat, c, 0.25);   // a little of the image, to recognise the scene
+    }
 
     // Selection (selStyle 1): a soft blue glow hugging the silhouette on both sides (a neon edge, no hard line), its
     // light flowing slowly along the contour (sawtooth around the selection centre, selAge = seconds since the

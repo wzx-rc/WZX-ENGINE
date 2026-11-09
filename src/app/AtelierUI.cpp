@@ -2739,6 +2739,19 @@ void App::atlInspectorRender(float x, float y, float w, float) {
         Label(x, y, "SAMPLES");
         y += 24 * s;
         sliderI("##msp", "Max samples", m_rs.maxSamples, 16, 16384, "%.0f", "Samples per pixel of the progressive image before it stops. More = cleaner, slower.");
+        check("##adapt", "Adaptive sampling", m_rs.adaptive,
+              "Pixels whose noise is already under the threshold stop receiving samples; the GPU time goes to the noisy\n"
+              "ones (shadows, glossy reflections, glass). Max samples still caps every pixel.");
+        if (m_rs.adaptive) {
+            sliderF("##adth", "Noise threshold", m_rs.adaptThreshold, 0.002f, 0.05f, "%.3f",
+                    "Estimated error under which a pixel stops (standard error of its mean, relative to the square root of\n"
+                    "its brightness). Lower = cleaner and slower; 0.01 is close to the uniform image.");
+            sliderI("##admin", "Min samples", m_rs.adaptMinSpp, 8, 256, "%.0f",
+                    "Samples every pixel gets before it may stop (its noise estimate needs some).");
+        }
+        check("##sppmap", "Sample heat map", m_rs.sppMap,
+              "Shows the samples per pixel over the image: red = as many as the accumulation, blue = few (skipped by\n"
+              "the adaptive sampling).");
         y += 8 * s;
         // Denoiser of the progressive image: off, the a-trous filter, or Intel Open Image Denoise while the view is still
         // (the a-trous filter while it moves). OIDN needs OpenImageDenoise.dll next to the editor (build.bat).

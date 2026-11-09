@@ -58,6 +58,13 @@ struct RenderSettings {
     bool dlss = true;
     int dlssInput = 0;
     float dlssHold = 0.2f;
+    // Progressive path tracing, adaptive sampling: once a pixel has adaptMinSpp samples, it gets no more while its
+    // estimated error (standard error of its mean over the square root of its luminance, worst of its 3 x 3
+    // neighbours) is under adaptThreshold; maxSamples still caps the others. sppMap: heat map of the samples per pixel.
+    bool adaptive = false;
+    float adaptThreshold = 0.01f;
+    int adaptMinSpp = 32;
+    bool sppMap = false;
     bool bevel = true;
     bool rasterBevel = false;       // the bevel in the raster view too (inline ray queries: builds the TLAS in raster)
     // Raster view closer to the path tracer (BrickIt HQ; builds the TLAS): every area light shadowed by rays, the
@@ -513,6 +520,7 @@ private:
     // input size, the view state: moving (since m_dlssMoveT), the DLSS image kept until OIDN's first one (handoff)
     Dlss m_dlss;
     ComPtr<ID3D12Resource> m_dlssTex[5];
+    ComPtr<ID3D12Resource> m_lumSq;   // adaptive sampling: sum of the squared luminance per pixel (u28, kDlssHeapBase + 5)
     uint32_t m_dlssTexW = 0, m_dlssTexH = 0;
     Buffer m_dlssConstants;
     ComPtr<ID3D12PipelineState> m_psoDlssPack;
