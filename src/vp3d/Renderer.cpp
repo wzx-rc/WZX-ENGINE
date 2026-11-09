@@ -2619,6 +2619,7 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
     // only the mark that no new change came.
     const bool dlssOn = rs.denoise && rs.dlss && !rs.ddgi && toBackBuffer && m_psoDlssPack && dlssAvailable() && !m_dlss.failed();
     bool dlssFrame = false;
+    const bool prevWasDlss = m_dlssLastFrame;   // the last frame was a DLSS frame (m_sampleIndex holds its mark)
     m_dlssLastFrame = false;
     if (dlssOn) {
         LARGE_INTEGER qc, qf;
@@ -2630,13 +2631,23 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
             if (now - m_dlssMoveT < rs.dlssHold) dlssFrame = true;
             else {
                 m_dlssMoving = false;
-                m_sampleIndex = 0;
                 m_dlssHandoff = m_dlssHistory;   // a DLSS image is in TEX_DENOISE_A
             }
         }
     } else {
         m_dlssMoving = m_dlssHandoff = m_dlssHistory = false;
     }
+    // A new full-size accumulation after DLSS frames (their mark m_sampleIndex 1 is in the constants already sent): the
+    // constants of this frame say sample 0 again, so the path tracer overwrites TEX_ACCUM instead of adding to what it
+    // holds (the last DLSS sample in the input rectangle, the accumulation from before the move elsewhere)
+    auto restartAccumulation = [&]() {
+        m_sampleIndex = 0;
+        fc.sampleIndex = 0;
+        fc.traceStride = 1;
+        memcpy(m_constants.mapped, &fc, sizeof(fc));
+        memcpy(m_lastFc, &fc, sizeof(fc));
+    };
+    if (!dlssFrame && prevWasDlss) restartAccumulation();   // (also when DLSS was just turned off)
     uint32_t shownSlot = 0xFFFFFFFFu;   // the slot of an image that is radiance itself (OIDN, DLSS), not demodulated
     if (dlssFrame && renderDlss(scene, rs, vp, fc)) {
         shownSlot = TEX_DENOISE_A;
@@ -2647,7 +2658,7 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
         m_sampleIndex = 1;
         traced = true;
     } else {
-    if (dlssFrame) { m_dlssMoving = m_dlssHandoff = false; m_sampleIndex = 0; }   // DLSS failed: the usual frame
+    if (dlssFrame) { m_dlssMoving = m_dlssHandoff = false; restartAccumulation(); }   // DLSS failed: the usual frame
     // Open Image Denoise (rs.oidn): a new accumulation drops its image (the a-trous filter shows the moving view);
     // once the view stayed still a frame, OIDN denoises at the samples of the schedule (oidnDue), its image faded in
     // (not in the offscreen renders, the camera thumbnails: their size would reallocate OIDN's buffers each time)

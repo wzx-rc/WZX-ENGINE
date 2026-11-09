@@ -663,7 +663,7 @@ void App::frame() {
             m_swayBase = m_scene.camera.yaw;
             if (!m_scene.objects.empty()) m_animBase = m_scene.objects[0].position.y;
         }
-        if (m_opt.sway > 0) {
+        if (m_opt.sway > 0 && (m_opt.swayStop <= 0 || m_frameCounter <= m_opt.swayStop)) {   // (--sway-stop N: still from frame N)
             m_scene.camera.yaw = m_swayBase + m_opt.sway * std::sin(t);
             if (!m_rs.raster && !m_rs.ddgi) markDirty();   // progressive: a moving camera restarts the accumulation, as in use
         }
@@ -1383,6 +1383,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         else if (a == L"--show-probes") opt.showProbes = _wtoi(next().c_str()) != 0;
         else if (a == L"--baked") opt.baked = _wtoi(next().c_str()) != 0;
         else if (a == L"--sway") opt.sway = (float)_wtof(next().c_str());
+        else if (a == L"--sway-stop") opt.swayStop = _wtoi(next().c_str());
         else if (a == L"--anim") opt.anim = _wtoi(next().c_str()) != 0;
         else if (a == L"--stat") opt.statPath = next();
         else if (a == L"--stat-from") opt.statFrom = _wtoi(next().c_str());

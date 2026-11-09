@@ -149,6 +149,7 @@ struct Options {
     // Stability tests: camera yaw oscillation (radians, 2 s period), first object bobbing, and the flicker statistics
     // (per-pixel standard deviation of the luminance over statFrames frames from statFrom, written to statPath).
     float sway = 0.0f;
+    int swayStop = 0;           // --sway-stop N: the sway stops at frame N (the view still after a move)
     bool anim = false;
     std::wstring statPath;
     int statFrom = 60, statFrames = 120;
