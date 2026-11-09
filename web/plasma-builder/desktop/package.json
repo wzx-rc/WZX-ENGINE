@@ -8,7 +8,7 @@
   "scripts": {
     "prepare-app": "node build.mjs",
     "start": "node build.mjs && electron .",
-    "pack:win": "node build.mjs && electron-packager . \"Plasma Orks Builder\" --platform=win32 --arch=x64 --out=dist --overwrite --asar --ignore=\"^/dist\" --ignore=\"^/build\\.mjs\" --ignore=\"^/README\\.md\" --ignore=\"^/assets\" --ignore=\"^/node_modules\""
+    "pack:win": "node build.mjs && electron-packager . \"Plasma Orks Builder\" --platform=win32 --arch=x64 --out=dist --overwrite --asar --icon=app/assets/icon/plasma-orks.ico --ignore=\"^/dist\" --ignore=\"^/build\\.mjs\" --ignore=\"^/README\\.md\" --ignore=\"^/assets\" --ignore=\"^/node_modules\""
   },
   "devDependencies": {
     "@electron/packager": "18.3.6",

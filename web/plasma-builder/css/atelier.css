@@ -1,34 +1,31 @@
 /* Réglages (les deux interfaces) */
 .settings { position: relative; }
-button.icon.framed { width: 44px; height: 44px; border: 1px solid var(--line); background: var(--panel); border-radius: 8px; }
+button.icon.framed { width: 40px; height: 40px; border: 1px solid var(--line); background: var(--panel); border-radius: 8px; }
 button.icon.framed[aria-expanded="true"] { border-color: var(--accent); color: var(--accent); }
 .settings-menu { min-width: 280px; gap: 10px; padding: 12px; }
 .menu-title { font-family: var(--head); font-size: 17px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
 .settings-menu .seg button { text-align: center; }
 .settings-menu .muted { margin: 0; line-height: 1.45; }
-.seg button[aria-checked="true"] { background: var(--accent-bg); color: var(--accent); }
 .drawer-only { display: none !important; }
 .pin b { display: none; }
 
 /* ===================== Interface Atelier ===================== */
-body.ui-atelier { --rail-w: 264px; --drawer-w: 300px; }
-.ui-atelier .app { height: 100vh; min-height: 560px; overflow: hidden; }
+.ui-atelier { --rail-w: 264px; --drawer-w: 300px; }
+.ui-atelier .app { height: calc(100vh - var(--wintitle-h, 0px)); min-height: 560px; overflow: hidden; }
 
-/* Barre du haut : les étapes au centre, Rig Lab / Importer en icônes */
-.ui-atelier .topbar { flex-wrap: nowrap; gap: 14px; padding-block: 8px; }
-.ui-atelier .brand { margin-right: 0; width: calc(var(--rail-w) - 30px); flex: none; }
-.ui-atelier .mainnav { flex: 1 1 auto; justify-content: center; align-items: center; flex-wrap: nowrap; gap: 4px; min-width: 0; }
-.ui-atelier .mainnav a.active, .ui-atelier .mainnav a[aria-disabled="true"] { display: none; }
-.ui-atelier .mainnav a { order: 2; min-height: 38px; width: 38px; padding: 0; justify-content: center; font-size: 0; gap: 0; color: var(--muted); }
-.ui-atelier .mainnav a:hover { color: var(--text); background: var(--raised); }
-.ui-atelier .mainnav .steps { order: 1; margin-right: 10px; counter-reset: step; border: 0; background: none; padding: 0; gap: 4px; flex-wrap: nowrap; }
-.ui-atelier .steps button { counter-increment: step; display: flex; align-items: center; gap: 8px; min-height: 38px; padding: 0 14px 0 10px; border-radius: 8px; border: 0; color: var(--muted); font-size: 14px; }
+/* Avant que atelier.js ait déplacé les éléments : rien ne s'affiche à l'ancienne place, les panneaux Atelier
+   sont déjà là (la classe ui-atelier est posée par early.js avant le premier affichage). */
+.ui-atelier .viewport-panel > #tools, .ui-atelier .vp-foot > #shading, .ui-atelier .vp-right > #qualityBox, .ui-atelier .vp-bar > #steps { display: none !important; }
+.ui-atelier #equip, .ui-atelier #floatbar { display: flex !important; }
+
+/* Barre du haut : la même que sur les autres pages ; les étapes flottent en haut de la vue */
+.ui-atelier .vp-steps { position: absolute; z-index: 4; top: 12px; left: 50%; transform: translateX(-50%); }
+.ui-atelier .vp-steps .steps { counter-reset: step; flex-wrap: nowrap; gap: 4px; padding: 4px; border-radius: 12px; background: rgba(14,15,18,.9); border: 1px solid #23262c; }
+.ui-atelier .steps button { counter-increment: step; display: flex; align-items: center; gap: 7px; min-height: 34px; padding: 0 11px 0 8px; border-radius: 8px; border: 0; color: var(--muted); font-size: 13px; white-space: nowrap; }
 .ui-atelier .steps button::before { content: counter(step); width: 20px; height: 20px; border-radius: 50%; border: 1px solid #3a3e46; display: grid; place-items: center; font-size: 11px; font-weight: 600; }
 .ui-atelier .steps button:hover { color: var(--text); }
 .ui-atelier .steps button[aria-pressed="true"] { background: var(--raised); color: #fff; border: 0; }
 .ui-atelier .steps button[aria-pressed="true"]::before { background: var(--accent); border-color: var(--accent); color: #16070a; }
-.ui-atelier .projname, .ui-atelier button.primary { min-height: 40px; }
-.ui-atelier button.icon.framed { width: 40px; height: 40px; }
 
 /* Corps : Équipement | tiroir bibliothèque | vue | inspecteur */
 .ui-atelier .body { flex-wrap: nowrap; gap: 0; padding: 0; min-height: 0; }
@@ -62,7 +59,7 @@ body.ui-atelier { --rail-w: 264px; --drawer-w: 300px; }
 
 /* Bibliothèque en tiroir */
 .ui-atelier .library { width: var(--drawer-w); max-width: none; min-width: 0; flex: none; background: #121418; border-right: 1px solid var(--line); padding: 16px 14px; overflow: hidden; }
-.ui-atelier.drawer-closed .library { display: none; }
+.ui-atelier .drawer-closed .library { display: none; }
 .ui-atelier .drawer-only { display: inline-flex !important; }
 .ui-atelier .libgrid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; max-height: none; flex: 1 1 auto; min-height: 0; }
 .ui-atelier .tile { border-radius: 10px; border-width: 1px; border-color: var(--line2); background: #0e0f12; font-size: 12px; padding-bottom: 8px; }
@@ -73,13 +70,13 @@ body.ui-atelier { --rail-w: 264px; --drawer-w: 300px; }
 /* Vue */
 .ui-atelier .viewport-panel { flex: 1 1 auto; padding: 0; gap: 0; background: radial-gradient(ellipse at 50% 42%, #1b1d22 0%, #121316 55%, #0c0d0f 100%); }
 .ui-atelier .vp-main { gap: 0; min-height: 0; }
-.ui-atelier .vp-bar { position: absolute; z-index: 3; right: 12px; top: 60px; flex-direction: column; align-items: flex-end; }
+.ui-atelier .vp-bar { position: absolute; z-index: 3; right: 12px; bottom: 18px; flex-direction: column; align-items: flex-end; }
 .ui-atelier .viewport-panel { position: relative; }
 .ui-atelier .vp-right .btngroup { flex-direction: column; background: rgba(14,15,18,.86); }
 .ui-atelier .vp-area { position: relative; flex: 1 1 auto; min-height: 0; gap: 0; }
 .ui-atelier .vp { border-radius: 0; background: transparent; }
 .ui-atelier .vp-info { top: 14px; left: 16px; font-size: 12px; line-height: 1.5; }
-.ui-atelier .views { position: absolute; z-index: 3; top: 12px; right: 12px; flex-direction: row; gap: 4px; padding: 4px; border-radius: 10px; background: rgba(14,15,18,.86); border: 1px solid #23262c; }
+.ui-atelier .views { position: absolute; z-index: 3; top: 12px; right: 12px; flex: none; flex-direction: column; gap: 4px; padding: 4px; border-radius: 10px; background: rgba(14,15,18,.86); border: 1px solid #23262c; }
 .ui-atelier .views button { width: 40px; border-width: 1px; border-radius: 7px; }
 .ui-atelier .vp-foot { padding: 8px 16px; border-top: 1px solid var(--line); background: #0e0f12; }
 .drawer-open { position: absolute; z-index: 3; left: 14px; top: 58px; display: flex; align-items: center; gap: 6px; height: 36px; padding: 0 12px; border: 1px solid var(--line2); border-radius: 8px; background: #121418; font-size: 13px; }
@@ -112,11 +109,11 @@ body.ui-atelier { --rail-w: 264px; --drawer-w: 300px; }
 /* Bandeaux : l'assemblage est dans Équipement ; les poses seulement à l'étape Pose */
 .ui-atelier .row-bottom { gap: 0; border-top: 1px solid var(--line); }
 .ui-atelier .strip[aria-label="Assemblage"] { display: none; }
-.ui-atelier:not([data-step="pose"]) .row-bottom { display: none; }
+.ui-atelier body:not([data-step="pose"]) .row-bottom { display: none; }
 .ui-atelier .strip { padding: 10px 16px; background: #0e0f12; }
 
 @media (max-width: 1100px) {
-  body.ui-atelier { --rail-w: 220px; --drawer-w: 260px; }
+  .ui-atelier { --rail-w: 220px; --drawer-w: 260px; }
   .ui-atelier .rightcol { width: 270px; }
   .ui-atelier .steps button { padding: 0 10px 0 8px; font-size: 13px; }
 }

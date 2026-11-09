@@ -41,6 +41,30 @@ bibliothèque, importées une par une avec l'**Importeur** (`import.html`). Quat
 
 **Manipulation** (reprise du BrickIt Builder de VIEWPORT3D) : un clic sur une brique de la bibliothèque la prend en main, elle vole jusqu'à son socket (le socket sélectionné s'il est compatible, sinon son socket d'origine) puis s'y pose avec un petit rebond. Glisser une vignette dans le viewport affiche les sockets compatibles (anneaux) et vise le plus proche du pointeur : une arme va en main droite ou gauche ; lâcher pose, Échap annule.
 
+## Hub (`hub.html`)
+
+Accueil du joueur : on ne vend pas une figurine, on **débloque des pièces**. Un board de cinq cartes : ouverture de
+paquets et de coffres, Plasma Library (compteurs ×N par pièce, par rareté et par catégorie), dernier butin, boutique
+(liens de paiement à brancher sur le site, prix `[PRIX]`), kit en cours et drop du jour.
+
+- **Paquet** : on le découpe en glissant le doigt (ou la souris, ou flèche droite / Entrée) le long de la ligne
+  pointillée, puis on retourne les 3 cartes : commune, rare, et une rare ou une **extrême** (chance réglable, garantie
+  au bout de N paquets).
+- **Coffre** : trois coups pour l'ouvrir, il donne toujours commune + rare + extrême.
+- Les pièces volent vers la bibliothèque, les compteurs s'animent ; les doublons se recyclent en dents (monnaie
+  provisoire).
+- Tout est provisoire : catalogue de noms, pictos de catégorie, taux et prix sont en tête de `js/loot.js` (`RULES`,
+  `NAMES`, `KIT`), partagé avec la Library ; l'état du joueur est dans le navigateur (`localStorage` `plasmaork.hub`),
+  en attendant le serveur.
+
+## Plasma Library (`library.html`)
+
+Toutes les pièces : catégories à gauche (compteur et barre de progression), filtres au centre (débloquées,
+manquantes, doublons, rareté, recherche, pièces du kit en cours) et grille avec compteur ×N ; à droite la pièce
+sélectionnée (aperçu, provenance, couleurs de faction, poser sur l'ork, export STL à brancher, recyclage de ses
+doublons). Une pièce manquante dit où la trouver et renvoie vers le Hub (`hub.html#pack`, `#chest`, `#shop`).
+Lien direct : `library.html#cat=weapon` ou `#piece=back_10`.
+
 ## Importeur (`import.html`)
 
 On dépose les fichiers d'une brique dans l'aperçu : modèle `.fbx`, `.obj`, `.glb` / `.gltf` (low et high dans le même
@@ -97,6 +121,8 @@ Le projet est sauvegardé dans le navigateur (localStorage), avec annuler / rét
 - `js/main.js` : le builder (état, historique, interface, briques accrochées aux sockets, export)
 - `js/sockets.js` : sockets de l'ork, noms des locators
 - `js/bricks.js` : format des briques, stockage IndexedDB, construction des objets 3D, export / import de la bibliothèque
+- `hub.html`, `js/hub.js`, `css/hub.css`, `assets/hub/` : le hub de déblocage ; `library.html`, `js/library.js`,
+  `css/library.css` : la Plasma Library ; `js/loot.js` : catalogue, règles et état du joueur partagés
 - `import.html`, `js/importer.js`, `css/importer.css` : l'importeur
 - `js/viewport.js` : viewport (passes HDR, masque de sélection, aides, caméra, gizmo) et moteur de vignettes hors écran
 - `js/render.js` : portage du renderer Viewport3D (shading raster, passe Tonemap, environnements, studio, HDRI)

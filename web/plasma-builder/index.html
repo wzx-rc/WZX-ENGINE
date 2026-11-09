@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Plasma Orks Builder</title>
+<title>Builder · Plasma Orks Builder</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/app.css">
@@ -27,15 +27,16 @@
     <div class="brand">
       <svg width="40" height="40" viewBox="0 0 40 40" aria-hidden="true"><path class="brand-skull" d="M20 4l4 6 7-4-1 8 7 1-5 6 4 6-8 0-2 8-6-5-6 5-2-8-8 0 4-6-5-6 7-1-1-8 7 4z"/><circle cx="15.5" cy="20" r="2.6" fill="#121316"/><circle cx="24.5" cy="20" r="2.6" fill="#121316"/><path d="M15 26h10l-2 3h-6z" fill="#121316"/></svg>
       <span class="brand-name">PLASMA<br>ORKS</span>
+      <button type="button" id="gsetBtn" class="icon gset-btn" aria-label="Réglages" title="Réglages" aria-expanded="false" aria-controls="gset"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>
     </div>
     <nav class="mainnav" aria-label="Navigation">
-      <a href="#" class="active" aria-current="page"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20v-2a4 4 0 0 1 4-4h6a4 4 0 0 1 4 4v2M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z"/></svg>Builder</a>
-      <a href="rig.html"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="4" r="2"/><path d="M12 6v8M6 9h12M12 14l-4 7M12 14l4 7"/></svg>Rig Lab</a>
-      <a href="import.html"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M4 20h16"/></svg>Importer</a>
-      <a href="#" aria-disabled="true" title="Bientôt"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"/></svg>Galerie</a>
-      <a href="#" aria-disabled="true" title="Bientôt"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM3 20v-1a5 5 0 0 1 10 0v1M16 11a3 3 0 1 0 0-6M21 20v-1a5 5 0 0 0-4-4.9"/></svg>Communauté</a>
-      <a href="#" aria-disabled="true" title="Bientôt"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14v16l-7-4-7 4z"/></svg>Mes créations</a>
+      <a href="hub.html" title="Hub"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="8" height="8" rx="2"/><rect x="13" y="3" width="8" height="5" rx="2"/><rect x="13" y="10" width="8" height="11" rx="2"/><rect x="3" y="13" width="8" height="8" rx="2"/></svg><span class="navlbl">Hub</span> <span class="navbadge" id="navBadge" hidden></span></a>
+      <a href="library.html" title="Library"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h4v14H4zM10 5h4v14h-4zM16 6l3.5-1 3 13.5-3.5 1z"/></svg><span class="navlbl">Library</span></a>
+      <a href="index.html" class="active" aria-current="page" title="Builder"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20v-2a4 4 0 0 1 4-4h6a4 4 0 0 1 4 4v2M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z"/></svg><span class="navlbl">Builder</span></a>
+      <a href="rig.html" title="Rig Lab"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="4" r="2"/><path d="M12 6v8M6 9h12M12 14l-4 7M12 14l4 7"/></svg><span class="navlbl">Rig Lab</span></a>
+      <a href="import.html" title="Importer"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M4 20h16"/></svg><span class="navlbl">Importer</span></a>
     </nav>
+    <script src="js/early.js"></script>
     <div class="topbar-right">
       <label class="projname"><span class="sr">Nom du projet</span><input id="projName" type="text" value="Da_Big_Boy_01" spellcheck="false">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16zM14 6l4 4"/></svg></label>
@@ -43,19 +44,8 @@
         <button type="button" id="undoBtn" class="icon" aria-label="Annuler (Ctrl+Z)" title="Annuler (Ctrl+Z)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14L4 9l5-5M4 9h11a5 5 0 0 1 0 10h-3"/></svg></button>
         <button type="button" id="redoBtn" class="icon" aria-label="Rétablir (Ctrl+Y)" title="Rétablir (Ctrl+Y)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 14l5-5-5-5M20 9H9a5 5 0 0 0 0 10h3"/></svg></button>
       </div>
-      <div class="settings">
-        <button type="button" id="settingsBtn" class="icon framed" aria-label="Réglages" title="Réglages" aria-expanded="false" aria-controls="settingsMenu"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>
-        <div id="settingsMenu" class="menu settings-menu" hidden>
-          <span class="menu-title">Interface</span>
-          <div class="seg" role="radiogroup" aria-label="Interface" id="themeSel">
-            <button type="button" role="radio" data-theme="classic">Classique</button>
-            <button type="button" role="radio" data-theme="atelier">Atelier</button>
-          </div>
-          <p class="muted">Classique : l'interface d'origine. Atelier : la vue d'abord, l'équipement à gauche, la bibliothèque en tiroir. Choix enregistré.</p>
-        </div>
-      </div>
       <div class="export">
-        <button type="button" id="exportBtn" class="primary"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M4 20h16"/></svg>Exporter STL</button>
+        <button type="button" id="exportBtn" class="primary" title="Exporter en STL"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M4 20h16"/></svg>Exporter</button>
         <button type="button" id="exportMenuBtn" class="primary caret" aria-label="Options d'export" aria-expanded="false" aria-controls="exportMenu"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button>
         <div id="exportMenu" class="menu" hidden>
           <button type="button" data-export="merged">Un seul STL (figurine fusionnée)</button>
@@ -125,6 +115,7 @@
                 <div class="pins" id="pins"></div>
                 <div class="vp-info" id="vpInfo"></div>
                 <button type="button" id="drawerOpen" class="drawer-open" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>Bibliothèque</button>
+                <div class="vp-steps" id="vpSteps"></div>
                 <div class="floatbar" id="floatbar" role="toolbar" aria-label="Outils de la vue" hidden></div>
                 <div class="loading" id="loading"><span>Chargement de l'ork</span><i></i></div>
               </div>
@@ -243,5 +234,6 @@
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 </div>
 <script type="module" src="js/main.js"></script>
+<script type="module" src="js/chrome.js"></script>
 </body>
 </html>

@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Plasma Library · Plasma Orks Builder</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&family=Inter:wght@400;500;600&family=Chakra+Petch:wght@600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/app.css">
+<link rel="stylesheet" href="css/hub.css">
+<link rel="stylesheet" href="css/library.css">
+</head>
+<body class="hub plib">
+<div class="app">
+
+  <header class="topbar">
+    <div class="brand">
+      <svg width="40" height="40" viewBox="0 0 40 40" aria-hidden="true"><path class="brand-skull" d="M20 4l4 6 7-4-1 8 7 1-5 6 4 6-8 0-2 8-6-5-6 5-2-8-8 0 4-6-5-6 7-1-1-8 7 4z"/><circle cx="15.5" cy="20" r="2.6" fill="#121316"/><circle cx="24.5" cy="20" r="2.6" fill="#121316"/><path d="M15 26h10l-2 3h-6z" fill="#121316"/></svg>
+      <span class="brand-name">PLASMA<br>ORKS</span>
+      <button type="button" id="gsetBtn" class="icon gset-btn" aria-label="Réglages" title="Réglages" aria-expanded="false" aria-controls="gset"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>
+    </div>
+    <nav class="mainnav" aria-label="Navigation">
+      <a href="hub.html" title="Hub"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="8" height="8" rx="2"/><rect x="13" y="3" width="8" height="5" rx="2"/><rect x="13" y="10" width="8" height="11" rx="2"/><rect x="3" y="13" width="8" height="8" rx="2"/></svg><span class="navlbl">Hub</span> <span class="navbadge" id="navBadge" hidden></span></a>
+      <a href="library.html" class="active" aria-current="page" title="Library"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h4v14H4zM10 5h4v14h-4zM16 6l3.5-1 3 13.5-3.5 1z"/></svg><span class="navlbl">Library</span></a>
+      <a href="index.html" title="Builder"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20v-2a4 4 0 0 1 4-4h6a4 4 0 0 1 4 4v2M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z"/></svg><span class="navlbl">Builder</span></a>
+      <a href="rig.html" title="Rig Lab"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="4" r="2"/><path d="M12 6v8M6 9h12M12 14l-4 7M12 14l4 7"/></svg><span class="navlbl">Rig Lab</span></a>
+      <a href="import.html" title="Importer"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M4 20h16"/></svg><span class="navlbl">Importer</span></a>
+    </nav>
+    <script src="js/early.js"></script>
+    <div class="topbar-right">
+      <span class="wallet" title="Dents : la monnaie du hub"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3l5 7 5-7 2 9-7 9-7-9z"/></svg><b id="dents">0</b> dents</span>
+      <a class="hbtn pink" href="hub.html#shop">Boutique</a>
+    </div>
+  </header>
+
+  <div class="libpage">
+
+    <!-- catégories -->
+    <nav class="libside" aria-label="Catégories">
+      <div class="libbrand"><img src="assets/hub/logo_plasma_ork.png" alt=""><span>PLASMA<br>LIBRARY</span></div>
+      <div class="catlist" id="catList"></div>
+      <div class="sidepack" id="sidePack">
+        <div class="minipacks" aria-hidden="true"><i class="b"></i><i class="f"><img src="assets/hub/faction_rose.png" alt=""></i></div>
+        <b id="sidePackTitle">0 pack à ouvrir</b>
+        <a class="hbtn pink wide" id="sidePackGo" href="hub.html#pack">Ouvrir</a>
+      </div>
+    </nav>
+
+    <!-- pièces -->
+    <main class="libmain">
+      <div class="libhead">
+        <h1 id="libTitle">Toutes les pièces</h1>
+        <span class="muted2" id="libSub"></span>
+      </div>
+
+      <section class="kitbar" aria-label="Kit en cours">
+        <img src="assets/ui/icon_back.png" alt="">
+        <div class="kitmid"><b id="kitName">Kit</b><div class="kitsegs" id="kitSegs"></div></div>
+        <span class="kittext" id="kitText"></span>
+        <button type="button" class="hbtn kitbtn" id="kitBtn" aria-pressed="false">Voir les pièces du kit</button>
+      </section>
+
+      <div class="filters">
+        <div class="chips" role="group" aria-label="État" id="fState">
+          <button type="button" data-f="all" aria-pressed="true">Toutes</button><button type="button" data-f="own" aria-pressed="false">Débloquées</button><button type="button" data-f="miss" aria-pressed="false">Manquantes</button><button type="button" data-f="dup" aria-pressed="false">Doublons</button>
+        </div>
+        <span class="sep" aria-hidden="true"></span>
+        <div class="chips rar" role="group" aria-label="Rareté" id="fRar">
+          <button type="button" data-r="c" aria-pressed="false"><i class="r-c"></i>Commune</button><button type="button" data-r="r" aria-pressed="false"><i class="r-r"></i>Rare</button><button type="button" data-r="x" aria-pressed="false"><i class="r-x"></i>Extrême</button>
+        </div>
+        <span class="grow"></span>
+        <label class="lsearch"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5"/></svg><input type="search" id="q" placeholder="Chercher une pièce" aria-label="Chercher une pièce"></label>
+      </div>
+
+      <div class="pgrid" id="pgrid" role="listbox" aria-label="Pièces"></div>
+    </main>
+
+    <!-- pièce sélectionnée -->
+    <aside class="libdetail" aria-label="Pièce sélectionnée" id="detail">
+      <span class="lab">Pièce sélectionnée</span>
+      <div class="dprev" id="dPrev">
+        <img id="dImg" src="assets/ui/icon_head.png" alt="">
+        <span class="dtag" id="dTag">COMMUNE</span>
+        <span class="dcnt" id="dCnt">×1</span>
+        <span class="dnote">aperçu 3D à brancher</span>
+      </div>
+      <h2 id="dName">—</h2>
+      <span class="dmeta" id="dMeta"></span>
+      <span class="dgot" id="dGot"></span>
+      <div class="dfac"><div class="factions" role="radiogroup" aria-label="Couleurs de faction" id="dFac"></div><span class="muted2">couleurs de faction</span></div>
+      <div class="dacts">
+        <a class="hbtn pink wide big" id="dPose" href="index.html">Poser sur mon ork</a>
+        <button type="button" class="hbtn wide" id="dStl">Exporter en STL</button>
+        <button type="button" class="hbtn ghost wide" id="dRecycle" hidden>Recycler</button>
+      </div>
+    </aside>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<div class="fx" id="fx" aria-hidden="true"></div>
+<script type="module" src="js/library.js"></script>
+<script type="module" src="js/chrome.js"></script>
+</body>
+</html>

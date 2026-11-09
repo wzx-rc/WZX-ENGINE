@@ -16,7 +16,7 @@ vendor('three', 'examples/jsm');
 vendor('three-mesh-bvh', 'build');
 vendor('three-gpu-pathtracer', 'build');
 
-for (const page of ['index.html', 'rig.html', 'import.html']) {
+for (const page of ['index.html', 'rig.html', 'import.html', 'hub.html', 'library.html']) {
   let html = fs.readFileSync(path.join(web, page), 'utf8');
   html = html.replace(/https:\/\/cdn\.jsdelivr\.net\/npm\/(three|three-mesh-bvh|three-gpu-pathtracer)@[^/]+\//g, './vendor/$1/');
   fs.writeFileSync(path.join(app, page), html);
