@@ -221,6 +221,7 @@ void App::renderMaterialPreview() {
     rs.exposure = std::pow(2.0f, ps.exposure);
     rs.vignette = 0.0f;
     rs.samplesPerFrame = 2;
+    rs.oidn = false;   // (Open Image Denoise: the main viewport only, its buffers are sized for it)
     // restart the accumulation when anything visible changed
     std::ostringstream key;
     key << (int)ps.shape << ' ' << (int)ps.environment << ' ' << ps.yaw << ' ' << ps.pitch << ' ' << ps.distance << ' ' << ps.exposure << ' '

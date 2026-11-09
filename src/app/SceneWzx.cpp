@@ -354,6 +354,8 @@ std::string App::wzxSceneJson(bool withCamera, const std::function<std::string(c
     w.num("denoiseStrength", rs.denoiseStrength);
     w.integer("denoisePasses", rs.denoisePasses);
     w.num("denoiseEdgeLuma", rs.denoiseEdgeLuma);
+    w.boolean("oidn", rs.oidn);
+    w.integer("oidnInterval", rs.oidnInterval);
     w.boolean("bevel", rs.bevel);
     w.num("bevelScale", rs.bevelScale);
     w.num("fireflyClamp", rs.fireflyClamp);
@@ -567,6 +569,8 @@ void App::loadWzxScene(const Json& j, const std::wstring& path) {
         rs.denoiseStrength = f(rj["denoiseStrength"], rs.denoiseStrength);
         rs.denoisePasses = (int)rj["denoisePasses"].num(rs.denoisePasses);
         rs.denoiseEdgeLuma = f(rj["denoiseEdgeLuma"], rs.denoiseEdgeLuma);
+        rs.oidn = flag(rj["oidn"], rs.oidn);
+        rs.oidnInterval = std::max(1, (int)rj["oidnInterval"].num(rs.oidnInterval));
         rs.bevel = flag(rj["bevel"], rs.bevel);
         rs.bevelScale = f(rj["bevelScale"], rs.bevelScale);
         rs.fireflyClamp = f(rj["fireflyClamp"], rs.fireflyClamp);

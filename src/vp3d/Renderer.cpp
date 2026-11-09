@@ -352,6 +352,7 @@ bool Renderer::createPipelines(std::string* error) {
         std::string* keep = error;
         error = &ignore;
         if (!make(L"SSAO.cso", m_psoSSAO) || !make(L"SSAO_MS.cso", m_psoSSAOMS) || !make(L"SSAOBlur.cso", m_psoSSAOBlur)) { m_psoSSAO.Reset(); m_psoSSAOMS.Reset(); m_psoSSAOBlur.Reset(); }
+        if (!make(L"OidnPack.cso", m_psoOidn)) m_psoOidn.Reset();   // Open Image Denoise passes: optional too
         error = keep;
     }
     return make(L"PathTrace.cso", m_psoTrace) && make(L"Denoise.cso", m_psoDenoise) && make(L"Tonemap.cso", m_psoTonemap) && make(L"GIFade.cso", m_psoGIFade) &&
@@ -2571,26 +2572,35 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
             m_cmd->Dispatch(gx, gy, 1);
         }
     } else {
-    m_cmd->SetComputeRootSignature(m_rootSig.Get());
-    m_cmd->SetComputeRootConstantBufferView(0, m_constants.va());
-    m_cmd->SetComputeRootShaderResourceView(2, m_tlas.va());
-    m_cmd->SetComputeRootShaderResourceView(3, m_vb.va());
-    m_cmd->SetComputeRootShaderResourceView(4, m_ib.va());
-    m_cmd->SetComputeRootShaderResourceView(5, m_instances.va());
-    m_cmd->SetComputeRootShaderResourceView(6, m_materials.va());
-    m_cmd->SetComputeRootShaderResourceView(7, m_lights.va());
-    m_cmd->SetComputeRootDescriptorTable(8, m_heap->GetGPUDescriptorHandleForHeapStart());
-    m_cmd->SetComputeRootDescriptorTable(9, textureTable());
-    D3D12_GPU_DESCRIPTOR_HANDLE histTable = m_heap->GetGPUDescriptorHandleForHeapStart();
-    histTable.ptr += (UINT64)(kGIHeapBase + kGITexCount) * m_descSize;
-    m_cmd->SetComputeRootDescriptorTable(12, histTable);   // u10, u11: temporal history
-    D3D12_GPU_DESCRIPTOR_HANDLE envTable = m_heap->GetGPUDescriptorHandleForHeapStart();
-    envTable.ptr += (UINT64)kEnvHeapSlot * m_descSize;
-    m_cmd->SetComputeRootShaderResourceView(13, m_envDist.va());
-    m_cmd->SetComputeRootDescriptorTable(14, envTable);
+    bindCompute();
 
     bool traced = false;
     m_cmd->EndQuery(m_queryHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 0);
+    // Open Image Denoise (rs.oidn): a new accumulation drops its image (the a-trous filter shows the moving view);
+    // once the view stayed still a frame, OIDN denoises at the samples of the schedule (oidnDue), its image faded in
+    // (not in the offscreen renders, the camera thumbnails: their size would reallocate OIDN's buffers each time)
+    const bool oidnOn = rs.denoise && rs.oidn && !rs.ddgi && toBackBuffer && m_psoOidn && !m_oidn.failed() && oidnAvailable();
+    const uint32_t before = m_sampleIndex;
+    if (before == 0 || !oidnOn) { m_oidnShown = false; m_oidnLast = 0; }
+    bool oidnRun = false;
+    if (oidnOn && before > 0) {
+        const uint32_t after = before < (uint32_t)rs.maxSamples ? before + fc.samplesPerFrame : before;
+        oidnRun = oidnDue(after, rs);
+    }
+    if (oidnRun) {   // the image shown by the last frame: where the fade to the new denoised image starts
+        const uint64_t bytes = (uint64_t)vp.w * vp.h * 16;
+        if (m_oidnFrom.size < bytes)
+            m_oidnFrom = createBuffer(bytes, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS,
+                                      D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+        m_cmd->SetPipelineState(m_psoOidn.Get());
+        m_cmd->SetComputeRootUnorderedAccessView(22, m_oidnFrom.va());
+        const uint32_t from = m_oidnShown ? (0x80000000u | (uint32_t)TEX_DENOISE_A)
+                                          : (rs.denoise && m_denoisedSlot != 0xFFFFFFFFu ? m_denoisedSlot : 0xFFFFFFFFu);
+        uint32_t c[4] = {1u, from, 0u, 0u};
+        m_cmd->SetComputeRoot32BitConstants(1, 4, c, 0);
+        m_cmd->Dispatch(gx, gy, 1);
+        uavBarrier();
+    }
     if (rs.ddgi) {   // ray traced probes and visibility (the raster probes take the giRaster branch above)
         recordDDGI(rs, gx, gy);   // never converges: probes and image history keep updating
         ++m_sampleIndex;
@@ -2603,10 +2613,32 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
         m_sampleIndex += fc.samplesPerFrame;
         traced = true;
     }
+    if (oidnRun) {
+        if (runOidn(gx, gy, (uint32_t)vp.w, (uint32_t)vp.h)) {
+            m_oidnShown = true;
+            m_oidnFade = 0;
+        }
+        m_oidnLast = m_sampleIndex;
+    }
 
-    // Edge-aware a-trous denoiser (rs.denoisePasses passes), only when new samples arrived.
+    // The denoised image shown: OIDN's, faded in from the last image; else the edge-aware a-trous denoiser
+    // (rs.denoisePasses passes), only when new samples arrived.
     uint32_t& denoisedSlot = m_denoisedSlot;
-    if (rs.denoise) {
+    uint32_t shownSlot = 0xFFFFFFFFu;   // OIDN: the slot of its image (radiance, not demodulated)
+    if (oidnOn && m_oidnShown) {
+        m_cmd->SetPipelineState(m_psoOidn.Get());
+        m_cmd->SetComputeRootUnorderedAccessView(19, m_oidn.output()->GetGPUVirtualAddress());
+        m_cmd->SetComputeRootUnorderedAccessView(22, m_oidnFrom.va());
+        const float t = rs.oidnBlendFrames <= 0 ? 1.0f : std::min(1.0f, (m_oidnFade + 1) / (float)rs.oidnBlendFrames);
+        if (m_oidnFade < (1 << 20)) ++m_oidnFade;
+        uint32_t c[4] = {2u, (uint32_t)TEX_DENOISE_A, 0u, 0u};
+        memcpy(&c[2], &t, sizeof(float));
+        m_cmd->SetComputeRoot32BitConstants(1, 4, c, 0);
+        m_cmd->Dispatch(gx, gy, 1);
+        uavBarrier();
+        shownSlot = TEX_DENOISE_A;
+        denoisedSlot = 0xFFFFFFFFu;   // the a-trous image is gone: redone when it is shown again
+    } else if (rs.denoise) {
         if (traced || denoisedSlot == 0xFFFFFFFF) {
             m_cmd->SetPipelineState(m_psoDenoise.Get());
             uint32_t src = TEX_ACCUM, dst = TEX_DENOISE_A;
@@ -2627,13 +2659,14 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
     // editor overlay (grid, wireframe) drawn by the raster pass into the denoise slot not holding the image
     uint32_t overlay = 0;
     if (m_psoDepth && (rs.editorGrid > 0 || rs.wireframe || !m_selIds.empty() || !m_edgeObjects.empty())) {   // (also draws the coverage of the selection)
-        const uint32_t slot = (rs.denoise && denoisedSlot == TEX_DENOISE_A) ? TEX_DENOISE_B : TEX_DENOISE_A;
+        const uint32_t slot = (rs.denoise && (denoisedSlot == TEX_DENOISE_A || shownSlot == TEX_DENOISE_A)) ? TEX_DENOISE_B : TEX_DENOISE_A;
         recordRaster(scene, rs, vp, false, false, false, (int)slot);
         overlay = slot + 1;
     }
     m_cmd->SetPipelineState(m_psoTonemap.Get());
     m_cmd->SetComputeRootDescriptorTable(23, selCovTable());
-    uint32_t tc[4] = {rs.denoise ? denoisedSlot : 0xFFFFFFFFu, 0, (uint32_t)rs.tonemapper, overlay};
+    const uint32_t tonemapSlot = shownSlot != 0xFFFFFFFFu ? (0x80000000u | shownSlot) : (rs.denoise ? denoisedSlot : 0xFFFFFFFFu);
+    uint32_t tc[4] = {tonemapSlot, 0, (uint32_t)rs.tonemapper, overlay};
     m_cmd->SetComputeRoot32BitConstants(1, 4, tc, 0);
     m_cmd->Dispatch(gx, gy, 1);
     if (m_giFadeT < 1.0f) {   // GI mode, raster while moving: from the last raster image to the traced one
@@ -2684,6 +2717,71 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
     m_cmd->Close();
     ID3D12CommandList* l[] = {m_cmd.Get()};
     m_queue->ExecuteCommandLists(1, l);
+}
+
+// Compute root signature and tables of the path tracing passes (also after runOidn reopened the command list).
+void Renderer::bindCompute() {
+    ID3D12DescriptorHeap* heaps[] = {m_heap.Get()};
+    m_cmd->SetDescriptorHeaps(1, heaps);
+    m_cmd->SetComputeRootSignature(m_rootSig.Get());
+    m_cmd->SetComputeRootConstantBufferView(0, m_constants.va());
+    m_cmd->SetComputeRootShaderResourceView(2, m_tlas.va());
+    m_cmd->SetComputeRootShaderResourceView(3, m_vb.va());
+    m_cmd->SetComputeRootShaderResourceView(4, m_ib.va());
+    m_cmd->SetComputeRootShaderResourceView(5, m_instances.va());
+    m_cmd->SetComputeRootShaderResourceView(6, m_materials.va());
+    m_cmd->SetComputeRootShaderResourceView(7, m_lights.va());
+    m_cmd->SetComputeRootDescriptorTable(8, m_heap->GetGPUDescriptorHandleForHeapStart());
+    m_cmd->SetComputeRootDescriptorTable(9, textureTable());
+    D3D12_GPU_DESCRIPTOR_HANDLE histTable = m_heap->GetGPUDescriptorHandleForHeapStart();
+    histTable.ptr += (UINT64)(kGIHeapBase + kGITexCount) * m_descSize;
+    m_cmd->SetComputeRootDescriptorTable(12, histTable);   // u10, u11: temporal history
+    D3D12_GPU_DESCRIPTOR_HANDLE envTable = m_heap->GetGPUDescriptorHandleForHeapStart();
+    envTable.ptr += (UINT64)kEnvHeapSlot * m_descSize;
+    m_cmd->SetComputeRootShaderResourceView(13, m_envDist.va());
+    m_cmd->SetComputeRootDescriptorTable(14, envTable);
+}
+
+bool Renderer::oidnAvailable() {
+    static const bool present = Oidn::dllPresent();
+    return present;
+}
+
+// Samples per pixel at which OIDN denoises: each doubling up to 32 (1 sample needs a still frame first, so 2, 4, 8,
+// 16, 32), then each multiple of rs.oidnInterval, and the final image (maxSamples), each once per accumulation.
+bool Renderer::oidnDue(uint32_t samples, const RenderSettings& rs) const {
+    if (samples == 0 || samples <= m_oidnLast) return false;
+    if (samples >= (uint32_t)std::max(1, rs.maxSamples)) return true;
+    if (m_oidnLast < 32) return samples >= std::max(1u, 2 * m_oidnLast);
+    const uint32_t interval = (uint32_t)std::max(1, rs.oidnInterval);
+    return samples / interval > m_oidnLast / interval;
+}
+
+// The accumulation packed for OIDN, the frame so far executed and waited for, OIDN run, then the command list
+// reopened with the compute bindings (the rest of the frame follows). False when OIDN failed (its status says why).
+bool Renderer::runOidn(UINT gx, UINT gy, uint32_t w, uint32_t h) {
+    if (!m_oidn.ensureDevice(m_device.Get()) || !m_oidn.resize(m_device.Get(), w, h)) return false;
+    m_cmd->SetPipelineState(m_psoOidn.Get());
+    m_cmd->SetComputeRootUnorderedAccessView(17, m_oidn.input()->GetGPUVirtualAddress());
+    uint32_t c[4] = {0u, 0u, 0u, 0u};
+    m_cmd->SetComputeRoot32BitConstants(1, 4, c, 0);
+    m_cmd->Dispatch(gx, gy, 1);
+    uavBarrier();
+    if (!m_oidn.shared()) {
+        transition(m_oidn.input(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_COPY_SOURCE);
+        m_cmd->CopyBufferRegion(m_oidn.readback(), 0, m_oidn.input(), 0, m_oidn.inputBytes());
+        transition(m_oidn.input(), D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+    }
+    executeAndWait();
+    const bool ok = m_oidn.run();
+    beginCommands();
+    bindCompute();
+    if (ok && !m_oidn.shared()) {
+        transition(m_oidn.output(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_COPY_DEST);
+        m_cmd->CopyBufferRegion(m_oidn.output(), 0, m_oidn.upload(), 0, m_oidn.outputBytes());
+        transition(m_oidn.output(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+    }
+    return ok;
 }
 
 float Renderer::orthoBack(const Camera& cam) const {

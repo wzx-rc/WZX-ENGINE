@@ -144,6 +144,16 @@ bool App::init(HINSTANCE inst, const Options& opt) {
     }
     if (!opt.openPath.empty()) loadSceneFile(opt.openPath);
     if (!opt.hdri.empty()) setHdri(opt.hdri);
+    if (opt.denoiser >= 0) {   // --denoiser 0 off, 1 a-trous, 2 Open Image Denoise (progressive path tracing)
+        m_rs.denoise = opt.denoiser != 0;
+        m_rs.oidn = opt.denoiser == 2;
+    }
+    // automated capture of the progressive view: the image of --spp samples is the final one (OIDN denoises it), shown
+    // at once (no fade)
+    if (!opt.shotPath.empty() && opt.shotSeq == 0 && !m_rs.raster && !m_rs.ddgi) {
+        m_rs.maxSamples = std::max(1, opt.shotSpp);
+        m_rs.oidnBlendFrames = 0;
+    }
     if (opt.camDist > 0) m_scene.camera.distance *= opt.camDist;   // test: camera closer (< 1) or further
     if (opt.camPitch > -100) m_scene.camera.pitch = radians(opt.camPitch);
     if (opt.select >= 0 && opt.select < (int)m_scene.objects.size()) m_selected = opt.select;
@@ -318,8 +328,10 @@ void App::setRenderMode(int mode) {
     m_rs.rcSplit = mode == 4;
     m_rs.rcScreen = false;
     m_rs.rcHysteresis = 0.0f;
-    // progressive: exact, no denoiser by default (the option is in the Render tab); GI: off by default (it blurs shadows)
-    m_rs.denoise = false;
+    // progressive: Open Image Denoise by default (the a-trous filter while the view moves, and alone when OIDN is not
+    // installed); GI: off by default (it blurs shadows)
+    m_rs.denoise = mode == 2;
+    m_rs.oidn = true;
     m_quality = mode == 2 ? 1 : 0;
     applyQuality();
     markDirty();
@@ -725,6 +737,9 @@ void App::frame() {
                     rst.splitProbes[3], rst.splitProbes[4], rst.splitProbes[5], rst.splitCapacity[0], rst.splitCapacity[1],
                     rst.splitCapacity[2], rst.splitCapacity[3], rst.splitCapacity[4], rst.splitCapacity[5]);
             if (!m_renderer.srcProfile.empty()) fprintf(tf, "passes_ms=%s\n", m_renderer.srcProfile.c_str());
+            if (m_renderer.oidnRuns() > 0 || m_renderer.oidnFailed())   // Open Image Denoise of the progressive view
+                fprintf(tf, "oidn_device=%s oidn_ms=%.1f oidn_runs=%d oidn_spp=%u status=%s\n", m_renderer.oidnDevice().c_str(),
+                        m_renderer.oidnMs(), m_renderer.oidnRuns(), m_renderer.oidnSamples(), m_renderer.oidnStatus().c_str());
             fclose(tf);
         }
         if (const char* dump = getenv("VP3D_DUMP_CAPTURE")) {   // debug: the probe cube captures of the last frame
@@ -1292,6 +1307,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         else if (a == L"--shot") opt.shotPath = next();
         else if (a == L"--shot-viewport") { opt.shotPath = next(); opt.shotViewport = true; }
         else if (a == L"--spp") opt.shotSpp = _wtoi(next().c_str());
+        else if (a == L"--denoiser") opt.denoiser = _wtoi(next().c_str());
         else if (a == L"--view") opt.view = _wtoi(next().c_str());
         else if (a == L"--select") opt.select = _wtoi(next().c_str());
         else if (a == L"--curve-test") opt.curveTest = next();

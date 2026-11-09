@@ -102,6 +102,7 @@ struct Options {
     std::wstring shotPath;      // auto screenshot then exit
     bool shotViewport = false;  // the auto screenshot is the 3D viewport only (--shot-viewport)
     int shotSpp = 256;
+    int denoiser = -1;          // --denoiser: 0 off, 1 a-trous, 2 Open Image Denoise (-1: the default of the mode)
     int view = -1;
     int select = -1;
     int tool = -1;              // test: start with this tool (1 move, 2 rotate)

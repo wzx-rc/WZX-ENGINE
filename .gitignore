@@ -14,6 +14,9 @@ _archive/
 00 - REFERENCES/
 01 - INBOX/
 
+# Intel Open Image Denoise : DLL précompilées téléchargées par build.bat (tools\fetch_oidn.ps1), ~80 Mo
+third_party/oidn/
+
 # Fichiers de préférences générés à l'exécution
 *.ini
 vp3d_prefs.txt

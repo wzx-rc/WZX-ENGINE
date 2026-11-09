@@ -28,7 +28,7 @@ if not exist build\lib mkdir build\lib
 
 echo [1/5] Shaders
 set "DXC=%WindowsSdkVerBinPath%x64\dxc.exe"
-for %%S in (PathTrace Denoise Tonemap DDGIUpdate DDGIRaster DDGIBlend GIShade GIFade RCVisibility RCTrace RCGather RCSProbes RCSTrace RCSProbeSH RCSGather SunShadowTrace SunShadowFilter ReflectTrace ReflectFilter SRCClear SRCInsert SRCAlloc SRCCount SRCTrace SRCMerge SRCIrradiance SRCFilter SRCGather ResolveTM) do (
+for %%S in (PathTrace Denoise Tonemap DDGIUpdate DDGIRaster DDGIBlend GIShade GIFade RCVisibility RCTrace RCGather RCSProbes RCSTrace RCSProbeSH RCSGather SunShadowTrace SunShadowFilter ReflectTrace ReflectFilter SRCClear SRCInsert SRCAlloc SRCCount SRCTrace SRCMerge SRCIrradiance SRCFilter SRCGather ResolveTM OidnPack) do (
     "%DXC%" -nologo -T cs_6_5 -E main -HV 2021 -O3 -I src\vp3d\shaders src\vp3d\shaders\%%S.hlsl -Fo "%OUT%\shaders\%%S.cso" || exit /b 1
 )
 rem screen-space ambient occlusion of the raster viewport (depth multisampled or not) and its blur
@@ -45,6 +45,11 @@ rem editor ground grid of the raster viewport
 "%DXC%" -nologo -T vs_6_0 -E VSGrid -HV 2021 -O3 src\vp3d\shaders\EditorGrid.hlsl -Fo "%OUT%\shaders\EditorGrid_VSGrid.cso" || exit /b 1
 "%DXC%" -nologo -T ps_6_0 -E PSGrid -HV 2021 -O3 src\vp3d\shaders\EditorGrid.hlsl -Fo "%OUT%\shaders\EditorGrid_PSGrid.cso" || exit /b 1
 if exist assets xcopy /E /I /Y /Q assets "%OUT%\assets" >nul
+rem Intel Open Image Denoise (Apache 2.0): prebuilt DLLs fetched once into third_party\oidn (git-ignored), copied next to
+rem the editor, which loads them at run time (src\vp3d\Oidn.cpp). Without them (no network) the build goes on and the
+rem OIDN denoiser is greyed out in the Render tab.
+if not exist third_party\oidn\bin\OpenImageDenoise.dll powershell -NoProfile -ExecutionPolicy Bypass -File tools\fetch_oidn.ps1
+if exist third_party\oidn\bin\OpenImageDenoise.dll xcopy /Y /Q /D third_party\oidn\bin\*.dll "%OUT%\" >nul
 
 set "CFLAGS=/nologo /std:c++17 /EHsc /W3 /utf-8 /DUNICODE /D_UNICODE /DNOMINMAX /DWIN32_LEAN_AND_MEAN /DIMGUI_DEFINE_MATH_OPERATORS %CFG% /Isrc /Ithird_party\imgui"
 

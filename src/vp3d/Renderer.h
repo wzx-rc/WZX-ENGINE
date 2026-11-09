@@ -8,6 +8,7 @@
 //               r.present();
 #pragma once
 #include "LitPrep.h"
+#include "Oidn.h"
 #include "Scene.h"
 #include <d3d12.h>
 #include <dxgi1_6.h>
@@ -43,6 +44,12 @@ struct RenderSettings {
     float denoiseStrength = 1.0f;
     int denoisePasses = 3;          // a-trous passes (steps 1, 2, 4, ...): more = smoother, blurrier
     float denoiseEdgeLuma = 0.5f;   // luminance edge sensitivity: lower = the filter stops at shadow edges
+    // Progressive path tracing, denoise on: Intel Open Image Denoise on the accumulated image while the view is still
+    // (at 2, 4, 8, 16, 32 samples per pixel, then every oidnInterval, and on the final image), the a-trous filter
+    // while it moves. Faded in over oidnBlendFrames frames (0 = at once). Needs OpenImageDenoise.dll (oidnAvailable).
+    bool oidn = true;
+    int oidnInterval = 64;
+    int oidnBlendFrames = 10;
     bool bevel = true;
     bool rasterBevel = false;       // the bevel in the raster view too (inline ray queries: builds the TLAS in raster)
     // Raster view closer to the path tracer (BrickIt HQ; builds the TLAS): every area light shadowed by rays, the
@@ -254,6 +261,15 @@ public:
     float giSpacing() const { return m_giSpacing; }
     const RCStats& rcStats() const { return m_rcStats; }   // Radiance Cascades of the last GI frame
     bool converged(const RenderSettings& rs) const { return m_sampleIndex >= (uint32_t)rs.maxSamples; }
+    // Open Image Denoise (RenderSettings::oidn): the DLL is there (the option can be offered); the device and its state
+    // once started (first denoise); the samples per pixel of the image on screen (0 = none: a-trous or raw)
+    static bool oidnAvailable();
+    bool oidnFailed() const { return m_oidn.failed(); }
+    const std::string& oidnDevice() const { return m_oidn.deviceName(); }
+    const std::string& oidnStatus() const { return m_oidn.status(); }
+    float oidnMs() const { return m_oidn.lastMs(); }
+    int oidnRuns() const { return m_oidn.runs(); }
+    uint32_t oidnSamples() const { return m_oidnShown ? m_oidnLast : 0u; }
 
     // Reads back the last tonemapped viewport image (RGBA8).
     bool readViewport(std::vector<uint8_t>& rgba, uint32_t& w, uint32_t& h);
@@ -463,6 +479,17 @@ private:
     uint32_t m_frameIndex = 0;
     uint32_t m_sampleIndex = 0;
     uint32_t m_denoisedSlot = 0xFFFFFFFF;
+    // Open Image Denoise: device and buffers, the fade start (float4 per pixel), the samples of the last denoise of
+    // this accumulation, whether its image is the one shown (in TEX_DENOISE_A), frames since it arrived
+    Oidn m_oidn;
+    Buffer m_oidnFrom;
+    ComPtr<ID3D12PipelineState> m_psoOidn;
+    uint32_t m_oidnLast = 0;
+    bool m_oidnShown = false;
+    int m_oidnFade = 0;
+    bool oidnDue(uint32_t samples, const RenderSettings& rs) const;
+    bool runOidn(UINT gx, UINT gy, uint32_t w, uint32_t h);   // pack, wait, denoise, reopen the command list
+    void bindCompute();                                       // root signature and the tables after a reopened list
 
     ComPtr<ID3D12QueryHeap> m_queryHeap;
     Buffer m_queryReadback;
