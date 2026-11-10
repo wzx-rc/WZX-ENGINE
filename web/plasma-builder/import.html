@@ -69,7 +69,7 @@
       <div class="vp-main">
         <div class="vp-bar">
           <div class="steps" role="group" aria-label="Affichage">
-            <button type="button" id="orkBtn" aria-pressed="true">Ork</button>
+            <button type="button" id="orkBtn" aria-pressed="false" title="Essayer la brique sur l'ork, accrochée par son plug">Sur l'ork</button>
             <button type="button" data-show="low">Low</button>
             <button type="button" data-show="high">High</button>
           </div>
@@ -118,14 +118,9 @@
             <label class="check"><input type="checkbox" id="fZup">Z vers le haut</label>
           </div>
 
-          <h3>Placement</h3>
-          <label>Socket de l'ork par défaut<select id="fHome"></select></label>
+          <h3>Plug</h3>
           <label>Type de plug<select id="fPlugType"></select></label>
-          <div class="iradio" role="radiogroup" aria-label="Origine du plug" id="fPlacement">
-            <label class="check"><input type="radio" name="placement" value="inplace">En place : modélisée sur l'ork dans Maya</label>
-            <label class="check"><input type="radio" name="placement" value="plug">Au locator PLUG_ (ou au point cliqué)</label>
-            <label class="check"><input type="radio" name="placement" value="origin">À l'origine de la scène</label>
-          </div>
+          <p class="muted">La brique reste à l'origine, comme dans Maya. Dans le Builder, elle s'accroche par son plug (locator <code>PLUG_type</code>) au socket où on la pose. « Sur l'ork » l'essaie sur le premier socket de son type.</p>
 
           <h3>Sockets de la brique</h3>
           <div id="fSockets" class="ilist"></div>
