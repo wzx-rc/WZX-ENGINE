@@ -45,6 +45,10 @@ struct DrawConstants {
     uint id;
     float alpha;
     uint flags;
+#ifdef VP3D_ATTRIB_SEMANTICS
+    float4 bmin;   // Lit: the box of the bevel (object space; bmax.w = 1 when there is one)
+    float4 bmax;
+#endif
 };
 #if defined(VP3D_ATTRIB_SEMANTICS) && !defined(VP3D_LIT_INSTANCED)
 ConstantBuffer<DrawConstants> D : register(b1);
@@ -543,6 +547,30 @@ float4 Shade(VSOut i, bool ghost, float shadowBias, bool capture) {
         const float px = max(length(ddx(i.wpos)), length(ddy(i.wpos)));
         if (rad > 0.5 * px)   // at least half a pixel wide
             N = RasterBevel(i.cwpos, Ng, N, D.id - 1, rad, rad / max(px, 1e-8));
+    }
+#else
+    // Lit (no ray queries): rounded edges of the box of the mesh. On a face of the box (the point there, its object
+    // normal along that face), the normal bends towards the faces closer than the radius, as a rounded box.
+    if (R.bevelOn > 0 && m.bevelRadius > 0 && !capture && !ghost && D.bmax.w > 0) {
+        const float rad = m.bevelRadius * R.bevelOn;
+        const float px = max(length(ddx(i.wpos)), length(ddy(i.wpos)));
+        if (rad > 0.5 * px) {
+            const float3 c = (D.bmin.xyz + D.bmax.xyz) * 0.5, h = (D.bmax.xyz - D.bmin.xyz) * 0.5;
+            const float3 q = i.opos - c;
+            const float3 d = h - abs(q);
+            const float eps = 0.004;
+            const float3 on = normalize(i.onrm), ao = abs(on);
+            const float da = ao.x > 0.95 ? d.x : (ao.y > 0.95 ? d.y : (ao.z > 0.95 ? d.z : 1e9));
+            const float sq = ao.x > 0.95 ? q.x * on.x : (ao.y > 0.95 ? q.y * on.y : q.z * on.z);
+            if (da < eps && sq > 0 && min(d.x, min(d.y, d.z)) > -eps) {
+                const float3 e = q - clamp(q, -(h - rad), h - rad);
+                if (dot(e, e) > 1e-12) {
+                    const float3 nb = normalize(e);
+                    float3 nw = normalize(float3(dot(D.row0.xyz, nb), dot(D.row1.xyz, nb), dot(D.row2.xyz, nb)));
+                    if (dot(nw, V) > 0.02) N = nw;
+                }
+            }
+        }
     }
 #endif
     float3 base = m.baseColor;

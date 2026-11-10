@@ -39,6 +39,10 @@ struct Settings {
     bool showProbes = false;     // the probes as small spheres shaded with their irradiance
     // Baked probes (setBakedProbes): the main pass reads them when no live DDGI runs. No computation at run time.
     bool bakedProbes = true;
+    // Rounded edges without ray tracing (the iPad): the normal bends over the edges of the box of each mesh (its outer
+    // faces, the top at the level of its biggest upward face: under the studs), over the material bevel radius times
+    // this scale. 0 = off. Cheap: a few instructions in the main pass.
+    float bevel = 0.0f;
 };
 
 class LitRenderer {
@@ -99,7 +103,14 @@ private:
     RefCntAutoPtr<Diligent::IBuffer> m_rasterCB, m_drawCB, m_postCB;
     RefCntAutoPtr<Diligent::IBuffer> m_drawBuf;        // DrawConstants of the frame, sorted by mesh (gDraws)
     std::vector<uint32_t> m_drawOrder;                 // sorted slot -> index in m_data.draws
-    std::vector<vp3d::lit::DrawConstants> m_drawSorted;
+    // the draw constants of Lit: those of the DirectX 12 viewport, then the box of the bevel (Raster.hlsl, Lit only)
+    struct LitDraw {
+        vp3d::lit::DrawConstants d;
+        float bmin[4];   // w: 1 = a box (the bevel applies)
+        float bmax[4];
+    };
+    std::vector<LitDraw> m_drawSorted;
+    std::vector<float> m_bevelBox;   // per mesh: min xyz, max xyz, valid (7 floats)
     uint32_t m_drawCalls = 0;
     std::vector<RefCntAutoPtr<Diligent::ITexture>> m_textures;   // MAX_TEXTURES slots (white when unused)
     std::vector<bool> m_textureValid;

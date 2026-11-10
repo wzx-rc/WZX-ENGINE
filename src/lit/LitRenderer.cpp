@@ -7,6 +7,7 @@
 #include "Graphics/GraphicsTools/interface/MapHelper.hpp"
 
 #include <cstring>
+#include <map>
 
 using namespace Diligent;
 
@@ -82,7 +83,7 @@ bool LitRenderer::init(IRenderDevice* device, IDeviceContext* context, IEngineFa
     while (m_msaa > 1 && (!(ci.SampleCounts & m_msaa) || !(di.SampleCounts & m_msaa))) m_msaa >>= 1;
 
     m_rasterCB = makeDynamicCB(device, sizeof(vp3d::lit::RasterConstants), "Lit raster constants");
-    m_drawCB = makeDynamicCB(device, sizeof(vp3d::lit::DrawConstants), "Lit draw constants");
+    m_drawCB = makeDynamicCB(device, sizeof(LitDraw), "Lit draw constants");
     m_postCB = makeDynamicCB(device, sizeof(PostConstants), "Lit post constants");
     m_giCB = makeDynamicCB(device, sizeof(vp3d::gpu::DDGIConstants), "Lit DDGI constants");
     m_probeCB = makeDynamicCB(device, sizeof(float) * 20, "Lit probe face constants");
@@ -332,6 +333,31 @@ void LitRenderer::uploadGeometry(const vp3d::Scene& scene) {
     m_geometryVersion = scene.geometryVersion;
     m_geometryScene = &scene;
     vp3d::lit::buildGeometry(scene, m_geo);
+    // the box of the bevel of each mesh: its bounds, the top lowered to its biggest upward face (a brick: under its
+    // studs; a tile: its top)
+    m_bevelBox.assign(m_geo.meshes.size() * 7, 0.0f);
+    for (size_t mi = 0; mi < m_geo.meshes.size(); ++mi) {
+        const vp3d::lit::MeshInfo& g = m_geo.meshes[mi];
+        const float3 ext = g.bmax - g.bmin;
+        if (g.indexCount < 12 || ext.x <= 0 || ext.y <= 0 || ext.z <= 0) continue;
+        std::map<int, float> upArea;   // y level (0.1 mm) -> area of the faces looking up
+        for (uint32_t t = 0; t + 2 < g.indexCount; t += 3) {
+            const float3 a = m_geo.vertices[g.vertexOffset + m_geo.indices[g.indexOffset + t]].pos;
+            const float3 b = m_geo.vertices[g.vertexOffset + m_geo.indices[g.indexOffset + t + 1]].pos;
+            const float3 c = m_geo.vertices[g.vertexOffset + m_geo.indices[g.indexOffset + t + 2]].pos;
+            const float3 n = cross(b - a, c - a);
+            const float len = length(n);
+            if (len <= 0 || n.y < 0.99f * len) continue;
+            upArea[(int)std::lround((a.y + b.y + c.y) / 3.0f * 1000.0f)] += len * 0.5f;
+        }
+        float top = g.bmax.y, best = 0;
+        for (const auto& kv : upArea) if (kv.second > best) { best = kv.second; top = kv.first / 1000.0f; }
+        if (top < g.bmax.y - 0.25f * std::max(1.0f, ext.y) || top <= g.bmin.y) top = g.bmax.y;
+        float* o = &m_bevelBox[mi * 7];
+        o[0] = g.bmin.x; o[1] = g.bmin.y; o[2] = g.bmin.z;
+        o[3] = g.bmax.x; o[4] = top; o[5] = g.bmax.z;
+        o[6] = 1.0f;
+    }
 
     auto immutable = [&](const char* name, const void* data, uint64_t size, BIND_FLAGS bind, RefCntAutoPtr<IBuffer>& out) {
         out.Release();
@@ -447,9 +473,17 @@ void LitRenderer::sortDraws() {
     m_drawOrder.resize(n);
     for (uint32_t k = 0; k < n; ++k) m_drawOrder[start[m_data.draws[k].mesh]++] = k;
     m_drawSorted.resize(std::max<uint32_t>(n, 1));
-    for (uint32_t k = 0; k < n; ++k) m_drawSorted[k] = vp3d::lit::drawConstants(m_data.draws[m_drawOrder[k]]);
-    updateBuffer(m_drawBuf, m_drawSorted.data(), (uint32_t)(m_drawSorted.size() * sizeof(vp3d::lit::DrawConstants)),
-                 sizeof(vp3d::lit::DrawConstants), "Lit draws");
+    for (uint32_t k = 0; k < n; ++k) {
+        const vp3d::lit::Draw& d = m_data.draws[m_drawOrder[k]];
+        LitDraw& o = m_drawSorted[k];
+        o.d = vp3d::lit::drawConstants(d);
+        const size_t b = (size_t)d.mesh * 7;
+        const bool box = b + 7 <= m_bevelBox.size() && m_bevelBox[b + 6] > 0;
+        for (int c = 0; c < 3; ++c) { o.bmin[c] = box ? m_bevelBox[b + c] : 0; o.bmax[c] = box ? m_bevelBox[b + 3 + c] : 0; }
+        o.bmin[3] = 0;
+        o.bmax[3] = box ? 1.0f : 0.0f;
+    }
+    updateBuffer(m_drawBuf, m_drawSorted.data(), (uint32_t)(m_drawSorted.size() * sizeof(LitDraw)), sizeof(LitDraw), "Lit draws");
 }
 
 void LitRenderer::drawRange(int mesh, uint32_t first, uint32_t count) {
@@ -509,6 +543,7 @@ void LitRenderer::render(const vp3d::Scene& scene, const Settings& settings, ITe
     {
         MapHelper<vp3d::lit::RasterConstants> rc(m_ctx, m_rasterCB, MAP_WRITE, MAP_FLAG_DISCARD);
         vp3d::lit::computeFrame(scene, m_data, m_env.valid() ? &m_env : nullptr, fs, (int)width, (int)height, *rc, castShadows);
+        rc->hemiPad = settings.bevel;   // (R.bevelOn of Raster.hlsl: Lit reads the box of each draw, no ray queries)
     }
     {
         MapHelper<PostConstants> pc(m_ctx, m_postCB, MAP_WRITE, MAP_FLAG_DISCARD);
