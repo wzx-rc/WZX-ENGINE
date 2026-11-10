@@ -174,7 +174,7 @@ def analyse(sel=None):
     if len(plugs) > 1:
         issues.append(('warn', u'%d PLUG_ : un seul est utilisé.' % len(plugs)))
     if roots and meshes and not plugs:
-        issues.append(('info', u'Pas de PLUG_ : placement « en place » (modélisée sur l\'ork) ou à l\'origine.'))
+        issues.append(('info', u'Pas de PLUG_ : la brique s\'accrochera par son origine (0, 0, 0). Ajoute un PLUG_ (bouton PLUG).'))
     for p in color:
         if not os.path.isfile(p):
             issues.append(('warn', u'Texture introuvable : %s' % p))

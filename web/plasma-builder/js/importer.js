@@ -165,7 +165,7 @@ async function addFiles(files) {
       } else if (IMAGE_EXT.test(f.name)) {
         const blob = new Blob([await f.arrayBuffer()], { type: f.type || 'image/' + f.name.split('.').pop().toLowerCase().replace('jpg', 'jpeg') });
         if (/(^|[^a-z])(mask|id|faction)([^a-z]|$)/i.test(f.name)) { draft.mask = blob; draft.maskName = f.name; }
-        else { draft.texture = blob; draft.textureName = f.name; }
+        else { draft.texture = blob; draft.textureName = f.name; if (ui.shade === 'resin') { ui.shade = 'paint'; renderBar(); } }
       } else if (/\.json$/i.test(f.name)) {
         const j = JSON.parse(await f.text());
         for (const l of j.locators || []) draft.locators.push({ name: l.name, m: new THREE.Matrix4().fromArray(l.matrix) });
@@ -481,10 +481,13 @@ function renderBar() {
   document.querySelectorAll('[data-show]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.show === ui.show)));
   $('orkBtn').setAttribute('aria-pressed', String(ui.ork));
   $('shading').querySelectorAll('[data-shade]').forEach(b => b.classList.toggle('on', b.dataset.shade === ui.shade));
+  $('texBtn').setAttribute('aria-pressed', String(ui.shade === 'paint'));
   $('vpCanvas').style.cursor = ui.tool === 'socket' || ui.tool === 'plug' ? 'crosshair' : '';
 }
 // L'aperçu de la brique vit dans l'espace de l'ork : on cache ses maillages, pas l'ork lui-même.
 const showOrk = () => { for (const [n, m] of Object.entries(model.meshes)) m.visible = ui.ork && !/_low$/.test(n); };
+function setShade(s) { ui.shade = s; renderBar(); buildPreview(); }
+$('texBtn').addEventListener('click', () => setShade(ui.shade === 'paint' ? 'resin' : 'paint'));
 $('orkBtn').addEventListener('click', () => { ui.ork = !ui.ork; showOrk(); renderBar(); refresh(true); });
 $('frameBtn').addEventListener('click', frameBrick);
 $('newBtn').addEventListener('click', () => { draft = emptyDraft(); ui.sel = null; refresh(); renderLibrary(); });
@@ -627,6 +630,7 @@ addEventListener('keydown', e => {
   else if (k === 'w') setTool('translate');
   else if (k === 'e' || k === 'r') setTool('rotate');
   else if (k === 'f') frameBrick();
+  else if (k === '4' || k === '5' || k === '6') setShade({ 4: 'wire', 5: 'resin', 6: 'paint' }[k]);
   else if (k === 'escape') { ui.sel = null; setTool('orbit'); }
 });
 

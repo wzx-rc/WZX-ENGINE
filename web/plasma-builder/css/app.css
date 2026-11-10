@@ -283,3 +283,10 @@ html.desktop .wintitle { padding-right: 0; }
 .wbtn:active { background: rgba(255,255,255,.14); }
 .wbtn.close:hover { background: var(--accent); color: #fff; }
 .wbtn:focus-visible { outline-offset: -2px; }
+
+/* Bouton Texture (vues du Builder et de l'Importeur) : bascule résine grise / texture, comme la touche 6 de Maya */
+button.texbtn { display: inline-flex; align-items: center; gap: 6px; padding: 0 12px; font-size: 13px; font-weight: 600; white-space: nowrap; }
+button.texbtn svg { width: 16px; height: 16px; flex: none; }
+.btngroup button.texbtn { height: 34px; border-radius: 8px; color: var(--text2); }
+.btngroup button.texbtn[aria-pressed="true"] { color: #ff8fa0; background: rgba(240,67,90,.16); }
+.floatbar .btngroup button.texbtn { height: 40px; border: 0; }

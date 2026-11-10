@@ -252,6 +252,7 @@ function renderSteps() {
   $('socketsBtn').setAttribute('aria-pressed', String(ui.sockets));
   $('rigBtn').setAttribute('aria-pressed', String(ui.rig));
   $('shading').querySelectorAll('[data-shade]').forEach(b => b.classList.toggle('on', b.dataset.shade === ui.shade));
+  $('texBtn').setAttribute('aria-pressed', String(ui.shade === 'paint'));
   $('qualitySel').value = ui.quality;
   document.body.dataset.step = ui.step;
   $('scaleSel').value = String(state.scale);
@@ -550,6 +551,7 @@ $('frameBtn').addEventListener('click', () => model && vp.frameObject(model.root
 $('socketsBtn').addEventListener('click', () => { ui.sockets = !ui.sockets; renderSteps(); renderPins(); });
 $('rigBtn').addEventListener('click', () => { ui.rig = !ui.rig; if (skel) skel.visible = ui.rig; renderSteps(); });
 $('lightBtn').addEventListener('click', () => vp.rotateLight());
+$('texBtn').addEventListener('click', () => { ui.shade = ui.shade === 'paint' ? 'resin' : 'paint'; applyMaterials(); renderSteps(); });
 $('fullBtn').addEventListener('click', () => { const el = $('vp'); if (document.fullscreenElement) document.exitFullscreen(); else el.requestFullscreen?.(); });
 $('qualitySel').addEventListener('change', e => setQuality(e.target.value));
 $('scaleSel').addEventListener('change', e => { state.scale = +e.target.value; vp.unitsPerMeter = eyeUnits() / (state.scale / 1000); vp.configurePT(); commit(); renderPrintInfo(); });
@@ -700,6 +702,8 @@ document.addEventListener('keydown', e => {
   const tool = { q: 'select', w: 'translate', g: 'translate', e: 'rotate', r: 'rotate', s: 'scale' }[k];
   if (tool) { ui.tool = tool; attachGizmo(); renderSteps(); }
   else if (k === 'f' && model) vp.frameObject(model.root);
+  // affichage comme Maya : 4 filaire, 5 résine, 6 texture
+  else if (k === '4' || k === '5' || k === '6') { ui.shade = { 4: 'wire', 5: 'resin', 6: 'paint' }[k]; applyMaterials(); renderSteps(); }
   else if (k === 'delete' || k === 'backspace') $('removeBtn').click();
 });
 
