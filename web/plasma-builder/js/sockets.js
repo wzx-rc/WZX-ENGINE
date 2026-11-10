@@ -4,6 +4,7 @@
 // Une brique modélisée en place sur l'ork dans Maya retombe donc exactement là où elle a été modélisée.
 import * as THREE from 'three';
 import { CHAINS, FINGERS } from './riglab/model.js';
+import { PRESETS, buildPreset } from './riglab/poses.js';
 
 export const SOCKET_TYPES = {
   head: 'Tête', grip: 'Main', back: 'Dos', shoulder: 'Épaule', chest: 'Torse', belt: 'Ceinture', base: 'Socle', any: 'Libre',
@@ -22,8 +23,43 @@ function surface(model, at, dir) {
   return hits.length ? ork.worldToLocal(hits[hits.length - 1].point.clone()) : at.clone();
 }
 
+// Repère des mains (grip) : le manche passe dans le poing. Y = axe du poing (de l'auriculaire vers l'index), Z = l'avant
+// de l'ork, X = Y × Z, réglés dans la pose de garde (celle du Builder) : une arme modélisée debout dans Maya (manche
+// selon Y, à l'origine, PLUG sans rotation au milieu de la prise) apparaît en garde comme dans Maya, juste inclinée
+// dans l'axe du poing, puis suit la main dans les autres poses.
+function gripRotations(model) {
+  const ork = model.ork, out = {};
+  const sample = () => {
+    ork.updateMatrixWorld(true);
+    const inv = ork.matrixWorld.clone().invert(), res = {};
+    for (const side of ['L', 'R']) {
+      const at = n => new THREE.Vector3().setFromMatrixPosition(inv.clone().multiply(model.bone(n).matrixWorld));
+      const hand = new THREE.Matrix4().extractRotation(inv.clone().multiply(model.bone(CHAINS[side === 'L' ? 'handL' : 'handR'][2]).matrixWorld));
+      res[side] = { hand, fist: at(FINGERS[side][1][0]).sub(at(FINGERS[side][4][0])).normalize() };
+    }
+    return res;
+  };
+  model.setPose(null);
+  const rest = sample();
+  const garde = PRESETS.find(p => p.id === 'garde');
+  if (garde) buildPreset(model, garde);
+  const pose = sample();
+  model.setPose(null);
+  model.root.updateMatrixWorld(true);
+  for (const side of ['L', 'R']) {
+    const y = pose[side].fist;
+    const z = new THREE.Vector3(0, 0, 1).addScaledVector(y, -y.z).normalize();
+    const x = new THREE.Vector3().crossVectors(y, z);
+    const inGarde = new THREE.Matrix4().makeBasis(x, y, z);
+    // la main porte le socket : repos = main au repos · (main en garde)⁻¹ · repère voulu en garde
+    out[side] = rest[side].hand.clone().multiply(pose[side].hand.clone().invert()).multiply(inGarde);
+  }
+  return out;
+}
+
 // À appeler avec l'ork au repos. Rend [{ id, label, type, bone, rest (Matrix4, espace ork), local (relatif au joint) }].
 export function orkSockets(model) {
+  const grip = gripRotations(model);
   model.setPose(null);
   model.root.updateMatrixWorld(true);
   const pos = name => model.bone(name).userData.restW.clone();
@@ -48,7 +84,7 @@ export function orkSockets(model) {
   const orkInv = model.ork.matrixWorld.clone().invert();
   return defs.map(([id, label, type, boneName, p]) => {
     const bone = boneName ? model.bone(boneName) : null;
-    const rest = new THREE.Matrix4().makeTranslation(p.x, p.y, p.z);
+    const rest = id.startsWith('grip_') ? grip[id.slice(-1)].clone().setPosition(p) : new THREE.Matrix4().makeTranslation(p.x, p.y, p.z);
     // repère du joint au repos, dans l'espace ork
     const boneRest = bone ? orkInv.clone().multiply(bone.matrixWorld) : new THREE.Matrix4();
     const local = boneRest.invert().multiply(rest);
