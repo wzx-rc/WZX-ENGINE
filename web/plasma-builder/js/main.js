@@ -10,6 +10,7 @@ import { PRESETS, buildPreset, loadMyPoses } from './riglab/poses.js';
 import { orkSockets, SOCKET_TYPES } from './sockets.js';
 import { CATEGORIES, catById, Store, brickMeshes, refreshBrickMaterials, mat4, triCount } from './bricks.js';
 import { exportMerged, exportParts, exportJSON } from './io.js';
+import { brickMenu } from './brickmenu.js';
 import { applyTheme, savedTheme, SOCKET_ICONS } from './atelier.js';
 
 // Le path tracing n'est proposé que dans l'app Windows (desktop/ : Electron expose window.plasmaDesktop).
@@ -701,7 +702,7 @@ document.addEventListener('keydown', e => {
   // comme Maya et le Rig Lab : W déplacer, E / R tourner, Q sélection, S échelle
   const tool = { q: 'select', w: 'translate', g: 'translate', e: 'rotate', r: 'rotate', s: 'scale' }[k];
   if (tool) { ui.tool = tool; attachGizmo(); renderSteps(); }
-  else if (k === 'f' && model) vp.frameObject(model.root);
+  else if (k === 'f' && model) vp.frameObject(ui.sel && inst[ui.sel] ? inst[ui.sel].meshes : model.root);   // la brique sélectionnée, sinon l'ork
   // affichage comme Maya : 4 filaire, 5 résine, 6 texture
   else if (k === '4' || k === '5' || k === '6') { ui.shade = { 4: 'wire', 5: 'resin', 6: 'paint' }[k]; applyMaterials(); renderSteps(); }
   else if (k === 'delete' || k === 'backspace') $('removeBtn').click();
@@ -724,6 +725,19 @@ vp.onFrame = dt => {
     b.style.top = ((1 - tmp.y) / 2 * h) + 'px';
   }
 };
+
+// Clic droit sur une vignette : renommer, supprimer (retirée aussi de la figurine).
+brickMenu($('libGrid'), {
+  get: id => recs.get(id),
+  toast,
+  changed: async kind => {
+    const n = Object.keys(state.placed).length;
+    await loadLibrary();
+    rebuild();
+    if (kind === 'delete' && Object.keys(state.placed).length !== n) commit();
+    renderAll();
+  },
+});
 
 // La bibliothèque peut changer dans l'importeur (autre onglet) : on la relit au retour sur la page.
 async function loadLibrary() {

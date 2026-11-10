@@ -290,3 +290,16 @@ button.texbtn svg { width: 16px; height: 16px; flex: none; }
 .btngroup button.texbtn { height: 34px; border-radius: 8px; color: var(--text2); }
 .btngroup button.texbtn[aria-pressed="true"] { color: #ff8fa0; background: rgba(240,67,90,.16); }
 .floatbar .btngroup button.texbtn { height: 40px; border: 0; }
+
+/* Menu du clic droit (vignettes de briques) */
+.ctxmenu { position: fixed; z-index: 1000; min-width: 190px; max-width: 280px; display: flex; flex-direction: column; gap: 2px; padding: 6px; border-radius: 10px; background: #16171b; border: 1px solid var(--line2); box-shadow: 0 12px 32px rgba(0,0,0,.5); font-size: 13px; }
+.ctxmenu .ctx-title { padding: 4px 8px 6px; color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ctxmenu > button { display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 8px; border: 0; border-radius: 6px; background: none; color: var(--text); text-align: left; }
+.ctxmenu > button svg { width: 16px; height: 16px; }
+.ctxmenu > button:hover, .ctxmenu > button:focus-visible { background: rgba(255,255,255,.06); }
+.ctxmenu > button.danger { color: #ff8fa0; }
+.ctxmenu input { margin: 0 4px 6px; height: 32px; }
+.ctxmenu .ctx-note { margin: 0 8px 8px; color: var(--text2); font-size: 12px; line-height: 1.4; white-space: normal; }
+.ctxmenu .ctx-row { display: flex; justify-content: flex-end; gap: 6px; padding: 0 4px 2px; }
+.ctxmenu .ctx-row button { height: 30px; padding: 0 12px; border-radius: 6px; font-size: 12.5px; }
+.ctxmenu .ctx-row .danger-btn, .ctxmenu .ctx-row .go-btn { background: var(--accent); border-color: var(--accent); color: #16070a; font-weight: 600; }

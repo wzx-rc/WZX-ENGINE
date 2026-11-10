@@ -77,7 +77,9 @@ export class Viewport {
     this.controls.enableDamping = true;
     this.controls.minDistance = 1;
     this.controls.maxDistance = 12;
-    this.controls.mouseButtons = { LEFT: null, MIDDLE: THREE.MOUSE.PAN, RIGHT: THREE.MOUSE.ROTATE };
+    // Navigation demandée par Wzx : clic gauche tourner, clic milieu déplacer, clic droit zoom (glisser), F cadrer.
+    // Un clic gauche sans glisser (moins de 4 px) sélectionne toujours ; le gizmo coupe la caméra pendant qu'on le tire.
+    this.controls.mouseButtons = { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.PAN, RIGHT: THREE.MOUSE.DOLLY };
     this.controls.touches = { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN };
 
     this.gizmo = new TransformControls(this.camera, canvas);

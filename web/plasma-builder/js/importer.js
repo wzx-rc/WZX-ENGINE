@@ -19,6 +19,7 @@ import { OrkModel } from './riglab/model.js';
 import { orkSockets, SOCKET_TYPES, parseLocatorName } from './sockets.js';
 import { CATEGORIES, catById, Store, newId, geoToRec, recToGeo, triCount, mat4, packLibrary, unpackLibrary } from './bricks.js';
 import { saveFile } from './io.js';
+import { brickMenu } from './brickmenu.js';
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -526,6 +527,17 @@ vpEl.addEventListener('dragleave', e => { if (!vpEl.contains(e.relatedTarget)) $
 vpEl.addEventListener('drop', e => { e.preventDefault(); $('drop').hidden = true; takeFiles([...e.dataTransfer.files]); });
 
 // ---------------------------------------------------------------- bibliothèque
+brickMenu($('libGrid'), {
+  get: id => library.find(r => r.id === id),
+  toast,
+  changed: (kind, r) => {
+    if (draft?.id === r.id) {
+      if (kind === 'delete') { draft = emptyDraft(); ui.sel = null; refresh(); }
+      else { draft.name = r.name; renderForm(); }
+    }
+    loadLibrary();
+  },
+});
 async function loadLibrary() {
   try { library = await Store.all(); } catch (err) { console.error(err); library = []; toast('Stockage du navigateur indisponible : la bibliothèque ne peut pas être enregistrée ici'); }
   renderLibrary();
