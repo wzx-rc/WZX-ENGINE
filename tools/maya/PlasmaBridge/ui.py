@@ -325,6 +325,13 @@ class BridgeWindow(QtWidgets.QWidget):
         if l['valid']:
             h.addWidget(_label(u'%s · %s' % ('Plug' if l['kind'] == 'plug' else 'Socket', core.TYPE_LABELS.get(l['type'], l['type'])), 'muted'))
             h.addStretch(1)
+            if l.get('frozen'):
+                dot.setStyleSheet('color: %s;' % C['warn'])
+                b = QtWidgets.QPushButton(u'Dégeler')
+                b.setProperty('kind', 'fix')
+                b.setToolTip(u'Gelé (Freeze Transformations) : remet sa position dans la transformation, sans le déplacer à l\'écran')
+                b.clicked.connect(lambda _=False, ll=l: self.unfreeze(ll))
+                h.addWidget(b)
         else:
             h.addWidget(_label(u'ignoré', 'muted'))
             h.addStretch(1)
@@ -371,6 +378,15 @@ class BridgeWindow(QtWidgets.QWidget):
         finally:
             cmds.undoInfo(closeChunk=True)
         self.status.setText(u'%s renommé en %s (Ctrl+Z pour annuler).' % (l['name'], new))
+        self.refresh()
+
+    def unfreeze(self, l):
+        cmds.undoInfo(openChunk=True, chunkName='PlasmaBridge_unfreeze')
+        try:
+            core.unfreeze_locator(l['node'])
+        finally:
+            cmds.undoInfo(closeChunk=True)
+        self.status.setText(u'%s dégelé : oriente-le (E) comme la brique doit être tenue, sans le geler (Ctrl+Z pour annuler).' % l['name'])
         self.refresh()
 
     def toggle_lod(self, m):

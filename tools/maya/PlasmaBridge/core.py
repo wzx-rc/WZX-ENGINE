@@ -155,6 +155,9 @@ def analyse(sel=None):
             kind, t, fix = guess_locator(l)
             loc_info.append({'node': l, 'name': short(l), 'valid': False, 'kind': kind, 'type': t, 'fix': fix})
 
+    for x in loc_info:
+        x['frozen'] = frozen_offset(x['node']) is not None
+
     plugs = [x for x in loc_info if x['valid'] and x['kind'] == 'plug']
     plug_type = plugs[0]['type'] if plugs else None
     color, other = _textures(meshes)
@@ -171,6 +174,11 @@ def analyse(sel=None):
     for x in loc_info:
         if not x['valid']:
             issues.append(('warn', u'Locator « %s » ignoré par l\'Importer (nom attendu PLUG_<type> ou SOCKET_<type>_<nom>).' % x['name']))
+    for x in loc_info:
+        if x['frozen']:
+            issues.append(('warn', u'« %s » a été gelé (Freeze Transformations) : sa position est restée dans le locator, '
+                                   u'l\'Importer le verrait en (0, 0, 0). Plasma Bridge le replace à l\'envoi (ou bouton '
+                                   u'« Dégeler »), mais sa rotation est perdue : oriente-le à nouveau, sans le geler.' % x['name']))
     if len(plugs) > 1:
         issues.append(('warn', u'%d PLUG_ : un seul est utilisé.' % len(plugs)))
     if roots and meshes and not plugs:
@@ -197,6 +205,38 @@ def _bbox(meshes):
 
 def rename_locator(node, new):
     return cmds.rename(node, new)
+
+
+def frozen_offset(loc):
+    """Locator gelé (Freeze Transformations) : son décalage (localPosition du shape), sinon None.
+    Le FBX et l'Importer ne lisent que la transformation : un PLUG gelé y arrive en (0, 0, 0)."""
+    shapes = cmds.listRelatives(loc, shapes=True, fullPath=True, type='locator') or []
+    if not shapes:
+        return None
+    lp = cmds.getAttr(shapes[0] + '.localPosition')[0]
+    return lp if any(abs(v) > 1e-6 for v in lp) else None
+
+
+def unfreeze_locator(loc):
+    """Remet le décalage du shape dans la transformation (même position à l'écran). Rend l'ancien état."""
+    lp = frozen_offset(loc)
+    if lp is None:
+        return None
+    shape = cmds.listRelatives(loc, shapes=True, fullPath=True, type='locator')[0]
+    m = cmds.xform(loc, query=True, worldSpace=True, matrix=True)
+    world = [lp[0] * m[0] + lp[1] * m[4] + lp[2] * m[8] + m[12],
+             lp[0] * m[1] + lp[1] * m[5] + lp[2] * m[9] + m[13],
+             lp[0] * m[2] + lp[1] * m[6] + lp[2] * m[10] + m[14]]
+    old = (cmds.getAttr(loc + '.translate')[0], lp)
+    cmds.setAttr(shape + '.localPosition', 0, 0, 0, type='double3')
+    cmds.xform(loc, worldSpace=True, translation=world)
+    return old
+
+
+def refreeze_locator(loc, old):
+    shape = cmds.listRelatives(loc, shapes=True, fullPath=True, type='locator')[0]
+    cmds.setAttr(loc + '.translate', *old[0], type='double3')
+    cmds.setAttr(shape + '.localPosition', *old[1], type='double3')
 
 
 def apply_lod_names(info):
@@ -259,7 +299,18 @@ def send(info=None, name=None, category=None, inbox=None, open_app=True, extra_t
     os.makedirs(tmp)
     try:
         fbx = name + '.fbx'
-        export_fbx(info['roots'], os.path.join(tmp, fbx))
+        # locators gelés : position remise dans la transformation le temps de l'export, puis scène rendue telle quelle
+        restore = []
+        for l in info['locators']:
+            if l.get('frozen') and cmds.objExists(l['node']):
+                old = unfreeze_locator(l['node'])
+                if old:
+                    restore.append((l['node'], old))
+        try:
+            export_fbx(info['roots'], os.path.join(tmp, fbx))
+        finally:
+            for node, old in restore:
+                refreeze_locator(node, old)
         files = [fbx]
         texs = list(info['textures']) + (list(info['otherTextures']) if extra_textures else [])
         for i, p in enumerate(texs):
