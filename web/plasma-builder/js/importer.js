@@ -192,7 +192,11 @@ async function fromMaya(p) {
   ui.sel = null;
   const files = p.files.map(f => new File([f.data], f.name));
   await addFiles(files);
-  if (p.name) { draft.name = p.name; renderForm(); }
+  if (p.name) draft.name = p.name;
+  // catégorie choisie dans la fenêtre Plasma Bridge (sinon celle du PLUG, ou devinée par le placement)
+  const cat = p.manifest?.category && catById(p.manifest.category);
+  if (cat && cat.id === p.manifest.category && draft.plugFrom !== 'file') { draft.cat = cat.id; draft.home = cat.home; draft.plugType = cat.type; draft.catAuto = false; }
+  refresh(true);
   for (const w of p.manifest?.warnings || []) console.warn('[Maya]', w);
   toast(`Reçu de Maya : ${p.name || files[0].name}${p.manifest?.warnings?.length ? ` (${p.manifest.warnings.length} remarque${p.manifest.warnings.length > 1 ? 's' : ''}, voir la console F12)` : ''}`, 4000);
   renderLibrary();
