@@ -530,6 +530,7 @@ vpEl.addEventListener('drop', e => { e.preventDefault(); $('drop').hidden = true
 brickMenu($('libGrid'), {
   get: id => library.find(r => r.id === id),
   toast,
+  edit: r => loadRec(r),
   changed: (kind, r) => {
     if (draft?.id === r.id) {
       if (kind === 'delete') { draft = emptyDraft(); ui.sel = null; refresh(); }
@@ -692,6 +693,14 @@ try {
   vp.frameObject(model.root, new THREE.Vector3(0.55, 0.25, 1), true);
   $('loading').hidden = true;
   window.importer = { model, vp, draft: () => draft, addFiles, orkDefs, refresh };
+  // « Modifier » depuis le Builder : import.html?edit=<id> rouvre la brique
+  const editId = new URLSearchParams(location.search).get('edit');
+  if (editId) {
+    try { library = await Store.all(); renderLibrary(); } catch (err) { console.error(err); }
+    const r = library.find(x => x.id === editId);
+    if (r) { loadRec(r); renderLibrary(); } else toast('Brique introuvable dans la bibliothèque');
+    history.replaceState(null, '', location.pathname);
+  }
   if (maya) { maya.onFiles(p => fromMaya(p).catch(err => { console.error(err); toast('Envoi Maya illisible : ' + (err.message || err), 8000); })); maya.ready(); }
 } catch (err) {
   console.error(err);

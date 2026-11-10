@@ -730,6 +730,7 @@ vp.onFrame = dt => {
 brickMenu($('libGrid'), {
   get: id => recs.get(id),
   toast,
+  edit: r => { location.href = 'import.html?edit=' + encodeURIComponent(r.id); },
   changed: async kind => {
     const n = Object.keys(state.placed).length;
     await loadLibrary();

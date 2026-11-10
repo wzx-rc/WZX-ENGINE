@@ -18,17 +18,18 @@ const outside = e => { if (menu && !menu.contains(e.target)) close(); };
 const onKey = e => { if (e.key === 'Escape') { e.stopPropagation(); close(); } };
 
 // grid : conteneur des vignettes [data-brick]. get(id) -> fiche ; changed(kind, rec) après l'enregistrement.
-export function brickMenu(grid, { get, changed, toast }) {
+// edit(rec) facultatif : entrée « Modifier » (rouvre la brique dans l'Importeur).
+export function brickMenu(grid, { get, changed, toast, edit }) {
   grid.addEventListener('contextmenu', e => {
     const tile = e.target.closest('[data-brick]');
     if (!tile) return;
     e.preventDefault();
     const rec = get(tile.dataset.brick);
-    if (rec) open(e.clientX, e.clientY, rec, { changed, toast });
+    if (rec) open(e.clientX, e.clientY, rec, { changed, toast, edit });
   });
 }
 
-function open(x, y, rec, { changed, toast }) {
+function open(x, y, rec, { changed, toast, edit }) {
   close();
   menu = document.createElement('div');
   menu.className = 'ctxmenu';
@@ -41,6 +42,7 @@ function open(x, y, rec, { changed, toast }) {
   };
   const main = () => {
     menu.innerHTML = `<div class="ctx-title">${esc(rec.name)}</div>
+      ${edit ? '<button type="button" role="menuitem" data-act="edit"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>Modifier</button>' : ''}
       <button type="button" role="menuitem" data-act="rename"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16zM14 6l4 4"/></svg>Renommer</button>
       <button type="button" role="menuitem" data-act="delete" class="danger"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>Supprimer</button>`;
     place();
@@ -82,7 +84,8 @@ function open(x, y, rec, { changed, toast }) {
   };
   menu.addEventListener('click', e => {
     const act = e.target.closest('button')?.dataset.act;
-    if (act === 'rename') rename();
+    if (act === 'edit') { close(); edit(rec); }
+    else if (act === 'rename') rename();
     else if (act === 'delete') confirmDelete();
     else if (act === 'save') save();
     else if (act === 'kill') kill();
