@@ -223,6 +223,9 @@ button.wide:hover, .mirror button:hover { background: var(--chip); }
 .loading { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; background: #111214; color: var(--text2); font-family: var(--head); font-size: 20px; letter-spacing: .04em; text-transform: uppercase; }
 .loading i { width: 220px; height: 4px; border-radius: 2px; background: linear-gradient(90deg, var(--accent) var(--p, 0%), var(--chip) var(--p, 0%)); }
 .loading.err { color: var(--accent); font-family: Inter, sans-serif; font-size: 14px; text-transform: none; letter-spacing: 0; padding: 20px; text-align: center; }
+.loading.busy { background: rgba(14,15,18,.74); backdrop-filter: blur(2px); font-size: 17px; }
+.loading.busy i { background: linear-gradient(90deg, transparent 0 30%, var(--accent) 45% 55%, transparent 70% 100%), var(--chip); background-size: 200% 100%, auto; animation: busybar 1.2s linear infinite; }
+@keyframes busybar { from { background-position: 100% 0, 0 0; } to { background-position: -100% 0, 0 0; } }
 
 /* Builder sur l'ork riggé */
 a.icon.small.btnlink { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: 6px; border: 1px solid var(--line2); background: var(--raised); color: var(--text2); }

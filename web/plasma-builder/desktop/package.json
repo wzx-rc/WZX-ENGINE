@@ -1,10 +1,11 @@
 {
   "name": "plasma-orks-builder",
   "productName": "Plasma Orks Builder",
-  "version": "0.2.0",
+  "version": "0.4.0",
   "description": "PlasmaOrk Builder pour Windows : le builder web avec le path tracing activé.",
   "main": "main.js",
   "private": true,
+  "plasmaEdition": "dev",
   "scripts": {
     "prepare-app": "node build.mjs",
     "start": "node build.mjs && electron .",

@@ -56,10 +56,10 @@ export function orkSockets(model) {
   });
 }
 
-// Noms des locators Maya : SOCKET_<type>[_<nom>] et PLUG_<type>.
+// Noms des locators Maya : SOCKET_<type>[_<nom>] et PLUG_<type> (préfixe en majuscules ou non : Socket_grip passe).
 export function parseLocatorName(name) {
-  const m = /^(SOCKET|PLUG)_([A-Za-z]+)(?:_(.+))?$/.exec(name.replace(/^.*[|:]/, ''));
+  const m = /^(SOCKET|PLUG)_([A-Za-z]+)(?:_(.+))?$/i.exec(name.replace(/^.*[|:]/, ''));
   if (!m) return null;
   const type = m[2].toLowerCase();
-  return { kind: m[1] === 'PLUG' ? 'plug' : 'socket', type: SOCKET_TYPES[type] ? type : 'any', name: m[3] || type };
+  return { kind: m[1].toUpperCase() === 'PLUG' ? 'plug' : 'socket', type: SOCKET_TYPES[type] ? type : 'any', name: m[3] || type };
 }

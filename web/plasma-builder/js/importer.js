@@ -23,7 +23,9 @@ const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const ICON = d => `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${d}"/></svg>`;
 const TRASH = 'M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13';
-const MODEL_EXT = /\.(fbx|obj|glb|gltf)$/i, IMAGE_EXT = /\.(jpe?g|png|webp|tga)$/i;
+const MODEL_EXT = /\.(fbx|obj|glb|gltf)$/i, IMAGE_EXT = /\.(jpe?g|png|webp|tga)$/i, SCENE_EXT = /\.(ma|mb)$/i;
+// Édition développeur de l'app Windows : passerelle Maya (étagère PlasmaOrks, scènes .ma / .mb converties par mayapy).
+const maya = window.plasmaDesktop?.maya || null;
 
 const vp = new Viewport($('vpCanvas'));
 vp.controls.target.set(0, 1.0, 0);
@@ -157,6 +159,43 @@ async function addFiles(files) {
   if (fresh && draft.meshes.length) guessPlacement();
   if (found) toast(`${found} objet${found > 1 ? 's' : ''} lu${found > 1 ? 's' : ''}${draft.locators.length ? `, ${draft.locators.length} locator${draft.locators.length > 1 ? 's' : ''}` : ''}`);
   refresh(true);
+}
+
+// Fichiers déposés ou choisis : les scènes Maya partent à la conversion (édition développeur), le reste est lu ici.
+function takeFiles(files) {
+  const scenes = files.filter(f => SCENE_EXT.test(f.name));
+  const rest = files.filter(f => !SCENE_EXT.test(f.name));
+  if (rest.length) addFiles(rest);
+  if (!scenes.length) return;
+  if (!maya) { toast('Les scènes Maya (.ma / .mb) s\'importent seulement dans l\'édition développeur de l\'app. Exporte la brique en .fbx.'); return; }
+  for (const f of scenes) convertScene(f);
+}
+async function convertScene(f) {
+  setBusy(`Maya convertit ${f.name}…`);
+  try {
+    const res = await maya.convert(f);
+    if (res?.error) { setBusy(null); toast(res.error, 8000); }
+    // le résultat arrive par maya.onFiles, comme un envoi de l'étagère
+  } catch (err) { console.error(err); setBusy(null); toast('Conversion Maya impossible : ' + (err.message || err), 8000); }
+}
+function setBusy(msg) {
+  const l = $('loading');
+  l.classList.toggle('busy', !!msg);
+  l.hidden = !msg;
+  if (msg) l.querySelector('span').textContent = msg;
+}
+// Une brique envoyée depuis Maya remplace le brouillon en cours (nouvelle brique).
+async function fromMaya(p) {
+  setBusy(null);
+  if (p.error) { toast(p.error, 8000); return; }
+  draft = emptyDraft();
+  ui.sel = null;
+  const files = p.files.map(f => new File([f.data], f.name));
+  await addFiles(files);
+  if (p.name) { draft.name = p.name; renderForm(); }
+  for (const w of p.manifest?.warnings || []) console.warn('[Maya]', w);
+  toast(`Reçu de Maya : ${p.name || files[0].name}${p.manifest?.warnings?.length ? ` (${p.manifest.warnings.length} remarque${p.manifest.warnings.length > 1 ? 's' : ''}, voir la console F12)` : ''}`, 4000);
+  renderLibrary();
 }
 
 // En place si la brique est déjà autour d'un socket de l'ork (modélisée sur l'ork dans Maya) : ce socket devient son
@@ -434,7 +473,7 @@ $('orkBtn').addEventListener('click', () => { ui.ork = !ui.ork; model.root.visib
 $('frameBtn').addEventListener('click', frameBrick);
 $('newBtn').addEventListener('click', () => { draft = emptyDraft(); ui.sel = null; refresh(); renderLibrary(); });
 $('pickBtn').addEventListener('click', () => $('fileInput').click());
-$('fileInput').addEventListener('change', e => { addFiles([...e.target.files]); e.target.value = ''; });
+$('fileInput').addEventListener('change', e => { takeFiles([...e.target.files]); e.target.value = ''; });
 $('libMenuBtn').addEventListener('click', () => { const m = $('libMenu'); m.hidden = !m.hidden; $('libMenuBtn').setAttribute('aria-expanded', String(!m.hidden)); });
 
 // Clic sur la brique avec l'outil socket ou plug : un repère au point touché, axes de la scène.
@@ -465,7 +504,7 @@ $('vpCanvas').addEventListener('pointerup', e => {
 const vpEl = $('vp');
 vpEl.addEventListener('dragover', e => { e.preventDefault(); $('drop').hidden = false; });
 vpEl.addEventListener('dragleave', e => { if (!vpEl.contains(e.relatedTarget)) $('drop').hidden = true; });
-vpEl.addEventListener('drop', e => { e.preventDefault(); $('drop').hidden = true; addFiles([...e.dataTransfer.files]); });
+vpEl.addEventListener('drop', e => { e.preventDefault(); $('drop').hidden = true; takeFiles([...e.dataTransfer.files]); });
 
 // ---------------------------------------------------------------- bibliothèque
 async function loadLibrary() {
@@ -576,12 +615,12 @@ addEventListener('keydown', e => {
 });
 
 let toastTimer = 0;
-function toast(msg) {
+function toast(msg, ms = 2800) {
   const t = $('toast');
   t.textContent = msg;
   t.classList.add('show');
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => t.classList.remove('show'), 2800);
+  toastTimer = setTimeout(() => t.classList.remove('show'), ms);
 }
 
 // Pastilles des sockets à l'écran.
@@ -601,6 +640,10 @@ vp.onFrame = () => {
 };
 
 // ---------------------------------------------------------------- démarrage
+if (maya) {
+  $('fileInput').accept += ',.ma,.mb';
+  $('dropHint').textContent = 'Modèle .fbx, .obj, .glb ou .gltf, ou directement la scène Maya .ma / .mb (convertie par Maya en arrière-plan), texture .jpg / .png. Depuis Maya : étagère PlasmaOrks, bouton Envoyer.';
+}
 renderBar();
 loadLibrary();
 try {
@@ -616,6 +659,7 @@ try {
   vp.frameObject(model.root, new THREE.Vector3(0.55, 0.25, 1), true);
   $('loading').hidden = true;
   window.importer = { model, vp, draft: () => draft, addFiles, orkDefs, refresh };
+  if (maya) { maya.onFiles(p => fromMaya(p).catch(err => { console.error(err); toast('Envoi Maya illisible : ' + (err.message || err), 8000); })); maya.ready(); }
 } catch (err) {
   console.error(err);
   const l = $('loading');
