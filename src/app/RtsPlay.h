@@ -33,6 +33,8 @@ const char* rtsDeviceName(int device);   // "Desktop", "Tablet", "Phone"
 // A device of the simulator of the editor, in landscape: its screen and safe area in points (null: Desktop)
 struct RtsDeviceSpec { const char* label; float w, h, safeL, safeT, safeR, safeB; };
 const RtsDeviceSpec* rtsDeviceSpec(int device);
+// the RTS camera at the start of Play: a phone starts closer (its distance times this), the units readable
+inline float rtsStartZoom(int device) { return device == kPhone ? 0.7f : 1.0f; }
 
 // The 3D view on screen and the UI scale (pixels per point); touch: the platform is a touch screen only (iOS, the
 // device simulator of the editor) — a Windows touch screen is detected from the pointer itself (Dear ImGui mouse
@@ -42,6 +44,7 @@ struct RtsView {
     bool touch = false;
     int device = kDesktop;
     float safeL = 0, safeT = 0, safeR = 0, safeB = 0;
+    float fontPx = 0;   // the HUD text size in pixels (0: the current font; the simulator: the 17 points of the device)
 };
 using RtsButtons = std::vector<std::pair<std::string, std::string>>;   // HUD buttons of the graph: id, label
 
@@ -101,6 +104,8 @@ public:
 private:
     const PrefabAsset* assetOf(int obj) const;
     int pickRoot(const RtsView& v, float mx, float my, float3* point) const;
+    // a finger: the object under it, else the nearest within 22 points of its outline on screen (touch target 44 pt)
+    int pickNear(const RtsView& v, float mx, float my, float3* point) const;
     bool groundAt(const RtsView& v, float mx, float my, float3& p) const;
     bool project(const RtsView& v, const float3& p, float& sx, float& sy) const;
     void buildNav(int ignore = -1);

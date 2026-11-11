@@ -195,6 +195,7 @@ private:
     bool ensureHouseModel();
     // Sun (RTS play): azimuth and height from the dial (AppRts.cpp), restored on Stop
     vp3d::SunLight m_saveSun;
+    vp3d::Camera m_saveCamera;   // the view of the editor before Play, back on Stop (the next Play starts from it again)
     float m_sunAzimuth = vp3d::radians(220.0f);
     float m_sunElevation = vp3d::radians(48.0f);
     float m_sunGrabAnim = 0.0f;         // the sun bounces when the dial is grabbed

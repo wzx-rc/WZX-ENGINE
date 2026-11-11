@@ -344,6 +344,7 @@ void GameHost::play() {
     m_saveObjects = s.objects;
     m_saveMaterials = s.materials;
     m_saveSun = s.sun;
+    m_saveCamera = s.camera;
     m_saveBuild = m_build;
     m_saveSelected = m_app.m_selected;
     m_saveTool = m_app.m_tool;
@@ -369,6 +370,8 @@ void GameHost::stop() {
     s.objects = m_saveObjects;
     s.materials = m_saveMaterials;
     s.sun = m_saveSun;
+    s.camera = m_saveCamera;
+    m_app.cameraChanged();
     m_app.m_selected = m_saveSelected < (int)s.objects.size() ? m_saveSelected : -1;
     m_app.m_multi.clear();
     m_app.m_tool = (Tool)m_saveTool;
@@ -398,7 +401,8 @@ void GameHost::setRtsCamera(bool on) {
         }
         if (p.cam != VCAM_PERSP) m_app.setPaneCamera(m_app.m_activePane, VCAM_PERSP);
         const vp3d::Camera& c = m_app.m_scene.camera;
-        m_cam.reset(c.target, c.yaw, std::min(c.distance, m_cam.maxDistance));   // the RTS starting view: the scene view, as the player
+        // the RTS starting view: the scene view, as the player (a phone: closer, the units readable on a small screen)
+        m_cam.reset(c.target, c.yaw, std::min(c.distance, m_cam.maxDistance) * rtsStartZoom(simDevice()));
     }
     m_rtsCam = on;
     m_rmbDrag = false;
@@ -612,6 +616,7 @@ RtsView GameHost::rtsView(bool belowTag) const {
         rv.safeT = sp->safeT * m_simScale;
         rv.safeR = sp->safeR * m_simScale;
         rv.safeB = sp->safeB * m_simScale;
+        rv.fontPx = 17.0f * m_simScale;   // the text of the player on a touch screen (Player.cpp: 17 points)
     } else if (belowTag && !m_player) {
         rv.y += 34 * m_app.m_dpi;
         rv.h -= 34 * m_app.m_dpi;

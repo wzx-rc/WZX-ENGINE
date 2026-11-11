@@ -161,8 +161,8 @@ bool Player::init(Diligent::IRenderDevice* device, Diligent::IDeviceContext* con
     if ((options.scene == "studio" || sceneFile) && options.game) {
         m_game = std::make_unique<Game>();
         m_game->setPrefabs(&m_prefabs);
+        m_game->setDevice(options.device);   // (before init: the RTS camera starts closer on a phone)
         if (!m_game->init(&m_scene, options.dataDir, options.uiScale, options.touch, error, graphText)) return false;
-        m_game->setDevice(options.device);
         if (village.type == app::Json::Array) m_game->loadVillage(village);
     }
     return true;

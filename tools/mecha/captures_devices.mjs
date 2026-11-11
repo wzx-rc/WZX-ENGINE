@@ -4,7 +4,14 @@
 // Usage: node tools/mecha/captures_devices.mjs   (the editor of this project running with game/scenes/mecha_level1.wzx)
 import { wzx } from './wzx.mjs';
 const sleep = (s) => new Promise((r) => setTimeout(r, s * 1000));
-const shot = async (label) => { await sleep(1.1); const r = await wzx('screenshot', { window: true }); console.log(`SHOT ${label} ${r.path}`); };
+// SHOT <label> <path> <x> <y> <w> <h>: the window capture and the rectangle of the view (its bezel around), to crop
+const shot = async (label) => {
+  await sleep(1.1);
+  const r = await wzx('screenshot', { window: true });
+  const [x, y, w, h] = (await wzx('state')).viewport;
+  const m = Math.round(h * 0.05);
+  console.log(`SHOT ${label} ${r.path} ${Math.round(x - m)} ${Math.round(y - m)} ${Math.round(w + 2 * m)} ${Math.round(h + 2 * m)}`);
+};
 
 // the same moment on each device: Play, the intro closed, the workers selected and sent to the nearest station
 async function moment(device) {

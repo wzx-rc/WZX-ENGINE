@@ -2753,6 +2753,19 @@ void App::SelfTest::build() {
         check("tap on a worker: it is selected", rp.selection().size() == 1 && rp.selection()[0] == w1);
         rp.tap(rv, x1, y1);
         check("double tap: the workers in view selected", rp.selection().size() == 2);
+        {   // a finger beside the worker (its ring + 16 points, off its mesh): still that worker (22 points of tolerance)
+            float bx, by, rx, ry;
+            const Object& o = a.m_scene.objects[w1];
+            screen(o.position, bx, by);
+            screen(o.position + float3(0.85f * o.scale.x, 0, 0), rx, ry);   // (its selection radius)
+            const float off = std::hypot(rx - bx, ry - by) + 16 * rv.scale;
+            rp.setSelection({});
+            rp.forgetTap();
+            rp.tap(rv, bx - off, by);
+            check("tap 16 points beside a worker: it is selected (touch tolerance)", rp.selection().size() == 1 && rp.selection()[0] == w1,
+                  fmt("%.0f px aside", off));
+            rp.forgetTap();
+        }
         rp.setSelection({});
         rp.touchRect(rv, std::min(x1, x2) - 40, std::min(y1, y2) - 40, std::max(x1, x2) + 40, std::max(y1, y2) + 40);
         check("long press + drag: the rectangle selects both workers", rp.selection().size() == 2);

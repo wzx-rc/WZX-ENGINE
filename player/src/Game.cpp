@@ -56,7 +56,7 @@ bool Game::init(Scene* scene, const std::string& dataDir, float uiScale, bool to
     m_touch = touch;
     m_build.init(20, 20, 1.0f);   // the RTS grid of the editor: 20 x 20 cells of 1 unit
     const Camera& c = m_scene->camera;
-    m_cam.reset(c.target, c.yaw, std::min(c.distance, m_cam.maxDistance));   // framed as the first view of the editor
+    m_cam.reset(c.target, c.yaw, std::min(c.distance, m_cam.maxDistance) * app::rtsStartZoom(m_device));   // framed as the first view of the editor
 
     std::string text = graphText;
     if (text.empty()) {

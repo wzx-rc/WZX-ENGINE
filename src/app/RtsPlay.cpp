@@ -485,7 +485,7 @@ void RtsPlay::tap(const RtsView& v, float x, float y) {
     }
     const double now = ImGui::GetTime();
     float3 point;
-    const int r = pickRoot(v, x, y, &point);
+    const int r = pickNear(v, x, y, &point);   // a finger is wide: 22 points of tolerance, the nearest
     const bool twice = r >= 0 && r == m_lastTapObj && now - m_lastTapT < 0.4 && std::hypot(x - m_lastTapX, y - m_lastTapY) < 40 * v.scale;
     m_lastTapT = twice ? -10.0 : now;
     m_lastTapX = x;
@@ -512,6 +512,36 @@ void RtsPlay::tap(const RtsView& v, float x, float y) {
         setSelection({});
     }
     m_rt->fireClickGround(g);
+}
+
+int RtsPlay::pickNear(const RtsView& v, float mx, float my, float3* point) const {
+    const int hit = pickRoot(v, mx, my, point);
+    if (hit >= 0) return hit;
+    const float tol = 22.0f * v.scale;
+    int best = -1;
+    float bestD = 1e30f;
+    for (int i = 0; i < (int)m_scene->objects.size(); ++i) {
+        const Object& o = m_scene->objects[i];
+        if (!o.isInstanceRoot() || !o.visible || o.ghost || !o.selectable || !selectableCategory(objectCategory(i))) continue;
+        const PrefabAsset* a = assetOf(i);
+        const float r = (a ? a->game.selectionRadius : 0.7f) * std::max(o.scale.x, o.scale.z);
+        const float h = (a ? a->game.height : 1.5f) * o.scale.y;
+        // its outline on screen: the segment from its base to its top, as thick as its ring
+        float bx, by, tx, ty, rx, ry;
+        if (!project(v, o.position, bx, by) || !project(v, o.position + float3(0, h, 0), tx, ty) ||
+            !project(v, o.position + float3(r, 0, 0), rx, ry))
+            continue;
+        const float rp = std::hypot(rx - bx, ry - by);
+        const float sx = tx - bx, sy = ty - by, l2 = sx * sx + sy * sy;
+        const float k = l2 > 1e-6f ? std::clamp(((mx - bx) * sx + (my - by) * sy) / l2, 0.0f, 1.0f) : 0.0f;
+        const float d = std::hypot(mx - (bx + sx * k), my - (by + sy * k)) - rp;
+        if (d < tol && d < bestD) {
+            bestD = d;
+            best = i;
+        }
+    }
+    if (best >= 0 && point) *point = m_scene->objects[best].position;
+    return best;
 }
 
 bool RtsPlay::input(const RtsView& v, bool overUi) {
@@ -814,7 +844,7 @@ void RtsPlay::drawHud(const RtsView& v, const RtsButtons* buttons) {
     // the safe area, then the margin
     const float m = (phone ? 8.0f : 12.0f) * d;
     const float L = v.x + v.safeL + m, T = v.y + v.safeT + m, R = v.x + v.w - v.safeR - m, B = v.y + v.h - v.safeB - m;
-    const float base = ImGui::GetFontSize();
+    const float base = v.fontPx > 0 ? v.fontPx : ImGui::GetFontSize();
     const float targetH = big ? 44.0f * d : 0.0f;   // touch targets: 44 points (Apple HIG)
     ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, big ? ImVec2(12 * d, 8 * d) : ImGui::GetStyle().FramePadding);
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, big ? ImVec2(8 * d, 8 * d) : ImGui::GetStyle().ItemSpacing);
@@ -924,20 +954,24 @@ void RtsPlay::drawHud(const RtsView& v, const RtsButtons* buttons) {
             ImGui::EndDisabled();
             if (accent) ImGui::PopStyleColor(3);
         };
-        if (phone) {   // a grid of three columns at the bottom right, under the thumb
+        if (phone) {   // a grid at the bottom right, under the thumb: one row up to 4 commands, else two rows (low, the view stays free)
             ImGui::SetNextWindowPos(ImVec2(R, B), ImGuiCond_Always, ImVec2(1.0f, 1.0f));
             ImGui::SetNextWindowBgAlpha(0.0f);
-            ImGui::PushFont(nullptr, base * 0.86f);
-            float bw = 84 * d;   // one width for the grid: the longest label
-            for (const Cmd& c : cmds) bw = std::max(bw, ImGui::CalcTextSize(c.label.c_str()).x + 16 * d);
+            ImGui::PushFont(nullptr, base * 0.82f);
+            const bool idle = m_sel.empty() && m_ghost < 0;
+            ImGui::PushStyleVar(ImGuiStyleVar_Alpha, idle ? 0.55f : 1.0f);
+            float bw = 64 * d;   // one width for the grid: the longest label
+            for (const Cmd& c : cmds) bw = std::max(bw, ImGui::CalcTextSize(c.label.c_str()).x + 12 * d);
             ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(4 * d, 4 * d));
-            ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(6 * d, 6 * d));
+            ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(4 * d, 4 * d));
             ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+            ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
             ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.08f, 0.10f, 0.12f, 0.82f));
             if (ImGui::Begin("##rtscommands", nullptr, flags)) {
+                const size_t cols = cmds.size() <= 4 ? cmds.size() : (cmds.size() + 1) / 2;
                 for (size_t k = 0; k < cmds.size(); ++k) {
                     ImGui::PushID((int)k);
-                    if (k % 3) ImGui::SameLine();
+                    if (k % cols) ImGui::SameLine();
                     button(cmds[k], bw);
                     ImGui::PopID();
                 }
@@ -946,7 +980,7 @@ void RtsPlay::drawHud(const RtsView& v, const RtsButtons* buttons) {
             }
             ImGui::End();
             ImGui::PopStyleColor();
-            ImGui::PopStyleVar(3);
+            ImGui::PopStyleVar(5);
             ImGui::PopFont();
         } else {
             // the buttons of the graph at the bottom left (as before), the touch commands at the bottom right
@@ -1026,13 +1060,15 @@ void RtsPlay::drawHud(const RtsView& v, const RtsButtons* buttons) {
     if (since < 14.0 && !m_rt->messageShown) {
         const float alpha = (float)std::clamp((14.0 - since) / 1.5, 0.0, 1.0);
         const char* hint = !m_touch ? "Clic : sélection  ·  Glisser : rectangle  ·  Double-clic : même type  ·  Clic droit : ordre  ·  ZQSD, bords, clic droit glissé : caméra"
-                         : phone ? "Toucher : sélection  ·  Toucher le sol ou une station : ordre  ·  Glisser : caméra  ·  Appui long + glisser : rectangle"
+                         : phone ? "Toucher : sélection, puis ordre  ·  Glisser : caméra  ·  Appui long + glisser : rectangle"
                                  : "Toucher : sélection  ·  Double toucher : même type  ·  Toucher le sol ou une station : ordre  ·  Glisser : caméra  ·  Appui long + glisser : rectangle  ·  Pincer : zoom";
-        const float w = std::min(R - L - 2 * 230 * d, 620 * d);
+        // (a phone: at the top right, beside the counters; else centred)
+        const float w = phone ? std::min(R - L - 250 * d, 460 * d) : std::min(R - L - 2 * 230 * d, 620 * d);
         if (w > 160 * d) {
             ImGui::PushFont(nullptr, base * (phone ? 0.86f : 0.95f));
             ImGui::PushStyleVar(ImGuiStyleVar_Alpha, alpha);
-            ImGui::SetNextWindowPos(ImVec2((L + R) * 0.5f, T), ImGuiCond_Always, ImVec2(0.5f, 0.0f));
+            if (phone) ImGui::SetNextWindowPos(ImVec2(R, T), ImGuiCond_Always, ImVec2(1.0f, 0.0f));
+            else ImGui::SetNextWindowPos(ImVec2((L + R) * 0.5f, T), ImGuiCond_Always, ImVec2(0.5f, 0.0f));
             ImGui::SetNextWindowSizeConstraints(ImVec2(0, 0), ImVec2(w, FLT_MAX));
             ImGui::SetNextWindowBgAlpha(0.55f);
             if (ImGui::Begin("##rtshint", nullptr, flags | ImGuiWindowFlags_NoInputs)) {
