@@ -1,0 +1,270 @@
+{
+  "format": "wzx-prefab",
+  "version": 1,
+  "name": "Prop Crates",
+  "game": {
+    "category": "Prop",
+    "footprintX": 1,
+    "footprintZ": 1,
+    "selectionRadius": 0.6,
+    "height": 0.8,
+    "blocksPath": true
+  },
+  "parts": [
+    {
+      "id": 1,
+      "parent": 0,
+      "name": "Root",
+      "position": [
+        0,
+        0,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "visible": true,
+      "collapsed": false
+    },
+    {
+      "id": 2,
+      "parent": 1,
+      "name": "Crate",
+      "shape": {
+        "primitive": "Cube",
+        "size": [
+          0.5,
+          0.5,
+          0.5
+        ],
+        "radius": 0.5,
+        "radius2": 0.15,
+        "segments": 32,
+        "rings": 16,
+        "subdiv": 1
+      },
+      "position": [
+        0,
+        0,
+        0
+      ],
+      "rotation": [
+        0,
+        8,
+        0
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "visible": true,
+      "collapsed": false,
+      "material": {
+        "name": "Crate Olive",
+        "baseColor": [
+          0.34,
+          0.38,
+          0.26
+        ],
+        "texture": null,
+        "roughness": 0.7,
+        "metallic": 0,
+        "specular": 0.5,
+        "transmission": 0,
+        "ior": 1.5,
+        "coat": 0,
+        "coatRoughness": 0.08,
+        "emission": [
+          0,
+          0,
+          0
+        ],
+        "emissionStrength": 0,
+        "preset": 0
+      }
+    },
+    {
+      "id": 3,
+      "parent": 1,
+      "name": "Crate",
+      "shape": {
+        "primitive": "Cube",
+        "size": [
+          0.4,
+          0.4,
+          0.4
+        ],
+        "radius": 0.5,
+        "radius2": 0.15,
+        "segments": 32,
+        "rings": 16,
+        "subdiv": 1
+      },
+      "position": [
+        0.5,
+        0,
+        0.1
+      ],
+      "rotation": [
+        0,
+        -14,
+        0
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "visible": true,
+      "collapsed": false,
+      "material": {
+        "name": "Crate Olive",
+        "baseColor": [
+          0.34,
+          0.38,
+          0.26
+        ],
+        "texture": null,
+        "roughness": 0.7,
+        "metallic": 0,
+        "specular": 0.5,
+        "transmission": 0,
+        "ior": 1.5,
+        "coat": 0,
+        "coatRoughness": 0.08,
+        "emission": [
+          0,
+          0,
+          0
+        ],
+        "emissionStrength": 0,
+        "preset": 0
+      }
+    },
+    {
+      "id": 4,
+      "parent": 1,
+      "name": "Crate",
+      "shape": {
+        "primitive": "Cube",
+        "size": [
+          0.36,
+          0.36,
+          0.36
+        ],
+        "radius": 0.5,
+        "radius2": 0.15,
+        "segments": 32,
+        "rings": 16,
+        "subdiv": 1
+      },
+      "position": [
+        0.05,
+        0.5,
+        0.02
+      ],
+      "rotation": [
+        0,
+        30,
+        0
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "visible": true,
+      "collapsed": false,
+      "material": {
+        "name": "Amber Hazard",
+        "baseColor": [
+          0.95,
+          0.62,
+          0.12
+        ],
+        "texture": null,
+        "roughness": 0.45,
+        "metallic": 0,
+        "specular": 0.5,
+        "transmission": 0,
+        "ior": 1.5,
+        "coat": 0,
+        "coatRoughness": 0.08,
+        "emission": [
+          0,
+          0,
+          0
+        ],
+        "emissionStrength": 0,
+        "preset": 0
+      }
+    },
+    {
+      "id": 5,
+      "parent": 1,
+      "name": "Strap",
+      "shape": {
+        "primitive": "Cube",
+        "size": [
+          0.52,
+          0.06,
+          0.52
+        ],
+        "radius": 0.5,
+        "radius2": 0.15,
+        "segments": 32,
+        "rings": 16,
+        "subdiv": 1
+      },
+      "position": [
+        0,
+        0.22,
+        0
+      ],
+      "rotation": [
+        0,
+        8,
+        0
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "visible": true,
+      "collapsed": false,
+      "material": {
+        "name": "Dark Rubber",
+        "baseColor": [
+          0.06,
+          0.06,
+          0.07
+        ],
+        "texture": null,
+        "roughness": 0.75,
+        "metallic": 0,
+        "specular": 0.5,
+        "transmission": 0,
+        "ior": 1.5,
+        "coat": 0,
+        "coatRoughness": 0.08,
+        "emission": [
+          0,
+          0,
+          0
+        ],
+        "emissionStrength": 0,
+        "preset": 0
+      }
+    }
+  ],
+  "clips": []
+}

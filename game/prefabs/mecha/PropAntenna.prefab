@@ -1,0 +1,495 @@
+{
+  "format": "wzx-prefab",
+  "version": 1,
+  "name": "Prop Antenna",
+  "game": {
+    "category": "Prop",
+    "footprintX": 1,
+    "footprintZ": 1,
+    "selectionRadius": 0.4,
+    "height": 2.6,
+    "blocksPath": true
+  },
+  "parts": [
+    {
+      "id": 1,
+      "parent": 0,
+      "name": "Root",
+      "position": [
+        0,
+        0,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "visible": true,
+      "collapsed": false
+    },
+    {
+      "id": 2,
+      "parent": 1,
+      "name": "Base",
+      "shape": {
+        "primitive": "Cube",
+        "size": [
+          0.5,
+          0.2,
+          0.5
+        ],
+        "radius": 0.5,
+        "radius2": 0.15,
+        "segments": 32,
+        "rings": 16,
+        "subdiv": 1
+      },
+      "position": [
+        0,
+        0,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "visible": true,
+      "collapsed": false,
+      "material": {
+        "name": "Concrete",
+        "baseColor": [
+          0.46,
+          0.47,
+          0.48
+        ],
+        "texture": null,
+        "roughness": 0.85,
+        "metallic": 0,
+        "specular": 0.5,
+        "transmission": 0,
+        "ior": 1.5,
+        "coat": 0,
+        "coatRoughness": 0.08,
+        "emission": [
+          0,
+          0,
+          0
+        ],
+        "emissionStrength": 0,
+        "preset": 0
+      }
+    },
+    {
+      "id": 3,
+      "parent": 1,
+      "name": "Strut",
+      "shape": {
+        "primitive": "Cylinder",
+        "size": [
+          1,
+          2.2,
+          1
+        ],
+        "radius": 0.025,
+        "radius2": 0.15,
+        "segments": 8,
+        "rings": 16,
+        "subdiv": 1
+      },
+      "position": [
+        0.12727922061357855,
+        0.2,
+        0.12727922061357855
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "visible": true,
+      "collapsed": false,
+      "material": {
+        "name": "Gunmetal",
+        "baseColor": [
+          0.36,
+          0.38,
+          0.42
+        ],
+        "texture": null,
+        "roughness": 0.4,
+        "metallic": 0.75,
+        "specular": 0.5,
+        "transmission": 0,
+        "ior": 1.5,
+        "coat": 0,
+        "coatRoughness": 0.08,
+        "emission": [
+          0,
+          0,
+          0
+        ],
+        "emissionStrength": 0,
+        "preset": 0
+      }
+    },
+    {
+      "id": 4,
+      "parent": 1,
+      "name": "Strut",
+      "shape": {
+        "primitive": "Cylinder",
+        "size": [
+          1,
+          2.2,
+          1
+        ],
+        "radius": 0.025,
+        "radius2": 0.15,
+        "segments": 8,
+        "rings": 16,
+        "subdiv": 1
+      },
+      "position": [
+        -0.12727922061357855,
+        0.2,
+        0.12727922061357855
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "visible": true,
+      "collapsed": false,
+      "material": {
+        "name": "Gunmetal",
+        "baseColor": [
+          0.36,
+          0.38,
+          0.42
+        ],
+        "texture": null,
+        "roughness": 0.4,
+        "metallic": 0.75,
+        "specular": 0.5,
+        "transmission": 0,
+        "ior": 1.5,
+        "coat": 0,
+        "coatRoughness": 0.08,
+        "emission": [
+          0,
+          0,
+          0
+        ],
+        "emissionStrength": 0,
+        "preset": 0
+      }
+    },
+    {
+      "id": 5,
+      "parent": 1,
+      "name": "Strut",
+      "shape": {
+        "primitive": "Cylinder",
+        "size": [
+          1,
+          2.2,
+          1
+        ],
+        "radius": 0.025,
+        "radius2": 0.15,
+        "segments": 8,
+        "rings": 16,
+        "subdiv": 1
+      },
+      "position": [
+        -0.12727922061357858,
+        0.2,
+        -0.12727922061357855
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "visible": true,
+      "collapsed": false,
+      "material": {
+        "name": "Gunmetal",
+        "baseColor": [
+          0.36,
+          0.38,
+          0.42
+        ],
+        "texture": null,
+        "roughness": 0.4,
+        "metallic": 0.75,
+        "specular": 0.5,
+        "transmission": 0,
+        "ior": 1.5,
+        "coat": 0,
+        "coatRoughness": 0.08,
+        "emission": [
+          0,
+          0,
+          0
+        ],
+        "emissionStrength": 0,
+        "preset": 0
+      }
+    },
+    {
+      "id": 6,
+      "parent": 1,
+      "name": "Strut",
+      "shape": {
+        "primitive": "Cylinder",
+        "size": [
+          1,
+          2.2,
+          1
+        ],
+        "radius": 0.025,
+        "radius2": 0.15,
+        "segments": 8,
+        "rings": 16,
+        "subdiv": 1
+      },
+      "position": [
+        0.12727922061357852,
+        0.2,
+        -0.12727922061357858
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "visible": true,
+      "collapsed": false,
+      "material": {
+        "name": "Gunmetal",
+        "baseColor": [
+          0.36,
+          0.38,
+          0.42
+        ],
+        "texture": null,
+        "roughness": 0.4,
+        "metallic": 0.75,
+        "specular": 0.5,
+        "transmission": 0,
+        "ior": 1.5,
+        "coat": 0,
+        "coatRoughness": 0.08,
+        "emission": [
+          0,
+          0,
+          0
+        ],
+        "emissionStrength": 0,
+        "preset": 0
+      }
+    },
+    {
+      "id": 7,
+      "parent": 1,
+      "name": "Mast",
+      "shape": {
+        "primitive": "Cylinder",
+        "size": [
+          1,
+          2.6,
+          1
+        ],
+        "radius": 0.04,
+        "radius2": 0.15,
+        "segments": 8,
+        "rings": 16,
+        "subdiv": 1
+      },
+      "position": [
+        0,
+        0.2,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "visible": true,
+      "collapsed": false,
+      "material": {
+        "name": "Armor White",
+        "baseColor": [
+          0.8,
+          0.82,
+          0.84
+        ],
+        "texture": null,
+        "roughness": 0.42,
+        "metallic": 0,
+        "specular": 0.5,
+        "transmission": 0,
+        "ior": 1.5,
+        "coat": 0.4,
+        "coatRoughness": 0.08,
+        "emission": [
+          0,
+          0,
+          0
+        ],
+        "emissionStrength": 0,
+        "preset": 0
+      }
+    },
+    {
+      "id": 8,
+      "parent": 1,
+      "name": "Blink",
+      "shape": {
+        "primitive": "Sphere",
+        "size": [
+          1,
+          1,
+          1
+        ],
+        "radius": 0.06,
+        "radius2": 0.15,
+        "segments": 32,
+        "rings": 16,
+        "subdiv": 1
+      },
+      "position": [
+        0,
+        2.82,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "visible": true,
+      "collapsed": false,
+      "material": {
+        "name": "Beacon Red",
+        "baseColor": [
+          1,
+          0.2,
+          0.15
+        ],
+        "texture": null,
+        "roughness": 0.5,
+        "metallic": 0,
+        "specular": 0.5,
+        "transmission": 0,
+        "ior": 1.5,
+        "coat": 0,
+        "coatRoughness": 0.08,
+        "emission": [
+          1,
+          0.22,
+          0.15
+        ],
+        "emissionStrength": 2.5,
+        "preset": 0
+      }
+    }
+  ],
+  "clips": [
+    {
+      "name": "Idle",
+      "length": 1.6,
+      "fps": 30,
+      "loop": true,
+      "tracks": [
+        {
+          "part": 8,
+          "channel": "Scale",
+          "keys": [
+            {
+              "t": 0,
+              "v": [
+                1,
+                1,
+                1
+              ],
+              "interp": "Smooth"
+            },
+            {
+              "t": 0.2,
+              "v": [
+                1.6,
+                1.6,
+                1.6
+              ],
+              "interp": "Smooth"
+            },
+            {
+              "t": 0.4,
+              "v": [
+                1,
+                1,
+                1
+              ],
+              "interp": "Smooth"
+            },
+            {
+              "t": 1.6,
+              "v": [
+                1,
+                1,
+                1
+              ],
+              "interp": "Smooth"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

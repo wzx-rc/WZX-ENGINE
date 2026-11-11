@@ -1,0 +1,312 @@
+{
+  "format": "wzx-prefab",
+  "version": 1,
+  "name": "Prop Lamp",
+  "game": {
+    "category": "Prop",
+    "footprintX": 1,
+    "footprintZ": 1,
+    "selectionRadius": 0.3,
+    "height": 1.8,
+    "blocksPath": true
+  },
+  "parts": [
+    {
+      "id": 1,
+      "parent": 0,
+      "name": "Root",
+      "position": [
+        0,
+        0,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "visible": true,
+      "collapsed": false
+    },
+    {
+      "id": 2,
+      "parent": 1,
+      "name": "Base",
+      "shape": {
+        "primitive": "Cylinder",
+        "size": [
+          1,
+          0.1,
+          1
+        ],
+        "radius": 0.14,
+        "radius2": 0.15,
+        "segments": 12,
+        "rings": 16,
+        "subdiv": 1
+      },
+      "position": [
+        0,
+        0,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "visible": true,
+      "collapsed": false,
+      "material": {
+        "name": "Gunmetal",
+        "baseColor": [
+          0.36,
+          0.38,
+          0.42
+        ],
+        "texture": null,
+        "roughness": 0.4,
+        "metallic": 0.75,
+        "specular": 0.5,
+        "transmission": 0,
+        "ior": 1.5,
+        "coat": 0,
+        "coatRoughness": 0.08,
+        "emission": [
+          0,
+          0,
+          0
+        ],
+        "emissionStrength": 0,
+        "preset": 0
+      }
+    },
+    {
+      "id": 3,
+      "parent": 1,
+      "name": "Pole",
+      "shape": {
+        "primitive": "Cylinder",
+        "size": [
+          1,
+          1.6,
+          1
+        ],
+        "radius": 0.035,
+        "radius2": 0.15,
+        "segments": 12,
+        "rings": 16,
+        "subdiv": 1
+      },
+      "position": [
+        0,
+        0.1,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "visible": true,
+      "collapsed": false,
+      "material": {
+        "name": "Gunmetal",
+        "baseColor": [
+          0.36,
+          0.38,
+          0.42
+        ],
+        "texture": null,
+        "roughness": 0.4,
+        "metallic": 0.75,
+        "specular": 0.5,
+        "transmission": 0,
+        "ior": 1.5,
+        "coat": 0,
+        "coatRoughness": 0.08,
+        "emission": [
+          0,
+          0,
+          0
+        ],
+        "emissionStrength": 0,
+        "preset": 0
+      }
+    },
+    {
+      "id": 4,
+      "parent": 1,
+      "name": "Arm",
+      "shape": {
+        "primitive": "Cube",
+        "size": [
+          0.05,
+          0.05,
+          0.4
+        ],
+        "radius": 0.5,
+        "radius2": 0.15,
+        "segments": 32,
+        "rings": 16,
+        "subdiv": 1
+      },
+      "position": [
+        0,
+        1.62,
+        0.15
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "visible": true,
+      "collapsed": false,
+      "material": {
+        "name": "Gunmetal",
+        "baseColor": [
+          0.36,
+          0.38,
+          0.42
+        ],
+        "texture": null,
+        "roughness": 0.4,
+        "metallic": 0.75,
+        "specular": 0.5,
+        "transmission": 0,
+        "ior": 1.5,
+        "coat": 0,
+        "coatRoughness": 0.08,
+        "emission": [
+          0,
+          0,
+          0
+        ],
+        "emissionStrength": 0,
+        "preset": 0
+      }
+    },
+    {
+      "id": 5,
+      "parent": 1,
+      "name": "Bulb",
+      "shape": {
+        "primitive": "Sphere",
+        "size": [
+          1,
+          1,
+          1
+        ],
+        "radius": 0.07,
+        "radius2": 0.15,
+        "segments": 32,
+        "rings": 16,
+        "subdiv": 1
+      },
+      "position": [
+        0,
+        1.5,
+        0.32
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "scale": [
+        1,
+        0.7,
+        1
+      ],
+      "visible": true,
+      "collapsed": false,
+      "material": {
+        "name": "Lamp Warm",
+        "baseColor": [
+          1,
+          0.85,
+          0.6
+        ],
+        "texture": null,
+        "roughness": 0.5,
+        "metallic": 0,
+        "specular": 0.5,
+        "transmission": 0,
+        "ior": 1.5,
+        "coat": 0,
+        "coatRoughness": 0.08,
+        "emission": [
+          1,
+          0.78,
+          0.5
+        ],
+        "emissionStrength": 2.8,
+        "preset": 0
+      }
+    }
+  ],
+  "clips": [
+    {
+      "name": "Idle",
+      "length": 3,
+      "fps": 30,
+      "loop": true,
+      "tracks": [
+        {
+          "part": 5,
+          "channel": "Scale",
+          "keys": [
+            {
+              "t": 0,
+              "v": [
+                1,
+                0.7,
+                1
+              ],
+              "interp": "Smooth"
+            },
+            {
+              "t": 1.5,
+              "v": [
+                1.15,
+                0.8,
+                1.15
+              ],
+              "interp": "Smooth"
+            },
+            {
+              "t": 3,
+              "v": [
+                1,
+                0.7,
+                1
+              ],
+              "interp": "Smooth"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,270 @@
+{
+  "format": "wzx-prefab",
+  "version": 1,
+  "name": "Prop Crystal",
+  "game": {
+    "category": "Prop",
+    "footprintX": 1,
+    "footprintZ": 1,
+    "selectionRadius": 0.6,
+    "height": 1.2,
+    "blocksPath": true
+  },
+  "parts": [
+    {
+      "id": 1,
+      "parent": 0,
+      "name": "Root",
+      "position": [
+        0,
+        0,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "visible": true,
+      "collapsed": false
+    },
+    {
+      "id": 2,
+      "parent": 1,
+      "name": "Shard",
+      "shape": {
+        "primitive": "Cylinder",
+        "size": [
+          1,
+          1.1,
+          1
+        ],
+        "radius": 0.14,
+        "radius2": 0.15,
+        "segments": 6,
+        "rings": 16,
+        "subdiv": 1
+      },
+      "position": [
+        0,
+        0,
+        0
+      ],
+      "rotation": [
+        8,
+        0,
+        6
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "visible": true,
+      "collapsed": false,
+      "material": {
+        "name": "Vitae Glow",
+        "baseColor": [
+          0.2,
+          0.95,
+          0.35
+        ],
+        "texture": null,
+        "roughness": 0.15,
+        "metallic": 0,
+        "specular": 0.5,
+        "transmission": 0,
+        "ior": 1.5,
+        "coat": 0,
+        "coatRoughness": 0.08,
+        "emission": [
+          0.18,
+          1,
+          0.32
+        ],
+        "emissionStrength": 1.6,
+        "preset": 0
+      }
+    },
+    {
+      "id": 3,
+      "parent": 1,
+      "name": "Shard",
+      "shape": {
+        "primitive": "Cylinder",
+        "size": [
+          1,
+          0.7,
+          1
+        ],
+        "radius": 0.1,
+        "radius2": 0.15,
+        "segments": 6,
+        "rings": 16,
+        "subdiv": 1
+      },
+      "position": [
+        0.22,
+        0,
+        0.1
+      ],
+      "rotation": [
+        -6,
+        30,
+        -22
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "visible": true,
+      "collapsed": false,
+      "material": {
+        "name": "Vitae Glow",
+        "baseColor": [
+          0.2,
+          0.95,
+          0.35
+        ],
+        "texture": null,
+        "roughness": 0.15,
+        "metallic": 0,
+        "specular": 0.5,
+        "transmission": 0,
+        "ior": 1.5,
+        "coat": 0,
+        "coatRoughness": 0.08,
+        "emission": [
+          0.18,
+          1,
+          0.32
+        ],
+        "emissionStrength": 1.6,
+        "preset": 0
+      }
+    },
+    {
+      "id": 4,
+      "parent": 1,
+      "name": "Shard",
+      "shape": {
+        "primitive": "Cylinder",
+        "size": [
+          1,
+          0.55,
+          1
+        ],
+        "radius": 0.09,
+        "radius2": 0.15,
+        "segments": 6,
+        "rings": 16,
+        "subdiv": 1
+      },
+      "position": [
+        -0.2,
+        0,
+        0.12
+      ],
+      "rotation": [
+        10,
+        60,
+        25
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "visible": true,
+      "collapsed": false,
+      "material": {
+        "name": "Vitae Glow",
+        "baseColor": [
+          0.2,
+          0.95,
+          0.35
+        ],
+        "texture": null,
+        "roughness": 0.15,
+        "metallic": 0,
+        "specular": 0.5,
+        "transmission": 0,
+        "ior": 1.5,
+        "coat": 0,
+        "coatRoughness": 0.08,
+        "emission": [
+          0.18,
+          1,
+          0.32
+        ],
+        "emissionStrength": 1.6,
+        "preset": 0
+      }
+    },
+    {
+      "id": 5,
+      "parent": 1,
+      "name": "Base Rock",
+      "shape": {
+        "primitive": "Sphere",
+        "size": [
+          1,
+          1,
+          1
+        ],
+        "radius": 0.3,
+        "radius2": 0.15,
+        "segments": 8,
+        "rings": 5,
+        "subdiv": 1
+      },
+      "position": [
+        0,
+        -0.12,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "scale": [
+        1.4,
+        0.6,
+        1.2
+      ],
+      "visible": true,
+      "collapsed": false,
+      "material": {
+        "name": "Basalt",
+        "baseColor": [
+          0.24,
+          0.22,
+          0.24
+        ],
+        "texture": null,
+        "roughness": 0.9,
+        "metallic": 0,
+        "specular": 0.5,
+        "transmission": 0,
+        "ior": 1.5,
+        "coat": 0,
+        "coatRoughness": 0.08,
+        "emission": [
+          0,
+          0,
+          0
+        ],
+        "emissionStrength": 0,
+        "preset": 0
+      }
+    }
+  ],
+  "clips": []
+}
