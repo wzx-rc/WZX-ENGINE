@@ -346,7 +346,8 @@ bool RtsPlay::input(const RtsView& v, bool overUi) {
     if (m_ghost >= 0) {
         Object& g = m_scene->objects[m_ghost];
         float3 p;
-        if (inView && groundAt(v, mx, my, p)) {
+        if (std::fabs(io.MouseDelta.x) + std::fabs(io.MouseDelta.y) > 0.5f) m_ghostHeld = false;
+        if (!m_ghostHeld && inView && groundAt(v, mx, my, p)) {
             const PrefabAsset* a = assetOf(m_ghost);
             const float ox = a && (a->game.footprintX % 2) ? 0.5f : 0.0f, oz = a && (a->game.footprintZ % 2) ? 0.5f : 0.0f;
             g.position = float3(std::floor(p.x - ox + 0.5f) + ox, 0, std::floor(p.z - oz + 0.5f) + oz);
@@ -628,6 +629,22 @@ bool RtsPlay::placeAt(float3 p) {
     m_ghost = -1;
     m_rt->firePlacement(placed);
     return true;
+}
+
+} // namespace app
+
+namespace app {
+
+bool RtsPlay::moveGhost(float3 p) {
+    if (!m_scene || m_ghost < 0) return false;
+    Object& g = m_scene->objects[m_ghost];
+    const PrefabAsset* a = assetOf(m_ghost);
+    const float ox = a && (a->game.footprintX % 2) ? 0.5f : 0.0f, oz = a && (a->game.footprintZ % 2) ? 0.5f : 0.0f;
+    g.position = float3(std::floor(p.x - ox + 0.5f) + ox, 0, std::floor(p.z - oz + 0.5f) + oz);
+    buildNav(m_ghost);
+    m_ghostOk = footprintFree(m_ghost);
+    m_ghostHeld = true;
+    return m_ghostOk;
 }
 
 } // namespace app

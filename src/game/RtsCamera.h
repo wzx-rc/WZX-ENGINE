@@ -24,7 +24,8 @@ public:
     float moveSpeed = 8.0f;         // m/s at the default distance
     float fastFactor = 2.5f;
     float turnSpeed = 1.6f;         // rad/s
-    float minDistance = 1.5f, maxDistance = 30.0f;
+    float minDistance = 1.5f, maxDistance = 55.0f;
+    float fovDeg = 35.0f;           // narrow: little perspective, units keep their size across the view
     float pitchDeg = 55.0f;
     float smoothing = 10.0f;
     float bound = 50.0f;            // target limited to +-bound on X and Z

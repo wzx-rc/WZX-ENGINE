@@ -6,8 +6,8 @@
     "category": "Unit",
     "footprintX": 1,
     "footprintZ": 1,
-    "selectionRadius": 1,
-    "height": 2.5,
+    "selectionRadius": 1.15,
+    "height": 3,
     "blocksPath": false
   },
   "parts": [
@@ -26,9 +26,9 @@
         0
       ],
       "scale": [
-        1,
-        1,
-        1
+        1.2,
+        1.2,
+        1.2
       ],
       "visible": true,
       "collapsed": false
@@ -228,26 +228,26 @@
       "visible": true,
       "collapsed": false,
       "material": {
-        "name": "Cobalt",
+        "name": "Team Blue",
         "baseColor": [
-          0.16,
-          0.34,
-          0.7
+          0.1,
+          0.52,
+          1
         ],
         "texture": null,
-        "roughness": 0.38,
-        "metallic": 0.1,
-        "specular": 0.5,
+        "roughness": 0.32,
+        "metallic": 0,
+        "specular": 0.6,
         "transmission": 0,
         "ior": 1.5,
-        "coat": 0.5,
+        "coat": 0.6,
         "coatRoughness": 0.08,
         "emission": [
-          0,
-          0,
-          0
+          0.05,
+          0.3,
+          0.8
         ],
-        "emissionStrength": 0,
+        "emissionStrength": 0.35,
         "preset": 0
       }
     },
@@ -714,26 +714,26 @@
       "visible": true,
       "collapsed": false,
       "material": {
-        "name": "Cobalt",
+        "name": "Team Blue",
         "baseColor": [
-          0.16,
-          0.34,
-          0.7
+          0.1,
+          0.52,
+          1
         ],
         "texture": null,
-        "roughness": 0.38,
-        "metallic": 0.1,
-        "specular": 0.5,
+        "roughness": 0.32,
+        "metallic": 0,
+        "specular": 0.6,
         "transmission": 0,
         "ior": 1.5,
-        "coat": 0.5,
+        "coat": 0.6,
         "coatRoughness": 0.08,
         "emission": [
-          0,
-          0,
-          0
+          0.05,
+          0.3,
+          0.8
         ],
-        "emissionStrength": 0,
+        "emissionStrength": 0.35,
         "preset": 0
       }
     },
@@ -1026,26 +1026,26 @@
       "visible": true,
       "collapsed": false,
       "material": {
-        "name": "Cobalt",
+        "name": "Team Blue",
         "baseColor": [
-          0.16,
-          0.34,
-          0.7
+          0.1,
+          0.52,
+          1
         ],
         "texture": null,
-        "roughness": 0.38,
-        "metallic": 0.1,
-        "specular": 0.5,
+        "roughness": 0.32,
+        "metallic": 0,
+        "specular": 0.6,
         "transmission": 0,
         "ior": 1.5,
-        "coat": 0.5,
+        "coat": 0.6,
         "coatRoughness": 0.08,
         "emission": [
-          0,
-          0,
-          0
+          0.05,
+          0.3,
+          0.8
         ],
-        "emissionStrength": 0,
+        "emissionStrength": 0.35,
         "preset": 0
       }
     },

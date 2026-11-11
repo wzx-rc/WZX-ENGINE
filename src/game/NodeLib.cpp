@@ -57,7 +57,7 @@ std::vector<NodeDef> build() {
                     .execIn().execOut("Then 1").execOut("Then 2").execOut("Then 3"));
     v.push_back(B(Op::Delay, "flow.delay", "Delay", FL, "Waits a number of seconds, then continues.")
                     .execIn().inF("Seconds", 1.0f).execOut());
-    v.push_back(B(Op::ForEachPart, "flow.forEachPart", "For Each Object", FL, "Loops over the visible objects of a type (empty = all).")
+    v.push_back(B(Op::ForEachPart, "flow.forEachPart", "For Each Object", FL, "Loops over the visible objects of a type: a library part, a prefab name (MechaWorker) or a category (Unit, Building, Resource); empty = all.")
                     .execIn().inS("Type", "CUBE").execOut("Loop").out("Object", O).execOut("Completed"));
     v.push_back(B(Op::DoOnce, "flow.doOnce", "Do Once", FL, "Lets execution pass only once per game.")
                     .execIn().execOut());

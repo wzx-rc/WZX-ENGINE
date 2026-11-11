@@ -44,6 +44,7 @@ public:
     bool beginPlacement(const std::string& prefab);
     // tests / API: the ghost put at a ground point (snapped) and placed there if its cells are free; false otherwise
     bool placeAt(float3 p);
+    bool moveGhost(float3 p);   // the ghost put there (snapped) without placing it: true when it is green
     bool placing() const { return m_ghost >= 0; }
     void setYaw(int obj, float degrees);
     void setPartColor(int obj, const std::string& part, float3 rgb);
@@ -74,6 +75,7 @@ private:
     float m_rdownX = 0, m_rdownY = 0;
     int m_ghost = -1;             // the building being placed
     bool m_ghostOk = false;
+    bool m_ghostHeld = false;   // moved by moveGhost (API): the mouse does not move it until it moves
     bool m_hudHovered = false;
     std::map<int, float3> m_baseEmission;   // material -> its emission before Set Part Glow
     // navigation grid

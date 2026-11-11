@@ -397,7 +397,7 @@ void GameHost::setRtsCamera(bool on) {
         }
         if (p.cam != VCAM_PERSP) m_app.setPaneCamera(m_app.m_activePane, VCAM_PERSP);
         const vp3d::Camera& c = m_app.m_scene.camera;
-        m_cam.reset(c.target, c.yaw, std::min(c.distance, 14.0f));   // the RTS starting view (prototype default)
+        m_cam.reset(c.target, c.yaw, std::min(c.distance, m_cam.maxDistance));   // the RTS starting view: the scene view, as the player
     }
     m_rtsCam = on;
     m_rmbDrag = false;
@@ -1614,6 +1614,29 @@ std::string GameHost::command(const Json& j, int& status) {
         if (!m_rts.placing()) return fail("no building is being placed");
         const bool placed = m_rts.placeAt(p);
         return ok(std::string(", \"placed\": ") + (placed ? "true" : "false"));
+    }
+    if (cmd == "input.ghost") {   // {pos}: the building being placed shown there (not placed): green or red
+        if (!m_playing) return fail("Play is not running");
+        float3 p;
+        if (!readVec(j["pos"], p)) return fail("give pos");
+        if (!m_rts.placing()) return fail("no building is being placed");
+        return ok(std::string(", \"free\": ") + (m_rts.moveGhost(p) ? "true" : "false"));
+    }
+    if (cmd == "input.ok") {   // the OK of the message box
+        if (!m_playing) return fail("Play is not running");
+        m_rt.messageShown = false;
+        return ok();
+    }
+    if (cmd == "rts.camera") {   // {target?, yaw?, distance?}: the RTS camera of the Play session (captures, tests)
+        if (!m_playing || !m_rtsCam) return fail("the RTS camera is not active");
+        float3 t = m_cam.target();
+        readVec(j["target"], t);
+        const float yaw = j["yaw"].type == Json::Number ? radians((float)j["yaw"].n) : m_cam.yaw();
+        const float dist = j["distance"].type == Json::Number ? (float)j["distance"].n : m_cam.distance();
+        m_cam.reset(t, yaw, dist);
+        m_cam.apply(m_app.m_scene.camera);
+        m_app.cameraChanged();
+        return ok(", \"distance\": " + num(m_cam.distance()));
     }
     if (cmd == "input.hud") {   // {id}: a click on a HUD button
         if (!m_playing) return fail("Play is not running");

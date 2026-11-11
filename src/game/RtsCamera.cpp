@@ -64,7 +64,7 @@ void RtsCamera::apply(vp3d::Camera& cam) const {
     cam.yaw = m_yaw;
     cam.pitch = vp3d::radians(pitchDeg);
     cam.distance = m_dist;
-    cam.fovY = vp3d::radians(40.0f);
+    cam.fovY = vp3d::radians(fovDeg);
     cam.dof = false;
 }
 

@@ -28,6 +28,7 @@ const M = {
   rock:    { name: 'Basalt',      baseColor: [0.24, 0.22, 0.24], roughness: 0.9 },
   rock2:   { name: 'Ochre Rock',  baseColor: [0.55, 0.40, 0.28], roughness: 0.92 },
   crate:   { name: 'Crate Olive', baseColor: [0.34, 0.38, 0.26], roughness: 0.7 },
+  team:    { name: 'Team Blue',   baseColor: [0.10, 0.52, 1.0], roughness: 0.32, specular: 0.6, coat: 0.6, emission: [0.05, 0.3, 0.8], emissionStrength: 0.35 },
 };
 function material(m) {
   return {
@@ -82,12 +83,12 @@ const loop4 = (len, a, b) => [[0, a], [len / 4, b], [len / 2, a], [3 * len / 4, 
 
 // ---------------------------------------------------------------- worker mecha (harvester, ~1.3 tall)
 function worker() {
-  const P = new Prefab('Mecha Worker', { category: 'Unit', footprintX: 1, footprintZ: 1, selectionRadius: 0.7, height: 1.4, blocksPath: false });
-  const root = P.pivot(0, 'Root');
+  const P = new Prefab('Mecha Worker', { category: 'Unit', footprintX: 1, footprintZ: 1, selectionRadius: 0.85, height: 1.9, blocksPath: false });
+  const root = P.part(0, 'Root', null, [0, 0, 0], [0, 0, 0], [1.35, 1.35, 1.35]);   // oversized for readability
   const body = P.pivot(root, 'Body', [0, 0.72, 0]);
   P.box(body, 'Hull', 0.78, 0.42, 0.62, [0, 0, 0], 'armor');
-  P.box(body, 'Hull Stripe', 0.80, 0.08, 0.64, [0, 0.26, 0], 'armorB');
-  P.box(body, 'Hull Top', 0.62, 0.12, 0.5, [0, 0.42, -0.02], 'armor');
+  P.box(body, 'Hull Stripe', 0.80, 0.08, 0.64, [0, 0.26, 0], 'team');
+  P.box(body, 'Hull Top', 0.62, 0.12, 0.5, [0, 0.42, -0.02], 'team');
   P.part(body, 'Cockpit', sph(0.2), [0, 0.42, 0.12], [0, 0, 0], [1, 0.75, 1.1], 'glass');
   P.box(body, 'Visor', 0.36, 0.05, 0.03, [0, 0.27, 0.43], 'visor');
   // back tank of Vitae (the resource it carries)
@@ -135,13 +136,13 @@ function worker() {
 
 // ---------------------------------------------------------------- combat mecha (~2.4 tall)
 function warden() {
-  const P = new Prefab('Mecha Warden', { category: 'Unit', footprintX: 1, footprintZ: 1, selectionRadius: 1.0, height: 2.5, blocksPath: false });
-  const root = P.pivot(0, 'Root');
+  const P = new Prefab('Mecha Warden', { category: 'Unit', footprintX: 1, footprintZ: 1, selectionRadius: 1.15, height: 3.0, blocksPath: false });
+  const root = P.part(0, 'Root', null, [0, 0, 0], [0, 0, 0], [1.2, 1.2, 1.2]);
   const pelvis = P.pivot(root, 'Pelvis', [0, 1.25, 0]);
   P.box(pelvis, 'Pelvis Block', 0.7, 0.26, 0.5, [0, -0.1, 0], 'steel');
   const torso = P.pivot(pelvis, 'Torso', [0, 0.16, 0]);
   P.box(torso, 'Chest', 1.1, 0.62, 0.78, [0, 0, 0], 'armor');
-  P.box(torso, 'Chest Plate', 0.86, 0.38, 0.06, [0, 0.12, 0.4], 'armorB');
+  P.box(torso, 'Chest Plate', 0.86, 0.38, 0.06, [0, 0.12, 0.4], 'team');
   P.box(torso, 'Chest Stripe', 1.12, 0.07, 0.8, [0, 0.46, 0], 'amber');
   P.box(torso, 'Head', 0.42, 0.26, 0.4, [0, 0.62, 0.08], 'armor');
   P.box(torso, 'Visor', 0.34, 0.06, 0.02, [0, 0.74, 0.29], 'visor');
@@ -152,7 +153,7 @@ function warden() {
   const arms = [];
   for (const s of [-1, 1]) {
     const sh = P.pivot(torso, s < 0 ? 'Shoulder L' : 'Shoulder R', [0.7 * s, 0.38, 0]);
-    P.box(sh, 'Pauldron', 0.36, 0.3, 0.5, [0.06 * s, -0.12, 0], 'armorB');
+    P.box(sh, 'Pauldron', 0.36, 0.3, 0.5, [0.06 * s, -0.12, 0], 'team');
     P.box(sh, 'Arm', 0.2, 0.5, 0.22, [0.06 * s, -0.6, 0], 'steel');
     // twin cannon
     P.hcyl(sh, 'Cannon', 0.09, 0.9, [0.06 * s, -0.62, 0.3], 'z', 'steel');

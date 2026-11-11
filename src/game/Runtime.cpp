@@ -539,7 +539,8 @@ void Runtime::exec(Node& n) {
         std::string part = S(1);
         std::vector<int> objs;
         for (int i = 0; i < m_world->objectCount(); ++i)
-            if (m_world->objectAlive(i) && !m_world->objectPart(i).empty() && (part.empty() || m_world->objectPart(i) == part)) objs.push_back(i);
+            if (m_world->objectAlive(i) && !m_world->objectPart(i).empty() &&
+                (part.empty() || m_world->objectPart(i) == part || m_world->objectPrefab(i) == part || m_world->objectCategory(i) == part)) objs.push_back(i);   // (a prefab name or a category: its instances)
         for (int o : objs) {
             if (!m_graph || m_budget < 0) return;
             setOut(n, 1, Value::Obj(o));
