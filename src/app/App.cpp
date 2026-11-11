@@ -61,6 +61,9 @@ bool App::init(HINSTANCE inst, const Options& opt) {
     m_exeDir = exe;
     m_exeDir = m_exeDir.substr(0, m_exeDir.find_last_of(L"\\/"));
     SetCurrentDirectoryW(m_exeDir.c_str());   // window .ini next to the exe
+    // live prefab instances read their .prefab files (paths relative to the project) and the meshes of their parts
+    m_prefabs.absPath = [this](const std::string& p) { return absPath(p); };
+    m_prefabs.loadMesh = [](const std::wstring& f, MeshData& m, std::string* err) { return loadMeshFile(f, m, nullptr, err); };
 
     WNDCLASSEXW wc = {sizeof(wc)};
     wc.style = CS_DBLCLKS;
@@ -537,6 +540,7 @@ void App::frame() {
     pivotInput(!gameKeys && m_workspace == 0 && !(m_game && (m_game->playerMode() || m_game->playing())));   // Edit Pivot (D, Insert), Center Pivot (Alt+Y)
     storeActiveCamera();   // the other panes see this camera as it is now (a camera object: moved with the view)
     if (m_game) m_game->update(m_dt);
+    updatePrefabs();   // live prefab instances: parts in sync, clips, poses
     updateDocState();
     if (m_turntable && !orbitLocked()) {
         m_scene.camera.yaw += 0.006f;
@@ -1023,6 +1027,7 @@ void App::redo() {
 }
 
 void App::select(int idx) {
+    idx = instanceRootOf(m_scene, idx);   // a part of a live prefab instance: the instance
     if (idx == m_selected && m_multi.empty() && m_outSel.empty()) return;
     m_selected = idx;
     m_multi.clear();

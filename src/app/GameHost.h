@@ -87,6 +87,10 @@ public:
     bool turnHouse(int id) override;
     int houseAt(int cx, int cz) const override;
     int houseCount() const override;
+    int spawnPrefab(const std::string& prefab, vp3d::float3 pos, float yawDeg) override;
+    bool playClip(int obj, const std::string& clip, bool loop, float speed) override;
+    void stopClip(int obj) override;
+    void clipFinished(int root, const std::string& clip);   // App::updatePrefabs: a non-looping clip ended (Play)
 
 private:
     void play();

@@ -36,6 +36,10 @@ public:
     virtual void hudButton(const std::string& id, const std::string& label) { (void)id; (void)label; }
     virtual void setSun(float azimuth, float height) { (void)azimuth; (void)height; }
     virtual void cellAt(float x, float z, int& cx, int& cz) const { (void)x; (void)z; cx = cz = 0; }
+    // live prefab instances (PrefabInstance.h): name or file of the prefab; -1 when it cannot be read
+    virtual int spawnPrefab(const std::string& prefab, float3 pos, float yawDeg) { (void)prefab; (void)pos; (void)yawDeg; return -1; }
+    virtual bool playClip(int obj, const std::string& clip, bool loop, float speed) { (void)obj; (void)clip; (void)loop; (void)speed; return false; }
+    virtual void stopClip(int obj) { (void)obj; }
 };
 
 class Runtime {
@@ -51,6 +55,7 @@ public:
     void fireClickGround(float3 point);
     void fireHouseClick(int house);   // house = its id
     void fireHudButton(const std::string& id);
+    void fireClipFinished(int obj, const std::string& clip);   // a non-looping clip of a prefab instance ended
     // key: upper-case name as accepted by the "Touche pressée" node (A..Z, 0..9, ESPACE, ENTREE, F1..F12, HAUT, BAS, GAUCHE, DROITE).
     void fireKey(const std::string& key);
 

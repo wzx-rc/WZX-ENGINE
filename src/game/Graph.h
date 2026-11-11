@@ -56,6 +56,8 @@ enum class Op {
     Add, Sub, Mul, Div, Greater, Less, Equal, StrEqual, And, Or, Not, Random, AddVec3, ScaleVec3, Concat,
     // RTS
     SnapGrid, CellFree, CountPart, SetRtsCamera, PlaceHouse, RemoveHouse, TurnHouse, HouseAt, HouseCount, OnHouseClicked, CellAt, SetSun, HudButton, OnHudButton,
+    // live prefab instances
+    SpawnPrefab, PlayClip, StopClip, OnClipFinished,
 };
 
 struct NodeDef {

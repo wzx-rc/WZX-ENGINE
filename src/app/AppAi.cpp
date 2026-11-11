@@ -280,6 +280,37 @@ std::string GameHost::extraCommand(const std::string& cmd, const Json& j, int& s
         return js.str();
     }
     // --- prefab (the Prefab workspace)
+    // --- live prefab instances of the scene (PrefabInstance.h), without the studio
+    if (cmd == "prefab.instance") {   // {prefab: name or file, pos?, yaw?, name?} -> index of the instance
+        if (m_playing) return fail("stop Play first");
+        const std::string path = a.m_prefabs.resolve(j["prefab"].str());
+        if (path.empty()) return fail("prefab not found: " + j["prefab"].str());
+        const Json& p = j["pos"];
+        float3 pos(0, 0, 0);
+        if (p.type == Json::Array && p.a.size() >= 3) pos = float3((float)p[0].num(), (float)p[1].num(), (float)p[2].num());
+        a.pushUndo();
+        a.outlinerIds();
+        const PrefabAsset* as = a.m_prefabs.get(path);
+        const int ri = addPrefabInstance(a.m_scene, a.m_prefabs, path, pos, (float)j["yaw"].num(0),
+                                         a.uniqueNodeName(j["name"].str(as ? as->name : "Prefab")));
+        if (ri < 0) return fail("prefab not read: " + path);
+        a.m_scene.objects[ri].collapsed = true;
+        syncPrefabInstances(a.m_scene, a.m_prefabs, true);
+        a.markDirty();
+        return "{\"ok\": true, \"index\": " + std::to_string(ri) + ", \"prefab\": " + jstr(path) + "}";
+    }
+    if (cmd == "prefab.unpack") {   // {target}: the instance becomes a plain group
+        if (m_playing) return fail("stop Play first");
+        const int o = resolveObject(j["target"]);
+        if (o < 0) return fail("no such object");
+        a.select(o);
+        a.prefabUnpackSelected();
+        return "{\"ok\": true}";
+    }
+    if (cmd == "prefab.animate") {   // {on}: the clips of the instances play in the editor viewport too
+        a.m_prefabAnimate = j["on"].type == Json::Bool ? j["on"].b : !a.m_prefabAnimate;
+        return std::string("{\"ok\": true, \"animate\": ") + (a.m_prefabAnimate ? "true" : "false") + "}";
+    }
     if (cmd.rfind("prefab.", 0) == 0) {
         App::PrefabStudio& P = a.m_pf;
         if (!P.initialised) a.prefabInit();

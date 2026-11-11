@@ -511,6 +511,29 @@ std::string GameHost::uniqueName(const std::string& base) const {
     }
 }
 
+// Live prefab instances (PrefabInstance.h): the root is appended, its parts right after (Play: indices stay valid).
+int GameHost::spawnPrefab(const std::string& prefab, float3 pos, float yawDeg) {
+    PrefabLibrary& lib = m_app.m_prefabs;
+    const std::string path = lib.resolve(prefab);
+    const PrefabAsset* a = path.empty() ? nullptr : lib.get(path);
+    if (!a) return -1;
+    const int r = addPrefabInstance(m_app.m_scene, lib, path, pos, yawDeg, uniqueName(a->name));
+    if (r < 0) return -1;
+    syncPrefabInstances(m_app.m_scene, lib, false);
+    m_app.markDirty();
+    return r;
+}
+
+bool GameHost::playClip(int obj, const std::string& clip, bool loop, float speed) {
+    return app::playClip(m_app.m_scene, m_app.m_prefabs, instanceRootOf(m_app.m_scene, obj), clip, loop, speed);
+}
+
+void GameHost::stopClip(int obj) { app::stopClip(m_app.m_scene, instanceRootOf(m_app.m_scene, obj)); }
+
+void GameHost::clipFinished(int root, const std::string& clip) {
+    if (m_rt.running()) m_rt.fireClipFinished(root, clip);
+}
+
 int GameHost::spawn(const std::string& part, float3 pos, float3 rgb) {
     const PartDef* p = findPart(part);
     if (!p) return -1;
@@ -563,8 +586,11 @@ void GameHost::playInput() {
         if (house >= 0 && tHouse <= pr.t) {
             // a house: the graph gets "House Clicked"; the RTS placement takes the drag (AppRts.cpp)
             m_rt.fireHouseClick(m_build.buildings()[house].id);
-        } else if (pr.object >= 0 && objectAlive(pr.object) && !m_app.m_scene.objects[pr.object].part.empty()) {
-            m_rt.fireClickObject(pr.object, pr.position);
+        } else if (pr.object >= 0 && objectAlive(pr.object) && !m_app.m_scene.objects[pr.object].part.empty() &&
+                   m_app.m_scene.objects[pr.object].selectable) {
+            m_rt.fireClickObject(instanceRootOf(m_app.m_scene, pr.object), pr.position);   // a prefab part: its instance
+        } else if (pr.object >= 0) {   // an object that is not selectable (the ground mesh): a ground click there
+            m_rt.fireClickGround(pr.position);
         } else if (std::fabs(d.y) > 1e-5f) {
             float t = -o.y / d.y;
             if (t > 0) m_rt.fireClickGround(o + d * t);
@@ -1015,7 +1041,22 @@ bool GameHost::exportScene(const fs::path& out, std::string& err, const std::str
     std::map<std::string, std::string> copies;   // path in the editor's file -> path in the build
     std::set<std::string> used;
     int missing = 0;
-    for (const std::string& rel : wzxSceneFiles(scene)) {
+    // every prefab of the project (the graph may spawn those the scene does not place) and the files of their parts
+    std::vector<std::string> files = wzxSceneFiles(scene);
+    {
+        const fs::path dir = fs::path(m_app.absPath("game/prefabs"));
+        for (auto e = fs::recursive_directory_iterator(dir, ec); !ec && e != fs::recursive_directory_iterator(); e.increment(ec)) {
+            if (!e->is_regular_file() || e->path().extension() != ".prefab") continue;
+            const std::string rel = "game/prefabs/" + fs::relative(e->path(), dir, ec).generic_u8string();
+            files.push_back(rel);
+            if (const PrefabAsset* a = m_app.m_prefabs.get(rel))
+                for (const std::string& f : prefabFiles(*a)) files.push_back(f);
+        }
+        ec.clear();
+        std::sort(files.begin(), files.end());
+        files.erase(std::unique(files.begin(), files.end()), files.end());
+    }
+    for (const std::string& rel : files) {
         fs::path src(m_app.absPath(rel));
         std::string dst = rel;
         if (fs::path(fromUtf8(rel)).is_absolute()) {
@@ -1296,13 +1337,14 @@ static const char* kHelp =
     "\"scene.new\": \"{} -> new scene (empty graph)\", "
     "\"scene.save\": \"{path}\", \"scene.load\": \"{path}\", "
     "\"object.add\": \"{part: CUBE|SPHERE|BALL | primitive: cube|sphere|plane|cylinder|torus|disk, pos:[x,y,z], yaw?, scale?, color?:[r,g,b] 0-1, name?} -> index\", "
-    "\"object.set\": \"{target: index|nom, pos?, yaw?, rotate?, scale?, color?, name?, visible?, material?: index|nom}\", "
+    "\"object.set\": \"{target: index|nom, pos?, yaw?, rotate?, scale?, color?, name?, visible?, selectable?, material?: index|nom}\", "
     "\"material.list\": \"{}\", \"material.set\": \"{target: index|nom, name?, baseColor?, roughness?, metallic?, specular?, transmission?, ior?, emission?, emissionStrength?, coat?, coatRoughness?, subsurface?}\", "
     "\"curve.add\": \"{type: linear|cv|ep|bezier, points: [[x,y,z]...], closed?, in?, out? | shape: line|circle|square|arc|helix|spiral|star, pos?, name?} -> index\", "
     "\"curve.get\": \"{target}\", \"curve.set\": \"{target, type?, points?, closed?, in?, out?}\", "
     "\"undo\": \"{}\", \"redo\": \"{}\", \"view.frame\": \"{target?}\", \"render.get\": \"{}\", \"render.set\": \"{mode?: lit|metal|progressive|gi|splitrc, exposure?}\", "
     "\"workspace.set\": \"{name: scene|graph|materials|prefab}\", "
-    "\"prefab.info\": \"{}\", \"prefab.new\": \"{demo?}\", \"prefab.open\": \"{path}\", \"prefab.save\": \"{path?}\", \"prefab.place\": \"{}\", "
+    "\"prefab.info\": \"{}\", \"prefab.new\": \"{demo?}\", \"prefab.open\": \"{path}\", \"prefab.save\": \"{path?}\", \"prefab.place\": \"{} (a live instance)\", "
+    "\"prefab.instance\": \"{prefab: name or file, pos?, yaw?, name?} -> index (live instance)\", \"prefab.unpack\": \"{target}\", \"prefab.animate\": \"{on} (clips in the editor)\", "
     "\"object.delete\": \"{target}\", \"object.select\": \"{target|null}\", "
     "\"camera.set\": \"{target?:[x,y,z], yaw?, pitch?, distance?}\", "
     "\"play\": \"{}\", \"stop\": \"{}\", "
@@ -1429,6 +1471,7 @@ std::string GameHost::command(const Json& j, int& status) {
         if (readVec(j["color"], v)) setColor(i, v);
         if (j["name"].type == Json::String) o.name = j["name"].s;
         if (j["visible"].type == Json::Bool) o.visible = j["visible"].b;
+        if (j["selectable"].type == Json::Bool) o.selectable = j["selectable"].b;   // (not selectable: the ground for the game clicks)
         const Json& mt = j["material"];   // a material of the scene (material.list), by index or name
         if (mt.type == Json::Number && mt.n >= 0 && mt.n < s.materials.size()) o.material = (int)mt.n;
         else if (mt.type == Json::String)

@@ -1,6 +1,7 @@
 // Prefab studio (workspace 3): the asset being assembled, its own scene (floor, lights, parts posed by the current
 // clip) rendered in Lit (raster, instant), files, undo, playback, picking and the move gizmo. Panels: PrefabUI.inl.
 #include "App.h"
+#include "GameHost.h"
 #include "vp3d/AssetImport.h"
 #include "vp3d/shaders/Shared.h"
 #include <commdlg.h>
@@ -887,9 +888,74 @@ void App::prefabShortcuts() {
 
 // --------------------------------------------------------------------------- to the main scene
 
-// The prefab (current pose) becomes a group of the main scene: one object per part, the mesh files and textures kept
-// as paths so the .wzx stores them. The group pivot is at the camera target.
+// The prefab becomes a live instance of the main scene (PrefabInstance.h): one object referencing the .prefab file
+// (saved first when it has none or is modified), its parts generated and posed from it. At the camera target.
 void App::prefabAddToScene() {
+    PrefabStudio& P = m_pf;
+    if (P.asset.parts.empty()) return;
+    if (P.path.empty() || prefabDirty()) {   // the instance reads the file: saved first (no dialog)
+        if (P.path.empty()) {
+            CreateDirectoryW((projectRoot() + L"\\game\\prefabs").c_str(), nullptr);
+            P.path = absPath("game/prefabs/" + P.asset.name + ".prefab");
+        }
+        prefabSave(false);
+    }
+    const std::string rel = relPath(P.path);
+    m_prefabs.refresh();
+    pushUndo();
+    outlinerIds();
+    float3 at(m_scene.camera.target.x, 0, m_scene.camera.target.z);
+    const int ri = addPrefabInstance(m_scene, m_prefabs, rel, at, 0.0f, uniqueNodeName(P.asset.name));
+    if (ri < 0) {
+        status(fromUtf8("Prefab not placed: " + rel + " could not be read"), 2);
+        return;
+    }
+    m_scene.objects[ri].collapsed = true;
+    syncPrefabInstances(m_scene, m_prefabs, true);
+    m_renderer.setScene(m_scene);
+    P.active = false;   // the renderer holds the main scene again: the studio scene is uploaded at its next frame
+    select(ri);
+    markDirty();
+    status(fromUtf8("Added to the scene: " + P.asset.name), 1);
+    log("Prefab instance placed in the scene: " + rel, 1);
+}
+
+void App::prefabUnpackSelected() {
+    const int ri = instanceRootOf(m_scene, m_selected);
+    if (ri < 0 || ri >= (int)m_scene.objects.size() || !m_scene.objects[ri].isInstanceRoot()) {
+        status(L"Select a prefab instance to unpack", 2);
+        return;
+    }
+    pushUndo();
+    unpackPrefabInstance(m_scene, ri);
+    markDirty();
+    status(L"Prefab unpacked: its parts are ordinary objects now", 1);
+}
+
+// Live prefab instances of the main scene, every frame: files changed on disk (checked every second), parts in
+// sync with their prefab (objects only appended in Play: indices are graph handles), clips advanced (Play, or the
+// editor's preview toggle) and parts posed from their root.
+void App::updatePrefabs() {
+    bool has = false;
+    for (const Object& o : m_scene.objects)
+        if (o.isInstanceRoot() || o.isInstancePart()) { has = true; break; }
+    if (!has) return;
+    const bool playing = m_game && m_game->playing();
+    const uint64_t now = GetTickCount64();
+    if (now - m_prefabCheckTick > 1000) {
+        m_prefabCheckTick = now;
+        m_prefabs.refresh();
+    }
+    if (syncPrefabInstances(m_scene, m_prefabs, !playing)) markDirty();
+    const bool animate = playing || m_prefabAnimate;
+    std::vector<std::pair<int, std::string>> finished;
+    updatePrefabInstances(m_scene, m_prefabs, m_dt, animate, &finished);
+    if (animate) m_renderer.resetAccumulation();
+    if (m_game) for (auto& [root, clip] : finished) m_game->clipFinished(root, clip);
+}
+
+// (former placement as a flat group, kept for Unpack-like uses: see unpackPrefabInstance)
+void App::prefabAddToSceneFlat() {
     PrefabStudio& P = m_pf;
     if (P.asset.parts.empty()) return;
     pushUndo();

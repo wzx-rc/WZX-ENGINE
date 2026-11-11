@@ -1,41 +1,36 @@
-// Lays out the mecha RTS level in the running editor from the prefabs of game/prefabs/mecha, then saves it as
-// game/scenes/mecha_level1.wzx. Usage: node tools/mecha/build_scene.mjs   (the editor running, Scene workspace)
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+// Lays out the mecha RTS level in the running editor with live prefab instances (game/prefabs/mecha), then saves
+// it as game/scenes/mecha_level1.wzx. Usage: node tools/mecha/build_scene.mjs   (the editor of this project running)
 import { wzx } from './wzx.mjs';
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
-const pf = (n) => path.join(root, 'game', 'prefabs', 'mecha', n + '.prefab');
-
-// prefab name -> positions on the ground (x, z)
+// prefab name -> [x, z, yaw degrees]
 const layout = [
-  ['BastionHQ', [[0, 0]]],
-  ['VitaeTanks', [[10, 3], [8, -7], [-6, 9]]],
-  ['VitaeDepot', [[-5, -4]]],
-  ['MechaFactory', [[4, -11]]],
-  ['MechaWorker', [[2.6, 3.4], [3.6, 2.2], [-2.4, 3.2]]],
-  ['MechaWarden', [[5.5, 6.0]]],
-  ['PropCrates', [[-2.8, -2.4], [6.4, -4.2], [-3.4, 5.6]]],
-  ['PropLamp', [[2.6, -2.6], [-2.6, 2.4], [7.2, 1.0], [-4.0, 7.0]]],
-  ['PropAntenna', [[-3.2, -0.6]]],
-  ['PropRocks', [[14, -2], [-11, 2], [3, 13], [-9, -10], [13, 10], [-14, -6]]],
-  ['PropCrystal', [[11.8, 5.2], [9.6, -9.4], [-8.2, 10.6], [-12.5, 0.5]]],
+  ['BastionHQ', [[0, 0, 0]]],
+  ['VitaeTanks', [[10, 3, 0], [8, -7, 15], [-6, 9, -10]]],
+  ['VitaeDepot', [[-5, -4, 30]]],
+  ['MechaFactory', [[4, -11, 0]]],
+  ['MechaWorker', [[2.6, 3.4, 20], [3.6, 2.2, 60], [-2.4, 3.2, -30]]],
+  ['MechaWarden', [[5.5, 6.0, 200]]],
+  ['PropCrates', [[-2.8, -2.4, 10], [6.4, -4.2, 70], [-3.4, 5.6, -20]]],
+  ['PropLamp', [[2.6, -2.6, 0], [-2.6, 2.4, 180], [7.2, 1.0, 90], [-4.0, 7.0, 0]]],
+  ['PropAntenna', [[-3.2, -0.6, 0]]],
+  ['PropRocks', [[14, -2, 0], [-11, 2, 80], [3, 13, 140], [-9, -10, 200], [13, 10, 260], [-14, -6, 30]]],
+  ['PropCrystal', [[11.8, 5.2, 0], [9.6, -9.4, 50], [-8.2, 10.6, 120], [-12.5, 0.5, 200]]],
 ];
 
 await wzx('workspace.set', { name: 'scene' });
 await wzx('scene.new');
 const floor = (await wzx('scene.get')).objects.find((o) => o.part === 'GROUND');
-if (floor) await wzx('object.set', { target: floor.index, color: [0.50, 0.42, 0.36], name: 'Plateau' });
-for (const [name, spots] of layout) {
-  await wzx('prefab.open', { path: pf(name) });
-  for (const [x, z] of spots) {
-    await wzx('camera.set', { target: [x, 0, z] });
-    await wzx('prefab.place');
+if (floor) await wzx('object.set', { target: floor.index, visible: false });
+const ground = await wzx('object.add', { primitive: 'plane', name: 'Ground', pos: [0, 0, 0], scale: [90, 1, 90], color: [0.42, 0.36, 0.31] });
+await wzx('object.set', { target: ground.index, selectable: false });
+let count = 0;
+for (const [name, spots] of layout)
+  for (const [x, z, yaw] of spots) {
+    await wzx('prefab.instance', { prefab: name, pos: [x, 0, z], yaw });
+    ++count;
   }
-}
-await wzx('workspace.set', { name: 'scene' });
 await wzx('sun.set', { azimuth: 135, elevation: 42 });
 await wzx('render.set', { mode: 'lit' });
 await wzx('camera.set', { target: [1, 0, -1], yaw: 35, pitch: 42, distance: 34 });
-await wzx('scene.save', { path: path.join(root, 'game', 'scenes', 'mecha_level1.wzx') });
-console.log('scene saved,', (await wzx('state')).objects, 'objects');
+await wzx('scene.save', { path: 'game/scenes/mecha_level1.wzx' });
+console.log('scene saved:', count, 'instances,', (await wzx('state')).objects, 'objects');

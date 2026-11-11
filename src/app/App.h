@@ -6,6 +6,7 @@
 #include "Json.h"
 #include "MeshFile.h"
 #include "Prefab.h"
+#include "PrefabInstance.h"
 #include "Rig.h"
 #include "UvCheck.h"
 #include "Theme.h"
@@ -521,7 +522,15 @@ private:
     void prefabDelete();
     void prefabKeySelected(int channel = -1);   // key the selected part at the current time (-1 = all channels)
     void prefabSetTime(float t);
-    void prefabAddToScene();             // place the prefab (current pose) in the main scene as a group
+    void prefabAddToScene();             // place the prefab in the main scene: a live instance (PrefabInstance.h)
+    void prefabUnpackSelected();         // the selected instance becomes a plain group of objects
+    void prefabAddToSceneFlat();         // the former placement: the current pose as a group of plain objects
+    // live prefab instances of the main scene: their prefab files, parts kept in sync and posed every frame (clips
+    // play in Play, and in the editor when m_prefabAnimate)
+    PrefabLibrary m_prefabs;
+    bool m_prefabAnimate = false;
+    uint64_t m_prefabCheckTick = 0;
+    void updatePrefabs();
     bool prefabMeshFor(const PrefabPart& p, MeshData& out, std::string* err);
     PrefabClip* prefabClip();
     void prefabStep(float dt);

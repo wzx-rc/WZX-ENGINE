@@ -88,6 +88,12 @@ void Game::frame(float dt, float viewW, float viewH, const CameraControls& cc) {
     // the HUD of the previous frame tells whether the pointer is on it
     playInput();
     m_rt.tick(dt);
+    if (m_prefabs) {   // live prefab instances, as App::updatePrefabs in Play: objects only appended, clips, poses
+        app::syncPrefabInstances(*m_scene, *m_prefabs, false);
+        std::vector<std::pair<int, std::string>> finished;
+        app::updatePrefabInstances(*m_scene, *m_prefabs, dt, true, &finished);
+        for (auto& [root, clip] : finished) m_rt.fireClipFinished(root, clip);
+    }
     if (m_rtsCam) {   // as the editor (GameHost::update): the scene camera stays until the graph turns the RTS camera on
         updateRtsCamera(dt, cc);
         updateSun();
@@ -149,8 +155,11 @@ void Game::playInput() {
         const int house = houseUnder(o, d, tHouse);
         if (house >= 0 && tHouse <= pr.t) {
             m_rt.fireHouseClick(m_build.buildings()[house].id);
-        } else if (pr.object >= 0 && objectAlive(pr.object) && !m_scene->objects[pr.object].part.empty()) {
-            m_rt.fireClickObject(pr.object, pr.position);
+        } else if (pr.object >= 0 && objectAlive(pr.object) && !m_scene->objects[pr.object].part.empty() &&
+                   m_scene->objects[pr.object].selectable) {
+            m_rt.fireClickObject(app::instanceRootOf(*m_scene, pr.object), pr.position);   // a prefab part: its instance
+        } else if (pr.object >= 0) {   // not selectable (the ground mesh): a ground click there (as GameHost)
+            m_rt.fireClickGround(pr.position);
         } else if (std::fabs(d.y) > 1e-5f) {
             float t = -o.y / d.y;
             if (t > 0) m_rt.fireClickGround(o + d * t);
@@ -302,6 +311,22 @@ std::string Game::uniqueName(const std::string& base) const {
         if (!used(n)) return n;
     }
 }
+
+int Game::spawnPrefab(const std::string& prefab, float3 pos, float yawDeg) {
+    if (!m_prefabs) return -1;
+    const std::string path = m_prefabs->resolve(prefab);
+    const app::PrefabAsset* a = path.empty() ? nullptr : m_prefabs->get(path);
+    if (!a) return -1;
+    const int r = app::addPrefabInstance(*m_scene, *m_prefabs, path, pos, yawDeg, uniqueName(a->name));
+    if (r >= 0) app::syncPrefabInstances(*m_scene, *m_prefabs, false);
+    return r;
+}
+
+bool Game::playClip(int obj, const std::string& clip, bool loop, float speed) {
+    return m_prefabs && app::playClip(*m_scene, *m_prefabs, app::instanceRootOf(*m_scene, obj), clip, loop, speed);
+}
+
+void Game::stopClip(int obj) { app::stopClip(*m_scene, app::instanceRootOf(*m_scene, obj)); }
 
 int Game::spawn(const std::string& part, float3 pos, float3 rgb) {
     const app::PartDef* p = app::findPart(part);

@@ -206,7 +206,13 @@ void readWzxScene(const Json& j, Scene& sc, const std::function<std::wstring(con
             o.camAspect = std::clamp(f(cj["aspect"], o.camAspect), 0.1f, 10.0f);
             o.camRender = flag(cj["render"], false);
         }
-        if (o.group) { o.mesh = -1; if (o.part.empty()) o.part = "GROUP"; }
+        o.prefab = oj["prefab"].str();   // live prefab instance: a transform, its parts come from the file (PrefabInstance.h)
+        if (!o.prefab.empty()) {
+            o.mesh = -1;
+            o.part = "PREFAB";
+            o.group = false;
+            o.clip = oj["clip"].str();
+        } else if (o.group) { o.mesh = -1; if (o.part.empty()) o.part = "GROUP"; }
         else if (o.camera) {}
         else if (oj["curve"].type == Json::Object) {   // curve object: its points, no mesh
             if (out.readCurve) out.readCurve(oj["curve"], o);
@@ -232,7 +238,7 @@ void readWzxScene(const Json& j, Scene& sc, const std::function<std::wstring(con
         o.order = (int)oj["order"].num(0);
         o.collapsed = flag(oj["collapsed"], false);
         int m = (int)oj["material"].num(-1);
-        if (o.group || o.camera) {
+        if (o.group || o.camera || !o.prefab.empty()) {
             o.material = 0;   // never used (no geometry)
             sc.addObject(o);
             continue;
@@ -317,7 +323,7 @@ std::vector<std::string> wzxSceneFiles(const Json& j) {
         if (v.type == Json::String && !v.s.empty() && v.s != "sky" && seen.insert(v.s).second) files.push_back(v.s);
     };
     add(j["environment"]["hdri"]);
-    for (const Json& o : j["objects"].a) add(o["mesh"]);
+    for (const Json& o : j["objects"].a) { add(o["mesh"]); add(o["prefab"]); }   // (the meshes of a prefab: see prefabFiles)
     for (const Json& m : j["materials"].a) add(m["baseColorTexture"]);
     add(j["probes"]);
     return files;

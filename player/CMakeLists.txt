@@ -39,6 +39,9 @@ add_library(wzx_engine STATIC
     ${WZX_ROOT}/src/vp3d/LitPrep.cpp
     ${WZX_ROOT}/src/app/Content.cpp
     ${WZX_ROOT}/src/app/WzxRead.cpp
+    ${WZX_ROOT}/src/app/Prefab.cpp
+    ${WZX_ROOT}/src/app/Rig.cpp
+    ${WZX_ROOT}/src/app/PrefabInstance.cpp
     ${WZX_ROOT}/src/lit/LitRenderer.cpp
     ${WZX_ROOT}/src/game/Graph.cpp
     ${WZX_ROOT}/src/game/NodeLib.cpp

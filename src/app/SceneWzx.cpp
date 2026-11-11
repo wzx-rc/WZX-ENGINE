@@ -377,7 +377,7 @@ std::string App::wzxSceneJson(bool withCamera, const std::function<std::string(c
     std::vector<int> saved;
     for (int i = 0; i < (int)sc.objects.size(); ++i) {
         const Object& o = sc.objects[i];
-        if (o.ghost || o.part == "House") continue;
+        if (o.ghost || o.part == "House" || o.isInstancePart()) continue;   // (prefab parts: rebuilt from the prefab)
         saved.push_back(i);
     }
     auto materialOf = [&](const Object& o) {
@@ -386,7 +386,7 @@ std::string App::wzxSceneJson(bool withCamera, const std::function<std::string(c
     };
     std::vector<int> fileIndex(sc.materials.size(), -1), order;
     for (int i : saved) {
-        if (sc.objects[i].group || sc.objects[i].camera) continue;   // a group or a camera has no material
+        if (sc.objects[i].group || sc.objects[i].camera || sc.objects[i].isInstanceRoot()) continue;   // a group, a camera or a prefab instance has no material
         int m = materialOf(sc.objects[i]);
         if (m >= 0 && m < (int)sc.materials.size() && fileIndex[m] < 0) {
             fileIndex[m] = 0;
@@ -429,7 +429,10 @@ std::string App::wzxSceneJson(bool withCamera, const std::function<std::string(c
         w.beginObject();
         w.str("name", o.name);
         w.str("type", o.part);
-        if (o.group) w.boolean("group", true);   // group node: a transform only, no geometry
+        if (o.isInstanceRoot()) {   // live prefab instance: its file and its animation, the parts come from the file
+            w.str("prefab", path(o.prefab));
+            if (!o.clip.empty()) w.str("clip", o.clip);
+        } else if (o.group) w.boolean("group", true);   // group node: a transform only, no geometry
         else if (o.camera) {   // camera object: a transform and its lens, no geometry
             w.beginObject("camera");
             w.deg("fov", o.camFovY);
@@ -453,7 +456,7 @@ std::string App::wzxSceneJson(bool withCamera, const std::function<std::string(c
         w.integer("collection", (int)o.collection);
         w.integer("order", o.order);
         w.boolean("collapsed", o.collapsed);
-        int m = (o.group || o.camera) ? -1 : materialOf(o);
+        int m = (o.group || o.camera || o.isInstanceRoot()) ? -1 : materialOf(o);
         w.integer("material", m >= 0 && m < (int)fileIndex.size() ? fileIndex[m] : -1);
         w.endObject();
     }

@@ -2454,6 +2454,138 @@ void App::SelfTest::build() {
     });
 
     // ================================================================= robustness
+    // ---------------------------------------------------------------- live prefab instances (PrefabInstance.h)
+    // the parts of an instance: (index, world position) of the objects generated for the root of this id
+    auto partsOf = [this](uint32_t root) {
+        std::vector<std::pair<int, float3>> p;
+        for (int i = 0; i < (int)a.m_scene.objects.size(); ++i)
+            if (a.m_scene.objects[i].instanceRoot == root) p.push_back({i, a.m_scene.objects[i].position});
+        return p;
+    };
+    auto centroid = [](const std::vector<std::pair<int, float3>>& p) {
+        float3 c(0, 0, 0);
+        for (auto& e : p) c = c + e.second;
+        return p.empty() ? c : c * (1.0f / (float)p.size());
+    };
+    add("prefab instances", [this] {
+        fresh();
+        const std::string path = a.m_prefabs.resolve("MechaWorker");
+        check("prefab found by its name (game/prefabs/mecha/MechaWorker.prefab)", !path.empty(), path);
+        a.pushUndo();
+        const int ri = addPrefabInstance(a.m_scene, a.m_prefabs, path, float3(3, 0, 3), 0.0f, "Worker Test");
+        v["root"] = ri;
+        v["rootId"] = ri >= 0 ? (double)a.m_scene.objects[ri].id : 0.0;
+        check("instance created: one root object, Idle clip", ri >= 0 && a.m_scene.objects[ri].isInstanceRoot() && a.m_scene.objects[ri].clip == "Idle");
+        return 3;
+    });
+    add("prefab instances", [this, partsOf, centroid] {
+        const int ri = (int)v["root"];
+        const PrefabAsset* as = a.m_prefabs.get(a.m_scene.objects[ri].prefab);
+        int solid = 0;
+        if (as) for (const PrefabPart& p : as->parts) solid += p.isPivot() ? 0 : 1;
+        const auto parts = partsOf((uint32_t)v["rootId"]);
+        check("its parts generated (one object per part that is not a pivot)", as && (int)parts.size() == solid, fmt("%d of %d", (int)parts.size(), solid));
+        const float3 c = centroid(parts);
+        v["cx"] = c.x; v["cz"] = c.z;
+        a.m_scene.objects[ri].position = float3(8, 0, 3);   // the root moves: the parts follow at the next frame
+        return 2;
+    });
+    add("prefab instances", [this, partsOf, centroid] {
+        const int ri = (int)v["root"];
+        const float3 c = centroid(partsOf((uint32_t)v["rootId"]));
+        check("the root moved by 5: every part follows", std::fabs(c.x - (float)v["cx"] - 5.0f) < 1e-3f && std::fabs(c.z - (float)v["cz"]) < 1e-3f,
+              fmt("dx %.3f", c.x - (float)v["cx"]));
+        // a quarter turn around the root: the centroid offset turns with it
+        v["ox"] = c.x - 8.0f; v["oz"] = c.z - 3.0f;
+        Object& r = a.m_scene.objects[ri];
+        r.rot = qNormalize(qMul(qAxisAngle(float3(0, 1, 0), 3.14159265f * 0.5f), r.rot));
+        return 2;
+    });
+    add("prefab instances", [this, partsOf, centroid] {
+        const float3 c = centroid(partsOf((uint32_t)v["rootId"]));
+        const float ox = (float)v["ox"], oz = (float)v["oz"];   // +90 degrees around Y: (x, z) -> (z, -x)
+        check("the root turned a quarter: the parts turn around it", std::fabs((c.x - 8.0f) - oz) < 1e-3f && std::fabs((c.z - 3.0f) + ox) < 1e-3f,
+              fmt("offset (%.3f, %.3f) from (%.3f, %.3f)", c.x - 8.0f, c.z - 3.0f, ox, oz));
+        const auto parts = partsOf((uint32_t)v["rootId"]);
+        if (!parts.empty()) a.select(parts[0].first);
+        check("selecting a part selects the instance", a.m_selected == (int)v["root"]);
+        a.select(-1);
+        // saved and read back: only the root is in the file, the parts come back from the prefab
+        const std::wstring f = a.m_exeDir + L"\\selftest_prefab.wzx";
+        check("scene with an instance saved", a.saveSceneFile(f));
+        const std::string text = a.wzxSceneJson(false);
+        check("the file keeps the root (prefab, clip), not its parts", text.find("\"prefab\": \"game/prefabs/mecha/MechaWorker.prefab\"") != std::string::npos &&
+                                                                       text.find("\"Back Tank Core\"") == std::string::npos);
+        v["parts"] = (double)parts.size();
+        check("scene read back", a.loadSceneFile(f));
+        return 3;
+    });
+    add("prefab instances", [this, partsOf] {
+        int ri = -1;
+        for (int i = 0; i < (int)a.m_scene.objects.size(); ++i)
+            if (a.m_scene.objects[i].name == "Worker Test") ri = i;
+        check("the instance read back", ri >= 0 && a.m_scene.objects[ri].isInstanceRoot());
+        v["root"] = ri;
+        v["rootId"] = ri >= 0 ? (double)a.m_scene.objects[ri].id : 0.0;
+        check("its parts rebuilt from the prefab", ri >= 0 && (double)partsOf(a.m_scene.objects[ri].id).size() == v["parts"],
+              fmt("%d parts", ri >= 0 ? (int)partsOf(a.m_scene.objects[ri].id).size() : 0));
+        // the clips in the editor (preview toggle): the Idle clip moves the body
+        a.m_prefabAnimate = true;
+        const auto parts = partsOf((uint32_t)v["rootId"]);
+        float y = 0;
+        for (auto& p : parts) y += p.second.y;
+        v["y0"] = y;
+        return 20;
+    });
+    add("prefab instances", [this, partsOf] {
+        float y = 0;
+        for (auto& p : partsOf((uint32_t)v["rootId"])) y += p.second.y;
+        const int ri = (int)v["root"];
+        check("Idle plays in the editor (preview on): the parts move", std::fabs(y - (float)v["y0"]) > 1e-4f && a.m_scene.objects[ri].clipTime > 0.0f,
+              fmt("clip time %.2f s", a.m_scene.objects[ri].clipTime));
+        a.m_prefabAnimate = false;
+        // the graph: Begin Play -> Spawn Prefab (MechaWarden) -> Play Clip (Walk)
+        Json g;
+        Json::parse(R"({"format": "wzx-graph", "version": 1, "nodes": [
+            {"id": 1, "type": "event.start", "x": 0, "y": 0},
+            {"id": 2, "type": "prefab.spawn", "x": 200, "y": 0, "in": {"Prefab": "MechaWarden", "Position": [-4, 0, 2], "Yaw": 90}},
+            {"id": 3, "type": "prefab.playClip", "x": 450, "y": 0, "in": {"Clip": "Walk", "Loop": true, "Speed": 1.5}}],
+            "links": [{"from": [1, 0], "to": [2, 0]}, {"from": [2, 0], "to": [3, 0]}, {"from": [2, 1], "to": [3, 1]}]})", g);
+        a.m_game->loadSceneGraph(g);
+        v["count"] = (double)a.m_scene.objects.size();
+        a.m_game->requestPlay();
+        return 15;
+    });
+    add("prefab instances", [this, partsOf] {
+        int ri = -1;
+        for (int i = (int)v["count"]; i < (int)a.m_scene.objects.size(); ++i)
+            if (a.m_scene.objects[i].isInstanceRoot()) ri = i;
+        check("Play: Spawn Prefab created a live instance", a.m_game->playing() && ri >= 0, fmt("%d objects added", (int)a.m_scene.objects.size() - (int)v["count"]));
+        check("Play Clip: it walks (Walk, speed 1.5)", ri >= 0 && a.m_scene.objects[ri].clip == "Walk" && a.m_scene.objects[ri].clipSpeed == 1.5f &&
+                                                       a.m_scene.objects[ri].clipTime > 0.0f);
+        check("its parts generated in Play", ri >= 0 && !partsOf(a.m_scene.objects[ri].id).empty());
+        a.m_game->requestPlay();   // Stop
+        return 3;
+    });
+    add("prefab instances", [this] {
+        check("Stop: the spawned instance is gone", !a.m_game->playing() && (double)a.m_scene.objects.size() == v["count"],
+              fmt("%d objects", (int)a.m_scene.objects.size()));
+        a.m_game->loadSceneGraph(Json());
+        const int ri = (int)v["root"];
+        const uint32_t id = a.m_scene.objects[ri].id;
+        a.select(ri);
+        a.prefabUnpackSelected();
+        int linked = 0, children = 0;
+        for (const Object& o : a.m_scene.objects) {
+            linked += o.instanceRoot == id ? 1 : 0;
+            children += o.parent == id ? 1 : 0;
+        }
+        check("Unpack: plain objects under a group, no instance link", !a.m_scene.objects[ri].isInstanceRoot() && a.m_scene.objects[ri].group &&
+                                                                         linked == 0 && (double)children == v["parts"]);
+        DeleteFileW((a.m_exeDir + L"\\selftest_prefab.wzx").c_str());
+        return 2;
+    });
+
     add("robustness", [this] { fresh(); a.select(obj("Cube")); return 2; });
     for (int n : {8, 1, 16, 4, 8, 16, 1, 4}) {
         add("robustness", [this, n] { a.m_msaa = n; return 2; });

@@ -3,6 +3,7 @@
 // the window or image, feed the input to Dear ImGui (plus the camera controls), then call frame() for each image.
 #pragma once
 #include "Game.h"
+#include "app/PrefabInstance.h"
 #include "ImGuiDiligent.h"
 #include "lit/LitRenderer.h"
 #include "vp3d/Scene.h"
@@ -52,6 +53,8 @@ public:
 
 private:
     vp3d::Scene m_scene;
+    app::PrefabLibrary m_prefabs;   // live prefab instances of the scene (their .prefab files, in the data folder)
+    std::string m_dataDir;
     vp3d::Camera m_home;
     lit::Settings m_settings;
     lit::LitRenderer m_renderer;

@@ -120,6 +120,13 @@ void Runtime::fireHouseClick(int house) {
     fire(Op::OnHouseClicked);
 }
 
+void Runtime::fireClipFinished(int obj, const std::string& clip) {
+    if (!m_graph) return;
+    for (Node& n : m_graph->nodes)
+        if (n.def->op == Op::OnClipFinished) m_cache[n.id] = {Value(), Value::Obj(obj), Value::Str(clip)};
+    fire(Op::OnClipFinished);
+}
+
 void Runtime::fireHudButton(const std::string& id) {
     if (!m_graph) return;
     for (Node& n : m_graph->nodes)
@@ -341,6 +348,18 @@ void Runtime::exec(Node& n) {
         break;
     }
     case Op::Destroy: { int o = Ob(1); if (o >= 0) m_world->destroy(o); break; }
+    case Op::SpawnPrefab: {
+        int o = m_world->spawnPrefab(S(1), V(2), F(3));
+        if (o < 0) error("prefab not found: " + S(1));
+        setOut(n, 1, Value::Obj(o));
+        break;
+    }
+    case Op::PlayClip: {
+        int o = Ob(1);
+        if (o >= 0 && !m_world->playClip(o, S(2), input(n, 3).asBool(), F(4))) error("no clip " + S(2) + " on " + m_world->objectName(o));
+        break;
+    }
+    case Op::StopClip: { int o = Ob(1); if (o >= 0) m_world->stopClip(o); break; }
     case Op::SetColor: { int o = Ob(1); if (o >= 0) m_world->setColor(o, V(2)); break; }
     case Op::SetScale: { int o = Ob(1); if (o >= 0) m_world->setScale(o, V(2)); break; }
     case Op::Select: m_world->select(Ob(1)); break;

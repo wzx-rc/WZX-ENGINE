@@ -136,6 +136,15 @@ std::vector<NodeDef> build() {
     v.push_back(B(Op::HudButton, "rts.hudButton", "HUD Button", RT, "Adds a button to the RTS HUD during Play. Id is sent back by « HUD Button Clicked ». Cleared on Stop.").execIn().inS("Id", "small").inS("Label", "+ Add Small House").execOut());
     v.push_back(B(Op::OnHudButton, "event.hudButton", "HUD Button Clicked", EV, "Runs when a button of the RTS HUD is clicked. Id = the Id of the button.").event().execOut().out("Id", S));
     v.push_back(B(Op::OnHouseClicked, "event.houseClicked", "House Clicked", EV, "Left click on a house during Play. House = its id.").event().execOut().out("House", F));
+    // live prefab instances (one object per instance: moving, turning or destroying it acts on the whole prefab)
+    const char* PF = "Prefab";
+    v.push_back(B(Op::SpawnPrefab, "prefab.spawn", "Spawn Prefab", PF, "Creates a live instance of a prefab: its name (MechaWorker) or its file (game/prefabs/...). It plays Idle when it has one.")
+                    .execIn().inS("Prefab", "MechaWorker").inV("Position", float3(0, 0, 0)).inF("Yaw", 0).execOut().out("Object", O));
+    v.push_back(B(Op::PlayClip, "prefab.playClip", "Play Clip", PF, "Plays an animation clip of a prefab instance from its start (Speed 1 = normal; Loop repeats it).")
+                    .execIn().in("Object", O).inS("Clip", "Walk").inB("Loop", true).inF("Speed", 1).execOut());
+    v.push_back(B(Op::StopClip, "prefab.stopClip", "Stop Clip", PF, "Freezes the animation of a prefab instance where it is.").execIn().in("Object", O).execOut());
+    v.push_back(B(Op::OnClipFinished, "event.clipFinished", "On Clip Finished", EV, "A clip played without Loop reached its end. Object = the instance, Clip = its name.")
+                    .event().execOut().out("Object", O).out("Clip", S));
     std::vector<NodeDef> out;
     for (auto& b : v) out.push_back(b.d);
     return out;

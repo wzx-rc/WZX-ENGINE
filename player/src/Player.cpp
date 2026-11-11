@@ -59,6 +59,14 @@ bool Player::init(Diligent::IRenderDevice* device, Diligent::IDeviceContext* con
             return (f.is_relative() ? data / f : f).wstring();
         }, scenePath.stem().u8string(), rd);
         for (const std::string& w : rd.warnings) std::fprintf(stderr, "%s\n", w.c_str());
+        // live prefab instances: their parts from the .prefab files of the data folder (posed at rest until Play)
+        m_dataDir = data.u8string();
+        m_prefabs.absPath = [this](const std::string& p) {
+            fs::path f = fs::u8path(p);
+            return (f.is_relative() ? fs::u8path(m_dataDir) / f : f).wstring();
+        };
+        app::syncPrefabInstances(m_scene, m_prefabs, true);
+        for (const std::string& w : m_prefabs.warnings) std::fprintf(stderr, "%s\n", w.c_str());
         const app::Json& r = j["render"];   // the editor's raster settings that Lit has
         m_settings.exposure = (float)r["exposure"].num(m_settings.exposure);
         m_settings.vignette = (float)r["vignette"].num(m_settings.vignette);
@@ -152,6 +160,7 @@ bool Player::init(Diligent::IRenderDevice* device, Diligent::IDeviceContext* con
 
     if ((options.scene == "studio" || sceneFile) && options.game) {
         m_game = std::make_unique<Game>();
+        m_game->setPrefabs(&m_prefabs);
         if (!m_game->init(&m_scene, options.dataDir, options.uiScale, options.touch, error, graphText)) return false;
         if (village.type == app::Json::Array) m_game->loadVillage(village);
     }

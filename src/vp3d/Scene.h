@@ -75,6 +75,19 @@ struct Object {
     // Pivot (Edit Pivot, Center Pivot): the point of the geometry (object space) at the object position; the geometry
     // is drawn at transform(v - pivot). 0: the origin of the mesh.
     float3 pivot{0, 0, 0};
+    // Live prefab instance (app/PrefabInstance.h). The root (prefab: the .prefab file, relative to the project; mesh -1,
+    // part "PREFAB", a transform only) carries the transform of the whole instance and its animation; its parts are
+    // generated objects (instanceRoot = the root's id, instancePart = the part id in the prefab) rebuilt from the file
+    // and posed every frame: they are never saved.
+    std::string prefab;
+    std::string clip;              // clip played (empty: the rest pose); clipTime advances by clipSpeed in Play
+    float clipTime = 0.0f, clipSpeed = 1.0f;
+    bool clipLoop = true;
+    bool clipPlaying = true;
+    uint32_t instanceRoot = 0;
+    uint32_t instancePart = 0;
+    bool isInstanceRoot() const { return !prefab.empty(); }
+    bool isInstancePart() const { return instanceRoot != 0; }
 
     Affine transform() const {
         Affine m = useRot ? Affine::trsQuat(position, rot, scale) : Affine::trs(position, yaw, scale);

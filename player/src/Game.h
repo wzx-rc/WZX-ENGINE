@@ -4,6 +4,7 @@
 // physical move keys and the touch gestures given by the platform file.
 #pragma once
 #include "app/Json.h"
+#include "app/PrefabInstance.h"
 #include "game/Placement.h"
 #include "game/RtsCamera.h"
 #include "game/Runtime.h"
@@ -64,8 +65,14 @@ public:
     bool turnHouse(int id) override;
     int houseAt(int cx, int cz) const override;
     int houseCount() const override;
+    int spawnPrefab(const std::string& prefab, vp3d::float3 pos, float yawDeg) override;
+    bool playClip(int obj, const std::string& clip, bool loop, float speed) override;
+    void stopClip(int obj) override;
+    // live prefab instances (app/PrefabInstance.h): the library of the Player, its scene kept in sync and posed
+    void setPrefabs(app::PrefabLibrary* lib) { m_prefabs = lib; }
 
 private:
+    app::PrefabLibrary* m_prefabs = nullptr;
     void cameraRay(float px, float py, vp3d::float3& o, vp3d::float3& d) const;
     bool groundAt(float px, float py, vp3d::float3& p) const;
     bool groundUnderMouse(vp3d::float3& p) const;
