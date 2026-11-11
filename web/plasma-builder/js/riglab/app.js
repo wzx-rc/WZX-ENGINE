@@ -198,7 +198,7 @@ function renderBonePanel() {
   box.innerHTML = ['x', 'y', 'z'].map(a => `
     <span class="ax ${a}">${a.toUpperCase()}</span>
     <input type="range" min="-180" max="180" step="0.5" value="${(e[a] * DEG).toFixed(1)}" data-ax="${a}" aria-label="Rotation ${a.toUpperCase()}">
-    <input type="number" min="-180" max="180" step="1" value="${(e[a] * DEG).toFixed(1)}" data-axn="${a}" aria-label="Rotation ${a.toUpperCase()} en degrés">`).join('');
+    <input type="number" min="-180" max="180" step="1" value="${(e[a] * DEG).toFixed(1)}" data-axn="${a}" aria-label="${tr(`Rotation ${a.toUpperCase()} en degrés`, `${a.toUpperCase()} rotation in degrees`)}">`).join('');
   box.querySelectorAll('input').forEach(inp => {
     inp.addEventListener('pointerdown', () => pushUndo());
     inp.addEventListener('focus', () => { if (inp.type === 'number') pushUndo(); });
@@ -229,7 +229,7 @@ $('mirrorBoneBtn').addEventListener('click', () => {
   const chain = chainOf(state.sel);
   model.mirrorBones(chain && state.tool === 'ik' ? CHAINS[chain].map(n => model.bone(n)) : [state.sel]);
   afterChange();
-  toast(`${label(state.sel.name)} copié sur ${label(model.mirror.get(state.sel).name)}`);
+  toast(tr(`${label(state.sel.name)} copié sur ${label(model.mirror.get(state.sel).name)}`, `${label(state.sel.name)} copied to ${label(model.mirror.get(state.sel).name)}`));
 });
 
 // ---------------------------------------------------------------- arbre des os
@@ -369,7 +369,7 @@ function renderMine() {
   const list = loadMine();
   $('myPoses').innerHTML = list.length ? list.map((p, i) => `
     <div class="row"><button type="button" data-load="${i}">${p.name.replace(/</g, '&lt;')}</button>
-    <button type="button" class="icon tiny" data-del="${i}" aria-label="Supprimer ${p.name.replace(/"/g, '')}" title="Supprimer"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg></button></div>`).join('')
+    <button type="button" class="icon tiny" data-del="${i}" aria-label="${tr('Supprimer', 'Delete')} ${p.name.replace(/"/g, '')}" title="Supprimer"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg></button></div>`).join('')
     : '<span class="empty">Aucune pose enregistrée.</span>';
 }
 $('savePoseBtn').addEventListener('click', () => {
@@ -380,7 +380,7 @@ $('savePoseBtn').addEventListener('click', () => {
   if (i >= 0) list[i] = entry; else list.push(entry);
   saveMine(list);
   renderMine();
-  toast(`Pose « ${name} » enregistrée`);
+  toast(tr(`Pose « ${name} » enregistrée`, `Pose "${name}" saved`));
 });
 $('myPoses').addEventListener('click', e => {
   const l = e.target.closest('[data-load]'), d = e.target.closest('[data-del]');
@@ -418,7 +418,7 @@ $('poseInput').addEventListener('change', async e => {
     if (!data.pose?.rot) throw new Error('pas une pose');
     pushUndo(); restore(data);
     if (data.name) $('poseNameInput').value = data.name;
-    toast(`Pose « ${data.name || f.name} » importée`);
+    toast(tr(`Pose « ${data.name || f.name} » importée`, `Pose "${data.name || f.name}" imported`));
   } catch { toast('Ce fichier n\'est pas une pose du Rig Lab'); }
 });
 // L'échelle est la hauteur des yeux (convention du builder) ; le GLB donne yeux et sol en cm.
@@ -432,7 +432,7 @@ async function exportSTL() {
   await new Promise(r => setTimeout(r, 30));
   const name = ($('poseNameInput').value || 'ork_pose').replace(/[^\w-]+/g, '_');
   const tris = await exportMerged(model.bakedMeshes(names), mmPerUnit(), name);
-  if (tris) toast(`${name}.stl : ${Math.round(tris).toLocaleString('fr-FR')} triangles, ${$('scaleSel').value} mm`);
+  if (tris) toast(`${name}.stl : ${Math.round(tris).toLocaleString(window.plasmaLang === 'fr' ? 'fr-FR' : 'en-US')} triangles, ${$('scaleSel').value} mm`);
 }
 
 // ---------------------------------------------------------------- clavier
@@ -487,7 +487,7 @@ try {
   afterChange();
   vp.frameObject(model.root, new THREE.Vector3(0.45, 0.2, 1), true);
   $('loading').hidden = true;
-  $('vpInfo').textContent = `${model.bones.length} joints · skin Maya ${model.meshes.BODY_low.geometry.attributes.position.count.toLocaleString('fr-FR')} sommets · high ${(model.meshes.BODY_high.geometry.index.count / 3).toLocaleString('fr-FR')} triangles`;
+  $('vpInfo').textContent = `${model.bones.length} joints · ${tr('skin Maya', 'Maya skin')} ${model.meshes.BODY_low.geometry.attributes.position.count.toLocaleString(window.plasmaLang === 'fr' ? 'fr-FR' : 'en-US')} ${tr('sommets', 'vertices')} · high ${(model.meshes.BODY_high.geometry.index.count / 3).toLocaleString(window.plasmaLang === 'fr' ? 'fr-FR' : 'en-US')} triangles`;
   window.riglab = { model, vp, state, select, applyPreset: id => applyPreset(PRESETS.find(p => p.id === id)) };
 } catch (err) {
   console.error(err);

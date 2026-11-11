@@ -244,8 +244,8 @@ function renderLibrary() {
   const list = all.filter(r => !q || r.name.toLowerCase().includes(q) || (r.tags || []).some(t => t.toLowerCase().includes(q)));
   $('libCount').textContent = all.length;
   const onSel = id => Object.values(state.placed).some(p => p.brick === id);
-  $('libGrid').innerHTML = list.length ? list.map(r => `<button type="button" class="tile" title="Clic : poser · Glisser : choisir le socket" data-brick="${r.id}" aria-pressed="${onSel(r.id)}">${r.lods.high?.length ? '<em class="badge">HD</em>' : ''}${r.thumb ? `<img alt="" draggable="false" src="${r.thumb}">` : '<span class="ph"></span>'}<span>${esc(r.name)}</span></button>`).join('')
-    : `<div class="libempty">${all.length ? 'Aucune brique ne correspond à la recherche.' : `Pas encore de brique dans « ${cat.label} ».<a href="import.html">Importer une brique</a>`}</div>`;
+  $('libGrid').innerHTML = list.length ? list.map(r => `<button type="button" class="tile" title="Clic : poser · Glisser : choisir le socket" data-brick="${r.id}" aria-pressed="${onSel(r.id)}">${r.lods.high?.length ? '<em class="badge">HD</em>' : ''}${r.thumb ? `<img alt="" draggable="false" src="${r.thumb}">` : '<span class="ph"></span>'}<span data-noi18n>${esc(r.name)}</span></button>`).join('')
+    : `<div class="libempty">${all.length ? 'Aucune brique ne correspond à la recherche.' : `${tr(`Pas encore de brique dans « ${cat.label} ».`, `No brick in "${cat.label}" yet.`)}<a href="import.html">${tr('Importer une brique', 'Import a brick')}</a>`}</div>`;
 }
 function renderSteps() {
   $('steps').querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.step === ui.step)));
@@ -259,7 +259,7 @@ function renderSteps() {
   $('scaleSel').value = String(state.scale);
 }
 function renderViews() {
-  if (!$('views').children.length) $('views').innerHTML = VIEWS.map((v, i) => `<button type="button" data-view="${i}" aria-label="Vue ${v.name}" title="${v.name}"><img alt=""></button>`).join('');
+  if (!$('views').children.length) $('views').innerHTML = VIEWS.map((v, i) => `<button type="button" data-view="${i}" aria-label="${tr('Vue', 'View')} ${plasmaT(v.name)}" title="${plasmaT(v.name)}"><img alt=""></button>`).join('');
   $('views').querySelectorAll('button').forEach((b, i) => b.setAttribute('aria-pressed', String(i === ui.view)));
 }
 // Pastilles des sockets dans le viewport (libres : anneau creux ; occupés : plein).
@@ -271,7 +271,7 @@ function renderPins() {
 // Interface Atelier : la liste Équipement (un bouton par socket, mêmes numéros que les pastilles).
 function renderEquip() {
   const list = [...sockets.values()];
-  $('equipCount').textContent = `${list.filter(s => state.placed[s.id]).length} / ${list.length} posés`;
+  $('equipCount').textContent = tr(`${list.filter(s => state.placed[s.id]).length} / ${list.length} posés`, `${list.filter(s => state.placed[s.id]).length} / ${list.length} placed`);
   $('equipList').innerHTML = list.map((s, n) => {
     const p = state.placed[s.id], r = p && rec(p.brick);
     const sub = r ? esc(r.name) : s.id === 'head' && !state.placed.head ? 'Tête d\u2019origine' : 'Vide · ' + esc(SOCKET_TYPES[s.type] || s.type);
@@ -311,21 +311,21 @@ function renderPrintInfo() {
   if (!model) return;
   const box = new THREE.Box3().setFromObject(model.root);
   const h = box.isEmpty() ? 0 : (box.max.y - box.min.y) * mmPerUnit();
-  $('printHeight').textContent = `${h.toFixed(1)} mm (échelle ${state.scale} mm aux yeux)`;
+  $('printHeight').textContent = tr(`${h.toFixed(1)} mm (échelle ${state.scale} mm aux yeux)`, `${h.toFixed(1)} mm (${state.scale} mm scale at eye level)`);
   let t = 0;
   model.root.traverseVisible(m => { if (m.isMesh && !m.userData.helper) t += (m.geometry.index ? m.geometry.index.count : m.geometry.attributes.position.count) / 3; });
-  $('printTris').textContent = Math.round(t).toLocaleString('fr-FR');
-  $('printParts').textContent = `ork + ${Object.keys(state.placed).length} brique${Object.keys(state.placed).length > 1 ? 's' : ''}`;
+  $('printTris').textContent = Math.round(t).toLocaleString(window.plasmaLang === 'fr' ? 'fr-FR' : 'en-US');
+  $('printParts').textContent = tr(`ork + ${Object.keys(state.placed).length} brique${Object.keys(state.placed).length > 1 ? 's' : ''}`, `ork + ${Object.keys(state.placed).length} brick${Object.keys(state.placed).length > 1 ? 's' : ''}`);
   if (!ui.test) ui.info = `${Math.round(t / 1000)}k triangles · ${h.toFixed(0)} mm`;
   renderInfo();
   $('asmInfo').textContent = `${Math.round(t / 1000)}k triangles`;
 }
-const QUALITY = { rt: 'Temps réel', hq: 'Haute qualité', bhq: 'HQ BrickIt', pt: 'Path tracing' };
+const QUALITY = { rt: tr('Temps réel', 'Real time'), hq: tr('Haute qualité', 'High quality'), bhq: 'HQ BrickIt', pt: 'Path tracing' };
 function renderInfo() {
   const s = vp.settings;
   let q = QUALITY[ui.quality];
   if (ui.quality === 'bhq' && vp.gi) q += ` · GI ${vp.gi.stats.state}`;
-  if (ui.quality === 'pt') q += vp.ptLoading ? ' · chargement…' : vp.spp ? ` · ${Math.floor(vp.spp)} spp` : ' · préparation…';
+  if (ui.quality === 'pt') q += vp.ptLoading ? tr(' · chargement…', ' · loading…') : vp.spp ? ` · ${Math.floor(vp.spp)} spp` : tr(' · préparation…', ' · preparing…');
   $('vpInfo').textContent = `${q} · ${TONEMAPPERS[s.tonemapper].name}\n${ui.info || ''}`;
 }
 const R_FMT = { ev: v => (v > 0 ? '+' : '') + (+v).toFixed(1) + ' EV', vignette: v => (+v).toFixed(2), envIntensity: v => (+v).toFixed(2), envRotation: v => Math.round(v * 180 / Math.PI) + '°', bounces: v => v, filterGlossy: v => (+v).toFixed(2), giStrength: v => (+v).toFixed(2), aoStrength: v => (+v).toFixed(2), aoRadius: v => (+v).toFixed(2) };
@@ -336,7 +336,7 @@ function renderRenderPanel() {
   $('bhqSet').hidden = ui.quality !== 'bhq';
   const hdriOpt = $('renderSet').querySelector('option[value="hdri"]');
   hdriOpt.disabled = !vp.studio.hdri;
-  hdriOpt.textContent = vp.studio.hdri ? 'HDRI · ' + vp.studio.hdri.name : 'HDRI (à charger)';
+  hdriOpt.textContent = vp.studio.hdri ? 'HDRI · ' + vp.studio.hdri.name : tr('HDRI (à charger)', 'HDRI (to load)');
 }
 function setRender(patch) {
   vp.setRender(patch);
@@ -351,7 +351,7 @@ function renderOrk() {
   for (const side of ['L', 'R']) { $('curl' + side).value = state.curl[side]; $('curl' + side + 'Out').textContent = Math.round(state.curl[side] / 1.6 * 100) + ' %'; }
   if (!model) return;
   const tris = n => Math.round(model.meshes[n].geometry.index.count / 3 / 1000) + 'k';
-  $('orkInfo').textContent = `Ork Boy riggé : ${model.bones.length} joints, low ${tris('BODY_low')} / high ${tris('BODY_high')} triangles.${state.placed.head ? ' Tête d\'origine masquée (brique de tête posée).' : ''}`;
+  $('orkInfo').textContent = tr(`Ork Boy riggé : ${model.bones.length} joints, low ${tris('BODY_low')} / high ${tris('BODY_high')} triangles.${state.placed.head ? ' Tête d\'origine masquée (brique de tête posée).' : ''}`, `Rigged Ork Boy: ${model.bones.length} joints, low ${tris('BODY_low')} / high ${tris('BODY_high')} triangles.${state.placed.head ? ' Original head hidden (head brick placed).' : ''}`);
 }
 function renderAssembly() {
   const ids = placedOrder();
@@ -362,7 +362,7 @@ function renderAssembly() {
 }
 function renderPoses() {
   const list = poseList();
-  if ($('poseRow').children.length !== list.length) $('poseRow').innerHTML = list.map(p => `<div class="card"><button type="button" class="thumb" data-pose="${esc(p.id)}" aria-label="Pose ${esc(p.name)}"><img alt=""></button><span class="lbl">${esc(p.name)}</span></div>`).join('');
+  if ($('poseRow').children.length !== list.length) $('poseRow').innerHTML = list.map(p => `<div class="card"><button type="button" class="thumb" data-pose="${esc(p.id)}" aria-label="Pose ${esc(plasmaT(p.name))}"><img alt=""></button><span class="lbl">${esc(p.name)}</span></div>`).join('');
   $('poseRow').querySelectorAll('[data-pose]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.pose === state.poseId)));
   $('poseName').textContent = list.find(p => p.id === state.poseId)?.name || '';
 }
@@ -404,7 +404,7 @@ function removeAt(sid) {
 }
 function renderGIInfo() {
   const g = vp.gi;
-  $('giInfo').textContent = g ? `${g.count} sondes (${g.dims.x}×${g.dims.y}×${g.dims.z}) · ${g.stats.state}` : '';
+  $('giInfo').textContent = g ? tr(`${g.count} sondes (${g.dims.x}×${g.dims.y}×${g.dims.z}) · ${g.stats.state}`, `${g.count} probes (${g.dims.x}×${g.dims.y}×${g.dims.z}) · ${g.stats.state}`) : '';
 }
 function setStep(step) {
   ui.step = step;
@@ -455,7 +455,7 @@ let hiddenAt = null;
 function showHidden() { if (hiddenAt && inst[hiddenAt]) inst[hiddenAt].holder.visible = true; hiddenAt = null; }
 function startHold(r, auto) {
   const cands = targetsFor(r, auto);
-  if (!cands.length) { toast(`Aucun socket « ${SOCKET_TYPES[r.plug.type] || r.plug.type} » pour ${r.name}`); return; }
+  if (!cands.length) { toast(tr(`Aucun socket « ${SOCKET_TYPES[r.plug.type] || r.plug.type} » pour ${r.name}`, `No "${SOCKET_TYPES[r.plug.type] || r.plug.type}" socket for ${r.name}`)); return; }
   vp.gizmo.detach();
   hold.start({
     candidates: cands, auto,
@@ -467,7 +467,7 @@ function startHold(r, auto) {
       const g = mountBrick(r, sockets.get(id), state.placed[id]?.brick === r.id ? state.placed[id].xf : defaultXf(), hold.ghostMat);
       return [g.holder];
     },
-    onDrop: id => { showHidden(); place(id, r.id); toast(`${r.name} posé sur ${sockets.get(id).label}`); },
+    onDrop: id => { showHidden(); place(id, r.id); toast(tr(`${r.name} posé sur ${sockets.get(id).label}`, `${r.name} placed on ${sockets.get(id).label}`)); },
     onCancel: () => { showHidden(); attachGizmo(); },
   });
 }
@@ -503,11 +503,11 @@ async function doExport(kind) {
   try {
     if (kind === 'merged') {
       const tris = await exportMerged([...orkPrintMeshes(), ...placedOrder().flatMap(brickPrintMeshes)], mmPerUnit(), projectName());
-      toast(`STL exporté : ${Math.round(tris).toLocaleString('fr-FR')} triangles, échelle ${state.scale} mm`);
+      toast(tr(`STL exporté : ${Math.round(tris).toLocaleString(window.plasmaLang === 'fr' ? 'fr-FR' : 'en-US')} triangles, échelle ${state.scale} mm`, `STL exported: ${Math.round(tris).toLocaleString(window.plasmaLang === 'fr' ? 'fr-FR' : 'en-US')} triangles, ${state.scale} mm scale`));
     } else if (kind === 'parts') {
       const groups = [{ id: 'ork', objects: orkPrintMeshes() }, ...placedOrder().map(sid => ({ id: sid.replace(/>/g, '-') + '_' + rec(state.placed[sid].brick).name.replace(/[^\w-]+/g, '_'), objects: brickPrintMeshes(sid) }))];
       const n = await exportParts(groups, mmPerUnit(), projectName());
-      toast(`${n} pièces STL exportées dans un ZIP`);
+      toast(tr(`${n} pièces STL exportées dans un ZIP`, `${n} STL pieces exported in a ZIP`));
     } else {
       await exportJSON({ name: $('projName').value, app: 'plasma-ork-builder', version: 2, state, bricks: Object.fromEntries([...new Set(Object.values(state.placed).map(p => p.brick))].map(id => [id, rec(id).name])) }, projectName());
       toast('Projet exporté');
@@ -579,7 +579,7 @@ $('sceneSel').addEventListener('change', async e => {
     if (testModel.maps[1001] && ui.shade !== 'paint') { ui.shade = 'paint'; applyMaterials(); renderSteps(); }
     let tris = 0;
     testModel.root.traverse(m => { if (m.isMesh) tris += m.geometry.index.count / 3; });
-    ui.info = `Modèle test ${testModel.def.label} · ${Math.round(tris / 1000)}k triangles`;
+    ui.info = tr(`Modèle test ${testModel.def.label} · ${Math.round(tris / 1000)}k triangles`, `Test model ${testModel.def.label} · ${Math.round(tris / 1000)}k triangles`);
   } else renderPrintInfo();
   model.root.visible = !test;
   vp.gizmo.detach();
@@ -600,16 +600,16 @@ $('texInput').addEventListener('change', async e => {
     const udim = await testModel.loadMapFile(f);
     if (ui.shade !== 'paint') { ui.shade = 'paint'; applyMaterials(); renderSteps(); }
     testModel.refresh();
-    toast(`${f.name} appliquée (UDIM ${udim})`);
-  } catch (err) { console.error(err); toast(`Impossible de lire ${f.name}`); }
+    toast(tr(`${f.name} appliquée (UDIM ${udim})`, `${f.name} applied (UDIM ${udim})`));
+  } catch (err) { console.error(err); toast(tr(`Impossible de lire ${f.name}`, `Couldn't read ${f.name}`)); }
 });
 $('hdriInput').addEventListener('change', async e => {
   const f = e.target.files[0];
   e.target.value = '';
   if (!f) { renderRenderPanel(); return; }
-  toast(`Chargement de ${f.name}…`);
-  try { await vp.setHDRI(f); setRender({}); toast(`HDRI ${f.name} chargé${vp.studio.hdri.sun ? ' (soleil extrait en lumière ombrée)' : ''}`); }
-  catch (err) { console.error(err); toast(`Impossible de lire ${f.name}`); renderRenderPanel(); }
+  toast(tr(`Chargement de ${f.name}…`, `Loading ${f.name}…`));
+  try { await vp.setHDRI(f); setRender({}); toast(tr(`HDRI ${f.name} chargé${vp.studio.hdri.sun ? ' (soleil extrait en lumière ombrée)' : ''}`, `HDRI ${f.name} loaded${vp.studio.hdri.sun ? ' (sun extracted as a shadowed light)' : ''}`)); }
+  catch (err) { console.error(err); toast(tr(`Impossible de lire ${f.name}`, `Couldn't read ${f.name}`)); renderRenderPanel(); }
 });
 $('gridChk').addEventListener('change', e => { vp.grid.visible = e.target.checked; });
 $('baseChk').addEventListener('change', e => { if (inst.base) inst.base.holder.visible = e.target.checked; renderPrintInfo(); });

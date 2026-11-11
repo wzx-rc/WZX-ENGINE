@@ -6,9 +6,11 @@ import * as THREE from 'three';
 import { CHAINS, FINGERS } from './riglab/model.js';
 import { PRESETS, buildPreset } from './riglab/poses.js';
 
-export const SOCKET_TYPES = {
+// Libellés traduits par i18n.js (plasmaT) quand l'interface est en anglais.
+const T = s => (globalThis.plasmaT ? globalThis.plasmaT(s) : s);
+export const SOCKET_TYPES = Object.fromEntries(Object.entries({
   head: 'Tête', grip: 'Main', back: 'Dos', shoulder: 'Épaule', chest: 'Torse', belt: 'Ceinture', base: 'Socle', any: 'Libre',
-};
+}).map(([k, v]) => [k, T(v)]));
 
 const Q = n => 'QuickRigCharacter_' + n;
 
@@ -83,6 +85,7 @@ export function orkSockets(model) {
   ];
   const orkInv = model.ork.matrixWorld.clone().invert();
   return defs.map(([id, label, type, boneName, p]) => {
+    label = T(label);
     const bone = boneName ? model.bone(boneName) : null;
     const rest = id.startsWith('grip_') ? grip[id.slice(-1)].clone().setPosition(p) : new THREE.Matrix4().makeTranslation(p.x, p.y, p.z);
     // repère du joint au repos, dans l'espace ork

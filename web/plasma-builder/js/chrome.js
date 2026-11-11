@@ -43,7 +43,7 @@ if (window.plasmaDesktop) {
     ctl.addEventListener('click', e => { const b = e.target.closest('[data-w]'); if (b) w[b.dataset.w](); });
     bar.append(ctl);
     const mx = ctl.querySelector('[data-w="max"]');
-    w.onState(m => { mx.innerHTML = m ? WIN_ICONS.restore : WIN_ICONS.max; mx.title = mx.ariaLabel = m ? 'Restaurer' : 'Agrandir'; });
+    w.onState(m => { mx.innerHTML = m ? WIN_ICONS.restore : WIN_ICONS.max; mx.title = mx.ariaLabel = m ? tr('Restaurer', 'Restore') : tr('Agrandir', 'Maximize'); });
   }
   document.body.prepend(bar);
 }
@@ -67,18 +67,23 @@ if (gbtn) {
     <section><h3>Interface du Builder</h3>
       <div class="seg" role="radiogroup" aria-label="Interface" id="themeSel"><button type="button" role="radio" data-theme="classic">Classique</button><button type="button" role="radio" data-theme="atelier">Atelier</button></div>
       <p class="muted">Classique : l'interface d'origine. Atelier : la vue d'abord, l'équipement à gauche, la bibliothèque en tiroir.</p></section>
+    <section><h3>Langue</h3>
+      <div class="seg" role="radiogroup" aria-label="Langue"><button type="button" role="radio" data-glang="en" lang="en">English</button><button type="button" role="radio" data-glang="fr" lang="fr">Français</button></div>
+      <p class="muted">La page se recharge pour changer de langue.</p></section>
     <p class="muted gset-foot">Choix enregistrés sur cet appareil.</p>`;
   gbtn.after(panel);
   const sync = () => {
     const mode = read(MODE_KEY, 'full'), theme = read(THEME_KEY, 'classic');
     panel.querySelectorAll('[data-gmode]').forEach(b => b.setAttribute('aria-checked', String(b.dataset.gmode === mode)));
     panel.querySelectorAll('[data-theme]').forEach(b => b.setAttribute('aria-checked', String(b.dataset.theme === theme)));
+    panel.querySelectorAll('[data-glang]').forEach(b => b.setAttribute('aria-checked', String(b.dataset.glang === (window.plasmaLang || 'en'))));
   };
   const open = v => { panel.hidden = !v; gbtn.setAttribute('aria-expanded', String(v)); if (v) sync(); };
   gbtn.addEventListener('click', () => open(panel.hidden));
   panel.addEventListener('click', e => {
     const b = e.target.closest('button'); if (!b) return;
     if (b.hasAttribute('data-gclose')) open(false);
+    else if (b.dataset.glang) { if (b.dataset.glang !== window.plasmaLang) window.plasmaSetLang?.(b.dataset.glang); }
     else if (b.dataset.gmode) {
       write(MODE_KEY, b.dataset.gmode);
       document.documentElement.classList.toggle('mode-simple', b.dataset.gmode === 'simple');

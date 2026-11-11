@@ -175,7 +175,7 @@ async function addFiles(files) {
       }
     } catch (err) {
       console.error(err);
-      toast(`Impossible de lire ${f.name}`);
+      toast(tr(`Impossible de lire ${f.name}`, `Couldn't read ${f.name}`));
     }
   }
   setTimeout(() => urls.forEach(u => URL.revokeObjectURL(u)), 4000);
@@ -214,7 +214,7 @@ function takeFiles(files) {
   for (const f of scenes) convertScene(f);
 }
 async function convertScene(f) {
-  setBusy(`Maya convertit ${f.name}…`);
+  setBusy(tr(`Maya convertit ${f.name}…`, `Maya is converting ${f.name}…`));
   try {
     const res = await maya.convert(f);
     if (res?.error) { setBusy(null); toast(res.error, 8000); }
@@ -241,7 +241,8 @@ async function fromMaya(p) {
   if (cat && cat.id === p.manifest.category && draft.plugFrom !== 'file') { draft.cat = cat.id; draft.home = cat.home; draft.plugType = cat.type; draft.catAuto = false; }
   refresh(true);
   for (const w of p.manifest?.warnings || []) console.warn('[Maya]', w);
-  toast(`Reçu de Maya : ${p.name || files[0].name}${p.manifest?.warnings?.length ? ` (${p.manifest.warnings.length} remarque${p.manifest.warnings.length > 1 ? 's' : ''}, voir la console F12)` : ''}`, 4000);
+  const nw = p.manifest?.warnings?.length || 0;
+  toast(tr(`Reçu de Maya : ${p.name || files[0].name}${nw ? ` (${nw} remarque${nw > 1 ? 's' : ''}, voir la console F12)` : ''}`, `Received from Maya: ${p.name || files[0].name}${nw ? ` (${nw} note${nw > 1 ? 's' : ''}, see the F12 console)` : ''}`), 4000);
   renderLibrary();
 }
 
@@ -360,17 +361,17 @@ function runChecks() {
   if (!draft || !draft.meshes.length) { $('fChecks').innerHTML = '<li class="muted">Dépose une brique pour lancer les contrôles.</li>'; return; }
   const low = lodGeos('low'), high = lodGeos('high');
   const tri = gs => Math.round(gs.reduce((n, g) => n + (g.index ? g.index.count : g.attributes.position.count) / 3, 0));
-  add(low.length ? 'ok' : 'bad', low.length ? `Low : ${tri(low).toLocaleString('fr-FR')} triangles (${low.length} objet${low.length > 1 ? 's' : ''})` : 'Aucun objet en low');
-  add(high.length ? 'ok' : 'warn', high.length ? `High : ${tri(high).toLocaleString('fr-FR')} triangles` : 'Pas de high : le low servira aussi en high et à l\'impression');
+  add(low.length ? 'ok' : 'bad', low.length ? tr(`Low : ${tri(low).toLocaleString(window.plasmaLang === 'fr' ? 'fr-FR' : 'en-US')} triangles (${low.length} objet${low.length > 1 ? 's' : ''})`, `Low: ${tri(low).toLocaleString(window.plasmaLang === 'fr' ? 'fr-FR' : 'en-US')} triangles (${low.length} object${low.length > 1 ? 's' : ''})`) : 'Aucun objet en low');
+  add(high.length ? 'ok' : 'warn', high.length ? tr(`High : ${tri(high).toLocaleString(window.plasmaLang === 'fr' ? 'fr-FR' : 'en-US')} triangles`, `High: ${tri(high).toLocaleString(window.plasmaLang === 'fr' ? 'fr-FR' : 'en-US')} triangles`) : 'Pas de high : le low servira aussi en high et à l\'impression');
   const used = draft.meshes.filter(m => m.lod !== 'skip'), uv = used.every(m => m.uv), moved = used.filter(m => m.uvFrom === 'low');
   add(uv ? 'ok' : 'warn', !uv ? 'Objets sans UV : la texture ne s\'appliquera pas dessus'
-    : moved.length ? `UV du high reprises du low (point le plus proche) : ${moved.map(m => esc(m.name)).join(', ')}` : 'UV présentes');
-  add(draft.texture ? 'ok' : 'warn', draft.texture ? `Texture : ${esc(draft.textureName)}` : 'Pas de texture (mode Peint en gris)');
+    : moved.length ? tr('UV du high reprises du low (point le plus proche) : ', 'High UVs copied from the low (closest point): ') + moved.map(m => esc(m.name)).join(', ') : 'UV présentes');
+  add(draft.texture ? 'ok' : 'warn', draft.texture ? tr('Texture : ', 'Texture: ') + esc(draft.textureName) : 'Pas de texture (mode Peint en gris)');
   const box = new THREE.Box3();
   for (const g of low) { g.computeBoundingBox(); box.union(g.boundingBox); }
   const size = box.getSize(new THREE.Vector3()).multiplyScalar(mmPerCm());
-  add(size.length() > 0.5 && size.length() < 60 ? 'ok' : 'warn', `Taille à l'échelle 32 mm : ${size.x.toFixed(1)} × ${size.y.toFixed(1)} × ${size.z.toFixed(1)} mm${size.length() < 0.5 ? ' (minuscule : vérifie les unités)' : size.length() > 60 ? ' (énorme : vérifie les unités)' : ''}`);
-  add(draft.plugM ? 'ok' : 'warn', draft.plugM ? `Plug ${draft.plugFrom === 'file' ? 'lu dans le fichier' : 'placé à la main'} : la brique s'accroche par lui`
+  add(size.length() > 0.5 && size.length() < 60 ? 'ok' : 'warn', tr(`Taille à l'échelle 32 mm : ${size.x.toFixed(1)} × ${size.y.toFixed(1)} × ${size.z.toFixed(1)} mm${size.length() < 0.5 ? ' (minuscule : vérifie les unités)' : size.length() > 60 ? ' (énorme : vérifie les unités)' : ''}`, `Size at 32 mm scale: ${size.x.toFixed(1)} × ${size.y.toFixed(1)} × ${size.z.toFixed(1)} mm${size.length() < 0.5 ? ' (tiny: check the units)' : size.length() > 60 ? ' (huge: check the units)' : ''}`));
+  add(draft.plugM ? 'ok' : 'warn', draft.plugM ? tr(`Plug ${draft.plugFrom === 'file' ? 'lu dans le fichier' : 'placé à la main'} : la brique s'accroche par lui`, `Plug ${draft.plugFrom === 'file' ? 'read from the file' : 'placed by hand'}: the brick attaches by it`)
     : 'Pas de PLUG_ : la brique s\'accrochera par son origine (0, 0, 0). Ajoute un locator PLUG_ dans Maya ou place-le au clic (outil prise)');
   // le high doit recouvrir le low (même scène, même position)
   if (high.length && low.length) {
@@ -380,15 +381,15 @@ function runChecks() {
     let sum = 0, max = 0, n = 0;
     for (let i = 0; i < hp.count; i += step) { p.fromBufferAttribute(hp, i); bvh.closestPointToPoint(p, hit); sum += hit.distance; max = Math.max(max, hit.distance); n++; }
     const mean = sum / n * mmPerCm(), mx = max * mmPerCm();
-    add(mean < 0.6 ? 'ok' : mean < 2 ? 'warn' : 'bad', `Écart high / low : ${mean.toFixed(2)} mm en moyenne, ${mx.toFixed(2)} mm au plus${mean >= 2 ? ' : ils ne se superposent pas (même scène, même position ?)' : ''}`);
+    add(mean < 0.6 ? 'ok' : mean < 2 ? 'warn' : 'bad', tr(`Écart high / low : ${mean.toFixed(2)} mm en moyenne, ${mx.toFixed(2)} mm au plus${mean >= 2 ? ' : ils ne se superposent pas (même scène, même position ?)' : ''}`, `High / low gap: ${mean.toFixed(2)} mm on average, ${mx.toFixed(2)} mm at most${mean >= 2 ? ': they don\'t overlap (same scene, same position?)' : ''}`));
   }
   const print = high.length ? high : low;
   if (print.length) {
     const open = openEdges(positionsOnly(print));
-    add(open ? 'warn' : 'ok', open ? `${open.toLocaleString('fr-FR')} arêtes ouvertes sur le ${high.length ? 'high' : 'low'} : à fermer pour l'impression` : `Maillage ${high.length ? 'high' : 'low'} fermé (imprimable)`);
+    add(open ? 'warn' : 'ok', open ? tr(`${open.toLocaleString(window.plasmaLang === 'fr' ? 'fr-FR' : 'en-US')} arêtes ouvertes sur le ${high.length ? 'high' : 'low'} : à fermer pour l'impression`, `${open.toLocaleString(window.plasmaLang === 'fr' ? 'fr-FR' : 'en-US')} open edges on the ${high.length ? 'high' : 'low'}: close them for printing`) : tr(`Maillage ${high.length ? 'high' : 'low'} fermé (imprimable)`, `Closed ${high.length ? 'high' : 'low'} mesh (printable)`));
   }
   const ns = draft.sockets.length;
-  add('ok', `${ns ? `${ns} socket${ns > 1 ? 's' : ''}` : 'Aucun socket'} sur la brique pour d'autres briques`);
+  add('ok', tr(`${ns ? `${ns} socket${ns > 1 ? 's' : ''}` : 'Aucun socket'} sur la brique pour d'autres briques`, `${ns ? `${ns} socket${ns > 1 ? 's' : ''}` : 'No socket'} on the brick for other bricks`));
   $('fChecks').innerHTML = out.join('');
 }
 
@@ -412,7 +413,7 @@ function renderForm() {
   $('fPlugType').value = d.plugType;
   $('fFiles').innerHTML = d.meshes.length ? d.meshes.map((m, i) => {
     const t = Math.round((m.geo.index ? m.geo.index.count : m.geo.attributes.position.count) / 3);
-    return `<div class="it"><span title="${esc(m.file)}">${esc(m.name)} <small>${t.toLocaleString('fr-FR')} tri</small></span><select data-lod="${i}" aria-label="Version de ${esc(m.name)}"><option value="low" ${m.lod === 'low' ? 'selected' : ''}>Low</option><option value="high" ${m.lod === 'high' ? 'selected' : ''}>High</option><option value="skip" ${m.lod === 'skip' ? 'selected' : ''}>Ignorer</option></select><button type="button" class="icon" data-rmesh="${i}" aria-label="Retirer ${esc(m.name)}">${ICON(TRASH)}</button></div>`;
+    return `<div class="it"><span title="${esc(m.file)}" data-noi18n>${esc(m.name)} <small>${t.toLocaleString(window.plasmaLang === 'fr' ? 'fr-FR' : 'en-US')} tri</small></span><select data-lod="${i}" aria-label="${tr('Version de', 'Version of')} ${esc(m.name)}"><option value="low" ${m.lod === 'low' ? 'selected' : ''}>Low</option><option value="high" ${m.lod === 'high' ? 'selected' : ''}>High</option><option value="skip" ${m.lod === 'skip' ? 'selected' : ''}>Ignorer</option></select><button type="button" class="icon" data-rmesh="${i}" aria-label="Retirer ${esc(m.name)}">${ICON(TRASH)}</button></div>`;
   }).join('') : '<span class="muted">Aucun fichier.</span>';
   $('fSockets').innerHTML = d.sockets.length ? d.sockets.map((s, i) => `<div class="it${ui.sel === i ? ' sel' : ''}"><input type="text" data-sname="${i}" value="${esc(s.name)}" aria-label="Nom du socket" spellcheck="false"><select data-stype="${i}" aria-label="Type du socket">${typeOptions(s.type)}</select><button type="button" class="icon" data-rsock="${i}" aria-label="Supprimer le socket ${esc(s.name)}">${ICON(TRASH)}</button></div>`).join('')
     : '<span class="muted">Aucun socket : la brique ne porte rien.</span>';
@@ -424,7 +425,7 @@ function renderForm() {
   $('saveBtn').textContent = d.id ? 'Enregistrer les modifications' : 'Enregistrer dans la bibliothèque';
   $('dropzone').hidden = !!d.meshes.length;
   const home = ui.ork && draft && homeSocket();
-  $('vpInfo').textContent = d.meshes.length ? `${d.files.join(', ') || d.name}\n${home ? `Essai sur ${home.label.toLowerCase()}, ork au repos` : 'Brique seule, à l\'origine comme dans Maya'}` : '';
+  $('vpInfo').textContent = d.meshes.length ? `${d.files.join(', ') || d.name}\n${home ? tr(`Essai sur ${home.label.toLowerCase()}, ork au repos`, `Trying on ${home.label.toLowerCase()}, ork at rest`) : tr('Brique seule, à l\'origine comme dans Maya', 'Brick alone, at the origin as in Maya')}` : '';
 }
 function refresh(frame = false) {
   renderForm();
@@ -547,7 +548,7 @@ function renderLibrary() {
   $('catFilter').innerHTML = [['all', 'Toutes'], ...CATEGORIES.map(c => [c.id, c.label])].map(([id, l]) => `<button type="button" data-cat="${id}" aria-pressed="${filter === id}">${l}</button>`).join('');
   const list = library.filter(r => filter === 'all' || r.cat === filter);
   $('libCount').textContent = library.length;
-  $('libGrid').innerHTML = list.length ? list.map(r => `<button type="button" class="tile" data-brick="${r.id}" aria-pressed="${draft?.id === r.id}" title="${esc(catById(r.cat).label)} · ${Math.round(triCount(r.lods.low) / 1000)}k tri low">${r.lods.high?.length ? '<em class="badge">HD</em>' : ''}${r.thumb ? `<img alt="" src="${r.thumb}">` : '<span class="ph"></span>'}<span>${esc(r.name)}</span></button>`).join('')
+  $('libGrid').innerHTML = list.length ? list.map(r => `<button type="button" class="tile" data-brick="${r.id}" aria-pressed="${draft?.id === r.id}" title="${esc(catById(r.cat).label)} · ${Math.round(triCount(r.lods.low) / 1000)}k tri low">${r.lods.high?.length ? '<em class="badge">HD</em>' : ''}${r.thumb ? `<img alt="" src="${r.thumb}">` : '<span class="ph"></span>'}<span data-noi18n>${esc(r.name)}</span></button>`).join('')
     : `<div class="libempty">${library.length ? 'Aucune brique dans cette catégorie.' : 'La bibliothèque est vide. Dépose les fichiers d\'une première brique dans l\'aperçu.'}</div>`;
 }
 function loadRec(r) {
@@ -596,7 +597,7 @@ $('saveBtn').addEventListener('click', async () => {
   };
   try {
     await Store.put(rec);
-    toast(`« ${rec.name} » enregistrée dans ${catById(rec.cat).label}`);
+    toast(tr(`« ${rec.name} » enregistrée dans ${catById(rec.cat).label}`, `"${rec.name}" saved in ${catById(rec.cat).label}`));
     await loadLibrary();
     loadRec(library.find(r => r.id === rec.id));
   } catch (err) {
@@ -611,7 +612,7 @@ $('deleteBtn').addEventListener('click', async () => {
   if (Date.now() - armed > 2500) { armed = Date.now(); toast('Clique encore pour supprimer la brique'); return; }
   armed = 0;
   await Store.delete(draft.id);
-  toast(`« ${draft.name} » supprimée`);
+  toast(tr(`« ${draft.name} » supprimée`, `"${draft.name}" deleted`));
   draft = emptyDraft();
   refresh();
   loadLibrary();
@@ -620,7 +621,7 @@ $('deleteBtn').addEventListener('click', async () => {
 async function exportLibrary() {
   if (!library.length) { toast('La bibliothèque est vide'); return; }
   toast('Préparation du ZIP…');
-  try { await saveFile('plasma_bricks.zip', await packLibrary(library)); toast(`${library.length} brique${library.length > 1 ? 's' : ''} exportée${library.length > 1 ? 's' : ''}`); }
+  try { await saveFile('plasma_bricks.zip', await packLibrary(library)); toast(tr(`${library.length} brique${library.length > 1 ? 's' : ''} exportée${library.length > 1 ? 's' : ''}`, `${library.length} brick${library.length > 1 ? 's' : ''} exported`)); }
   catch (err) { console.error(err); toast('Export impossible : ' + (err.message || err)); }
 }
 $('libInput').addEventListener('change', async e => {
@@ -630,7 +631,7 @@ $('libInput').addEventListener('change', async e => {
   try {
     const list = unpackLibrary(await f.arrayBuffer());
     for (const r of list) await Store.put(r);
-    toast(`${list.length} brique${list.length > 1 ? 's' : ''} importée${list.length > 1 ? 's' : ''}`);
+    toast(tr(`${list.length} brique${list.length > 1 ? 's' : ''} importée${list.length > 1 ? 's' : ''}`, `${list.length} brick${list.length > 1 ? 's' : ''} imported`));
     loadLibrary();
   } catch (err) { console.error(err); toast('Ce fichier n\'est pas une bibliothèque de briques : ' + (err.message || err)); }
 });

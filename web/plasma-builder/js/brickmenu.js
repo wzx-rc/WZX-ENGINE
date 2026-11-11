@@ -41,7 +41,7 @@ function open(x, y, rec, { changed, toast, edit }) {
     menu.style.top = Math.max(8, Math.min(y, innerHeight - r.height - 8)) + 'px';
   };
   const main = () => {
-    menu.innerHTML = `<div class="ctx-title">${esc(rec.name)}</div>
+    menu.innerHTML = `<div class="ctx-title" data-noi18n>${esc(rec.name)}</div>
       ${edit ? '<button type="button" role="menuitem" data-act="edit"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>Modifier</button>' : ''}
       <button type="button" role="menuitem" data-act="rename"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16zM14 6l4 4"/></svg>Renommer</button>
       <button type="button" role="menuitem" data-act="delete" class="danger"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>Supprimer</button>`;
@@ -64,12 +64,12 @@ function open(x, y, rec, { changed, toast, edit }) {
     try {
       const r = { ...rec, name, updated: Date.now() };
       await Store.put(r);
-      toast(`« ${old} » renommée en « ${name} »`);
+      toast(tr(`« ${old} » renommée en « ${name} »`, `"${old}" renamed to "${name}"`));
       changed('rename', r);
-    } catch (err) { console.error(err); toast('Impossible de renommer : ' + (err.message || err)); }
+    } catch (err) { console.error(err); toast(tr('Impossible de renommer : ', 'Couldn\'t rename: ') + (err.message || err)); }
   };
   const confirmDelete = () => {
-    menu.innerHTML = `<div class="ctx-title">Supprimer « ${esc(rec.name)} » ?</div><p class="ctx-note">Elle disparaît de la bibliothèque et des figurines où elle est posée.</p>
+    menu.innerHTML = `<div class="ctx-title">${tr(`Supprimer « ${esc(rec.name)} » ?`, `Delete "${esc(rec.name)}"?`)}</div><p class="ctx-note">Elle disparaît de la bibliothèque et des figurines où elle est posée.</p>
       <div class="ctx-row"><button type="button" data-act="cancel">Annuler</button><button type="button" data-act="kill" class="danger-btn">Supprimer</button></div>`;
     place();
     menu.querySelector('[data-act="cancel"]').focus();
@@ -78,9 +78,9 @@ function open(x, y, rec, { changed, toast, edit }) {
     close();
     try {
       await Store.delete(rec.id);
-      toast(`« ${rec.name} » supprimée`);
+      toast(tr(`« ${rec.name} » supprimée`, `"${rec.name}" deleted`));
       changed('delete', rec);
-    } catch (err) { console.error(err); toast('Impossible de supprimer : ' + (err.message || err)); }
+    } catch (err) { console.error(err); toast(tr('Impossible de supprimer : ', 'Couldn\'t delete: ') + (err.message || err)); }
   };
   menu.addEventListener('click', e => {
     const act = e.target.closest('button')?.dataset.act;

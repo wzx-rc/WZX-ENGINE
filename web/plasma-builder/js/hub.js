@@ -23,7 +23,7 @@ function render() {
 
   setNum('dents', S.dents);
   const packs = S.packs, chests = S.chests;
-  $('packTitle').textContent = packs ? `${packs} pack${packs > 1 ? 's' : ''} t'attend${packs > 1 ? 'ent' : ''}` : 'Plus de pack à ouvrir';
+  $('packTitle').textContent = packs ? tr(`${packs} pack${packs > 1 ? 's' : ''} t'attend${packs > 1 ? 'ent' : ''}`, `${packs} pack${packs > 1 ? 's' : ''} waiting for you`) : 'Plus de pack à ouvrir';
   $('openPack').disabled = !packs;
   $('openChest').disabled = !chests;
   $('chestCount').textContent = chests;
@@ -48,26 +48,28 @@ function render() {
     return `<div class="${bump ? 'bump' : ''}" data-cat="${cat}" title="${catLabel(cat)}"><img src="${ICON[cat]}" alt="${catLabel(cat)}"><b>${n}</b><span>/ ${NAMES[cat].length}</span></div>`;
   }).join('');
   const d = dupes();
-  $('dupeInfo').textContent = d ? `${d} doublon${d > 1 ? 's' : ''} à recycler` : 'Aucun doublon';
+  $('dupeInfo').textContent = d ? tr(`${d} doublon${d > 1 ? 's' : ''} à recycler`, `${d} duplicate${d > 1 ? 's' : ''} to recycle`) : 'Aucun doublon';
   $('recycle').disabled = !d;
 
   const last = S.last.map(id => byId[id]).filter(Boolean);
   $('lastRow').innerHTML = last.length ? last.map(p => pieceCard(p)).join('') : '<div class="empty">Ouvre un pack : tes 3 dernières pièces apparaîtront ici.</div>';
-  $('lastWhen').textContent = S.lastAt ? 'il y a ' + ago(S.lastAt) : 'aucun pour l’instant';
+  $('lastWhen').textContent = S.lastAt ? tr('il y a ' + ago(S.lastAt), ago(S.lastAt) + ' ago') : 'aucun pour l’instant';
 
   const kitOwn = KIT.pieces.filter(id => S.owned[id]).length;
   $('kitName').textContent = `${KIT.name} · ${kitOwn} / ${KIT.pieces.length}`;
   $('kitBar').innerHTML = KIT.pieces.map(id => `<i class="${S.owned[id] ? 'on' : ''}" title="${S.owned[id] ? esc(byId[id].name) : '???'}"></i>`).join('');
   const miss = KIT.pieces.filter(id => !S.owned[id]).map(id => byId[id]);
-  $('kitInfo').textContent = miss.length ? `Il manque : ${miss.map(p => catSingular[p.cat].toLowerCase() + ' ' + RARITY[p.rk].toLowerCase()).join(', ')}. Complet : ${KIT.reward}.` : `Kit complet : ${KIT.reward} !`;
+  $('kitInfo').textContent = miss.length
+    ? tr(`Il manque : ${miss.map(p => catSingular[p.cat].toLowerCase() + ' ' + RARITY[p.rk].toLowerCase()).join(', ')}. Complet : ${KIT.reward}.`, `Missing: ${miss.map(p => RARITY[p.rk].toLowerCase() + ' ' + catSingular[p.cat].toLowerCase()).join(', ')}. Complete: ${KIT.reward}.`)
+    : tr(`Kit complet : ${KIT.reward} !`, `Kit complete: ${KIT.reward}!`);
   $('packDentsPrice').textContent = RULES.packInDents;
   document.querySelector('[data-buy="dents"]').disabled = S.dents < RULES.packInDents;
 }
 function ago(t) {
   const m = Math.round((Date.now() - t) / 60000);
-  if (m < 1) return 'quelques secondes';
+  if (m < 1) return tr('quelques secondes', 'a few seconds');
   if (m < 60) return m + ' min';
-  const h = Math.round(m / 60); return h < 48 ? h + ' h' : Math.round(h / 24) + ' j';
+  const h = Math.round(m / 60); return h < 48 ? h + ' h' : Math.round(h / 24) + tr(' j', ' d');
 }
 
 // Les pièces gagnées volent jusqu'à la carte Plasma Library, puis les compteurs montent.
@@ -90,7 +92,7 @@ function flyToLibrary(rects, got) {
   setTimeout(() => {
     render();
     const dl = $('libDelta');
-    dl.hidden = false; dl.textContent = fresh ? `+${fresh} nouvelle${fresh > 1 ? 's' : ''}` : 'doublons';
+    dl.hidden = false; dl.textContent = fresh ? tr(`+${fresh} nouvelle${fresh > 1 ? 's' : ''}`, `+${fresh} new`) : tr('doublons', 'duplicates');
     dl.style.animation = 'none'; void dl.offsetWidth; dl.style.animation = '';
     const [x, y] = center($('libOwned'));
     sparks(x, y, '#3e8ef7', 18);
@@ -113,9 +115,9 @@ document.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && open) closeOverlay(); });
 
 function cardSlot(p, i, extra = '') {
-  const tag = p.isNew ? (p.rk === 'x' ? 'Nouvelle pièce extrême' : 'Nouvelle pièce') : `Doublon · tu en as ${p.count}`;
+  const tag = p.isNew ? (p.rk === 'x' ? 'Nouvelle pièce extrême' : 'Nouvelle pièce') : tr(`Doublon · tu en as ${p.count}`, `Duplicate · you have ${p.count}`);
   return `<div class="slot ${extra}" style="animation-delay:${0.25 + i * 0.15}s;--rot:${(i - 1) * 25}deg">
-    <button type="button" class="flip" data-i="${i}" aria-label="Retourner la carte ${i + 1}">
+    <button type="button" class="flip" data-i="${i}" aria-label="${tr('Retourner la carte', 'Flip card')} ${i + 1}">
       <span class="face back"><span class="foil"></span><img src="assets/hub/logo_plasma_ork.png" alt=""><span class="lab" style="position:relative;color:#ffb3d3">Touche pour retourner</span></span>
       <span class="face front ${p.rk}"><span class="rar">${RARITY[p.rk]}</span><img src="${ICON[p.cat]}" alt=""><b>${esc(p.name)}</b><small>${catSingular[p.cat]}</small><span class="tag">${tag}</span></span>
     </button></div>`;
@@ -215,7 +217,7 @@ function updateChest() {
   $('lock').style.boxShadow = `0 0 ${12 + glow}px rgba(255,46,136,.7)`;
   $('chestPrompt').textContent = ['Frappe le coffre pour l’ouvrir', 'Encore !', 'Une dernière fois !', ''][h];
   $('chestDots').querySelectorAll('i').forEach((d, i) => d.classList.toggle('on', i < h));
-  $('chest').setAttribute('aria-label', h < 3 ? `Frapper le coffre (${h} sur 3)` : 'Coffre ouvert');
+  $('chest').setAttribute('aria-label', h < 3 ? tr(`Frapper le coffre (${h} sur 3)`, `Smash the chest (${h} of 3)`) : 'Coffre ouvert');
 }
 $('chest').addEventListener('click', e => {
   if (chest.hits >= 3) return;
@@ -252,7 +254,7 @@ document.querySelector('.shop').addEventListener('click', e => {
   if (what === 'dents') {
     if (S.dents < RULES.packInDents) return;
     S.dents -= RULES.packInDents; S.packs++; save(); render();
-    toast('Pack Boyz échangé contre ' + RULES.packInDents + ' dents');
+    toast(tr('Pack Boyz échangé contre ' + RULES.packInDents + ' dents', 'Boyz Pack bought for ' + RULES.packInDents + ' teeth'));
   } else if (what === 'pack') { S.packs++; save(); render(); toast('Démo : pack ajouté. Le paiement sera branché sur le site.'); }
   else if (what === 'chest') { S.chests++; save(); render(); toast('Démo : coffre ajouté. Le paiement sera branché sur le site.'); }
   else toast('Abonnement : à brancher sur le site.');
@@ -265,7 +267,7 @@ $('recycle').addEventListener('click', () => {
   if (!gain) return;
   S.dents += gain; save(); render();
   const [x, y] = center($('dents')); sparks(x, y, '#f2c230', 24);
-  toast(`+${gain} dents grâce aux doublons`);
+  toast(tr(`+${gain} dents grâce aux doublons`, `+${gain} teeth from duplicates`));
 });
 $('openPack').addEventListener('click', openPack);
 $('openChest').addEventListener('click', openChest);
@@ -290,7 +292,7 @@ $('dropBtn').addEventListener('click', () => {
   if (!before) S.got[p.id] = { at: Date.now(), src: 'drop' };
   save();
   const [x, y] = center($('dropBtn')); sparks(x, y, '#f2c230', 30);
-  toast(`Drop du jour : ${p.name} (${before ? 'doublon' : 'nouvelle pièce'})`);
+  toast(tr(`Drop du jour : ${p.name} (${before ? 'doublon' : 'nouvelle pièce'})`, `Daily drop: ${p.name} (${before ? 'duplicate' : 'new piece'})`));
   render(); tickDrop();
 });
 
