@@ -1,0 +1,2247 @@
+{
+  "format": "wzx-prefab",
+  "version": 1,
+  "name": "Mecha Warden",
+  "game": {
+    "category": "Unit",
+    "footprintX": 1,
+    "footprintZ": 1,
+    "selectionRadius": 1.15,
+    "height": 3,
+    "blocksPath": false
+  },
+  "parts": [
+    {
+      "id": 1,
+      "parent": 0,
+      "name": "Root",
+      "position": [
+        0,
+        0,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "scale": [
+        1.2,
+        1.2,
+        1.2
+      ],
+      "visible": true,
+      "collapsed": false
+    },
+    {
+      "id": 2,
+      "parent": 1,
+      "name": "Pelvis",
+      "position": [
+        0,
+        1.25,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "visible": true,
+      "collapsed": false
+    },
+    {
+      "id": 3,
+      "parent": 2,
+      "name": "Pelvis Block",
+      "shape": {
+        "primitive": "Cube",
+        "size": [
+          0.7,
+          0.26,
+          0.5
+        ],
+        "radius": 0.5,
+        "radius2": 0.15,
+        "segments": 32,
+        "rings": 16,
+        "subdiv": 1
+      },
+      "position": [
+        0,
+        -0.1,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "visible": true,
+      "collapsed": false,
+      "material": {
+        "name": "Gunmetal",
+        "baseColor": [
+          0.36,
+          0.38,
+          0.42
+        ],
+        "texture": null,
+        "roughness": 0.4,
+        "metallic": 0.75,
+        "specular": 0.5,
+        "transmission": 0,
+        "ior": 1.5,
+        "coat": 0,
+        "coatRoughness": 0.08,
+        "emission": [
+          0,
+          0,
+          0
+        ],
+        "emissionStrength": 0,
+        "preset": 0
+      }
+    },
+    {
+      "id": 4,
+      "parent": 2,
+      "name": "Torso",
+      "position": [
+        0,
+        0.16,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "visible": true,
+      "collapsed": false
+    },
+    {
+      "id": 5,
+      "parent": 4,
+      "name": "Chest",
+      "shape": {
+        "primitive": "Cube",
+        "size": [
+          1.1,
+          0.62,
+          0.78
+        ],
+        "radius": 0.5,
+        "radius2": 0.15,
+        "segments": 32,
+        "rings": 16,
+        "subdiv": 1
+      },
+      "position": [
+        0,
+        0,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "visible": true,
+      "collapsed": false,
+      "material": {
+        "name": "Armor White",
+        "baseColor": [
+          0.8,
+          0.82,
+          0.84
+        ],
+        "texture": null,
+        "roughness": 0.42,
+        "metallic": 0,
+        "specular": 0.5,
+        "transmission": 0,
+        "ior": 1.5,
+        "coat": 0.4,
+        "coatRoughness": 0.08,
+        "emission": [
+          0,
+          0,
+          0
+        ],
+        "emissionStrength": 0,
+        "preset": 0
+      }
+    },
+    {
+      "id": 6,
+      "parent": 4,
+      "name": "Chest Plate",
+      "shape": {
+        "primitive": "Cube",
+        "size": [
+          0.86,
+          0.38,
+          0.06
+        ],
+        "radius": 0.5,
+        "radius2": 0.15,
+        "segments": 32,
+        "rings": 16,
+        "subdiv": 1
+      },
+      "position": [
+        0,
+        0.12,
+        0.4
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "visible": true,
+      "collapsed": false,
+      "material": {
+        "name": "Team Blue",
+        "baseColor": [
+          0.1,
+          0.52,
+          1
+        ],
+        "texture": null,
+        "roughness": 0.32,
+        "metallic": 0,
+        "specular": 0.6,
+        "transmission": 0,
+        "ior": 1.5,
+        "coat": 0.6,
+        "coatRoughness": 0.08,
+        "emission": [
+          0.05,
+          0.3,
+          0.8
+        ],
+        "emissionStrength": 0.35,
+        "preset": 0
+      }
+    },
+    {
+      "id": 7,
+      "parent": 4,
+      "name": "Chest Stripe",
+      "shape": {
+        "primitive": "Cube",
+        "size": [
+          1.12,
+          0.07,
+          0.8
+        ],
+        "radius": 0.5,
+        "radius2": 0.15,
+        "segments": 32,
+        "rings": 16,
+        "subdiv": 1
+      },
+      "position": [
+        0,
+        0.46,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "visible": true,
+      "collapsed": false,
+      "material": {
+        "name": "Amber Hazard",
+        "baseColor": [
+          0.95,
+          0.62,
+          0.12
+        ],
+        "texture": null,
+        "roughness": 0.45,
+        "metallic": 0,
+        "specular": 0.5,
+        "transmission": 0,
+        "ior": 1.5,
+        "coat": 0,
+        "coatRoughness": 0.08,
+        "emission": [
+          0,
+          0,
+          0
+        ],
+        "emissionStrength": 0,
+        "preset": 0
+      }
+    },
+    {
+      "id": 8,
+      "parent": 4,
+      "name": "Head",
+      "shape": {
+        "primitive": "Cube",
+        "size": [
+          0.42,
+          0.26,
+          0.4
+        ],
+        "radius": 0.5,
+        "radius2": 0.15,
+        "segments": 32,
+        "rings": 16,
+        "subdiv": 1
+      },
+      "position": [
+        0,
+        0.62,
+        0.08
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "visible": true,
+      "collapsed": false,
+      "material": {
+        "name": "Armor White",
+        "baseColor": [
+          0.8,
+          0.82,
+          0.84
+        ],
+        "texture": null,
+        "roughness": 0.42,
+        "metallic": 0,
+        "specular": 0.5,
+        "transmission": 0,
+        "ior": 1.5,
+        "coat": 0.4,
+        "coatRoughness": 0.08,
+        "emission": [
+          0,
+          0,
+          0
+        ],
+        "emissionStrength": 0,
+        "preset": 0
+      }
+    },
+    {
+      "id": 9,
+      "parent": 4,
+      "name": "Visor",
+      "shape": {
+        "primitive": "Cube",
+        "size": [
+          0.34,
+          0.06,
+          0.02
+        ],
+        "radius": 0.5,
+        "radius2": 0.15,
+        "segments": 32,
+        "rings": 16,
+        "subdiv": 1
+      },
+      "position": [
+        0,
+        0.74,
+        0.29
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "visible": true,
+      "collapsed": false,
+      "material": {
+        "name": "Visor Glow",
+        "baseColor": [
+          0.2,
+          0.7,
+          1
+        ],
+        "texture": null,
+        "roughness": 0.2,
+        "metallic": 0,
+        "specular": 0.5,
+        "transmission": 0,
+        "ior": 1.5,
+        "coat": 0,
+        "coatRoughness": 0.08,
+        "emission": [
+          0.2,
+          0.65,
+          1
+        ],
+        "emissionStrength": 2.2,
+        "preset": 0
+      }
+    },
+    {
+      "id": 10,
+      "parent": 4,
+      "name": "Backpack",
+      "shape": {
+        "primitive": "Cube",
+        "size": [
+          0.74,
+          0.5,
+          0.3
+        ],
+        "radius": 0.5,
+        "radius2": 0.15,
+        "segments": 32,
+        "rings": 16,
+        "subdiv": 1
+      },
+      "position": [
+        0,
+        0.06,
+        -0.52
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "visible": true,
+      "collapsed": false,
+      "material": {
+        "name": "Gunmetal",
+        "baseColor": [
+          0.36,
+          0.38,
+          0.42
+        ],
+        "texture": null,
+        "roughness": 0.4,
+        "metallic": 0.75,
+        "specular": 0.5,
+        "transmission": 0,
+        "ior": 1.5,
+        "coat": 0,
+        "coatRoughness": 0.08,
+        "emission": [
+          0,
+          0,
+          0
+        ],
+        "emissionStrength": 0,
+        "preset": 0
+      }
+    },
+    {
+      "id": 11,
+      "parent": 4,
+      "name": "Exhaust L",
+      "shape": {
+        "primitive": "Cylinder",
+        "size": [
+          1,
+          0.2,
+          1
+        ],
+        "radius": 0.07,
+        "radius2": 0.15,
+        "segments": 20,
+        "rings": 16,
+        "subdiv": 1
+      },
+      "position": [
+        -0.22,
+        0.58,
+        -0.7
+      ],
+      "rotation": [
+        90,
+        0,
+        0
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "visible": true,
+      "collapsed": false,
+      "material": {
+        "name": "Dark Rubber",
+        "baseColor": [
+          0.06,
+          0.06,
+          0.07
+        ],
+        "texture": null,
+        "roughness": 0.75,
+        "metallic": 0,
+        "specular": 0.5,
+        "transmission": 0,
+        "ior": 1.5,
+        "coat": 0,
+        "coatRoughness": 0.08,
+        "emission": [
+          0,
+          0,
+          0
+        ],
+        "emissionStrength": 0,
+        "preset": 0
+      }
+    },
+    {
+      "id": 12,
+      "parent": 4,
+      "name": "Exhaust R",
+      "shape": {
+        "primitive": "Cylinder",
+        "size": [
+          1,
+          0.2,
+          1
+        ],
+        "radius": 0.07,
+        "radius2": 0.15,
+        "segments": 20,
+        "rings": 16,
+        "subdiv": 1
+      },
+      "position": [
+        0.22,
+        0.58,
+        -0.7
+      ],
+      "rotation": [
+        90,
+        0,
+        0
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "visible": true,
+      "collapsed": false,
+      "material": {
+        "name": "Dark Rubber",
+        "baseColor": [
+          0.06,
+          0.06,
+          0.07
+        ],
+        "texture": null,
+        "roughness": 0.75,
+        "metallic": 0,
+        "specular": 0.5,
+        "transmission": 0,
+        "ior": 1.5,
+        "coat": 0,
+        "coatRoughness": 0.08,
+        "emission": [
+          0,
+          0,
+          0
+        ],
+        "emissionStrength": 0,
+        "preset": 0
+      }
+    },
+    {
+      "id": 13,
+      "parent": 4,
+      "name": "Beacon",
+      "shape": {
+        "primitive": "Sphere",
+        "size": [
+          1,
+          1,
+          1
+        ],
+        "radius": 0.04,
+        "radius2": 0.15,
+        "segments": 32,
+        "rings": 16,
+        "subdiv": 1
+      },
+      "position": [
+        0.3,
+        0.66,
+        -0.52
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "visible": true,
+      "collapsed": false,
+      "material": {
+        "name": "Beacon Red",
+        "baseColor": [
+          1,
+          0.2,
+          0.15
+        ],
+        "texture": null,
+        "roughness": 0.5,
+        "metallic": 0,
+        "specular": 0.5,
+        "transmission": 0,
+        "ior": 1.5,
+        "coat": 0,
+        "coatRoughness": 0.08,
+        "emission": [
+          1,
+          0.22,
+          0.15
+        ],
+        "emissionStrength": 2.5,
+        "preset": 0
+      }
+    },
+    {
+      "id": 14,
+      "parent": 4,
+      "name": "Shoulder L",
+      "position": [
+        -0.7,
+        0.38,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "visible": true,
+      "collapsed": false
+    },
+    {
+      "id": 15,
+      "parent": 14,
+      "name": "Pauldron",
+      "shape": {
+        "primitive": "Cube",
+        "size": [
+          0.36,
+          0.3,
+          0.5
+        ],
+        "radius": 0.5,
+        "radius2": 0.15,
+        "segments": 32,
+        "rings": 16,
+        "subdiv": 1
+      },
+      "position": [
+        -0.06,
+        -0.12,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "visible": true,
+      "collapsed": false,
+      "material": {
+        "name": "Team Blue",
+        "baseColor": [
+          0.1,
+          0.52,
+          1
+        ],
+        "texture": null,
+        "roughness": 0.32,
+        "metallic": 0,
+        "specular": 0.6,
+        "transmission": 0,
+        "ior": 1.5,
+        "coat": 0.6,
+        "coatRoughness": 0.08,
+        "emission": [
+          0.05,
+          0.3,
+          0.8
+        ],
+        "emissionStrength": 0.35,
+        "preset": 0
+      }
+    },
+    {
+      "id": 16,
+      "parent": 14,
+      "name": "Arm",
+      "shape": {
+        "primitive": "Cube",
+        "size": [
+          0.2,
+          0.5,
+          0.22
+        ],
+        "radius": 0.5,
+        "radius2": 0.15,
+        "segments": 32,
+        "rings": 16,
+        "subdiv": 1
+      },
+      "position": [
+        -0.06,
+        -0.6,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "visible": true,
+      "collapsed": false,
+      "material": {
+        "name": "Gunmetal",
+        "baseColor": [
+          0.36,
+          0.38,
+          0.42
+        ],
+        "texture": null,
+        "roughness": 0.4,
+        "metallic": 0.75,
+        "specular": 0.5,
+        "transmission": 0,
+        "ior": 1.5,
+        "coat": 0,
+        "coatRoughness": 0.08,
+        "emission": [
+          0,
+          0,
+          0
+        ],
+        "emissionStrength": 0,
+        "preset": 0
+      }
+    },
+    {
+      "id": 17,
+      "parent": 14,
+      "name": "Cannon",
+      "shape": {
+        "primitive": "Cylinder",
+        "size": [
+          1,
+          0.9,
+          1
+        ],
+        "radius": 0.09,
+        "radius2": 0.15,
+        "segments": 20,
+        "rings": 16,
+        "subdiv": 1
+      },
+      "position": [
+        -0.06,
+        -0.62,
+        -0.15000000000000002
+      ],
+      "rotation": [
+        90,
+        0,
+        0
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "visible": true,
+      "collapsed": false,
+      "material": {
+        "name": "Gunmetal",
+        "baseColor": [
+          0.36,
+          0.38,
+          0.42
+        ],
+        "texture": null,
+        "roughness": 0.4,
+        "metallic": 0.75,
+        "specular": 0.5,
+        "transmission": 0,
+        "ior": 1.5,
+        "coat": 0,
+        "coatRoughness": 0.08,
+        "emission": [
+          0,
+          0,
+          0
+        ],
+        "emissionStrength": 0,
+        "preset": 0
+      }
+    },
+    {
+      "id": 18,
+      "parent": 14,
+      "name": "Cannon Muzzle",
+      "shape": {
+        "primitive": "Cylinder",
+        "size": [
+          1,
+          0.12,
+          1
+        ],
+        "radius": 0.11,
+        "radius2": 0.15,
+        "segments": 20,
+        "rings": 16,
+        "subdiv": 1
+      },
+      "position": [
+        -0.06,
+        -0.62,
+        0.72
+      ],
+      "rotation": [
+        90,
+        0,
+        0
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "visible": true,
+      "collapsed": false,
+      "material": {
+        "name": "Dark Rubber",
+        "baseColor": [
+          0.06,
+          0.06,
+          0.07
+        ],
+        "texture": null,
+        "roughness": 0.75,
+        "metallic": 0,
+        "specular": 0.5,
+        "transmission": 0,
+        "ior": 1.5,
+        "coat": 0,
+        "coatRoughness": 0.08,
+        "emission": [
+          0,
+          0,
+          0
+        ],
+        "emissionStrength": 0,
+        "preset": 0
+      }
+    },
+    {
+      "id": 19,
+      "parent": 14,
+      "name": "Muzzle Glow",
+      "shape": {
+        "primitive": "Disk",
+        "size": [
+          1,
+          1,
+          1
+        ],
+        "radius": 0.07,
+        "radius2": 0.15,
+        "segments": 32,
+        "rings": 1,
+        "subdiv": 1
+      },
+      "position": [
+        -0.06,
+        -0.62,
+        0.845
+      ],
+      "rotation": [
+        90,
+        0,
+        0
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "visible": true,
+      "collapsed": false,
+      "material": {
+        "name": "Visor Glow",
+        "baseColor": [
+          0.2,
+          0.7,
+          1
+        ],
+        "texture": null,
+        "roughness": 0.2,
+        "metallic": 0,
+        "specular": 0.5,
+        "transmission": 0,
+        "ior": 1.5,
+        "coat": 0,
+        "coatRoughness": 0.08,
+        "emission": [
+          0.2,
+          0.65,
+          1
+        ],
+        "emissionStrength": 2.2,
+        "preset": 0
+      }
+    },
+    {
+      "id": 20,
+      "parent": 4,
+      "name": "Shoulder R",
+      "position": [
+        0.7,
+        0.38,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "visible": true,
+      "collapsed": false
+    },
+    {
+      "id": 21,
+      "parent": 20,
+      "name": "Pauldron",
+      "shape": {
+        "primitive": "Cube",
+        "size": [
+          0.36,
+          0.3,
+          0.5
+        ],
+        "radius": 0.5,
+        "radius2": 0.15,
+        "segments": 32,
+        "rings": 16,
+        "subdiv": 1
+      },
+      "position": [
+        0.06,
+        -0.12,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "visible": true,
+      "collapsed": false,
+      "material": {
+        "name": "Team Blue",
+        "baseColor": [
+          0.1,
+          0.52,
+          1
+        ],
+        "texture": null,
+        "roughness": 0.32,
+        "metallic": 0,
+        "specular": 0.6,
+        "transmission": 0,
+        "ior": 1.5,
+        "coat": 0.6,
+        "coatRoughness": 0.08,
+        "emission": [
+          0.05,
+          0.3,
+          0.8
+        ],
+        "emissionStrength": 0.35,
+        "preset": 0
+      }
+    },
+    {
+      "id": 22,
+      "parent": 20,
+      "name": "Arm",
+      "shape": {
+        "primitive": "Cube",
+        "size": [
+          0.2,
+          0.5,
+          0.22
+        ],
+        "radius": 0.5,
+        "radius2": 0.15,
+        "segments": 32,
+        "rings": 16,
+        "subdiv": 1
+      },
+      "position": [
+        0.06,
+        -0.6,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "visible": true,
+      "collapsed": false,
+      "material": {
+        "name": "Gunmetal",
+        "baseColor": [
+          0.36,
+          0.38,
+          0.42
+        ],
+        "texture": null,
+        "roughness": 0.4,
+        "metallic": 0.75,
+        "specular": 0.5,
+        "transmission": 0,
+        "ior": 1.5,
+        "coat": 0,
+        "coatRoughness": 0.08,
+        "emission": [
+          0,
+          0,
+          0
+        ],
+        "emissionStrength": 0,
+        "preset": 0
+      }
+    },
+    {
+      "id": 23,
+      "parent": 20,
+      "name": "Cannon",
+      "shape": {
+        "primitive": "Cylinder",
+        "size": [
+          1,
+          0.9,
+          1
+        ],
+        "radius": 0.09,
+        "radius2": 0.15,
+        "segments": 20,
+        "rings": 16,
+        "subdiv": 1
+      },
+      "position": [
+        0.06,
+        -0.62,
+        -0.15000000000000002
+      ],
+      "rotation": [
+        90,
+        0,
+        0
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "visible": true,
+      "collapsed": false,
+      "material": {
+        "name": "Gunmetal",
+        "baseColor": [
+          0.36,
+          0.38,
+          0.42
+        ],
+        "texture": null,
+        "roughness": 0.4,
+        "metallic": 0.75,
+        "specular": 0.5,
+        "transmission": 0,
+        "ior": 1.5,
+        "coat": 0,
+        "coatRoughness": 0.08,
+        "emission": [
+          0,
+          0,
+          0
+        ],
+        "emissionStrength": 0,
+        "preset": 0
+      }
+    },
+    {
+      "id": 24,
+      "parent": 20,
+      "name": "Cannon Muzzle",
+      "shape": {
+        "primitive": "Cylinder",
+        "size": [
+          1,
+          0.12,
+          1
+        ],
+        "radius": 0.11,
+        "radius2": 0.15,
+        "segments": 20,
+        "rings": 16,
+        "subdiv": 1
+      },
+      "position": [
+        0.06,
+        -0.62,
+        0.72
+      ],
+      "rotation": [
+        90,
+        0,
+        0
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "visible": true,
+      "collapsed": false,
+      "material": {
+        "name": "Dark Rubber",
+        "baseColor": [
+          0.06,
+          0.06,
+          0.07
+        ],
+        "texture": null,
+        "roughness": 0.75,
+        "metallic": 0,
+        "specular": 0.5,
+        "transmission": 0,
+        "ior": 1.5,
+        "coat": 0,
+        "coatRoughness": 0.08,
+        "emission": [
+          0,
+          0,
+          0
+        ],
+        "emissionStrength": 0,
+        "preset": 0
+      }
+    },
+    {
+      "id": 25,
+      "parent": 20,
+      "name": "Muzzle Glow",
+      "shape": {
+        "primitive": "Disk",
+        "size": [
+          1,
+          1,
+          1
+        ],
+        "radius": 0.07,
+        "radius2": 0.15,
+        "segments": 32,
+        "rings": 1,
+        "subdiv": 1
+      },
+      "position": [
+        0.06,
+        -0.62,
+        0.845
+      ],
+      "rotation": [
+        90,
+        0,
+        0
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "visible": true,
+      "collapsed": false,
+      "material": {
+        "name": "Visor Glow",
+        "baseColor": [
+          0.2,
+          0.7,
+          1
+        ],
+        "texture": null,
+        "roughness": 0.2,
+        "metallic": 0,
+        "specular": 0.5,
+        "transmission": 0,
+        "ior": 1.5,
+        "coat": 0,
+        "coatRoughness": 0.08,
+        "emission": [
+          0.2,
+          0.65,
+          1
+        ],
+        "emissionStrength": 2.2,
+        "preset": 0
+      }
+    },
+    {
+      "id": 26,
+      "parent": 1,
+      "name": "Hip L",
+      "position": [
+        -0.34,
+        1.12,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "visible": true,
+      "collapsed": false
+    },
+    {
+      "id": 27,
+      "parent": 26,
+      "name": "Thigh",
+      "shape": {
+        "primitive": "Cube",
+        "size": [
+          0.24,
+          0.58,
+          0.3
+        ],
+        "radius": 0.5,
+        "radius2": 0.15,
+        "segments": 32,
+        "rings": 16,
+        "subdiv": 1
+      },
+      "position": [
+        0,
+        -0.6,
+        0.04
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "visible": true,
+      "collapsed": false,
+      "material": {
+        "name": "Armor White",
+        "baseColor": [
+          0.8,
+          0.82,
+          0.84
+        ],
+        "texture": null,
+        "roughness": 0.42,
+        "metallic": 0,
+        "specular": 0.5,
+        "transmission": 0,
+        "ior": 1.5,
+        "coat": 0.4,
+        "coatRoughness": 0.08,
+        "emission": [
+          0,
+          0,
+          0
+        ],
+        "emissionStrength": 0,
+        "preset": 0
+      }
+    },
+    {
+      "id": 28,
+      "parent": 26,
+      "name": "Knee",
+      "position": [
+        0,
+        -0.6,
+        0.06
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "visible": true,
+      "collapsed": false
+    },
+    {
+      "id": 29,
+      "parent": 28,
+      "name": "Knee Cap",
+      "shape": {
+        "primitive": "Sphere",
+        "size": [
+          1,
+          1,
+          1
+        ],
+        "radius": 0.13,
+        "radius2": 0.15,
+        "segments": 32,
+        "rings": 16,
+        "subdiv": 1
+      },
+      "position": [
+        0,
+        -0.12,
+        0.1
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "visible": true,
+      "collapsed": false,
+      "material": {
+        "name": "Cobalt",
+        "baseColor": [
+          0.16,
+          0.34,
+          0.7
+        ],
+        "texture": null,
+        "roughness": 0.38,
+        "metallic": 0.1,
+        "specular": 0.5,
+        "transmission": 0,
+        "ior": 1.5,
+        "coat": 0.5,
+        "coatRoughness": 0.08,
+        "emission": [
+          0,
+          0,
+          0
+        ],
+        "emissionStrength": 0,
+        "preset": 0
+      }
+    },
+    {
+      "id": 30,
+      "parent": 28,
+      "name": "Shin",
+      "shape": {
+        "primitive": "Cube",
+        "size": [
+          0.22,
+          0.5,
+          0.26
+        ],
+        "radius": 0.5,
+        "radius2": 0.15,
+        "segments": 32,
+        "rings": 16,
+        "subdiv": 1
+      },
+      "position": [
+        0,
+        -0.5,
+        -0.04
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "visible": true,
+      "collapsed": false,
+      "material": {
+        "name": "Gunmetal",
+        "baseColor": [
+          0.36,
+          0.38,
+          0.42
+        ],
+        "texture": null,
+        "roughness": 0.4,
+        "metallic": 0.75,
+        "specular": 0.5,
+        "transmission": 0,
+        "ior": 1.5,
+        "coat": 0,
+        "coatRoughness": 0.08,
+        "emission": [
+          0,
+          0,
+          0
+        ],
+        "emissionStrength": 0,
+        "preset": 0
+      }
+    },
+    {
+      "id": 31,
+      "parent": 28,
+      "name": "Foot",
+      "shape": {
+        "primitive": "Cube",
+        "size": [
+          0.34,
+          0.1,
+          0.5
+        ],
+        "radius": 0.5,
+        "radius2": 0.15,
+        "segments": 32,
+        "rings": 16,
+        "subdiv": 1
+      },
+      "position": [
+        0,
+        -0.56,
+        0.06
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "visible": true,
+      "collapsed": false,
+      "material": {
+        "name": "Dark Rubber",
+        "baseColor": [
+          0.06,
+          0.06,
+          0.07
+        ],
+        "texture": null,
+        "roughness": 0.75,
+        "metallic": 0,
+        "specular": 0.5,
+        "transmission": 0,
+        "ior": 1.5,
+        "coat": 0,
+        "coatRoughness": 0.08,
+        "emission": [
+          0,
+          0,
+          0
+        ],
+        "emissionStrength": 0,
+        "preset": 0
+      }
+    },
+    {
+      "id": 32,
+      "parent": 1,
+      "name": "Hip R",
+      "position": [
+        0.34,
+        1.12,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "visible": true,
+      "collapsed": false
+    },
+    {
+      "id": 33,
+      "parent": 32,
+      "name": "Thigh",
+      "shape": {
+        "primitive": "Cube",
+        "size": [
+          0.24,
+          0.58,
+          0.3
+        ],
+        "radius": 0.5,
+        "radius2": 0.15,
+        "segments": 32,
+        "rings": 16,
+        "subdiv": 1
+      },
+      "position": [
+        0,
+        -0.6,
+        0.04
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "visible": true,
+      "collapsed": false,
+      "material": {
+        "name": "Armor White",
+        "baseColor": [
+          0.8,
+          0.82,
+          0.84
+        ],
+        "texture": null,
+        "roughness": 0.42,
+        "metallic": 0,
+        "specular": 0.5,
+        "transmission": 0,
+        "ior": 1.5,
+        "coat": 0.4,
+        "coatRoughness": 0.08,
+        "emission": [
+          0,
+          0,
+          0
+        ],
+        "emissionStrength": 0,
+        "preset": 0
+      }
+    },
+    {
+      "id": 34,
+      "parent": 32,
+      "name": "Knee",
+      "position": [
+        0,
+        -0.6,
+        0.06
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "visible": true,
+      "collapsed": false
+    },
+    {
+      "id": 35,
+      "parent": 34,
+      "name": "Knee Cap",
+      "shape": {
+        "primitive": "Sphere",
+        "size": [
+          1,
+          1,
+          1
+        ],
+        "radius": 0.13,
+        "radius2": 0.15,
+        "segments": 32,
+        "rings": 16,
+        "subdiv": 1
+      },
+      "position": [
+        0,
+        -0.12,
+        0.1
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "visible": true,
+      "collapsed": false,
+      "material": {
+        "name": "Cobalt",
+        "baseColor": [
+          0.16,
+          0.34,
+          0.7
+        ],
+        "texture": null,
+        "roughness": 0.38,
+        "metallic": 0.1,
+        "specular": 0.5,
+        "transmission": 0,
+        "ior": 1.5,
+        "coat": 0.5,
+        "coatRoughness": 0.08,
+        "emission": [
+          0,
+          0,
+          0
+        ],
+        "emissionStrength": 0,
+        "preset": 0
+      }
+    },
+    {
+      "id": 36,
+      "parent": 34,
+      "name": "Shin",
+      "shape": {
+        "primitive": "Cube",
+        "size": [
+          0.22,
+          0.5,
+          0.26
+        ],
+        "radius": 0.5,
+        "radius2": 0.15,
+        "segments": 32,
+        "rings": 16,
+        "subdiv": 1
+      },
+      "position": [
+        0,
+        -0.5,
+        -0.04
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "visible": true,
+      "collapsed": false,
+      "material": {
+        "name": "Gunmetal",
+        "baseColor": [
+          0.36,
+          0.38,
+          0.42
+        ],
+        "texture": null,
+        "roughness": 0.4,
+        "metallic": 0.75,
+        "specular": 0.5,
+        "transmission": 0,
+        "ior": 1.5,
+        "coat": 0,
+        "coatRoughness": 0.08,
+        "emission": [
+          0,
+          0,
+          0
+        ],
+        "emissionStrength": 0,
+        "preset": 0
+      }
+    },
+    {
+      "id": 37,
+      "parent": 34,
+      "name": "Foot",
+      "shape": {
+        "primitive": "Cube",
+        "size": [
+          0.34,
+          0.1,
+          0.5
+        ],
+        "radius": 0.5,
+        "radius2": 0.15,
+        "segments": 32,
+        "rings": 16,
+        "subdiv": 1
+      },
+      "position": [
+        0,
+        -0.56,
+        0.06
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "visible": true,
+      "collapsed": false,
+      "material": {
+        "name": "Dark Rubber",
+        "baseColor": [
+          0.06,
+          0.06,
+          0.07
+        ],
+        "texture": null,
+        "roughness": 0.75,
+        "metallic": 0,
+        "specular": 0.5,
+        "transmission": 0,
+        "ior": 1.5,
+        "coat": 0,
+        "coatRoughness": 0.08,
+        "emission": [
+          0,
+          0,
+          0
+        ],
+        "emissionStrength": 0,
+        "preset": 0
+      }
+    }
+  ],
+  "clips": [
+    {
+      "name": "Idle",
+      "length": 3,
+      "fps": 30,
+      "loop": true,
+      "tracks": [
+        {
+          "part": 2,
+          "channel": "Position",
+          "keys": [
+            {
+              "t": 0,
+              "v": [
+                0,
+                1.25,
+                0
+              ],
+              "interp": "Smooth"
+            },
+            {
+              "t": 1.5,
+              "v": [
+                0,
+                1.21,
+                0
+              ],
+              "interp": "Smooth"
+            },
+            {
+              "t": 3,
+              "v": [
+                0,
+                1.25,
+                0
+              ],
+              "interp": "Smooth"
+            }
+          ]
+        },
+        {
+          "part": 4,
+          "channel": "Rotation",
+          "keys": [
+            {
+              "t": 0,
+              "v": [
+                0,
+                -6,
+                0
+              ],
+              "interp": "Smooth"
+            },
+            {
+              "t": 1.5,
+              "v": [
+                0,
+                6,
+                0
+              ],
+              "interp": "Smooth"
+            },
+            {
+              "t": 3,
+              "v": [
+                0,
+                -6,
+                0
+              ],
+              "interp": "Smooth"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Walk",
+      "length": 1.1,
+      "fps": 30,
+      "loop": true,
+      "tracks": [
+        {
+          "part": 26,
+          "channel": "Rotation",
+          "keys": [
+            {
+              "t": 0,
+              "v": [
+                24,
+                0,
+                0
+              ],
+              "interp": "Smooth"
+            },
+            {
+              "t": 0.55,
+              "v": [
+                -24,
+                0,
+                0
+              ],
+              "interp": "Smooth"
+            },
+            {
+              "t": 1.1,
+              "v": [
+                24,
+                0,
+                0
+              ],
+              "interp": "Smooth"
+            }
+          ]
+        },
+        {
+          "part": 32,
+          "channel": "Rotation",
+          "keys": [
+            {
+              "t": 0,
+              "v": [
+                -24,
+                0,
+                0
+              ],
+              "interp": "Smooth"
+            },
+            {
+              "t": 0.55,
+              "v": [
+                24,
+                0,
+                0
+              ],
+              "interp": "Smooth"
+            },
+            {
+              "t": 1.1,
+              "v": [
+                -24,
+                0,
+                0
+              ],
+              "interp": "Smooth"
+            }
+          ]
+        },
+        {
+          "part": 28,
+          "channel": "Rotation",
+          "keys": [
+            {
+              "t": 0,
+              "v": [
+                0,
+                0,
+                0
+              ],
+              "interp": "Smooth"
+            },
+            {
+              "t": 0.27,
+              "v": [
+                -34,
+                0,
+                0
+              ],
+              "interp": "Smooth"
+            },
+            {
+              "t": 0.55,
+              "v": [
+                0,
+                0,
+                0
+              ],
+              "interp": "Smooth"
+            },
+            {
+              "t": 1.1,
+              "v": [
+                0,
+                0,
+                0
+              ],
+              "interp": "Smooth"
+            }
+          ]
+        },
+        {
+          "part": 34,
+          "channel": "Rotation",
+          "keys": [
+            {
+              "t": 0,
+              "v": [
+                0,
+                0,
+                0
+              ],
+              "interp": "Smooth"
+            },
+            {
+              "t": 0.55,
+              "v": [
+                0,
+                0,
+                0
+              ],
+              "interp": "Smooth"
+            },
+            {
+              "t": 0.82,
+              "v": [
+                -34,
+                0,
+                0
+              ],
+              "interp": "Smooth"
+            },
+            {
+              "t": 1.1,
+              "v": [
+                0,
+                0,
+                0
+              ],
+              "interp": "Smooth"
+            }
+          ]
+        },
+        {
+          "part": 2,
+          "channel": "Position",
+          "keys": [
+            {
+              "t": 0,
+              "v": [
+                0,
+                1.25,
+                0
+              ],
+              "interp": "Smooth"
+            },
+            {
+              "t": 0.27,
+              "v": [
+                0,
+                1.3,
+                0
+              ],
+              "interp": "Smooth"
+            },
+            {
+              "t": 0.55,
+              "v": [
+                0,
+                1.25,
+                0
+              ],
+              "interp": "Smooth"
+            },
+            {
+              "t": 0.82,
+              "v": [
+                0,
+                1.3,
+                0
+              ],
+              "interp": "Smooth"
+            },
+            {
+              "t": 1.1,
+              "v": [
+                0,
+                1.25,
+                0
+              ],
+              "interp": "Smooth"
+            }
+          ]
+        },
+        {
+          "part": 4,
+          "channel": "Rotation",
+          "keys": [
+            {
+              "t": 0,
+              "v": [
+                0,
+                5,
+                0
+              ],
+              "interp": "Smooth"
+            },
+            {
+              "t": 0.55,
+              "v": [
+                0,
+                -5,
+                0
+              ],
+              "interp": "Smooth"
+            },
+            {
+              "t": 1.1,
+              "v": [
+                0,
+                5,
+                0
+              ],
+              "interp": "Smooth"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Fire",
+      "length": 0.6,
+      "fps": 30,
+      "loop": true,
+      "tracks": [
+        {
+          "part": 14,
+          "channel": "Position",
+          "keys": [
+            {
+              "t": 0,
+              "v": [
+                -0.7,
+                0.38,
+                0
+              ],
+              "interp": "Smooth"
+            },
+            {
+              "t": 0.05,
+              "v": [
+                -0.7,
+                0.38,
+                -0.12
+              ],
+              "interp": "Smooth"
+            },
+            {
+              "t": 0.3,
+              "v": [
+                -0.7,
+                0.38,
+                0
+              ],
+              "interp": "Smooth"
+            },
+            {
+              "t": 0.6,
+              "v": [
+                -0.7,
+                0.38,
+                0
+              ],
+              "interp": "Smooth"
+            }
+          ]
+        },
+        {
+          "part": 20,
+          "channel": "Position",
+          "keys": [
+            {
+              "t": 0,
+              "v": [
+                0.7,
+                0.38,
+                0
+              ],
+              "interp": "Smooth"
+            },
+            {
+              "t": 0.3,
+              "v": [
+                0.7,
+                0.38,
+                0
+              ],
+              "interp": "Smooth"
+            },
+            {
+              "t": 0.35,
+              "v": [
+                0.7,
+                0.38,
+                -0.12
+              ],
+              "interp": "Smooth"
+            },
+            {
+              "t": 0.6,
+              "v": [
+                0.7,
+                0.38,
+                0
+              ],
+              "interp": "Smooth"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

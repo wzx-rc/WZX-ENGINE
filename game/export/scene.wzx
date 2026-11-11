@@ -3,17 +3,17 @@
   "version": 1,
   "units": "cm",
   "scene": {
-    "name": "Build test",
+    "name": "New Scene",
     "unitsPerMeter": 100,
     "gridScale": 1
   },
   "collections": [],
   "camera": {
-    "target": [0, 1, 0],
-    "yaw": 30,
-    "pitch": 28,
-    "distance": 22,
-    "fov": 32,
+    "target": [1.5, 0, 0.5],
+    "yaw": 25,
+    "pitch": 55,
+    "distance": 36,
+    "fov": 35,
     "dof": false,
     "fStop": 2.8,
     "focalLength": 50,
@@ -33,7 +33,7 @@
   },
   "sun": {
     "enabled": true,
-    "direction": [-0.52541065, 0.63799864, 0.56294],
+    "direction": [0.5254827, 0.6691306, -0.5254827],
     "color": [1, 0.95, 0.88],
     "intensity": 4,
     "id": 1,
@@ -57,36 +57,27 @@
       "collection": 0,
       "order": 0,
       "selectable": true
-    },
-    {
-      "name": "Warm key",
-      "position": [-14, 10, 8],
-      "target": [0, 1, 0],
-      "width": 6,
-      "height": 6,
-      "color": [1, 0.6, 0.3],
-      "intensity": 12,
-      "visible": false,
-      "enabled": true,
-      "id": 4,
-      "parent": 0,
-      "collection": 0,
-      "order": 0,
-      "selectable": true
     }
   ],
   "render": {
     "mode": 0,
-    "quality": 1,
+    "quality": 0,
     "exposure": 1.3,
     "tonemapper": 0,
     "vignette": 0.18,
-    "maxBounces": 10,
-    "maxSamples": 4096,
-    "denoise": true,
+    "maxBounces": 4,
+    "maxSamples": 256,
+    "denoise": false,
     "denoiseStrength": 1,
     "denoisePasses": 3,
     "denoiseEdgeLuma": 0.5,
+    "oidn": true,
+    "oidnInterval": 64,
+    "dlss": true,
+    "dlssInput": 0,
+    "adaptive": false,
+    "adaptThreshold": 0.01,
+    "adaptMinSpp": 32,
     "bevel": true,
     "bevelScale": 1,
     "fireflyClamp": 25,
@@ -118,88 +109,11 @@
       "color": -1
     },
     {
-      "name": "Red plastic",
-      "baseColor": [0.7, 0.05, 0.04],
-      "roughness": 0.35,
+      "name": "Ground",
+      "baseColor": [0.13286833, 0.10348452, 0.080886915],
+      "roughness": 0.95,
       "metallic": 0,
-      "specular": 0.5,
-      "transmission": 0,
-      "ior": 1.5,
-      "subsurface": 0,
-      "subsurfaceRadius": [1, 0.35, 0.15],
-      "emission": [0, 0, 0],
-      "emissionStrength": 0,
-      "coat": 0,
-      "coatRoughness": 0.05,
-      "bevelRadius": 0,
-      "flags": 0,
-      "preset": 0,
-      "color": -1
-    },
-    {
-      "name": "Chrome",
-      "baseColor": [0.9, 0.9, 0.92],
-      "roughness": 0.08,
-      "metallic": 1,
-      "specular": 0.5,
-      "transmission": 0,
-      "ior": 1.5,
-      "subsurface": 0,
-      "subsurfaceRadius": [1, 0.35, 0.15],
-      "emission": [0, 0, 0],
-      "emissionStrength": 0,
-      "coat": 0,
-      "coatRoughness": 0.05,
-      "bevelRadius": 0,
-      "flags": 0,
-      "preset": 2,
-      "color": -1
-    },
-    {
-      "name": "Gold",
-      "baseColor": [1, 0.66, 0.22],
-      "roughness": 0.3,
-      "metallic": 1,
-      "specular": 0.5,
-      "transmission": 0,
-      "ior": 1.5,
-      "subsurface": 0,
-      "subsurfaceRadius": [1, 0.35, 0.15],
-      "emission": [0, 0, 0],
-      "emissionStrength": 0,
-      "coat": 0,
-      "coatRoughness": 0.05,
-      "bevelRadius": 0,
-      "flags": 0,
-      "preset": 0,
-      "color": -1
-    },
-    {
-      "name": "Neon",
-      "baseColor": [0.1, 0.6, 1],
-      "roughness": 0.5,
-      "metallic": 0,
-      "specular": 0.5,
-      "transmission": 0,
-      "ior": 1.5,
-      "subsurface": 0,
-      "subsurfaceRadius": [1, 0.35, 0.15],
-      "emission": [0.1, 0.6, 1],
-      "emissionStrength": 6,
-      "coat": 0,
-      "coatRoughness": 0.05,
-      "bevelRadius": 0,
-      "flags": 0,
-      "preset": 8,
-      "color": -1
-    },
-    {
-      "name": "House",
-      "baseColor": [1, 1, 1],
-      "baseColorTexture": "assets/HOUSE/cozy+cottage+3d+model_basecolor.jpg",
-      "roughness": 0.7,
-      "metallic": 0,
-      "specular": 0.5,
+      "specular": 0.25,
       "transmission": 0,
       "ior": 1.5,
       "subsurface": 0,
@@ -211,45 +125,6 @@
       "bevelRadius": 0,
       "flags": 0,
       "preset": 7,
-      "color": -1
-    },
-    {
-      "name": "Textured cube",
-      "baseColor": [1, 1, 1],
-      "baseColorTexture": "assets/HOUSE/cozy+cottage+3d+model_basecolor.jpg",
-      "roughness": 0.6,
-      "metallic": 0,
-      "specular": 0.5,
-      "transmission": 0,
-      "ior": 1.5,
-      "subsurface": 0,
-      "subsurfaceRadius": [1, 0.35, 0.15],
-      "emission": [0, 0, 0],
-      "emissionStrength": 0,
-      "coat": 0,
-      "coatRoughness": 0.05,
-      "bevelRadius": 0,
-      "flags": 0,
-      "preset": 7,
-      "color": -1
-    },
-    {
-      "name": "Green pyramid",
-      "baseColor": [0.12, 0.5, 0.15],
-      "roughness": 0.5,
-      "metallic": 0,
-      "specular": 0.5,
-      "transmission": 0,
-      "ior": 1.5,
-      "subsurface": 0,
-      "subsurfaceRadius": [1, 0.35, 0.15],
-      "emission": [0, 0, 0],
-      "emissionStrength": 0,
-      "coat": 0,
-      "coatRoughness": 0.05,
-      "bevelRadius": 0,
-      "flags": 0,
-      "preset": 0,
       "color": -1
     }
   ],
@@ -264,7 +139,7 @@
       "position": [0, 0, 0],
       "rotation": [0, 0, 0, 1],
       "scale": [1, 1, 1],
-      "visible": true,
+      "visible": false,
       "selectable": false,
       "id": 2,
       "parent": 0,
@@ -274,188 +149,2345 @@
       "material": 0
     },
     {
-      "name": "Cube",
-      "type": "Cube",
+      "name": "Ground",
+      "type": "PRIM_Plane",
       "shape": {
-        "primitive": "Cube",
-        "size": [2.5, 2.5, 2.5],
+        "primitive": "Plane",
+        "size": [1, 1, 1],
         "radius": 0.5,
         "radius2": 0.15,
         "segments": 32,
         "rings": 16,
         "subdiv": 1
       },
-      "position": [-6, 1.25, -1],
-      "rotation": [0, 0.38268343, 0, 0.9238795],
-      "scale": [1, 1, 1],
-      "visible": true,
-      "selectable": true,
-      "id": 11,
-      "parent": 0,
-      "collection": 0,
-      "order": 11,
-      "collapsed": false,
-      "material": 6
-    },
-    {
-      "name": "Sphere",
-      "type": "Sphere",
-      "shape": {
-        "primitive": "Sphere",
-        "size": [1, 1, 1],
-        "radius": 1.5,
-        "radius2": 0.15,
-        "segments": 48,
-        "rings": 24,
-        "subdiv": 1
-      },
-      "position": [-1.5, 1.5, -4],
+      "position": [0, 0, 0],
       "rotation": [0, 0, 0, 1],
-      "scale": [1, 1, 1],
+      "scale": [90, 1, 90],
       "visible": true,
-      "selectable": true,
-      "id": 12,
+      "selectable": false,
+      "id": 4,
       "parent": 0,
       "collection": 0,
-      "order": 12,
-      "collapsed": false,
-      "material": 2
-    },
-    {
-      "name": "Torus",
-      "type": "Torus",
-      "shape": {
-        "primitive": "Torus",
-        "size": [1, 1, 1],
-        "radius": 1.4,
-        "radius2": 0.45,
-        "segments": 48,
-        "rings": 24,
-        "subdiv": 1
-      },
-      "position": [2.5, 0.45, -1],
-      "rotation": [0, 0, 0, 1],
-      "scale": [1, 1, 1],
-      "visible": true,
-      "selectable": true,
-      "id": 13,
-      "parent": 0,
-      "collection": 0,
-      "order": 13,
-      "collapsed": false,
-      "material": 3
-    },
-    {
-      "name": "Cylinder",
-      "type": "Cylinder",
-      "shape": {
-        "primitive": "Cylinder",
-        "size": [1, 3, 1],
-        "radius": 0.6,
-        "radius2": 0.15,
-        "segments": 32,
-        "rings": 16,
-        "subdiv": 1
-      },
-      "position": [-3, 1.5, 3],
-      "rotation": [0, 0, 0, 1],
-      "scale": [1, 1, 1],
-      "visible": true,
-      "selectable": true,
-      "id": 14,
-      "parent": 0,
-      "collection": 0,
-      "order": 14,
-      "collapsed": false,
-      "material": 4
-    },
-    {
-      "name": "Red box",
-      "type": "Cube",
-      "shape": {
-        "primitive": "Cube",
-        "size": [1.5, 1.5, 1.5],
-        "radius": 0.5,
-        "radius2": 0.15,
-        "segments": 32,
-        "rings": 16,
-        "subdiv": 1
-      },
-      "position": [1, 0.75, 4],
-      "rotation": [0, 0, 0, 1],
-      "scale": [1, 1, 1],
-      "visible": true,
-      "selectable": true,
-      "id": 15,
-      "parent": 0,
-      "collection": 0,
-      "order": 15,
+      "order": 0,
       "collapsed": false,
       "material": 1
     },
     {
-      "name": "House",
-      "type": "MESH",
-      "mesh": "assets/HOUSE/House01_low.obj",
-      "position": [7, 0, 2],
-      "rotation": [0, 0, 0, 1],
-      "scale": [0.03, 0.03, 0.03],
-      "visible": true,
-      "selectable": true,
-      "id": 16,
-      "parent": 0,
-      "collection": 0,
-      "order": 16,
-      "collapsed": false,
-      "material": 5
-    },
-    {
-      "name": "Pyramid",
-      "type": "MESH",
-      "mesh": "assets/test/pyramid.obj",
-      "position": [5, 0, -5],
+      "name": "Bastion HQ",
+      "type": "PREFAB",
+      "prefab": "game/prefabs/mecha/BastionHQ.prefab",
+      "clip": "Idle",
+      "position": [0, 0, 0],
       "rotation": [0, 0, 0, 1],
       "scale": [1, 1, 1],
       "visible": true,
       "selectable": true,
-      "id": 17,
+      "id": 5,
       "parent": 0,
       "collection": 0,
-      "order": 17,
-      "collapsed": false,
-      "material": 7
+      "order": 0,
+      "collapsed": true,
+      "material": -1
     },
     {
-      "name": "Hidden cube",
-      "type": "Cube",
-      "shape": {
-        "primitive": "Cube",
-        "size": [3, 3, 3],
-        "radius": 0.5,
-        "radius2": 0.15,
-        "segments": 32,
-        "rings": 16,
-        "subdiv": 1
-      },
-      "position": [0, 1.5, 0],
+      "name": "Vitae Tanks",
+      "type": "PREFAB",
+      "prefab": "game/prefabs/mecha/VitaeTanks.prefab",
+      "clip": "Idle",
+      "position": [10, 0, 3],
       "rotation": [0, 0, 0, 1],
       "scale": [1, 1, 1],
-      "visible": false,
+      "visible": true,
       "selectable": true,
-      "id": 18,
+      "id": 29,
       "parent": 0,
       "collection": 0,
-      "order": 18,
-      "collapsed": false,
-      "material": 1
+      "order": 0,
+      "collapsed": true,
+      "material": -1
+    },
+    {
+      "name": "Vitae Tanks1",
+      "type": "PREFAB",
+      "prefab": "game/prefabs/mecha/VitaeTanks.prefab",
+      "clip": "Idle",
+      "position": [8, 0, -7],
+      "rotation": [0, 0.1305262, 0, 0.9914449],
+      "scale": [1, 1, 1],
+      "visible": true,
+      "selectable": true,
+      "id": 66,
+      "parent": 0,
+      "collection": 0,
+      "order": 0,
+      "collapsed": true,
+      "material": -1
+    },
+    {
+      "name": "Vitae Tanks2",
+      "type": "PREFAB",
+      "prefab": "game/prefabs/mecha/VitaeTanks.prefab",
+      "clip": "Idle",
+      "position": [-6, 0, 9],
+      "rotation": [-0, -0.087155744, -0, 0.9961947],
+      "scale": [1, 1, 1],
+      "visible": true,
+      "selectable": true,
+      "id": 103,
+      "parent": 0,
+      "collection": 0,
+      "order": 0,
+      "collapsed": true,
+      "material": -1
+    },
+    {
+      "name": "Vitae Depot",
+      "type": "PREFAB",
+      "prefab": "game/prefabs/mecha/VitaeDepot.prefab",
+      "position": [-5, 0, -4],
+      "rotation": [0, 0.25881904, 0, 0.9659258],
+      "scale": [1, 1, 1],
+      "visible": true,
+      "selectable": true,
+      "id": 140,
+      "parent": 0,
+      "collection": 0,
+      "order": 0,
+      "collapsed": true,
+      "material": -1
+    },
+    {
+      "name": "Mecha Worker",
+      "type": "PREFAB",
+      "prefab": "game/prefabs/mecha/MechaWorker.prefab",
+      "clip": "Idle",
+      "position": [-1.4, 0, 3.6],
+      "rotation": [0, 0, 0, 1],
+      "scale": [1, 1, 1],
+      "visible": true,
+      "selectable": true,
+      "id": 149,
+      "parent": 0,
+      "collection": 0,
+      "order": 0,
+      "collapsed": true,
+      "material": -1
+    },
+    {
+      "name": "Mecha Worker1",
+      "type": "PREFAB",
+      "prefab": "game/prefabs/mecha/MechaWorker.prefab",
+      "clip": "Idle",
+      "position": [0, 0, 4],
+      "rotation": [0, 0, 0, 1],
+      "scale": [1, 1, 1],
+      "visible": true,
+      "selectable": true,
+      "id": 171,
+      "parent": 0,
+      "collection": 0,
+      "order": 0,
+      "collapsed": true,
+      "material": -1
+    },
+    {
+      "name": "Mecha Worker2",
+      "type": "PREFAB",
+      "prefab": "game/prefabs/mecha/MechaWorker.prefab",
+      "clip": "Idle",
+      "position": [1.4, 0, 3.6],
+      "rotation": [0, 0, 0, 1],
+      "scale": [1, 1, 1],
+      "visible": true,
+      "selectable": true,
+      "id": 193,
+      "parent": 0,
+      "collection": 0,
+      "order": 0,
+      "collapsed": true,
+      "material": -1
+    },
+    {
+      "name": "Prop Crates",
+      "type": "PREFAB",
+      "prefab": "game/prefabs/mecha/PropCrates.prefab",
+      "position": [-2.8, 0, -2.4],
+      "rotation": [0, 0.087155744, 0, 0.9961947],
+      "scale": [1, 1, 1],
+      "visible": true,
+      "selectable": true,
+      "id": 215,
+      "parent": 0,
+      "collection": 0,
+      "order": 0,
+      "collapsed": true,
+      "material": -1
+    },
+    {
+      "name": "Prop Crates1",
+      "type": "PREFAB",
+      "prefab": "game/prefabs/mecha/PropCrates.prefab",
+      "position": [6.4, 0, -4.2],
+      "rotation": [0, 0.5735765, 0, 0.819152],
+      "scale": [1, 1, 1],
+      "visible": true,
+      "selectable": true,
+      "id": 220,
+      "parent": 0,
+      "collection": 0,
+      "order": 0,
+      "collapsed": true,
+      "material": -1
+    },
+    {
+      "name": "Prop Crates2",
+      "type": "PREFAB",
+      "prefab": "game/prefabs/mecha/PropCrates.prefab",
+      "position": [-3.4, 0, 5.6],
+      "rotation": [-0, -0.1736482, -0, 0.9848077],
+      "scale": [1, 1, 1],
+      "visible": true,
+      "selectable": true,
+      "id": 225,
+      "parent": 0,
+      "collection": 0,
+      "order": 0,
+      "collapsed": true,
+      "material": -1
+    },
+    {
+      "name": "Prop Lamp",
+      "type": "PREFAB",
+      "prefab": "game/prefabs/mecha/PropLamp.prefab",
+      "clip": "Idle",
+      "position": [2.6, 0, -2.6],
+      "rotation": [0, 0, 0, 1],
+      "scale": [1, 1, 1],
+      "visible": true,
+      "selectable": true,
+      "id": 230,
+      "parent": 0,
+      "collection": 0,
+      "order": 0,
+      "collapsed": true,
+      "material": -1
+    },
+    {
+      "name": "Prop Lamp1",
+      "type": "PREFAB",
+      "prefab": "game/prefabs/mecha/PropLamp.prefab",
+      "clip": "Idle",
+      "position": [-2.6, 0, 2.4],
+      "rotation": [0, 1, 0, -4.371139e-08],
+      "scale": [1, 1, 1],
+      "visible": true,
+      "selectable": true,
+      "id": 235,
+      "parent": 0,
+      "collection": 0,
+      "order": 0,
+      "collapsed": true,
+      "material": -1
+    },
+    {
+      "name": "Prop Lamp2",
+      "type": "PREFAB",
+      "prefab": "game/prefabs/mecha/PropLamp.prefab",
+      "clip": "Idle",
+      "position": [7.2, 0, 1],
+      "rotation": [0, 0.70710677, 0, 0.70710677],
+      "scale": [1, 1, 1],
+      "visible": true,
+      "selectable": true,
+      "id": 240,
+      "parent": 0,
+      "collection": 0,
+      "order": 0,
+      "collapsed": true,
+      "material": -1
+    },
+    {
+      "name": "Prop Lamp3",
+      "type": "PREFAB",
+      "prefab": "game/prefabs/mecha/PropLamp.prefab",
+      "clip": "Idle",
+      "position": [-4, 0, 7],
+      "rotation": [0, 0, 0, 1],
+      "scale": [1, 1, 1],
+      "visible": true,
+      "selectable": true,
+      "id": 245,
+      "parent": 0,
+      "collection": 0,
+      "order": 0,
+      "collapsed": true,
+      "material": -1
+    },
+    {
+      "name": "Prop Antenna",
+      "type": "PREFAB",
+      "prefab": "game/prefabs/mecha/PropAntenna.prefab",
+      "clip": "Idle",
+      "position": [-3.2, 0, -0.6],
+      "rotation": [0, 0, 0, 1],
+      "scale": [1, 1, 1],
+      "visible": true,
+      "selectable": true,
+      "id": 250,
+      "parent": 0,
+      "collection": 0,
+      "order": 0,
+      "collapsed": true,
+      "material": -1
+    },
+    {
+      "name": "Prop Rocks",
+      "type": "PREFAB",
+      "prefab": "game/prefabs/mecha/PropRocks.prefab",
+      "position": [14, 0, -2],
+      "rotation": [0, 0, 0, 1],
+      "scale": [1, 1, 1],
+      "visible": true,
+      "selectable": true,
+      "id": 258,
+      "parent": 0,
+      "collection": 0,
+      "order": 0,
+      "collapsed": true,
+      "material": -1
+    },
+    {
+      "name": "Prop Rocks1",
+      "type": "PREFAB",
+      "prefab": "game/prefabs/mecha/PropRocks.prefab",
+      "position": [-11, 0, 2],
+      "rotation": [0, 0.64278764, 0, 0.76604444],
+      "scale": [1, 1, 1],
+      "visible": true,
+      "selectable": true,
+      "id": 262,
+      "parent": 0,
+      "collection": 0,
+      "order": 0,
+      "collapsed": true,
+      "material": -1
+    },
+    {
+      "name": "Prop Rocks2",
+      "type": "PREFAB",
+      "prefab": "game/prefabs/mecha/PropRocks.prefab",
+      "position": [3, 0, 13],
+      "rotation": [0, 0.9396927, 0, 0.34202003],
+      "scale": [1, 1, 1],
+      "visible": true,
+      "selectable": true,
+      "id": 266,
+      "parent": 0,
+      "collection": 0,
+      "order": 0,
+      "collapsed": true,
+      "material": -1
+    },
+    {
+      "name": "Prop Rocks3",
+      "type": "PREFAB",
+      "prefab": "game/prefabs/mecha/PropRocks.prefab",
+      "position": [-9, 0, -10],
+      "rotation": [0, 0.9848077, 0, -0.1736482],
+      "scale": [1, 1, 1],
+      "visible": true,
+      "selectable": true,
+      "id": 270,
+      "parent": 0,
+      "collection": 0,
+      "order": 0,
+      "collapsed": true,
+      "material": -1
+    },
+    {
+      "name": "Prop Rocks4",
+      "type": "PREFAB",
+      "prefab": "game/prefabs/mecha/PropRocks.prefab",
+      "position": [13, 0, 10],
+      "rotation": [0, 0.76604444, 0, -0.64278764],
+      "scale": [1, 1, 1],
+      "visible": true,
+      "selectable": true,
+      "id": 274,
+      "parent": 0,
+      "collection": 0,
+      "order": 0,
+      "collapsed": true,
+      "material": -1
+    },
+    {
+      "name": "Prop Rocks5",
+      "type": "PREFAB",
+      "prefab": "game/prefabs/mecha/PropRocks.prefab",
+      "position": [-14, 0, -6],
+      "rotation": [0, 0.25881904, 0, 0.9659258],
+      "scale": [1, 1, 1],
+      "visible": true,
+      "selectable": true,
+      "id": 278,
+      "parent": 0,
+      "collection": 0,
+      "order": 0,
+      "collapsed": true,
+      "material": -1
+    },
+    {
+      "name": "Prop Crystal",
+      "type": "PREFAB",
+      "prefab": "game/prefabs/mecha/PropCrystal.prefab",
+      "position": [11.8, 0, 5.2],
+      "rotation": [0, 0, 0, 1],
+      "scale": [1, 1, 1],
+      "visible": true,
+      "selectable": true,
+      "id": 282,
+      "parent": 0,
+      "collection": 0,
+      "order": 0,
+      "collapsed": true,
+      "material": -1
+    },
+    {
+      "name": "Prop Crystal1",
+      "type": "PREFAB",
+      "prefab": "game/prefabs/mecha/PropCrystal.prefab",
+      "position": [9.6, 0, -9.4],
+      "rotation": [0, 0.42261827, 0, 0.90630776],
+      "scale": [1, 1, 1],
+      "visible": true,
+      "selectable": true,
+      "id": 287,
+      "parent": 0,
+      "collection": 0,
+      "order": 0,
+      "collapsed": true,
+      "material": -1
+    },
+    {
+      "name": "Prop Crystal2",
+      "type": "PREFAB",
+      "prefab": "game/prefabs/mecha/PropCrystal.prefab",
+      "position": [-8.2, 0, 10.6],
+      "rotation": [0, 0.86602545, 0, 0.49999997],
+      "scale": [1, 1, 1],
+      "visible": true,
+      "selectable": true,
+      "id": 292,
+      "parent": 0,
+      "collection": 0,
+      "order": 0,
+      "collapsed": true,
+      "material": -1
+    },
+    {
+      "name": "Prop Crystal3",
+      "type": "PREFAB",
+      "prefab": "game/prefabs/mecha/PropCrystal.prefab",
+      "position": [-12.5, 0, 0.5],
+      "rotation": [0, 0.9848077, 0, -0.1736482],
+      "scale": [1, 1, 1],
+      "visible": true,
+      "selectable": true,
+      "id": 297,
+      "parent": 0,
+      "collection": 0,
+      "order": 0,
+      "collapsed": true,
+      "material": -1
     }
   ],
   "village": [],
   "graph": {
     "format": "wzx-graph",
     "groups": [],
-    "links": [],
-    "name": "main",
+    "links": [
+      {
+        "from": [
+          1,
+          ""
+        ],
+        "to": [
+          2,
+          ""
+        ]
+      },
+      {
+        "from": [
+          2,
+          ""
+        ],
+        "to": [
+          3,
+          ""
+        ]
+      },
+      {
+        "from": [
+          3,
+          ""
+        ],
+        "to": [
+          4,
+          ""
+        ]
+      },
+      {
+        "from": [
+          4,
+          ""
+        ],
+        "to": [
+          5,
+          ""
+        ]
+      },
+      {
+        "from": [
+          5,
+          ""
+        ],
+        "to": [
+          6,
+          ""
+        ]
+      },
+      {
+        "from": [
+          6,
+          ""
+        ],
+        "to": [
+          7,
+          ""
+        ]
+      },
+      {
+        "from": [
+          7,
+          ""
+        ],
+        "to": [
+          8,
+          ""
+        ]
+      },
+      {
+        "from": [
+          8,
+          ""
+        ],
+        "to": [
+          9,
+          ""
+        ]
+      },
+      {
+        "from": [
+          9,
+          ""
+        ],
+        "to": [
+          10,
+          ""
+        ]
+      },
+      {
+        "from": [
+          10,
+          ""
+        ],
+        "to": [
+          11,
+          ""
+        ]
+      },
+      {
+        "from": [
+          11,
+          ""
+        ],
+        "to": [
+          12,
+          ""
+        ]
+      },
+      {
+        "from": [
+          12,
+          ""
+        ],
+        "to": [
+          13,
+          ""
+        ]
+      },
+      {
+        "from": [
+          14,
+          "Loop"
+        ],
+        "to": [
+          15,
+          ""
+        ]
+      },
+      {
+        "from": [
+          14,
+          "Object"
+        ],
+        "to": [
+          15,
+          "Object"
+        ]
+      },
+      {
+        "from": [
+          15,
+          ""
+        ],
+        "to": [
+          16,
+          ""
+        ]
+      },
+      {
+        "from": [
+          14,
+          "Object"
+        ],
+        "to": [
+          16,
+          "Object"
+        ]
+      },
+      {
+        "from": [
+          17,
+          "Loop"
+        ],
+        "to": [
+          18,
+          ""
+        ]
+      },
+      {
+        "from": [
+          17,
+          "Object"
+        ],
+        "to": [
+          18,
+          "Object"
+        ]
+      },
+      {
+        "from": [
+          18,
+          ""
+        ],
+        "to": [
+          19,
+          ""
+        ]
+      },
+      {
+        "from": [
+          17,
+          "Object"
+        ],
+        "to": [
+          19,
+          "Object"
+        ]
+      },
+      {
+        "from": [
+          20,
+          "Loop"
+        ],
+        "to": [
+          21,
+          ""
+        ]
+      },
+      {
+        "from": [
+          20,
+          "Object"
+        ],
+        "to": [
+          21,
+          "Object"
+        ]
+      },
+      {
+        "from": [
+          22,
+          "Loop"
+        ],
+        "to": [
+          23,
+          ""
+        ]
+      },
+      {
+        "from": [
+          22,
+          "Object"
+        ],
+        "to": [
+          23,
+          "Object"
+        ]
+      },
+      {
+        "from": [
+          13,
+          ""
+        ],
+        "to": [
+          14,
+          ""
+        ]
+      },
+      {
+        "from": [
+          14,
+          "Completed"
+        ],
+        "to": [
+          17,
+          ""
+        ]
+      },
+      {
+        "from": [
+          17,
+          "Completed"
+        ],
+        "to": [
+          20,
+          ""
+        ]
+      },
+      {
+        "from": [
+          20,
+          "Completed"
+        ],
+        "to": [
+          22,
+          ""
+        ]
+      },
+      {
+        "from": [
+          22,
+          "Completed"
+        ],
+        "to": [
+          24,
+          ""
+        ]
+      },
+      {
+        "from": [
+          26,
+          "Type"
+        ],
+        "to": [
+          27,
+          "A"
+        ]
+      },
+      {
+        "from": [
+          25,
+          "Object"
+        ],
+        "to": [
+          26,
+          "Object"
+        ]
+      },
+      {
+        "from": [
+          27,
+          "Result"
+        ],
+        "to": [
+          28,
+          "Condition"
+        ]
+      },
+      {
+        "from": [
+          29,
+          "Object"
+        ],
+        "to": [
+          30,
+          "Object"
+        ]
+      },
+      {
+        "from": [
+          30,
+          "Type"
+        ],
+        "to": [
+          31,
+          "A"
+        ]
+      },
+      {
+        "from": [
+          31,
+          "Result"
+        ],
+        "to": [
+          32,
+          "Condition"
+        ]
+      },
+      {
+        "from": [
+          25,
+          ""
+        ],
+        "to": [
+          28,
+          ""
+        ]
+      },
+      {
+        "from": [
+          28,
+          "True"
+        ],
+        "to": [
+          29,
+          ""
+        ]
+      },
+      {
+        "from": [
+          29,
+          "Loop"
+        ],
+        "to": [
+          32,
+          ""
+        ]
+      },
+      {
+        "from": [
+          32,
+          "True"
+        ],
+        "to": [
+          33,
+          ""
+        ]
+      },
+      {
+        "from": [
+          33,
+          ""
+        ],
+        "to": [
+          34,
+          ""
+        ]
+      },
+      {
+        "from": [
+          34,
+          ""
+        ],
+        "to": [
+          35,
+          ""
+        ]
+      },
+      {
+        "from": [
+          29,
+          "Object"
+        ],
+        "to": [
+          33,
+          "Object"
+        ]
+      },
+      {
+        "from": [
+          25,
+          "Object"
+        ],
+        "to": [
+          33,
+          "Target"
+        ]
+      },
+      {
+        "from": [
+          29,
+          "Object"
+        ],
+        "to": [
+          34,
+          "Object"
+        ]
+      },
+      {
+        "from": [
+          29,
+          "Object"
+        ],
+        "to": [
+          35,
+          "Object"
+        ]
+      },
+      {
+        "from": [
+          36,
+          ""
+        ],
+        "to": [
+          37,
+          ""
+        ]
+      },
+      {
+        "from": [
+          37,
+          "Loop"
+        ],
+        "to": [
+          38,
+          ""
+        ]
+      },
+      {
+        "from": [
+          38,
+          ""
+        ],
+        "to": [
+          39,
+          ""
+        ]
+      },
+      {
+        "from": [
+          37,
+          "Object"
+        ],
+        "to": [
+          38,
+          "Object"
+        ]
+      },
+      {
+        "from": [
+          37,
+          "Object"
+        ],
+        "to": [
+          39,
+          "Object"
+        ]
+      },
+      {
+        "from": [
+          36,
+          "Point"
+        ],
+        "to": [
+          39,
+          "Target"
+        ]
+      },
+      {
+        "from": [
+          40,
+          "Name"
+        ],
+        "to": [
+          41,
+          "A"
+        ]
+      },
+      {
+        "from": [
+          41,
+          "Result"
+        ],
+        "to": [
+          42,
+          "Condition"
+        ]
+      },
+      {
+        "from": [
+          40,
+          "Object"
+        ],
+        "to": [
+          43,
+          "Object"
+        ]
+      },
+      {
+        "from": [
+          40,
+          ""
+        ],
+        "to": [
+          42,
+          ""
+        ]
+      },
+      {
+        "from": [
+          42,
+          "True"
+        ],
+        "to": [
+          44,
+          ""
+        ]
+      },
+      {
+        "from": [
+          40,
+          "Object"
+        ],
+        "to": [
+          44,
+          "Object"
+        ]
+      },
+      {
+        "from": [
+          43,
+          "Target"
+        ],
+        "to": [
+          45,
+          "Object"
+        ]
+      },
+      {
+        "from": [
+          45,
+          "Position"
+        ],
+        "to": [
+          44,
+          "Target"
+        ]
+      },
+      {
+        "from": [
+          44,
+          "Arrived"
+        ],
+        "to": [
+          46,
+          ""
+        ]
+      },
+      {
+        "from": [
+          46,
+          ""
+        ],
+        "to": [
+          47,
+          ""
+        ]
+      },
+      {
+        "from": [
+          44,
+          "Unit"
+        ],
+        "to": [
+          46,
+          "Object"
+        ]
+      },
+      {
+        "from": [
+          44,
+          "Unit"
+        ],
+        "to": [
+          47,
+          "Object"
+        ]
+      },
+      {
+        "from": [
+          40,
+          "Name"
+        ],
+        "to": [
+          48,
+          "A"
+        ]
+      },
+      {
+        "from": [
+          48,
+          "Result"
+        ],
+        "to": [
+          49,
+          "Condition"
+        ]
+      },
+      {
+        "from": [
+          42,
+          "False"
+        ],
+        "to": [
+          49,
+          ""
+        ]
+      },
+      {
+        "from": [
+          40,
+          "Object"
+        ],
+        "to": [
+          51,
+          "Object"
+        ]
+      },
+      {
+        "from": [
+          51,
+          "Value"
+        ],
+        "to": [
+          50,
+          "A"
+        ]
+      },
+      {
+        "from": [
+          50,
+          "Result"
+        ],
+        "to": [
+          52,
+          "Condition"
+        ]
+      },
+      {
+        "from": [
+          49,
+          "True"
+        ],
+        "to": [
+          52,
+          ""
+        ]
+      },
+      {
+        "from": [
+          40,
+          "Object"
+        ],
+        "to": [
+          53,
+          "Object"
+        ]
+      },
+      {
+        "from": [
+          53,
+          "Target"
+        ],
+        "to": [
+          54,
+          "Object"
+        ]
+      },
+      {
+        "from": [
+          54,
+          "Value"
+        ],
+        "to": [
+          55,
+          "A"
+        ]
+      },
+      {
+        "from": [
+          55,
+          "Result"
+        ],
+        "to": [
+          56,
+          "A"
+        ]
+      },
+      {
+        "from": [
+          56,
+          "Result"
+        ],
+        "to": [
+          57,
+          "Condition"
+        ]
+      },
+      {
+        "from": [
+          52,
+          "True"
+        ],
+        "to": [
+          57,
+          ""
+        ]
+      },
+      {
+        "from": [
+          57,
+          "True"
+        ],
+        "to": [
+          58,
+          ""
+        ]
+      },
+      {
+        "from": [
+          58,
+          ""
+        ],
+        "to": [
+          59,
+          ""
+        ]
+      },
+      {
+        "from": [
+          59,
+          ""
+        ],
+        "to": [
+          60,
+          ""
+        ]
+      },
+      {
+        "from": [
+          53,
+          "Target"
+        ],
+        "to": [
+          58,
+          "Object"
+        ]
+      },
+      {
+        "from": [
+          40,
+          "Object"
+        ],
+        "to": [
+          59,
+          "Object"
+        ]
+      },
+      {
+        "from": [
+          40,
+          "Object"
+        ],
+        "to": [
+          60,
+          "Object"
+        ]
+      },
+      {
+        "from": [
+          53,
+          "Target"
+        ],
+        "to": [
+          62,
+          "Object"
+        ]
+      },
+      {
+        "from": [
+          62,
+          "Value"
+        ],
+        "to": [
+          61,
+          "A"
+        ]
+      },
+      {
+        "from": [
+          61,
+          "Result"
+        ],
+        "to": [
+          63,
+          "Condition"
+        ]
+      },
+      {
+        "from": [
+          60,
+          ""
+        ],
+        "to": [
+          63,
+          ""
+        ]
+      },
+      {
+        "from": [
+          63,
+          "True"
+        ],
+        "to": [
+          64,
+          ""
+        ]
+      },
+      {
+        "from": [
+          64,
+          ""
+        ],
+        "to": [
+          65,
+          ""
+        ]
+      },
+      {
+        "from": [
+          53,
+          "Target"
+        ],
+        "to": [
+          64,
+          "Object"
+        ]
+      },
+      {
+        "from": [
+          53,
+          "Target"
+        ],
+        "to": [
+          65,
+          "Object"
+        ]
+      },
+      {
+        "from": [
+          65,
+          ""
+        ],
+        "to": [
+          66,
+          ""
+        ]
+      },
+      {
+        "from": [
+          63,
+          "False"
+        ],
+        "to": [
+          67,
+          ""
+        ]
+      },
+      {
+        "from": [
+          40,
+          "Object"
+        ],
+        "to": [
+          66,
+          "Object"
+        ]
+      },
+      {
+        "from": [
+          40,
+          "Object"
+        ],
+        "to": [
+          67,
+          "Object"
+        ]
+      },
+      {
+        "from": [
+          40,
+          "Object"
+        ],
+        "to": [
+          69,
+          "Object"
+        ]
+      },
+      {
+        "from": [
+          69,
+          "Position"
+        ],
+        "to": [
+          68,
+          "From"
+        ]
+      },
+      {
+        "from": [
+          68,
+          "Object"
+        ],
+        "to": [
+          70,
+          "Object"
+        ]
+      },
+      {
+        "from": [
+          70,
+          "Valid"
+        ],
+        "to": [
+          71,
+          "Condition"
+        ]
+      },
+      {
+        "from": [
+          57,
+          "False"
+        ],
+        "to": [
+          71,
+          ""
+        ]
+      },
+      {
+        "from": [
+          71,
+          "True"
+        ],
+        "to": [
+          72,
+          ""
+        ]
+      },
+      {
+        "from": [
+          72,
+          ""
+        ],
+        "to": [
+          73,
+          ""
+        ]
+      },
+      {
+        "from": [
+          71,
+          "False"
+        ],
+        "to": [
+          74,
+          ""
+        ]
+      },
+      {
+        "from": [
+          74,
+          ""
+        ],
+        "to": [
+          75,
+          ""
+        ]
+      },
+      {
+        "from": [
+          40,
+          "Object"
+        ],
+        "to": [
+          72,
+          "Object"
+        ]
+      },
+      {
+        "from": [
+          68,
+          "Object"
+        ],
+        "to": [
+          72,
+          "Target"
+        ]
+      },
+      {
+        "from": [
+          40,
+          "Object"
+        ],
+        "to": [
+          73,
+          "Object"
+        ]
+      },
+      {
+        "from": [
+          40,
+          "Object"
+        ],
+        "to": [
+          74,
+          "Object"
+        ]
+      },
+      {
+        "from": [
+          40,
+          "Name"
+        ],
+        "to": [
+          76,
+          "A"
+        ]
+      },
+      {
+        "from": [
+          76,
+          "Result"
+        ],
+        "to": [
+          77,
+          "Condition"
+        ]
+      },
+      {
+        "from": [
+          49,
+          "False"
+        ],
+        "to": [
+          77,
+          ""
+        ]
+      },
+      {
+        "from": [
+          40,
+          "Object"
+        ],
+        "to": [
+          79,
+          "Object"
+        ]
+      },
+      {
+        "from": [
+          79,
+          "Position"
+        ],
+        "to": [
+          78,
+          "From"
+        ]
+      },
+      {
+        "from": [
+          77,
+          "True"
+        ],
+        "to": [
+          80,
+          ""
+        ]
+      },
+      {
+        "from": [
+          40,
+          "Object"
+        ],
+        "to": [
+          80,
+          "Object"
+        ]
+      },
+      {
+        "from": [
+          78,
+          "Object"
+        ],
+        "to": [
+          81,
+          "Object"
+        ]
+      },
+      {
+        "from": [
+          81,
+          "Position"
+        ],
+        "to": [
+          80,
+          "Target"
+        ]
+      },
+      {
+        "from": [
+          80,
+          "Unit"
+        ],
+        "to": [
+          82,
+          "Object"
+        ]
+      },
+      {
+        "from": [
+          80,
+          "Arrived"
+        ],
+        "to": [
+          83,
+          ""
+        ]
+      },
+      {
+        "from": [
+          83,
+          ""
+        ],
+        "to": [
+          84,
+          ""
+        ]
+      },
+      {
+        "from": [
+          84,
+          ""
+        ],
+        "to": [
+          85,
+          ""
+        ]
+      },
+      {
+        "from": [
+          85,
+          ""
+        ],
+        "to": [
+          86,
+          ""
+        ]
+      },
+      {
+        "from": [
+          86,
+          ""
+        ],
+        "to": [
+          87,
+          ""
+        ]
+      },
+      {
+        "from": [
+          82,
+          "Value"
+        ],
+        "to": [
+          83,
+          "Amount"
+        ]
+      },
+      {
+        "from": [
+          82,
+          "Value"
+        ],
+        "to": [
+          84,
+          "Amount"
+        ]
+      },
+      {
+        "from": [
+          80,
+          "Unit"
+        ],
+        "to": [
+          85,
+          "Object"
+        ]
+      },
+      {
+        "from": [
+          80,
+          "Unit"
+        ],
+        "to": [
+          86,
+          "Object"
+        ]
+      },
+      {
+        "from": [
+          80,
+          "Unit"
+        ],
+        "to": [
+          89,
+          "Object"
+        ]
+      },
+      {
+        "from": [
+          89,
+          "Value"
+        ],
+        "to": [
+          88,
+          "A"
+        ]
+      },
+      {
+        "from": [
+          88,
+          "Result"
+        ],
+        "to": [
+          90,
+          "Condition"
+        ]
+      },
+      {
+        "from": [
+          87,
+          ""
+        ],
+        "to": [
+          90,
+          ""
+        ]
+      },
+      {
+        "from": [
+          90,
+          "True"
+        ],
+        "to": [
+          91,
+          ""
+        ]
+      },
+      {
+        "from": [
+          80,
+          "Unit"
+        ],
+        "to": [
+          91,
+          "Object"
+        ]
+      },
+      {
+        "from": [
+          92,
+          "Id"
+        ],
+        "to": [
+          93,
+          "A"
+        ]
+      },
+      {
+        "from": [
+          93,
+          "Result"
+        ],
+        "to": [
+          94,
+          "Condition"
+        ]
+      },
+      {
+        "from": [
+          95,
+          "Value"
+        ],
+        "to": [
+          96,
+          "A"
+        ]
+      },
+      {
+        "from": [
+          96,
+          "Result"
+        ],
+        "to": [
+          97,
+          "A"
+        ]
+      },
+      {
+        "from": [
+          97,
+          "Result"
+        ],
+        "to": [
+          98,
+          "Condition"
+        ]
+      },
+      {
+        "from": [
+          101,
+          "Object"
+        ],
+        "to": [
+          100,
+          "Building"
+        ]
+      },
+      {
+        "from": [
+          92,
+          ""
+        ],
+        "to": [
+          94,
+          ""
+        ]
+      },
+      {
+        "from": [
+          94,
+          "True"
+        ],
+        "to": [
+          98,
+          ""
+        ]
+      },
+      {
+        "from": [
+          98,
+          "True"
+        ],
+        "to": [
+          99,
+          ""
+        ]
+      },
+      {
+        "from": [
+          99,
+          ""
+        ],
+        "to": [
+          100,
+          ""
+        ]
+      },
+      {
+        "from": [
+          98,
+          "False"
+        ],
+        "to": [
+          104,
+          ""
+        ]
+      },
+      {
+        "from": [
+          100,
+          "Spawned"
+        ],
+        "to": [
+          102,
+          ""
+        ]
+      },
+      {
+        "from": [
+          102,
+          ""
+        ],
+        "to": [
+          103,
+          ""
+        ]
+      },
+      {
+        "from": [
+          100,
+          "Unit"
+        ],
+        "to": [
+          102,
+          "Object"
+        ]
+      },
+      {
+        "from": [
+          100,
+          "Unit"
+        ],
+        "to": [
+          103,
+          "Object"
+        ]
+      },
+      {
+        "from": [
+          92,
+          "Id"
+        ],
+        "to": [
+          105,
+          "A"
+        ]
+      },
+      {
+        "from": [
+          105,
+          "Result"
+        ],
+        "to": [
+          106,
+          "Condition"
+        ]
+      },
+      {
+        "from": [
+          94,
+          "False"
+        ],
+        "to": [
+          106,
+          ""
+        ]
+      },
+      {
+        "from": [
+          108,
+          "Value"
+        ],
+        "to": [
+          107,
+          "A"
+        ]
+      },
+      {
+        "from": [
+          107,
+          "Result"
+        ],
+        "to": [
+          109,
+          "Condition"
+        ]
+      },
+      {
+        "from": [
+          106,
+          "True"
+        ],
+        "to": [
+          109,
+          ""
+        ]
+      },
+      {
+        "from": [
+          109,
+          "True"
+        ],
+        "to": [
+          110,
+          ""
+        ]
+      },
+      {
+        "from": [
+          110,
+          "Placed"
+        ],
+        "to": [
+          111,
+          ""
+        ]
+      },
+      {
+        "from": [
+          111,
+          ""
+        ],
+        "to": [
+          112,
+          ""
+        ]
+      },
+      {
+        "from": [
+          112,
+          ""
+        ],
+        "to": [
+          113,
+          ""
+        ]
+      },
+      {
+        "from": [
+          113,
+          ""
+        ],
+        "to": [
+          114,
+          ""
+        ]
+      },
+      {
+        "from": [
+          92,
+          "Id"
+        ],
+        "to": [
+          115,
+          "A"
+        ]
+      },
+      {
+        "from": [
+          115,
+          "Result"
+        ],
+        "to": [
+          116,
+          "Condition"
+        ]
+      },
+      {
+        "from": [
+          106,
+          "False"
+        ],
+        "to": [
+          116,
+          ""
+        ]
+      },
+      {
+        "from": [
+          117,
+          "Value"
+        ],
+        "to": [
+          118,
+          "A"
+        ]
+      },
+      {
+        "from": [
+          118,
+          "Result"
+        ],
+        "to": [
+          119,
+          "A"
+        ]
+      },
+      {
+        "from": [
+          119,
+          "Result"
+        ],
+        "to": [
+          120,
+          "Condition"
+        ]
+      },
+      {
+        "from": [
+          123,
+          "Object"
+        ],
+        "to": [
+          122,
+          "Building"
+        ]
+      },
+      {
+        "from": [
+          116,
+          "True"
+        ],
+        "to": [
+          120,
+          ""
+        ]
+      },
+      {
+        "from": [
+          120,
+          "True"
+        ],
+        "to": [
+          121,
+          ""
+        ]
+      },
+      {
+        "from": [
+          121,
+          ""
+        ],
+        "to": [
+          122,
+          ""
+        ]
+      },
+      {
+        "from": [
+          120,
+          "False"
+        ],
+        "to": [
+          126,
+          ""
+        ]
+      },
+      {
+        "from": [
+          122,
+          "Spawned"
+        ],
+        "to": [
+          124,
+          ""
+        ]
+      },
+      {
+        "from": [
+          124,
+          ""
+        ],
+        "to": [
+          125,
+          ""
+        ]
+      },
+      {
+        "from": [
+          128,
+          "Value"
+        ],
+        "to": [
+          129,
+          "A"
+        ]
+      },
+      {
+        "from": [
+          129,
+          "Result"
+        ],
+        "to": [
+          130,
+          "A"
+        ]
+      },
+      {
+        "from": [
+          130,
+          "Result"
+        ],
+        "to": [
+          131,
+          "Done"
+        ]
+      },
+      {
+        "from": [
+          132,
+          "Value"
+        ],
+        "to": [
+          133,
+          "A"
+        ]
+      },
+      {
+        "from": [
+          133,
+          "Result"
+        ],
+        "to": [
+          134,
+          "A"
+        ]
+      },
+      {
+        "from": [
+          134,
+          "Result"
+        ],
+        "to": [
+          135,
+          "Done"
+        ]
+      },
+      {
+        "from": [
+          137,
+          "Value"
+        ],
+        "to": [
+          136,
+          "A"
+        ]
+      },
+      {
+        "from": [
+          130,
+          "Result"
+        ],
+        "to": [
+          138,
+          "A"
+        ]
+      },
+      {
+        "from": [
+          134,
+          "Result"
+        ],
+        "to": [
+          138,
+          "B"
+        ]
+      },
+      {
+        "from": [
+          138,
+          "Result"
+        ],
+        "to": [
+          139,
+          "A"
+        ]
+      },
+      {
+        "from": [
+          136,
+          "Result"
+        ],
+        "to": [
+          139,
+          "B"
+        ]
+      },
+      {
+        "from": [
+          139,
+          "Result"
+        ],
+        "to": [
+          140,
+          "Condition"
+        ]
+      },
+      {
+        "from": [
+          127,
+          ""
+        ],
+        "to": [
+          131,
+          ""
+        ]
+      },
+      {
+        "from": [
+          131,
+          ""
+        ],
+        "to": [
+          135,
+          ""
+        ]
+      },
+      {
+        "from": [
+          135,
+          ""
+        ],
+        "to": [
+          140,
+          ""
+        ]
+      },
+      {
+        "from": [
+          140,
+          "True"
+        ],
+        "to": [
+          141,
+          ""
+        ]
+      },
+      {
+        "from": [
+          141,
+          ""
+        ],
+        "to": [
+          142,
+          ""
+        ]
+      }
+    ],
+    "name": "mecha_level1",
     "nodes": [
       {
         "id": 1,
@@ -463,9 +2495,1346 @@
         "type": "event.start",
         "x": 0,
         "y": 0
+      },
+      {
+        "id": 2,
+        "in": {
+          "Active": true
+        },
+        "type": "rts.camera",
+        "x": 220,
+        "y": 0
+      },
+      {
+        "id": 3,
+        "in": {
+          "Name": "vitae",
+          "Value": 100
+        },
+        "type": "action.setVar",
+        "x": 440,
+        "y": 0
+      },
+      {
+        "id": 4,
+        "in": {
+          "Name": "gathered",
+          "Value": 0
+        },
+        "type": "action.setVar",
+        "x": 660,
+        "y": 0
+      },
+      {
+        "id": 5,
+        "in": {
+          "Name": "wardens",
+          "Value": 0
+        },
+        "type": "action.setVar",
+        "x": 880,
+        "y": 0
+      },
+      {
+        "id": 6,
+        "in": {
+          "Name": "factoryBuilt",
+          "Value": 0
+        },
+        "type": "action.setVar",
+        "x": 1100,
+        "y": 0
+      },
+      {
+        "id": 7,
+        "in": {
+          "Color": [0.3, 1, 0.45],
+          "Id": "vitae",
+          "Label": "Vitae",
+          "Variable": "vitae"
+        },
+        "type": "hud.counter",
+        "x": 1320,
+        "y": 0
+      },
+      {
+        "id": 8,
+        "in": {
+          "Color": [0.55, 0.85, 1],
+          "Id": "gathered",
+          "Label": "Récolté",
+          "Variable": "gathered"
+        },
+        "type": "hud.counter",
+        "x": 1540,
+        "y": 0
+      },
+      {
+        "id": 9,
+        "in": {
+          "Done": false,
+          "Id": "gather",
+          "Text": "Récolter 300 Vitae"
+        },
+        "type": "hud.objective",
+        "x": 1760,
+        "y": 0
+      },
+      {
+        "id": 10,
+        "in": {
+          "Done": false,
+          "Id": "factory",
+          "Text": "Construire une Usine"
+        },
+        "type": "hud.objective",
+        "x": 1980,
+        "y": 0
+      },
+      {
+        "id": 11,
+        "in": {
+          "Done": false,
+          "Id": "wardens",
+          "Text": "Produire 3 Wardens"
+        },
+        "type": "hud.objective",
+        "x": 2200,
+        "y": 0
+      },
+      {
+        "id": 12,
+        "in": {
+          "Id": "worker",
+          "Label": "Ouvrier (50)"
+        },
+        "type": "rts.hudButton",
+        "x": 2420,
+        "y": 0
+      },
+      {
+        "id": 13,
+        "in": {
+          "Id": "factory",
+          "Label": "Usine (150)"
+        },
+        "type": "rts.hudButton",
+        "x": 2640,
+        "y": 0
+      },
+      {
+        "id": 14,
+        "in": {
+          "Type": "VitaeTanks"
+        },
+        "type": "flow.forEachPart",
+        "x": 0,
+        "y": 200
+      },
+      {
+        "id": 15,
+        "in": {
+          "Name": "stock",
+          "Value": 150
+        },
+        "type": "unit.setVar",
+        "x": 220,
+        "y": 200
+      },
+      {
+        "id": 16,
+        "in": {
+          "Name": "stockMax",
+          "Value": 150
+        },
+        "type": "unit.setVar",
+        "x": 440,
+        "y": 200
+      },
+      {
+        "id": 17,
+        "in": {
+          "Type": "MechaWorker"
+        },
+        "type": "flow.forEachPart",
+        "x": 660,
+        "y": 200
+      },
+      {
+        "id": 18,
+        "in": {
+          "Name": "cargo",
+          "Value": 0
+        },
+        "type": "unit.setVar",
+        "x": 880,
+        "y": 200
+      },
+      {
+        "id": 19,
+        "in": {
+          "Name": "cargoMax",
+          "Value": 10
+        },
+        "type": "unit.setVar",
+        "x": 1100,
+        "y": 200
+      },
+      {
+        "id": 20,
+        "in": {
+          "Type": "BastionHQ"
+        },
+        "type": "flow.forEachPart",
+        "x": 1320,
+        "y": 200
+      },
+      {
+        "id": 21,
+        "in": {
+          "Name": "dropoff",
+          "Value": 1
+        },
+        "type": "unit.setVar",
+        "x": 1540,
+        "y": 200
+      },
+      {
+        "id": 22,
+        "in": {
+          "Type": "VitaeDepot"
+        },
+        "type": "flow.forEachPart",
+        "x": 1760,
+        "y": 200
+      },
+      {
+        "id": 23,
+        "in": {
+          "Name": "dropoff",
+          "Value": 1
+        },
+        "type": "unit.setVar",
+        "x": 1980,
+        "y": 200
+      },
+      {
+        "id": 24,
+        "in": {
+          "Text": "Sélectionnez vos ouvriers et faites un clic droit sur une station de Vitae pour la récolter. Construisez une Usine, puis produisez 3 Wardens.",
+          "Title": "Opération Vitae"
+        },
+        "type": "hud.message",
+        "x": 2200,
+        "y": 200
+      },
+      {
+        "id": 25,
+        "in": {},
+        "type": "event.rightClickObject",
+        "x": 0,
+        "y": 450
+      },
+      {
+        "id": 26,
+        "in": {},
+        "type": "unit.type",
+        "x": 0,
+        "y": 570
+      },
+      {
+        "id": 27,
+        "in": {
+          "A": "",
+          "B": "VitaeTanks"
+        },
+        "type": "math.strEqual",
+        "x": 220,
+        "y": 570
+      },
+      {
+        "id": 28,
+        "in": {
+          "Condition": true
+        },
+        "type": "flow.branch",
+        "x": 220,
+        "y": 450
+      },
+      {
+        "id": 29,
+        "in": {},
+        "type": "unit.forEachSelected",
+        "x": 440,
+        "y": 450
+      },
+      {
+        "id": 30,
+        "in": {},
+        "type": "unit.type",
+        "x": 440,
+        "y": 570
+      },
+      {
+        "id": 31,
+        "in": {
+          "A": "",
+          "B": "MechaWorker"
+        },
+        "type": "math.strEqual",
+        "x": 660,
+        "y": 570
+      },
+      {
+        "id": 32,
+        "in": {
+          "Condition": true
+        },
+        "type": "flow.branch",
+        "x": 660,
+        "y": 450
+      },
+      {
+        "id": 33,
+        "in": {
+          "Name": "station"
+        },
+        "type": "unit.setLink",
+        "x": 880,
+        "y": 450
+      },
+      {
+        "id": 34,
+        "in": {
+          "Name": "state",
+          "Value": 1
+        },
+        "type": "unit.setVar",
+        "x": 1100,
+        "y": 450
+      },
+      {
+        "id": 35,
+        "in": {
+          "Name": "go",
+          "Seconds": 0
+        },
+        "type": "unit.startTimer",
+        "x": 1320,
+        "y": 450
+      },
+      {
+        "id": 36,
+        "in": {},
+        "type": "event.rightClickGround",
+        "x": 0,
+        "y": 700
+      },
+      {
+        "id": 37,
+        "in": {},
+        "type": "unit.forEachSelected",
+        "x": 220,
+        "y": 700
+      },
+      {
+        "id": 38,
+        "in": {
+          "Name": "state",
+          "Value": 0
+        },
+        "type": "unit.setVar",
+        "x": 440,
+        "y": 700
+      },
+      {
+        "id": 39,
+        "in": {
+          "Speed": 3.4,
+          "Target": [0, 0, 0]
+        },
+        "type": "unit.move",
+        "x": 660,
+        "y": 700
+      },
+      {
+        "id": 40,
+        "in": {},
+        "type": "event.timer",
+        "x": 0,
+        "y": 950
+      },
+      {
+        "id": 41,
+        "in": {
+          "A": "",
+          "B": "go"
+        },
+        "type": "math.strEqual",
+        "x": 220,
+        "y": 1070
+      },
+      {
+        "id": 42,
+        "in": {
+          "Condition": true
+        },
+        "type": "flow.branch",
+        "x": 220,
+        "y": 950
+      },
+      {
+        "id": 43,
+        "in": {
+          "Name": "station"
+        },
+        "type": "unit.getLink",
+        "x": 440,
+        "y": 1070
+      },
+      {
+        "id": 44,
+        "in": {
+          "Speed": 3.4,
+          "Target": [0, 0, 0]
+        },
+        "type": "unit.move",
+        "x": 660,
+        "y": 950
+      },
+      {
+        "id": 45,
+        "in": {},
+        "type": "data.getPosition",
+        "x": 660,
+        "y": 1070
+      },
+      {
+        "id": 46,
+        "in": {
+          "Clip": "Harvest",
+          "Loop": true,
+          "Speed": 1
+        },
+        "type": "prefab.playClip",
+        "x": 880,
+        "y": 950
+      },
+      {
+        "id": 47,
+        "in": {
+          "Name": "harvest",
+          "Seconds": 2
+        },
+        "type": "unit.startTimer",
+        "x": 1100,
+        "y": 950
+      },
+      {
+        "id": 48,
+        "in": {
+          "A": "",
+          "B": "harvest"
+        },
+        "type": "math.strEqual",
+        "x": 220,
+        "y": 1370
+      },
+      {
+        "id": 49,
+        "in": {
+          "Condition": true
+        },
+        "type": "flow.branch",
+        "x": 220,
+        "y": 1250
+      },
+      {
+        "id": 50,
+        "in": {
+          "A": 0,
+          "B": 1
+        },
+        "type": "math.equal",
+        "x": 440,
+        "y": 1370
+      },
+      {
+        "id": 51,
+        "in": {
+          "Name": "state"
+        },
+        "type": "unit.getVar",
+        "x": 440,
+        "y": 1470
+      },
+      {
+        "id": 52,
+        "in": {
+          "Condition": true
+        },
+        "type": "flow.branch",
+        "x": 440,
+        "y": 1250
+      },
+      {
+        "id": 53,
+        "in": {
+          "Name": "station"
+        },
+        "type": "unit.getLink",
+        "x": 660,
+        "y": 1470
+      },
+      {
+        "id": 54,
+        "in": {
+          "Name": "stock"
+        },
+        "type": "unit.getVar",
+        "x": 660,
+        "y": 1570
+      },
+      {
+        "id": 55,
+        "in": {
+          "A": 0,
+          "B": 10
+        },
+        "type": "math.less",
+        "x": 660,
+        "y": 1370
+      },
+      {
+        "id": 56,
+        "in": {
+          "A": false
+        },
+        "type": "math.not",
+        "x": 820,
+        "y": 1370
+      },
+      {
+        "id": 57,
+        "in": {
+          "Condition": true
+        },
+        "type": "flow.branch",
+        "x": 880,
+        "y": 1250
+      },
+      {
+        "id": 58,
+        "in": {
+          "Amount": -10,
+          "Name": "stock"
+        },
+        "type": "unit.addVar",
+        "x": 1100,
+        "y": 1250
+      },
+      {
+        "id": 59,
+        "in": {
+          "Name": "cargo",
+          "Value": 10
+        },
+        "type": "unit.setVar",
+        "x": 1320,
+        "y": 1250
+      },
+      {
+        "id": 60,
+        "in": {
+          "Glow": 4,
+          "Part": "Back Tank Core"
+        },
+        "type": "prefab.setPartGlow",
+        "x": 1540,
+        "y": 1250
+      },
+      {
+        "id": 61,
+        "in": {
+          "A": 0,
+          "B": 10
+        },
+        "type": "math.less",
+        "x": 1760,
+        "y": 1370
+      },
+      {
+        "id": 62,
+        "in": {
+          "Name": "stock"
+        },
+        "type": "unit.getVar",
+        "x": 1760,
+        "y": 1470
+      },
+      {
+        "id": 63,
+        "in": {
+          "Condition": true
+        },
+        "type": "flow.branch",
+        "x": 1760,
+        "y": 1250
+      },
+      {
+        "id": 64,
+        "in": {
+          "Glow": 0.1,
+          "Part": "Liquid"
+        },
+        "type": "prefab.setPartGlow",
+        "x": 1980,
+        "y": 1250
+      },
+      {
+        "id": 65,
+        "in": {
+          "Glow": 0.1,
+          "Part": "Pipe Glow"
+        },
+        "type": "prefab.setPartGlow",
+        "x": 2200,
+        "y": 1250
+      },
+      {
+        "id": 66,
+        "in": {
+          "Name": "back",
+          "Seconds": 0
+        },
+        "type": "unit.startTimer",
+        "x": 2420,
+        "y": 1250
+      },
+      {
+        "id": 67,
+        "in": {
+          "Name": "back",
+          "Seconds": 0
+        },
+        "type": "unit.startTimer",
+        "x": 2420,
+        "y": 1370
+      },
+      {
+        "id": 68,
+        "in": {
+          "From": [0, 0, 0],
+          "Min": 10,
+          "Type": "VitaeTanks",
+          "Var Name": "stock"
+        },
+        "type": "unit.findNearest",
+        "x": 1100,
+        "y": 1670
+      },
+      {
+        "id": 69,
+        "in": {},
+        "type": "data.getPosition",
+        "x": 880,
+        "y": 1770
+      },
+      {
+        "id": 70,
+        "in": {},
+        "type": "data.isValid",
+        "x": 1320,
+        "y": 1770
+      },
+      {
+        "id": 71,
+        "in": {
+          "Condition": true
+        },
+        "type": "flow.branch",
+        "x": 1320,
+        "y": 1670
+      },
+      {
+        "id": 72,
+        "in": {
+          "Name": "station"
+        },
+        "type": "unit.setLink",
+        "x": 1540,
+        "y": 1670
+      },
+      {
+        "id": 73,
+        "in": {
+          "Name": "go",
+          "Seconds": 0
+        },
+        "type": "unit.startTimer",
+        "x": 1760,
+        "y": 1670
+      },
+      {
+        "id": 74,
+        "in": {
+          "Clip": "Idle",
+          "Loop": true,
+          "Speed": 1
+        },
+        "type": "prefab.playClip",
+        "x": 1540,
+        "y": 1790
+      },
+      {
+        "id": 75,
+        "in": {
+          "Text": "Toutes les stations de Vitae sont vides"
+        },
+        "type": "action.print",
+        "x": 1760,
+        "y": 1790
+      },
+      {
+        "id": 76,
+        "in": {
+          "A": "",
+          "B": "back"
+        },
+        "type": "math.strEqual",
+        "x": 220,
+        "y": 2070
+      },
+      {
+        "id": 77,
+        "in": {
+          "Condition": true
+        },
+        "type": "flow.branch",
+        "x": 220,
+        "y": 1950
+      },
+      {
+        "id": 78,
+        "in": {
+          "From": [0, 0, 0],
+          "Min": 1,
+          "Type": "Building",
+          "Var Name": "dropoff"
+        },
+        "type": "unit.findNearest",
+        "x": 440,
+        "y": 2070
+      },
+      {
+        "id": 79,
+        "in": {},
+        "type": "data.getPosition",
+        "x": 440,
+        "y": 2170
+      },
+      {
+        "id": 80,
+        "in": {
+          "Speed": 3.4,
+          "Target": [0, 0, 0]
+        },
+        "type": "unit.move",
+        "x": 660,
+        "y": 1950
+      },
+      {
+        "id": 81,
+        "in": {},
+        "type": "data.getPosition",
+        "x": 660,
+        "y": 2070
+      },
+      {
+        "id": 82,
+        "in": {
+          "Name": "cargo"
+        },
+        "type": "unit.getVar",
+        "x": 880,
+        "y": 2070
+      },
+      {
+        "id": 83,
+        "in": {
+          "Amount": 1,
+          "Name": "vitae"
+        },
+        "type": "action.addVar",
+        "x": 880,
+        "y": 1950
+      },
+      {
+        "id": 84,
+        "in": {
+          "Amount": 1,
+          "Name": "gathered"
+        },
+        "type": "action.addVar",
+        "x": 1100,
+        "y": 1950
+      },
+      {
+        "id": 85,
+        "in": {
+          "Name": "cargo",
+          "Value": 0
+        },
+        "type": "unit.setVar",
+        "x": 1320,
+        "y": 1950
+      },
+      {
+        "id": 86,
+        "in": {
+          "Glow": 1,
+          "Part": "Back Tank Core"
+        },
+        "type": "prefab.setPartGlow",
+        "x": 1540,
+        "y": 1950
+      },
+      {
+        "id": 87,
+        "in": {
+          "Name": "goals"
+        },
+        "type": "flow.fireCustom",
+        "x": 1760,
+        "y": 1950
+      },
+      {
+        "id": 88,
+        "in": {
+          "A": 0,
+          "B": 1
+        },
+        "type": "math.equal",
+        "x": 1980,
+        "y": 2070
+      },
+      {
+        "id": 89,
+        "in": {
+          "Name": "state"
+        },
+        "type": "unit.getVar",
+        "x": 1980,
+        "y": 2170
+      },
+      {
+        "id": 90,
+        "in": {
+          "Condition": true
+        },
+        "type": "flow.branch",
+        "x": 1980,
+        "y": 1950
+      },
+      {
+        "id": 91,
+        "in": {
+          "Name": "go",
+          "Seconds": 0.2
+        },
+        "type": "unit.startTimer",
+        "x": 2200,
+        "y": 1950
+      },
+      {
+        "id": 92,
+        "in": {},
+        "type": "event.hudButton",
+        "x": 0,
+        "y": 2300
+      },
+      {
+        "id": 93,
+        "in": {
+          "A": "",
+          "B": "worker"
+        },
+        "type": "math.strEqual",
+        "x": 220,
+        "y": 2420
+      },
+      {
+        "id": 94,
+        "in": {
+          "Condition": true
+        },
+        "type": "flow.branch",
+        "x": 220,
+        "y": 2300
+      },
+      {
+        "id": 95,
+        "in": {
+          "Name": "vitae"
+        },
+        "type": "data.getVar",
+        "x": 440,
+        "y": 2520
+      },
+      {
+        "id": 96,
+        "in": {
+          "A": 0,
+          "B": 50
+        },
+        "type": "math.less",
+        "x": 440,
+        "y": 2420
+      },
+      {
+        "id": 97,
+        "in": {
+          "A": false
+        },
+        "type": "math.not",
+        "x": 600,
+        "y": 2420
+      },
+      {
+        "id": 98,
+        "in": {
+          "Condition": true
+        },
+        "type": "flow.branch",
+        "x": 660,
+        "y": 2300
+      },
+      {
+        "id": 99,
+        "in": {
+          "Amount": -50,
+          "Name": "vitae"
+        },
+        "type": "action.addVar",
+        "x": 880,
+        "y": 2300
+      },
+      {
+        "id": 100,
+        "in": {
+          "Prefab": "MechaWorker",
+          "Seconds": 5
+        },
+        "type": "unit.produce",
+        "x": 1100,
+        "y": 2300
+      },
+      {
+        "id": 101,
+        "in": {
+          "Name": "Bastion HQ"
+        },
+        "type": "data.findObject",
+        "x": 1100,
+        "y": 2460
+      },
+      {
+        "id": 102,
+        "in": {
+          "Name": "cargo",
+          "Value": 0
+        },
+        "type": "unit.setVar",
+        "x": 1320,
+        "y": 2300
+      },
+      {
+        "id": 103,
+        "in": {
+          "Name": "cargoMax",
+          "Value": 10
+        },
+        "type": "unit.setVar",
+        "x": 1540,
+        "y": 2300
+      },
+      {
+        "id": 104,
+        "in": {
+          "Text": "Pas assez de Vitae : un Ouvrier coûte 50"
+        },
+        "type": "action.print",
+        "x": 880,
+        "y": 2420
+      },
+      {
+        "id": 105,
+        "in": {
+          "A": "",
+          "B": "factory"
+        },
+        "type": "math.strEqual",
+        "x": 220,
+        "y": 2720
+      },
+      {
+        "id": 106,
+        "in": {
+          "Condition": true
+        },
+        "type": "flow.branch",
+        "x": 220,
+        "y": 2600
+      },
+      {
+        "id": 107,
+        "in": {
+          "A": 0,
+          "B": 0
+        },
+        "type": "math.equal",
+        "x": 440,
+        "y": 2720
+      },
+      {
+        "id": 108,
+        "in": {
+          "Name": "factoryBuilt"
+        },
+        "type": "data.getVar",
+        "x": 440,
+        "y": 2820
+      },
+      {
+        "id": 109,
+        "in": {
+          "Condition": true
+        },
+        "type": "flow.branch",
+        "x": 440,
+        "y": 2600
+      },
+      {
+        "id": 110,
+        "in": {
+          "Cost": 150,
+          "Cost Var": "vitae",
+          "Prefab": "MechaFactory"
+        },
+        "type": "unit.placeBuilding",
+        "x": 660,
+        "y": 2600
+      },
+      {
+        "id": 111,
+        "in": {
+          "Name": "factoryBuilt",
+          "Value": 1
+        },
+        "type": "action.setVar",
+        "x": 880,
+        "y": 2600
+      },
+      {
+        "id": 112,
+        "in": {
+          "Done": true,
+          "Id": "factory",
+          "Text": "Construire une Usine"
+        },
+        "type": "hud.objective",
+        "x": 1100,
+        "y": 2600
+      },
+      {
+        "id": 113,
+        "in": {
+          "Id": "warden",
+          "Label": "Warden (100)"
+        },
+        "type": "rts.hudButton",
+        "x": 1320,
+        "y": 2600
+      },
+      {
+        "id": 114,
+        "in": {
+          "Name": "goals"
+        },
+        "type": "flow.fireCustom",
+        "x": 1540,
+        "y": 2600
+      },
+      {
+        "id": 115,
+        "in": {
+          "A": "",
+          "B": "warden"
+        },
+        "type": "math.strEqual",
+        "x": 220,
+        "y": 2970
+      },
+      {
+        "id": 116,
+        "in": {
+          "Condition": true
+        },
+        "type": "flow.branch",
+        "x": 220,
+        "y": 2850
+      },
+      {
+        "id": 117,
+        "in": {
+          "Name": "vitae"
+        },
+        "type": "data.getVar",
+        "x": 440,
+        "y": 3070
+      },
+      {
+        "id": 118,
+        "in": {
+          "A": 0,
+          "B": 100
+        },
+        "type": "math.less",
+        "x": 440,
+        "y": 2970
+      },
+      {
+        "id": 119,
+        "in": {
+          "A": false
+        },
+        "type": "math.not",
+        "x": 600,
+        "y": 2970
+      },
+      {
+        "id": 120,
+        "in": {
+          "Condition": true
+        },
+        "type": "flow.branch",
+        "x": 660,
+        "y": 2850
+      },
+      {
+        "id": 121,
+        "in": {
+          "Amount": -100,
+          "Name": "vitae"
+        },
+        "type": "action.addVar",
+        "x": 880,
+        "y": 2850
+      },
+      {
+        "id": 122,
+        "in": {
+          "Prefab": "MechaWarden",
+          "Seconds": 8
+        },
+        "type": "unit.produce",
+        "x": 1100,
+        "y": 2850
+      },
+      {
+        "id": 123,
+        "in": {
+          "From": [0, 0, 0],
+          "Min": 0,
+          "Type": "MechaFactory",
+          "Var Name": ""
+        },
+        "type": "unit.findNearest",
+        "x": 1100,
+        "y": 3010
+      },
+      {
+        "id": 124,
+        "in": {
+          "Amount": 1,
+          "Name": "wardens"
+        },
+        "type": "action.addVar",
+        "x": 1320,
+        "y": 2850
+      },
+      {
+        "id": 125,
+        "in": {
+          "Name": "goals"
+        },
+        "type": "flow.fireCustom",
+        "x": 1540,
+        "y": 2850
+      },
+      {
+        "id": 126,
+        "in": {
+          "Text": "Pas assez de Vitae : un Warden coûte 100"
+        },
+        "type": "action.print",
+        "x": 880,
+        "y": 2970
+      },
+      {
+        "id": 127,
+        "in": {
+          "Name": "goals"
+        },
+        "type": "event.custom",
+        "x": 0,
+        "y": 3150
+      },
+      {
+        "id": 128,
+        "in": {
+          "Name": "gathered"
+        },
+        "type": "data.getVar",
+        "x": 220,
+        "y": 3370
+      },
+      {
+        "id": 129,
+        "in": {
+          "A": 0,
+          "B": 300
+        },
+        "type": "math.less",
+        "x": 220,
+        "y": 3270
+      },
+      {
+        "id": 130,
+        "in": {
+          "A": false
+        },
+        "type": "math.not",
+        "x": 380,
+        "y": 3270
+      },
+      {
+        "id": 131,
+        "in": {
+          "Done": false,
+          "Id": "gather",
+          "Text": "Récolter 300 Vitae"
+        },
+        "type": "hud.objective",
+        "x": 440,
+        "y": 3150
+      },
+      {
+        "id": 132,
+        "in": {
+          "Name": "wardens"
+        },
+        "type": "data.getVar",
+        "x": 660,
+        "y": 3370
+      },
+      {
+        "id": 133,
+        "in": {
+          "A": 0,
+          "B": 3
+        },
+        "type": "math.less",
+        "x": 660,
+        "y": 3270
+      },
+      {
+        "id": 134,
+        "in": {
+          "A": false
+        },
+        "type": "math.not",
+        "x": 820,
+        "y": 3270
+      },
+      {
+        "id": 135,
+        "in": {
+          "Done": false,
+          "Id": "wardens",
+          "Text": "Produire 3 Wardens"
+        },
+        "type": "hud.objective",
+        "x": 880,
+        "y": 3150
+      },
+      {
+        "id": 136,
+        "in": {
+          "A": 0,
+          "B": 1
+        },
+        "type": "math.equal",
+        "x": 1100,
+        "y": 3370
+      },
+      {
+        "id": 137,
+        "in": {
+          "Name": "factoryBuilt"
+        },
+        "type": "data.getVar",
+        "x": 1100,
+        "y": 3470
+      },
+      {
+        "id": 138,
+        "in": {
+          "A": true,
+          "B": true
+        },
+        "type": "math.and",
+        "x": 1320,
+        "y": 3270
+      },
+      {
+        "id": 139,
+        "in": {
+          "A": true,
+          "B": true
+        },
+        "type": "math.and",
+        "x": 1320,
+        "y": 3370
+      },
+      {
+        "id": 140,
+        "in": {
+          "Condition": true
+        },
+        "type": "flow.branch",
+        "x": 1100,
+        "y": 3150
+      },
+      {
+        "id": 141,
+        "in": {},
+        "type": "flow.doOnce",
+        "x": 1320,
+        "y": 3150
+      },
+      {
+        "id": 142,
+        "in": {
+          "Text": "Opération Vitae réussie : la colonie est opérationnelle et protégée par vos Wardens.",
+          "Title": "Mission accomplie"
+        },
+        "type": "hud.message",
+        "x": 1540,
+        "y": 3150
       }
     ],
     "version": 1
   },
-  "probes": "game/probes/build_test.probes"
+  "probes": "game/probes/studio.probes"
 }

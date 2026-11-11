@@ -1,0 +1,28 @@
+{
+  "asset": { "version": "2.0", "generator": "WZX Engine tools/make_uvset_crate.ps1" },
+  "scene": 0,
+  "scenes": [ { "nodes": [0] } ],
+  "nodes": [ { "name": "Crate", "mesh": 0 } ],
+  "meshes": [ {
+    "name": "Crate",
+    "extras": { "uvSetNames": ["Tiling", "Lightmap", "UDIM"] },
+    "primitives": [ { "attributes": { "POSITION": 0, "NORMAL": 1, "TEXCOORD_0": 2, "TEXCOORD_1": 3, "TEXCOORD_2": 4 }, "indices": 5 } ]
+  } ],
+  "buffers": [ { "byteLength": 1224, "uri": "data:application/octet-stream;base64,AACAPgAAAADsUTg+AACAPgAAAADsUTi+AACAPuxRuD7sUTi+AACAPuxRuD7sUTg+AACAvgAAAADsUTi+AACAvgAAAADsUTg+AACAvuxRuD7sUTg+AACAvuxRuD7sUTi+AACAvgAAAADsUTg+AACAPgAAAADsUTg+AACAPuxRuD7sUTg+AACAvuxRuD7sUTg+AACAPgAAAADsUTi+AACAvgAAAADsUTi+AACAvuxRuD7sUTi+AACAPuxRuD7sUTi+AACAvuxRuD7sUTg+AACAPuxRuD7sUTg+AACAPuxRuD7sUTi+AACAvuxRuD7sUTi+AACAvgAAAADsUTi+AACAPgAAAADsUTi+AACAPgAAAADsUTg+AACAvgAAAADsUTg+AACAPwAAAAAAAAAAAACAPwAAAAAAAAAAAACAPwAAAAAAAAAAAACAPwAAAAAAAAAAAACAvwAAAAAAAAAAAACAvwAAAAAAAAAAAACAvwAAAAAAAAAAAACAvwAAAAAAAAAAAAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/AAAAAAAAAAAAAIC/AAAAAAAAAAAAAIC/AAAAAAAAAAAAAIC/AAAAAAAAAAAAAIC/AAAAAAAAgD8AAAAAAAAAAAAAgD8AAAAAAAAAAAAAgD8AAAAAAAAAAAAAgD8AAAAAAAAAAAAAgL8AAAAAAAAAAAAAgL8AAAAAAAAAAAAAgL8AAAAAAAAAAAAAgL8AAAAAAAAAAAAAgD8AAIA/AACAPwAAgD8AAAAAAAAAAAAAAAAAAAAAAACAPwAAgD8AAIA/AACAPwAAAAAAAAAAAAAAAAAAAAAAAIA/AACAPwAAgD8AAIA/AAAAAAAAAAAAAAAAAAAAAAAAgD8AAIA/AACAPwAAgD8AAAAAAAAAAAAAAAAAAAAAAACAPwAAgD8AAIA/AACAPwAAAAAAAAAAAAAAAAAAAAAAAIA/AACAPwAAgD8AAIA/AAAAAAAAAAAAAAAACtejPEjhej86baA+SOF6PzptoD64HgU/CtejPLgeBT/yiyU/SOF6PxvotD5I4Xo/G+i0PrgeBT/yiyU/uB4FP2PJLz9I4Xo/SOF6P0jhej9I4Xo/uB4FP2PJLz+4HgU/CtejPI/C9T46baA+j8L1PjptoD4K16M8CtejPArXozwb6LQ+j8L1PvKLJT+PwvU+8oslPwrXozwb6LQ+CtejPGPJLz+PwvU+SOF6P4/C9T5I4Xo/CtejPGPJLz8K16M8zczMPWZmZj9mZmY/ZmZmP2ZmZj/NzMw9zczMPc3MzD3NzIw/ZmZmPzMz8z9mZmY/MzPzP83MzD3NzIw/zczMPWZmBkBmZmY/mpk5QGZmZj+amTlAzczMPWZmBkDNzMw9zczMPc3MzL1mZmY/zczMvWZmZj9mZma/zczMPWZmZr/NzIw/zczMvTMz8z/NzMy9MzPzP2ZmZr/NzIw/ZmZmv2ZmBkDNzMy9mpk5QM3MzL2amTlAZmZmv2ZmBkBmZma/AAABAAIAAAACAAMABAAFAAYABAAGAAcACAAJAAoACAAKAAsADAANAA4ADAAOAA8AEAARABIAEAASABMAFAAVABYAFAAWABcA" } ],
+  "bufferViews": [
+    { "buffer": 0, "byteOffset": 0, "byteLength": 288 },
+    { "buffer": 0, "byteOffset": 288, "byteLength": 288 },
+    { "buffer": 0, "byteOffset": 576, "byteLength": 192 },
+    { "buffer": 0, "byteOffset": 768, "byteLength": 192 },
+    { "buffer": 0, "byteOffset": 960, "byteLength": 192 },
+    { "buffer": 0, "byteOffset": 1152, "byteLength": 72 }
+  ],
+  "accessors": [
+    { "bufferView": 0, "componentType": 5126, "count": 24, "type": "VEC3", "min": [-0.25, 0, -0.18], "max": [0.25, 0.36, 0.18] },
+    { "bufferView": 1, "componentType": 5126, "count": 24, "type": "VEC3" },
+    { "bufferView": 2, "componentType": 5126, "count": 24, "type": "VEC2" },
+    { "bufferView": 3, "componentType": 5126, "count": 24, "type": "VEC2" },
+    { "bufferView": 4, "componentType": 5126, "count": 24, "type": "VEC2" },
+    { "bufferView": 5, "componentType": 5123, "count": 36, "type": "SCALAR" }
+  ]
+}

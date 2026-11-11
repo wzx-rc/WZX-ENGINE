@@ -2685,6 +2685,127 @@ void App::SelfTest::build() {
         return 1;
     });
 
+    // ---------------------------------------------------------------- devices and touch (RtsPlay: layouts, gestures, simulator)
+    add("touch", [this] {
+        fresh();
+        PrefabLibrary& lib = a.m_prefabs;
+        v["hq"] = addPrefabInstance(a.m_scene, lib, lib.resolve("BastionHQ"), float3(0, 0, 0), 0.0f, "HQ");
+        v["tank"] = addPrefabInstance(a.m_scene, lib, lib.resolve("VitaeTanks"), float3(6, 0, 1), 0.0f, "Tank");
+        v["w1"] = addPrefabInstance(a.m_scene, lib, lib.resolve("MechaWorker"), float3(-1.2f, 0, 4), 0.0f, "W1");
+        v["w2"] = addPrefabInstance(a.m_scene, lib, lib.resolve("MechaWorker"), float3(1.2f, 0, 4), 0.0f, "W2");
+        syncPrefabInstances(a.m_scene, lib, true);
+        a.m_scene.camera.target = float3(0, 0, 3);
+        a.m_scene.camera.yaw = 0.0f;
+        a.m_scene.camera.pitch = radians(55.0f);
+        a.m_scene.camera.distance = 24.0f;
+        a.cameraChanged();
+        // the graph: the device and the input mode seen by the graph, an order on a station, an order on the ground,
+        // a building placed from a HUD button
+        Json g;
+        Json::parse(R"({"format": "wzx-graph", "version": 1, "nodes": [
+            {"id": 1, "type": "event.start", "x": 0, "y": 0},
+            {"id": 2, "type": "input.device", "x": 0, "y": 150},
+            {"id": 3, "type": "math.strEqual", "x": 200, "y": 150, "in": {"B": "Phone"}},
+            {"id": 4, "type": "flow.branch", "x": 200, "y": 0},
+            {"id": 5, "type": "action.setVar", "x": 400, "y": 0, "in": {"Name": "phoneAtStart", "Value": 1}},
+            {"id": 6, "type": "rts.hudButton", "x": 600, "y": 0, "in": {"Id": "factory", "Label": "Usine"}},
+            {"id": 10, "type": "event.inputModeChanged", "x": 0, "y": 300},
+            {"id": 11, "type": "math.strEqual", "x": 200, "y": 450, "in": {"B": "Touch"}},
+            {"id": 12, "type": "flow.branch", "x": 200, "y": 300},
+            {"id": 13, "type": "action.setVar", "x": 400, "y": 300, "in": {"Name": "touchSeen", "Value": 1}},
+            {"id": 14, "type": "action.setVar", "x": 400, "y": 400, "in": {"Name": "mouseSeen", "Value": 1}},
+            {"id": 20, "type": "event.rightClickObject", "x": 0, "y": 600},
+            {"id": 21, "type": "action.setVar", "x": 200, "y": 600, "in": {"Name": "harvest", "Value": 1}},
+            {"id": 30, "type": "event.rightClickGround", "x": 0, "y": 750},
+            {"id": 31, "type": "unit.forEachSelected", "x": 200, "y": 750},
+            {"id": 32, "type": "unit.move", "x": 400, "y": 750, "in": {"Speed": 3}},
+            {"id": 40, "type": "event.hudButton", "x": 0, "y": 950},
+            {"id": 41, "type": "unit.placeBuilding", "x": 200, "y": 950, "in": {"Prefab": "MechaFactory", "Cost Var": "", "Cost": 0}}],
+            "links": [{"from": [1, 0], "to": [4, 0]}, {"from": [2, 0], "to": [3, 0]}, {"from": [3, 0], "to": [4, 1]}, {"from": [4, 0], "to": [5, 0]},
+                      {"from": [5, 0], "to": [6, 0]}, {"from": [4, 1], "to": [6, 0]},
+                      {"from": [10, 0], "to": [12, 0]}, {"from": [10, 1], "to": [11, 0]}, {"from": [11, 0], "to": [12, 1]},
+                      {"from": [12, 0], "to": [13, 0]}, {"from": [12, 1], "to": [14, 0]},
+                      {"from": [20, 0], "to": [21, 0]},
+                      {"from": [30, 0], "to": [31, 0]}, {"from": [31, 0], "to": [32, 0]}, {"from": [31, 1], "to": [32, 1]}, {"from": [30, 1], "to": [32, 2]},
+                      {"from": [40, 0], "to": [41, 0]}]})", g);
+        a.m_game->loadSceneGraph(g);
+        a.m_game->setSimDevice(kPhone);
+        a.m_game->requestPlay();
+        return 60;
+    });
+    add("touch", [this] {
+        game::Runtime& rt = a.m_game->runtime();
+        RtsPlay& rp = a.m_game->m_rts;
+        const int w1 = (int)v["w1"], w2 = (int)v["w2"], tank = (int)v["tank"];
+        const float aspect = a.m_rcView.w / std::max(1.0f, a.m_rcView.h);
+        check("simulator iPhone: the view cut to the device in landscape (852 x 393)", a.m_game->playing() && std::fabs(aspect - 852.0f / 393.0f) < 0.03f,
+              fmt("view %.0f x %.0f", a.m_rcView.w, a.m_rcView.h));
+        check("device Phone, input Touch, HUD layout Phone", a.m_game->device() == "Phone" && rp.touchMode() && std::string(rp.layoutName()) == "Phone" &&
+                                                             a.m_game->inputMode() == "Touch");
+        check("graph: Get Device = Phone at the start, On Input Mode Changed = Touch", rt.variables().count("phoneAtStart") && rt.variables().count("touchSeen"));
+        const RtsView rv = a.m_game->rtsView(false);
+        check("simulator: the safe area of the notch and of the home indicator", rv.safeL > 0 && rv.safeB > 0 && rv.touch && rv.device == kPhone);
+        auto screen = [&](const float3& p, float& x, float& y) { float2 s; const bool ok = a.project(p, s); x = s.x; y = s.y; return ok; };
+        float x1, y1, x2, y2;
+        screen(a.m_scene.objects[w1].position + float3(0, 0.6f, 0), x1, y1);
+        screen(a.m_scene.objects[w2].position + float3(0, 0.6f, 0), x2, y2);
+        rp.tap(rv, x1, y1);
+        check("tap on a worker: it is selected", rp.selection().size() == 1 && rp.selection()[0] == w1);
+        rp.tap(rv, x1, y1);
+        check("double tap: the workers in view selected", rp.selection().size() == 2);
+        rp.setSelection({});
+        rp.touchRect(rv, std::min(x1, x2) - 40, std::min(y1, y2) - 40, std::max(x1, x2) + 40, std::max(y1, y2) + 40);
+        check("long press + drag: the rectangle selects both workers", rp.selection().size() == 2);
+        float tx, ty;
+        screen(a.m_scene.objects[tank].position + float3(0, 0.8f, 0), tx, ty);
+        rp.tap(rv, tx, ty);
+        check("tap on a station with workers selected: the order (Object Right Clicked)", rt.variables().count("harvest") && rp.selection().size() == 2);
+        float gx, gy;
+        screen(float3(-3, 0, 8), gx, gy);
+        rp.tap(rv, gx, gy);
+        check("tap on the ground with workers selected: they walk there", rt.unitMoving(w1) && rt.unitMoving(w2) && rp.selection().size() == 2);
+        // placement: the ghost at the centre of the view, a tap moves it, Valider places it
+        rt.fireHudButton("factory");
+        check("touch placement: the ghost starts at the centre of the view", rp.placing());
+        float px, py;
+        screen(float3(-7, 0, 7), px, py);
+        rp.tap(rv, px, py);
+        check("a tap moves the ghost (not an order)", rp.placing() && rp.ghostOk());
+        check("Valider places it", rp.confirmPlacement() && !rp.placing());
+        rt.fireHudButton("factory");
+        rp.cancelPlacement();
+        check("Annuler: the placement cancelled", !rp.placing() && !rt.placementPending());
+        a.m_game->setSimDevice(kTablet);
+        return 6;
+    });
+    add("touch", [this] {
+        RtsPlay& rp = a.m_game->m_rts;
+        const float aspect = a.m_rcView.w / std::max(1.0f, a.m_rcView.h);
+        check("simulator iPad: 1180 x 820, layout Tablet", std::fabs(aspect - 1180.0f / 820.0f) < 0.03f && std::string(rp.layoutName()) == "Tablet" && rp.touchMode());
+        a.m_game->setSimDevice(0);
+        return 6;
+    });
+    add("touch", [this] {
+        RtsPlay& rp = a.m_game->m_rts;
+        game::Runtime& rt = a.m_game->runtime();
+        check("back to PC: mouse, layout Desktop, On Input Mode Changed = Mouse",
+              !rp.touchMode() && std::string(rp.layoutName()) == "Desktop" && a.m_game->device() == "Desktop" && rt.variables().count("mouseSeen"));
+        rp.forceInputMode(1);
+        return 3;
+    });
+    add("touch", [this] {
+        RtsPlay& rp = a.m_game->m_rts;
+        check("a touch screen on a PC: Touch, large targets (layout Tablet)", rp.touchMode() && std::string(rp.layoutName()) == "Tablet");
+        rp.forceInputMode(-1);
+        a.m_game->requestPlay();   // Stop
+        return 3;
+    });
+    add("touch", [this] {
+        check("Stop: simulator off, the view of the editor back", !a.m_game->playing() && a.m_game->simDevice() == 0);
+        a.m_game->loadSceneGraph(Json());
+        return 1;
+    });
+
     add("robustness", [this] { fresh(); a.select(obj("Cube")); return 2; });
     for (int n : {8, 1, 16, 4, 8, 16, 1, 4}) {
         add("robustness", [this, n] { a.m_msaa = n; return 2; });

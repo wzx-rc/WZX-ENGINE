@@ -4,6 +4,7 @@
 #include "Rig.h"
 #include <algorithm>
 #include <charconv>
+#include <cstdio>
 #include <cmath>
 #include <functional>
 
@@ -343,11 +344,12 @@ Affine mul(const Affine& a, const Affine& b) {
 
 namespace {
 
+// snprintf rather than std::to_chars: floating point to_chars needs iOS 16.3 and the player targets iOS 15
 std::string fnum(float v) {
     if (!std::isfinite(v)) v = 0.0f;
     char b[32];
-    auto r = std::to_chars(b, b + sizeof(b), v);
-    return std::string(b, r.ptr);
+    snprintf(b, sizeof(b), "%.9g", (double)v);
+    return b;
 }
 std::string esc(const std::string& s) {
     std::string o;
@@ -401,9 +403,21 @@ float3 vec3(const Json& j, const float3& def) {
 float fl(const Json& j, float def) { return (float)j.num(def); }
 bool flag(const Json& j, bool def) { return j.type == Json::Bool ? j.b : def; }
 
+// ASCII case-insensitive comparison (portable: no _stricmp outside Windows)
+bool sameNoCase(const std::string& a, const char* b) {
+    size_t i = 0;
+    for (; i < a.size() && b[i]; ++i) {
+        char x = a[i], y = b[i];
+        if (x >= 'A' && x <= 'Z') x = (char)(x - 'A' + 'a');
+        if (y >= 'A' && y <= 'Z') y = (char)(y - 'A' + 'a');
+        if (x != y) return false;
+    }
+    return i == a.size() && !b[i];
+}
+
 int primType(const std::string& n) {
     for (int t = PRIM_CUBE; t <= PRIM_DISK; ++t)
-        if (_stricmp(n.c_str(), primitiveName(t)) == 0) return t;
+        if (sameNoCase(n, primitiveName(t))) return t;
     return PRIM_NONE;
 }
 

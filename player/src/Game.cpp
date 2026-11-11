@@ -86,6 +86,7 @@ void Game::frame(float dt, float viewW, float viewH, const CameraControls& cc) {
     m_viewW = std::max(1.0f, viewW);
     m_viewH = std::max(1.0f, viewH);
     m_time += dt;
+    m_twoFingers = cc.twoFingers;
     // the HUD of the previous frame tells whether the pointer is on it
     playInput();
     m_rt.tick(dt);
@@ -145,6 +146,17 @@ bool Game::keyPressed(int key, const char* name) const {
     return name && std::find(m_touchKeys.begin(), m_touchKeys.end(), name) != m_touchKeys.end();
 }
 
+app::RtsView Game::rtsView() const {
+    app::RtsView v{0, 0, m_viewW, m_viewH, m_s};
+    v.touch = m_touch;
+    v.device = m_device;
+    v.safeL = m_safeL;
+    v.safeT = m_safeT;
+    v.safeR = m_safeR;
+    v.safeB = m_safeB;
+    return v;
+}
+
 // Game clicks and keys (GameHost::playInput).
 void Game::playInput() {
     ImGuiIO& io = ImGui::GetIO();
@@ -154,8 +166,9 @@ void Game::playInput() {
         cameraRay(io.MousePos.x, io.MousePos.y, o, d);
         float tHouse = 0;
         const bool house = houseUnder(o, d, tHouse) >= 0 && tHouse <= pick(*m_scene, o, d).t;
+        if (m_twoFingers) m_rts.cancelGesture();   // a second finger: the camera, not a tap
         if (!(house && ImGui::IsMouseClicked(0))) {
-            m_rts.input(app::RtsView{0, 0, m_viewW, m_viewH, m_s}, m_buildHud || io.WantCaptureMouse);
+            m_rts.input(rtsView(), m_buildHud || io.WantCaptureMouse);
             rtsClick = true;
         }
     }
@@ -210,7 +223,7 @@ void Game::updateRtsCamera(float dt, const CameraControls& cc) {
     }
     in.fast = io.KeyShift;
     if (inView) {
-        if (!m_touch) {
+        if (!m_touch && !m_rts.touchMode()) {
             if (io.MousePos.x < e) in.moveX -= 1;
             if (io.MousePos.x > m_viewW - e) in.moveX += 1;
             if (io.MousePos.y < e) in.moveZ += 1;
@@ -226,7 +239,7 @@ void Game::updateRtsCamera(float dt, const CameraControls& cc) {
         if (groundAt(cc.fingersX, cc.fingersY, g)) { in.hasCursorGround = true; in.cursorGround = g; }
     }
     m_cam.update(in, dt);
-    if (inView && ImGui::IsMouseDown(1)) {
+    if (inView && !m_rts.touchMode() && ImGui::IsMouseDown(1)) {
         float3 g;
         if (groundUnderMouse(g)) {
             if (!m_rmbDrag) { m_rmbDrag = true; m_rmbGrab = g; }
@@ -234,6 +247,16 @@ void Game::updateRtsCamera(float dt, const CameraControls& cc) {
         }
     } else {
         m_rmbDrag = false;
+    }
+    float fx, fy;
+    if (!cc.twoFingers && m_rts.touchPan(fx, fy)) {   // touch: one finger drags the ground (RtsPlay)
+        float3 g;
+        if (groundAt(fx, fy, g)) {
+            if (!m_touchDrag) { m_touchDrag = true; m_touchGrab = g; }
+            else m_cam.dragTo(m_touchGrab, g);
+        }
+    } else {
+        m_touchDrag = false;
     }
     if (cc.twoFingers) {
         float3 g;
@@ -633,14 +656,15 @@ void Game::cellAt(float x, float z, int& cx, int& cz) const {
 
 // Bottom left: the buttons declared by the graph; on touch screens also the keys of the game (R, C, Del).
 void Game::drawRtsHud() {
-    if (m_hudButtons.empty() && m_build.buildings().empty() && !m_touch) {   // nothing to show in the button box
+    // a game without houses: the RTS layer draws the HUD buttons of the graph in its command bar (by device)
+    if (m_build.buildings().empty() && (m_rts.active() || (m_hudButtons.empty() && !m_touch))) {
         if (m_rts.active()) {
-            const app::RtsView rv{0, 0, m_viewW, m_viewH, m_s};
+            const app::RtsView rv = rtsView();
             m_rts.drawOverlay(ImGui::GetBackgroundDrawList(), rv);
-            m_rts.drawHud(rv);
+            m_rts.drawHud(rv, &m_hudButtons);
             m_buildHud |= m_rts.hudHovered();
         }
-        if (m_rtsCam) drawSunDial();
+        if (m_rtsCam && m_device != app::kPhone) drawSunDial();   // (a phone: no room for it)
         return;
     }
     const float d = m_s;
@@ -673,12 +697,12 @@ void Game::drawRtsHud() {
     }
     ImGui::End();
     if (m_rts.active()) {   // RTS units: rings and bars over the 3D view (behind the windows), counters, objectives
-        const app::RtsView rv{0, 0, m_viewW, m_viewH, m_s};
+        const app::RtsView rv = rtsView();
         m_rts.drawOverlay(ImGui::GetBackgroundDrawList(), rv);
         m_rts.drawHud(rv);
         m_buildHud |= m_rts.hudHovered();
     }
-    if (m_rtsCam) drawSunDial();
+    if (m_rtsCam && m_device != app::kPhone) drawSunDial();   // (a phone: no room for it)
 }
 
 // Sun dial, top right (AppRts.cpp, GameHost::drawSunDial).

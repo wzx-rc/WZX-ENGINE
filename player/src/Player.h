@@ -21,6 +21,7 @@ struct Options {
     std::string dataDir;             // folder holding game/ and assets/ (studio)
     float uiScale = 1.0f;            // HUD scale (DPI)
     bool touch = false;              // touch screen: touch buttons, no screen edge scrolling
+    int device = 0;                  // app::RtsDevice: 0 Desktop, 1 Tablet (iPad), 2 Phone (iPhone): the HUD layout
     std::string fontFile;            // HUD font (TTF), empty = the built-in one
     // DDGI probes without ray tracing (lit::Settings): on, view (0 full, 1 indirect only, 2 direct only), budget, debug spheres
     bool ddgi = false;

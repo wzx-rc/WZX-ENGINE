@@ -103,7 +103,15 @@ public:
     bool beginPlacement(const std::string& prefab) override { return m_rts.beginPlacement(prefab); }
     void setPartColor(int obj, const std::string& part, vp3d::float3 rgb) override { m_rts.setPartColor(obj, part, rgb); m_app.markDirty(); }
     void setPartGlow(int obj, const std::string& part, float k) override { m_rts.setPartGlow(obj, part, k); m_app.markDirty(); }
+    std::string device() const override { return rtsDeviceName(simDevice() ? simDevice() : m_rts.device()); }
+    std::string inputMode() const override { return m_rts.inputModeName(); }
     RtsPlay m_rts;
+    // Device simulator of Play (as the Device Simulator of Unity): 0 PC, 1 iPad, 2 iPhone. The view of the editor is
+    // cut to the device in landscape (App::viewportCanvas), its safe area kept clear by the HUD, the mouse is a finger.
+    int simDevice() const { return m_playing && !m_player ? m_simDevice : 0; }
+    void setSimDevice(int device) { m_simDevice = device; }
+    void setSimFrame(float x, float y, float w, float h, float pointScale) { m_simArea[0] = x; m_simArea[1] = y; m_simArea[2] = w; m_simArea[3] = h; m_simScale = pointScale; }
+    RtsView rtsView(bool belowTag) const;   // the view of the RTS layer (simulated device, or below the PLAY tag)
     game::Runtime& runtime() { return m_rt; }   // (self-test)
 
 private:
@@ -146,6 +154,11 @@ private:
     uint32_t m_rtsPaneObject = 0;
     bool m_rmbDrag = false;
     vp3d::float3 m_rmbGrab;
+    bool m_touchDrag = false;          // a finger dragging the camera (touch mode)
+    vp3d::float3 m_touchGrab;
+    int m_simDevice = 0;
+    float m_simArea[4] = {0, 0, 0, 0}, m_simScale = 1.0f;
+    void drawDevicePicker();
     game::RtsCamera m_cam;
     void drawToasts();
     void toast(const std::wstring& s);

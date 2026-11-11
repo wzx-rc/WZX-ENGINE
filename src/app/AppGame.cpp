@@ -5,6 +5,7 @@
 #include "WzxRead.h"
 #include "atelier/atelier_style.h"
 #include "atelier/ui_icons.h"
+#include <cctype>
 #include <set>
 #include <unordered_map>
 #include <shellapi.h>
@@ -437,17 +438,20 @@ void GameHost::updateRtsCamera(float dt) {
         in.turn = phys(0x12) - phys(0x10);                                                   // E / Q
     }
     in.fast = io.KeyShift;
+    const bool touch = m_rts.touchMode();
     if (inView) {
+        if (!touch) {
         if (io.MousePos.x < v.x + e) in.moveX -= 1;
         if (io.MousePos.x > v.r() - e) in.moveX += 1;
         if (io.MousePos.y < v.y + e) in.moveZ += 1;
         if (io.MousePos.y > v.b() - e) in.moveZ -= 1;
-        in.wheel = io.MouseWheel;
+        }
+        in.wheel = io.MouseWheel;   // (the simulator: the wheel is the pinch)
         float3 g;
         if (groundUnderMouse(g)) { in.hasCursorGround = true; in.cursorGround = g; }
     }
     m_cam.update(in, dt);
-    if (inView && ImGui::IsMouseDown(1)) {
+    if (inView && !touch && ImGui::IsMouseDown(1)) {
         float3 g;
         if (groundUnderMouse(g)) {
             if (!m_rmbDrag) { m_rmbDrag = true; m_rmbGrab = g; }
@@ -455,6 +459,18 @@ void GameHost::updateRtsCamera(float dt) {
         }
     } else {
         m_rmbDrag = false;
+    }
+    float fx, fy;
+    if (m_rts.touchPan(fx, fy)) {   // touch: one finger drags the ground
+        float3 o, dir;
+        m_app.cameraRay(fx, fy, o, dir);
+        if (std::fabs(dir.y) > 1e-5f && -o.y / dir.y > 0) {
+            const float3 g = o + dir * (-o.y / dir.y);
+            if (!m_touchDrag) { m_touchDrag = true; m_touchGrab = g; }
+            else m_cam.dragTo(m_touchGrab, g);
+        }
+    } else {
+        m_touchDrag = false;
     }
     if (inView && ImGui::IsMouseDown(2)) m_cam.addYaw(io.MouseDelta.x * 0.01f);
     m_cam.apply(m_app.m_scene.camera);
@@ -585,6 +601,49 @@ void GameHost::toast(const std::wstring& s) {
     if (m_toasts.size() > 5) m_toasts.erase(m_toasts.begin());
 }
 
+RtsView GameHost::rtsView(bool belowTag) const {
+    const ScreenRect& v = m_app.m_rcView;
+    RtsView rv{v.x, v.y, v.w, v.h, m_app.m_dpi};
+    if (const RtsDeviceSpec* sp = rtsDeviceSpec(simDevice())) {   // the simulated device: points, safe area, a finger
+        rv.scale = m_simScale;
+        rv.touch = true;
+        rv.device = simDevice();
+        rv.safeL = sp->safeL * m_simScale;
+        rv.safeT = sp->safeT * m_simScale;
+        rv.safeR = sp->safeR * m_simScale;
+        rv.safeB = sp->safeB * m_simScale;
+    } else if (belowTag && !m_player) {
+        rv.y += 34 * m_app.m_dpi;
+        rv.h -= 34 * m_app.m_dpi;
+    }
+    return rv;
+}
+
+// The device picker of Play (top right of the view): PC, iPad, iPhone.
+void GameHost::drawDevicePicker() {
+    const float d = m_app.m_dpi;
+    const bool sim = simDevice() > 0;
+    const ScreenRect& v = m_app.m_rcView;
+    const float right = sim ? m_simArea[0] + m_simArea[2] - 10 * d : v.r() - 10 * d, top = sim ? m_simArea[1] + 8 * d : v.y + 8 * d;
+    ImGui::SetNextWindowPos(ImVec2(right, top), ImGuiCond_Always, ImVec2(1.0f, 0.0f));
+    ImGui::SetNextWindowBgAlpha(0.8f);
+    const ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |
+                                   ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_AlwaysAutoResize;
+    if (ImGui::Begin("##devicepicker", nullptr, flags)) {
+        ImGui::TextDisabled("Appareil");
+        static const char* kNames[] = {"PC", "iPad", "iPhone"};
+        for (int k = 0; k < 3; ++k) {
+            ImGui::SameLine();
+            const bool on = m_simDevice == k;
+            if (on) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.25f, 0.72f, 0.31f, 1.0f));
+            if (ImGui::SmallButton(kNames[k])) m_simDevice = k;
+            if (on) ImGui::PopStyleColor();
+        }
+        m_buildHud |= ImGui::IsWindowHovered();
+    }
+    ImGui::End();
+}
+
 // --------------------------------------------------------------------------- per-frame input
 
 // Game clicks and keys (Play in the editor, or the built game).
@@ -599,8 +658,7 @@ void GameHost::playInput() {
         m_app.cameraRay(io.MousePos.x, io.MousePos.y, o, d);
         const bool house = placeActive() && houseUnder(o, d, tHouse) >= 0 && tHouse <= pick(m_app.m_scene, o, d).t;
         if (!(house && ImGui::IsMouseClicked(0))) {
-            RtsView rv{v.x, v.y, v.w, v.h, m_app.m_dpi};
-            m_rts.input(rv, m_buildHud);
+            m_rts.input(rtsView(false), m_buildHud);
             rtsClick = true;
             const std::vector<int>& s = m_rts.selection();   // the editor outlines the selection too
             const int first = s.empty() ? -1 : s[0];
@@ -950,9 +1008,9 @@ void GameHost::draw() {
         }
         if (placeActive()) drawRtsHud();
         if (m_rts.active()) {   // RTS units: rings and bars over the view, counters, objectives, selection card
-            RtsView rv{v.x, v.y, v.w, v.h, m_app.m_dpi};
+            const RtsView rv = rtsView(false);
             m_rts.drawOverlay(ImGui::GetForegroundDrawList(), rv);
-            m_rts.drawHud(rv);
+            m_rts.drawHud(rv, m_build.buildings().empty() ? &m_hudButtons : nullptr);
             m_buildHud |= m_rts.hudHovered();
         }
         drawToasts();
@@ -964,7 +1022,8 @@ void GameHost::draw() {
         if (m_playing) {
             ImDrawList* fg = ImGui::GetForegroundDrawList();
             fg->AddRect(ImVec2(v.x + 1, v.y + 1), ImVec2(v.x + v.w - 1, v.y + v.h - 1), IM_COL32(0x3F, 0xB9, 0x50, 255), 0, 0, 2.5f);
-            ImVec2 tl(v.x + v.w * 0.5f - 120, v.y + 10), br(tl.x + 240, tl.y + 26);
+            const bool sim = simDevice() > 0;   // the simulator: the tag above the device
+            ImVec2 tl(sim ? m_simArea[0] + m_simArea[2] * 0.5f - 120 : v.x + v.w * 0.5f - 120, sim ? m_simArea[1] + 8 * m_app.m_dpi : v.y + 10), br(tl.x + 240, tl.y + 26);
             fg->AddRectFilled(tl, br, IM_COL32(0x3F, 0xB9, 0x50, 230), 5);
             const char* tag = "PLAY  ·  F5 to stop";
             ImVec2 ts = ImGui::CalcTextSize(tag);
@@ -972,11 +1031,22 @@ void GameHost::draw() {
         }
         if (placeActive()) drawRtsHud();
         if (m_rts.active()) {   // RTS units (below the PLAY tag of the editor)
-            RtsView rv{v.x, v.y + 34 * m_app.m_dpi, v.w, v.h - 34 * m_app.m_dpi, m_app.m_dpi};
-            RtsView full{v.x, v.y, v.w, v.h, m_app.m_dpi};
-            m_rts.drawOverlay(ImGui::GetForegroundDrawList(), full);
-            m_rts.drawHud(rv);
+            m_rts.drawOverlay(ImGui::GetForegroundDrawList(), rtsView(false));
+            m_rts.drawHud(rtsView(true), m_build.buildings().empty() ? &m_hudButtons : nullptr);
             m_buildHud |= m_rts.hudHovered();
+        }
+        if (m_playing) drawDevicePicker();
+        if (simDevice() == kPhone) {   // the simulator: the Dynamic Island (left, in landscape) and the home indicator
+            ImDrawList* fg = ImGui::GetForegroundDrawList();
+            const float k = m_simScale;
+            const ImVec2 c(v.x + 18 * k, v.y + v.h * 0.5f);
+            fg->AddRectFilled(ImVec2(c.x - 18 * k, c.y - 63 * k), ImVec2(c.x + 18 * k, c.y + 63 * k), IM_COL32(0, 0, 0, 255), 18 * k);
+            fg->AddRectFilled(ImVec2(v.x + v.w * 0.5f - 70 * k, v.y + v.h - 9 * k), ImVec2(v.x + v.w * 0.5f + 70 * k, v.y + v.h - 4 * k),
+                              IM_COL32(235, 235, 235, 200), 3 * k);
+        } else if (simDevice() == kTablet) {   // the home indicator of the iPad
+            const float k = m_simScale;
+            ImGui::GetForegroundDrawList()->AddRectFilled(ImVec2(v.x + v.w * 0.5f - 160 * k, v.y + v.h - 9 * k),
+                                                          ImVec2(v.x + v.w * 0.5f + 160 * k, v.y + v.h - 4 * k), IM_COL32(235, 235, 235, 200), 3 * k);
         }
     }
     if (m_showBuild) drawBuildWindow();
@@ -1643,9 +1713,86 @@ std::string GameHost::command(const Json& j, int& status) {
         m_rt.fireHudButton(j["id"].str());
         return ok();
     }
+    // the platform: the device simulator, the input mode, touch gestures (the same code as the fingers)
+    if (cmd == "rts.device") {   // {device: "pc" | "ipad" | "iphone"}: the device simulated in Play (applies next frame)
+        std::string dv = j["device"].str();
+        for (char& c : dv) c = (char)std::tolower((unsigned char)c);
+        if (dv == "pc" || dv == "desktop") m_simDevice = 0;
+        else if (dv == "ipad" || dv == "tablet") m_simDevice = 1;
+        else if (dv == "iphone" || dv == "phone") m_simDevice = 2;
+        else if (!dv.empty()) return fail("device: pc, ipad or iphone");
+        static const char* kNames[] = {"pc", "ipad", "iphone"};
+        return ok(std::string(", \"device\": \"") + kNames[m_simDevice] + "\"");
+    }
+    if (cmd == "rts.var") {   // {name, value}: a global variable of the graph set (tests, captures)
+        if (!m_playing) return fail("Play is not running");
+        m_rt.setVariable(j["name"].str(), game::Value::Float((float)j["value"].n));
+        return ok();
+    }
+    if (cmd == "rts.input") {   // {mode: "auto" | "mouse" | "touch"}: the input mode (auto: detected)
+        const std::string md = j["mode"].str();
+        m_rts.forceInputMode(md == "mouse" ? 0 : md == "touch" ? 1 : -1);
+        return ok();
+    }
+    if (cmd == "input.tap" || cmd == "input.touchrect" || cmd == "input.command") {
+        if (!m_playing) return fail("Play is not running");
+        const RtsView rv = rtsView(false);
+        // a point of the screen: {screen: [x, y]} in pixels of the view, {target} an object, {pos} a ground point
+        auto screenOf = [&](const Json& t, const Json& p, const Json& sc, float& x, float& y) -> bool {
+            float3 w;
+            if (sc.type == Json::Array && sc.a.size() >= 2) {
+                x = rv.x + (float)sc.a[0].n;
+                y = rv.y + (float)sc.a[1].n;
+                return true;
+            }
+            if (t.type != Json::Null) {
+                const int i = resolveObject(t);
+                if (i < 0) return false;
+                w = s.objects[instanceRootOf(s, i)].position + float3(0, 0.6f, 0);
+            } else if (!readVec(p, w)) {
+                return false;
+            }
+            float2 q;
+            if (!m_app.project(w, q)) return false;
+            x = q.x;
+            y = q.y;
+            return true;
+        };
+        if (cmd == "input.tap") {   // {target | pos | screen, double?}: a tap of a finger there
+            float x, y;
+            if (!screenOf(j["target"], j["pos"], j["screen"], x, y)) return fail("give target, pos or screen");
+            if (j["double"].type == Json::Bool && j["double"].b) {   // the two taps of a double tap
+                m_rts.forgetTap();
+                m_rts.tap(rv, x, y);
+            }
+            m_rts.tap(rv, x, y);
+            std::string out = ", \"selection\": [";
+            for (size_t k = 0; k < m_rts.selection().size(); ++k) out += (k ? ", " : "") + std::to_string(m_rts.selection()[k]);
+            return ok(out + "]");
+        }
+        if (cmd == "input.touchrect") {   // {from, to} ground points (or fromScreen, toScreen), preview?: shown only
+            float x0, y0, x1, y1;
+            if (!screenOf(Json(), j["from"], j["fromScreen"], x0, y0) || !screenOf(Json(), j["to"], j["toScreen"], x1, y1)) return fail("give from and to");
+            if (j["preview"].type == Json::Bool && j["preview"].b) m_rts.previewRect(x0, y0, x1, y1);
+            else m_rts.touchRect(rv, x0, y0, x1, y1);
+            std::string out = ", \"selection\": [";
+            for (size_t k = 0; k < m_rts.selection().size(); ++k) out += (k ? ", " : "") + std::to_string(m_rts.selection()[k]);
+            return ok(out + "]");
+        }
+        // input.command {name: "all" | "none" | "ok" | "cancel"}: the touch commands of the HUD
+        const std::string nm = j["name"].str();
+        if (nm == "all") m_rts.selectAllUnits();
+        else if (nm == "none") m_rts.setSelection({});
+        else if (nm == "ok") return ok(std::string(", \"placed\": ") + (m_rts.confirmPlacement() ? "true" : "false"));
+        else if (nm == "cancel") m_rts.cancelPlacement();
+        else return fail("name: all, none, ok or cancel");
+        return ok();
+    }
     if (cmd == "rts.state") {   // variables, selection, objectives, message, units of the Play session
         std::ostringstream js;
-        js << "{\"ok\": true, \"playing\": " << (m_playing ? "true" : "false") << ", \"vars\": {";
+        js << "{\"ok\": true, \"playing\": " << (m_playing ? "true" : "false") << ", \"device\": " << jstr(device())
+           << ", \"inputMode\": " << jstr(inputMode()) << ", \"layout\": " << jstr(m_rts.layoutName()) << ", \"ghostOk\": "
+           << (m_rts.placing() && m_rts.ghostOk() ? "true" : "false") << ", \"vars\": {";
         bool first = true;
         for (auto& [k, val] : m_rt.variables()) { js << (first ? "" : ", ") << jstr(k) << ": " << val.asFloat(); first = false; }
         js << "}, \"selection\": [";

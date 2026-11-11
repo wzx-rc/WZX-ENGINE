@@ -12,6 +12,21 @@ namespace app {
 // 3D image + input + gizmo in a screen rectangle of the current window (Atelier Scene workspace).
 void App::viewportCanvas(ImVec2 p0, ImVec2 size) {
     m_viewportVisible = true;
+    if (const RtsDeviceSpec* sp = m_game ? rtsDeviceSpec(m_game->simDevice()) : nullptr) {
+        // the device simulator of Play: the view cut to the device in landscape, a bezel around it
+        ImDrawList* bg = ImGui::GetWindowDrawList();
+        bg->AddRectFilled(p0, ImVec2(p0.x + size.x, p0.y + size.y), IM_COL32(14, 15, 18, 255));
+        const float top = 44 * m_dpi, pad = 18 * m_dpi;
+        const float k = std::max(0.1f, std::min((size.x - 2 * pad) / sp->w, (size.y - top - pad) / sp->h));
+        const ImVec2 sz(std::floor(sp->w * k), std::floor(sp->h * k));
+        const ImVec2 q(std::floor(p0.x + (size.x - sz.x) * 0.5f), std::floor(p0.y + top + (size.y - top - pad - sz.y) * 0.5f));
+        const float bz = 10 * k;
+        bg->AddRectFilled(ImVec2(q.x - bz, q.y - bz), ImVec2(q.x + sz.x + bz, q.y + sz.y + bz), IM_COL32(4, 4, 6, 255), 22 * k);
+        bg->AddRect(ImVec2(q.x - bz, q.y - bz), ImVec2(q.x + sz.x + bz, q.y + sz.y + bz), IM_COL32(70, 74, 82, 255), 22 * k, 0, 1.5f);
+        m_game->setSimFrame(p0.x, p0.y, size.x, size.y, k);
+        p0 = q;
+        size = sz;
+    }
     m_rcView = {p0.x, p0.y, size.x, size.y};
     m_vpPx.x = 0;
     m_vpPx.y = 0;

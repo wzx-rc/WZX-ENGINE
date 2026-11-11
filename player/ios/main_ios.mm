@@ -57,6 +57,10 @@ using namespace Diligent;
     self.view = view;
 }
 
+- (UIInterfaceOrientationMask)supportedInterfaceOrientations {
+    return UIInterfaceOrientationMaskLandscape;   // the game is played in landscape (iPhone and iPad)
+}
+
 - (BOOL)prefersStatusBarHidden {
     return YES;
 }
@@ -102,6 +106,8 @@ using namespace Diligent;
     opt.scene = [[NSFileManager defaultManager] fileExistsAtPath:[res stringByAppendingPathComponent:@"game.json"]] ? "game" : "studio";
     opt.uiScale = (float)self.view.contentScaleFactor;
     opt.touch = true;
+    // the HUD layout: iPad (Tablet) or iPhone (Phone)
+    opt.device = [UIDevice currentDevice].userInterfaceIdiom == UIUserInterfaceIdiomPad ? 1 : 2;
     std::string err;
     if (!_player.init(_device, _context, factory, _swapChain->GetDesc().ColorBufferFormat, shaders.UTF8String, opt, &err)) {
         [self showError:[NSString stringWithUTF8String:err.c_str()]];

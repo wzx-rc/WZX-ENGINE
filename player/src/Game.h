@@ -40,6 +40,9 @@ public:
     const std::deque<std::string>& log() const { return m_rt.log; }   // the graph's messages and errors
     // Margins the HUD keeps clear, in pixels (iPhone notch and home indicator).
     void setSafeArea(float left, float top, float right, float bottom) { m_safeL = left; m_safeT = top; m_safeR = right; m_safeB = bottom; }
+    void setDevice(int device) { m_device = device; }   // app::RtsDevice (the HUD layout)
+    std::string device() const override { return app::rtsDeviceName(m_device); }
+    std::string inputMode() const override { return m_rts.inputModeName(); }
     int objectsShown() const;                                          // visible objects of the scene (tests)
 
     // game::World
@@ -113,6 +116,11 @@ private:
     std::string m_dataDir;
     float m_s = 1.0f;                 // UI scale (DPI)
     bool m_touch = false;
+    int m_device = 0;
+    bool m_twoFingers = false;          // two fingers on the screen this frame (the camera takes them)
+    bool m_touchDrag = false;           // one finger dragging the camera (touch mode of the RTS layer)
+    vp3d::float3 m_touchGrab;
+    app::RtsView rtsView() const;
     float m_viewW = 1, m_viewH = 1;
     float m_safeL = 0, m_safeT = 0, m_safeR = 0, m_safeB = 0;
     float m_time = 0;

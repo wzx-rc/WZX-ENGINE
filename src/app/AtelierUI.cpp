@@ -1408,7 +1408,8 @@ void App::atlViewport(float x, float y, float w, float h) {
     if (tris >= 1000000) snprintf(triText, sizeof(triText), "%.1f M", tris / 1e6);
     else if (tris >= 10000) snprintf(triText, sizeof(triText), "%.1f k", tris / 1e3);
     else snprintf(triText, sizeof(triText), "%zu", tris);
-    const bool roomy = r.w > 330 * s && r.h > 210 * s;   // (a small pane of a layout: no view cube, no statistics)
+    // (a small pane of a layout, the device simulator of Play: no view cube, no statistics)
+    const bool roomy = r.w > 330 * s && r.h > 210 * s && !(m_game && m_game->simDevice() > 0);
     if (m_showStats && roomy && r.h > 300 * s) {
         // (text at 11, as the panels: 9 was too small to read)
         R st = {r.x + r.w - 214 * s, r.y + 116 * s, 200 * s, 158 * s};   // under the view cube

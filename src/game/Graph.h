@@ -63,6 +63,8 @@ enum class Op {
     GetSelected, CountSelected, IsSelected, ForEachSelected, SelectAdd, ClearSelection,
     SetObjVar, AddObjVar, GetObjVar, StartTimer, FindNearest, ObjectType, ObjectCategory,
     MoveUnit, StopUnit, PlaceBuilding, ProduceUnit, HudCounter, SetObjective, ShowMessage, SetPartColor, SetPartGlow, SetObjLink, GetObjLink,
+    // the platform: device (Desktop / Tablet / Phone) and input mode (Mouse / Touch)
+    GetDevice, GetInputMode, OnInputModeChanged,
 };
 
 struct NodeDef {

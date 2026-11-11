@@ -53,6 +53,10 @@ public:
     virtual bool beginPlacement(const std::string& prefab) { (void)prefab; return false; }
     virtual void setPartColor(int obj, const std::string& part, float3 rgb) { (void)obj; (void)part; (void)rgb; }
     virtual void setPartGlow(int obj, const std::string& part, float k) { (void)obj; (void)part; (void)k; }
+    // the platform the game runs on: "Desktop", "Tablet" (iPad) or "Phone" (iPhone), and the input in use: "Mouse" or
+    // "Touch" (it switches live: a Windows touch screen turns it to Touch when the screen is touched)
+    virtual std::string device() const { return "Desktop"; }
+    virtual std::string inputMode() const { return "Mouse"; }
 };
 
 class Runtime {
@@ -73,6 +77,7 @@ public:
     void fireRightClickGround(float3 point);
     void fireRightClickObject(int obj, float3 point);
     void fireSelectionChanged();
+    void fireInputModeChanged(const std::string& mode);   // "Mouse" or "Touch"
     void firePlacement(int building);   // the building placed (-1: cancelled) for the pending « Place Building »
     bool placementPending() const { return m_placeNode >= 0; }
 
@@ -94,6 +99,7 @@ public:
 
     float time() const { return m_time; }
     const std::map<std::string, Value>& variables() const { return m_vars; }
+    void setVariable(const std::string& name, const Value& v) { m_vars[name] = v; }   // tests, captures (API rts.var)
     // Editor feedback: time (in play seconds) a node last ran, for highlighting.
     float lastRun(int nodeId) const;
     std::deque<std::string> log;          // most recent last, capped

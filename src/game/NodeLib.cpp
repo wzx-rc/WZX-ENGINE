@@ -156,6 +156,11 @@ std::vector<NodeDef> build() {
                     .event().execOut());
     v.push_back(B(Op::OnTimer, "event.timer", "On Timer", EV, "A timer started with « Start Timer » ran out. Object, Name = those of the timer.")
                     .event().execOut().out("Object", O).out("Name", S));
+    // the platform: device and input mode (the HUD and the controls adapt to them by themselves; the graph can too)
+    v.push_back(B(Op::GetDevice, "input.device", "Get Device", IN, "The device the game runs on: Desktop (PC), Tablet (iPad) or Phone (iPhone).").pure().out("Device", S));
+    v.push_back(B(Op::GetInputMode, "input.mode", "Get Input Mode", IN, "The input in use: Mouse or Touch (it switches live with the last input used).").pure().out("Mode", S));
+    v.push_back(B(Op::OnInputModeChanged, "event.inputModeChanged", "On Input Mode Changed", EV, "The player switched between mouse and touch (a Windows touch screen touched, the mouse used again). Mode = Mouse or Touch.")
+                    .event().execOut().out("Mode", S));
     v.push_back(B(Op::GetSelected, "unit.selected", "Get Selected Unit", UN, "The first selected unit or building (none: not valid).").pure().out("Object", O));
     v.push_back(B(Op::CountSelected, "unit.countSelected", "Count Selected", UN, "Number of selected units and buildings.").pure().out("Count", F));
     v.push_back(B(Op::IsSelected, "unit.isSelected", "Is Selected", UN, "True if the object is selected.").pure().in("Object", O).out("Selected", Bo));

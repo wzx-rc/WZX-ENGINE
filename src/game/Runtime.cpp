@@ -161,6 +161,13 @@ void Runtime::fireSelectionChanged() {
     fire(Op::OnSelectionChanged);
 }
 
+void Runtime::fireInputModeChanged(const std::string& mode) {
+    if (!m_graph) return;
+    for (const Node& n : m_graph->nodes)
+        if (n.def->op == Op::OnInputModeChanged) m_cache[n.id] = {Value(), Value::Str(mode)};
+    fire(Op::OnInputModeChanged);
+}
+
 void Runtime::firePlacement(int building) {
     if (!m_graph || m_placeNode < 0) return;
     const int node = m_placeNode;
@@ -410,6 +417,8 @@ Value Runtime::output(const Node& n, int pin) {
     case Op::Selected: r = Value::Obj(m_world->selected()); break;
     case Op::GetSelected: { std::vector<int> s = m_world->selection(); r = Value::Obj(s.empty() ? -1 : s[0]); break; }
     case Op::CountSelected: r = Value::Float((float)m_world->selection().size()); break;
+    case Op::GetDevice: r = Value::Str(m_world->device()); break;
+    case Op::GetInputMode: r = Value::Str(m_world->inputMode()); break;
     case Op::IsSelected: {
         const int o = Ob(0);
         const std::vector<int> s = m_world->selection();

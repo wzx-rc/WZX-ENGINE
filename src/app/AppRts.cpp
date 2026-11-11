@@ -369,8 +369,9 @@ void GameHost::updatePlacement(float dt) {
 // RTS HUD, bottom left of the view: one button per house type. A click adds a house at the centre of
 // the view; a drag takes it from the button onto the grid. The sun dial comes with the RTS camera (Play).
 void GameHost::drawRtsHud() {
-    if (m_playing && m_hudButtons.empty() && m_build.buildings().empty()) {   // nothing to show in this box
-        if (m_rtsCam) drawSunDial();
+    // (Play without houses: the HUD buttons of the graph are in the command bar of the RTS layer, RtsPlay::drawHud)
+    if (m_playing && (m_hudButtons.empty() || m_rts.active()) && m_build.buildings().empty()) {   // nothing to show in this box
+        if (m_rtsCam && simDevice() == 0) drawSunDial();   // (the simulator: the dial of the editor stays out of the device)
         return;
     }
     const ScreenRect& v = m_app.m_rcView;
@@ -419,7 +420,7 @@ void GameHost::drawRtsHud() {
         if (!m_playing || !m_build.buildings().empty()) ImGui::TextDisabled("Drag a house onto the grid  ·  R rotate  ·  Del delete");   // (a game without houses: no hint)
     }
     ImGui::End();
-    if (m_rtsCam) drawSunDial();
+    if (m_rtsCam && simDevice() == 0) drawSunDial();   // (the simulator: the dial of the editor stays out of the device)
 }
 
 // Graph nodes of the houses (World): the ids are stable, so a node keeps its house when another is removed.
