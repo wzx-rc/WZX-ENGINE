@@ -11,6 +11,7 @@
 #include "imgui_internal.h"   // TempInputIsActive (Corail sliders)
 #include "atelier/material_ui.h"
 #include <cctype>
+#include <filesystem>
 
 namespace app {
 
@@ -546,6 +547,7 @@ void App::drawAtelier() {
         Splitter("splitBottom", {cx, Y + H - bh - 13 * s, cw, 5 * s}, A.bottomH, 140, maxB, false, true);
     }
     if (m_workspace == 3) drawPrefabStudio(X, top, W, H - 42 * s);   // Prefab studio panels (PrefabUI.inl)
+    drawPrefabAsk();   // (Ouvrir le prefab with unsaved changes in the studio)
     }   // not Halo
 
     // toast (status messages), as in archive/atelier-graph/former Atelier graph.cpp
@@ -1222,6 +1224,7 @@ void App::atlHierarchy(float x, float y, float w, float h) {
                 }
                 ImGui::EndMenu();
             }
+            if (obj) prefabInstanceMenuItems(n.index);   // a prefab instance (or one of its parts): its prefab
             ImGui::Separator();
             if (n.kind != NODE_SUN && ImGui::MenuItem("Delete", "Del")) deleteSelected();
         }
@@ -2360,6 +2363,18 @@ void App::atlInspectorActor(float x, float y, float w, float) {
         Glyph(Icon::Lock, x + w - 25 * s, y + 21 * s, 13, locked ? P().accent : P().muted);
     }
     y += 69 * s;
+    if (prefabInstanceUnder(m_selected) >= 0) {   // a prefab instance: its prefab, open it or unpack it
+        const std::string stem = toUtf8(std::filesystem::path(fromUtf8(o->prefab)).stem().wstring());
+        Label(x, y, "PREFAB");
+        Text(x + 64 * s, y - 1 * s, stem, P().accent, 12);
+        y += 22 * s;
+        const float bw = (w - 6 * s) / 2;
+        if (Button("pfOpen", {x, y, bw, 27 * s}, "Ouvrir le prefab", Icon::FolderOpen)) { prefabOpenInstance(m_selected); return; }
+        Tip("Le prefab de cette instance dans l'onglet Prefab (double-clic dans la vue)");
+        if (Button("pfUnpack", {x + bw + 6 * s, y, bw, 27 * s}, "Dépaqueter", Icon::Folder)) { prefabUnpackSelected(); return; }
+        Tip("Ses pièces deviennent des objets ordinaires, détachés du prefab (Ctrl+Z annule)");
+        y += 39 * s;
+    }
     Search("##atlPropSearch", {x, y, w, 28 * s}, A.propSearch, sizeof(A.propSearch), "Search properties...");
     y += 40 * s;
     auto show = [&](const char* keys) { return matches(keys, A.propSearch); };

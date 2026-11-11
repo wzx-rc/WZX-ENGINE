@@ -21,6 +21,7 @@ async function post(p, body) {
 }
 
 async function findPort() {
+  if (process.env.WZX_PORT) return Number(process.env.WZX_PORT);   // a given editor (two editors of the same project open)
   const candidates = [cfg.port, ...Array.from({ length: 10 }, (_, k) => 7878 + k).filter((p) => p !== cfg.port)];
   for (const p of candidates) {
     try {

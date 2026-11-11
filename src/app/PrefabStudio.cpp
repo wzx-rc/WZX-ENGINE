@@ -5,6 +5,7 @@
 #include "vp3d/AssetImport.h"
 #include "vp3d/shaders/Shared.h"
 #include <commdlg.h>
+#include <shellapi.h>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -930,6 +931,80 @@ void App::prefabUnpackSelected() {
     unpackPrefabInstance(m_scene, ri);
     markDirty();
     status(L"Prefab unpacked: its parts are ordinary objects now", 1);
+}
+
+int App::prefabInstanceUnder(int obj) const {
+    if (obj < 0 || obj >= (int)m_scene.objects.size()) return -1;
+    const int r = instanceRootOf(m_scene, obj);
+    return r >= 0 && r < (int)m_scene.objects.size() && m_scene.objects[r].isInstanceRoot() && !m_scene.objects[r].prefab.empty() ? r : -1;
+}
+
+void App::prefabOpenInstance(int obj) {
+    const int r = prefabInstanceUnder(obj);
+    if (r < 0) return;
+    if (!m_pf.initialised) prefabInit();   // (the Prefab tab never opened yet)
+    const std::wstring path = absPath(m_scene.objects[r].prefab);
+    std::error_code ec;
+    const bool same = !m_pf.path.empty() && fs::equivalent(fs::path(m_pf.path), fs::path(path), ec);
+    if (same) {   // already the one of the studio (its edits kept)
+        m_workspace = 3;
+        return;
+    }
+    if (!m_pf.path.empty() && prefabDirty()) {   // another prefab with unsaved changes: ask first
+        m_prefabAskPath = path;
+        m_prefabAskOpen = true;
+        return;
+    }
+    if (prefabOpen(path)) m_workspace = 3;
+}
+
+void App::prefabRevealInstance(int obj) {
+    const int r = prefabInstanceUnder(obj);
+    if (r < 0) return;
+    const std::wstring path = fs::path(absPath(m_scene.objects[r].prefab)).make_preferred().wstring();
+    const std::wstring args = L"/select,\"" + path + L"\"";
+    ShellExecuteW(nullptr, L"open", L"explorer.exe", args.c_str(), nullptr, SW_SHOWNORMAL);
+}
+
+void App::prefabInstanceMenuItems(int obj) {
+    const int r = prefabInstanceUnder(obj);
+    if (r < 0) return;
+    ImGui::Separator();
+    ImGui::TextDisabled("Prefab : %s", toUtf8(fs::path(fromUtf8(m_scene.objects[r].prefab)).stem().wstring()).c_str());
+    if (ImGui::MenuItem("Ouvrir le prefab")) prefabOpenInstance(r);
+    if (ImGui::MenuItem("Sélectionner le fichier")) prefabRevealInstance(r);
+    if (ImGui::MenuItem("Dépaqueter")) {
+        select(r);
+        prefabUnpackSelected();
+    }
+}
+
+void App::drawPrefabAsk() {
+    if (m_prefabAskOpen) {
+        ImGui::OpenPopup("Prefab modifié##prefabAsk");
+        m_prefabAskOpen = false;
+    }
+    if (ImGui::BeginPopupModal("Prefab modifié##prefabAsk", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings)) {
+        ImGui::Text("Le studio Prefab a des modifications non enregistrées sur %s.", toUtf8(fs::path(m_pf.path).filename().wstring()).c_str());
+        ImGui::Text("Ouvrir %s à la place ?", toUtf8(fs::path(m_prefabAskPath).filename().wstring()).c_str());
+        ImGui::Spacing();
+        auto openIt = [&]() {
+            if (prefabOpen(m_prefabAskPath)) m_workspace = 3;
+            m_prefabAskPath.clear();
+            ImGui::CloseCurrentPopup();
+        };
+        if (ImGui::Button("Enregistrer puis ouvrir")) {
+            if (prefabSave(false)) openIt();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Ouvrir sans enregistrer")) openIt();
+        ImGui::SameLine();
+        if (ImGui::Button("Annuler") || ImGui::IsKeyPressed(ImGuiKey_Escape, false)) {
+            m_prefabAskPath.clear();
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
+    }
 }
 
 // Live prefab instances of the main scene, every frame: files changed on disk (checked every second), parts in

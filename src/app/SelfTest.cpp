@@ -2685,6 +2685,75 @@ void App::SelfTest::build() {
         return 1;
     });
 
+    // ---------------------------------------------------------------- the prefab of an instance (Inspector, menus, double-click)
+    add("prefab access", [this] {
+        fresh();
+        // a copy of the worker: modified and saved by the test, then deleted
+        const std::wstring src = a.absPath("game/prefabs/mecha/MechaWorker.prefab"), dst = a.absPath("game/prefabs/selftest_access.prefab");
+        CopyFileW(src.c_str(), dst.c_str(), FALSE);
+        PrefabLibrary& lib = a.m_prefabs;
+        lib.refresh();
+        const int r1 = addPrefabInstance(a.m_scene, lib, "game/prefabs/selftest_access.prefab", float3(-2, 0, 0), 0.0f, "PA1");
+        const int r2 = addPrefabInstance(a.m_scene, lib, "game/prefabs/selftest_access.prefab", float3(2, 0, 0), 0.0f, "PA2");
+        const int w = addPrefabInstance(a.m_scene, lib, lib.resolve("MechaWorker"), float3(0, 0, 3), 0.0f, "PW");
+        syncPrefabInstances(a.m_scene, lib, true);
+        v["r1"] = r1;
+        v["r2"] = r2;
+        v["w"] = w;
+        int part = -1;
+        for (int i = 0; i < (int)a.m_scene.objects.size(); ++i)
+            if (a.m_scene.objects[i].isInstancePart() && a.m_scene.objects[i].instanceRoot == a.m_scene.objects[r1].id && !a.m_scene.objects[i].group) part = i;
+        check("a part of an instance stands for its instance (the menus, the Inspector)", part >= 0 && a.prefabInstanceUnder(part) == r1 && a.prefabInstanceUnder(r1) == r1);
+        check("an ordinary object has no prefab", a.prefabInstanceUnder(obj("Cube")) == -1);
+        a.prefabOpenInstance(part);
+        check("Ouvrir le prefab: the Prefab tab on its file", a.m_workspace == 3 && a.m_pf.path.find(L"selftest_access.prefab") != std::wstring::npos &&
+                                                              !a.prefabDirty());
+        // a modification saved: every instance follows when the Scene tab comes back
+        int pi = -1;
+        for (int k = 0; k < (int)a.m_pf.asset.parts.size() && pi < 0; ++k)
+            if (!a.m_pf.asset.parts[k].isPivot()) pi = k;
+        v["pid"] = pi >= 0 ? (double)a.m_pf.asset.parts[pi].id : 0.0;
+        auto partScale = [this](int root, uint32_t pid) {
+            for (const Object& o : a.m_scene.objects)
+                if (o.isInstancePart() && o.instanceRoot == a.m_scene.objects[root].id && o.instancePart == pid) return o.scale.x;
+            return -1.0f;
+        };
+        v["s1"] = partScale(r1, (uint32_t)v["pid"]);
+        if (pi >= 0) a.m_pf.asset.parts[pi].scale = a.m_pf.asset.parts[pi].scale * 2.0f;
+        check("the studio: modified", a.prefabDirty());
+        check("saved", a.prefabSave(false) && !a.prefabDirty());
+        a.m_workspace = 0;
+        return 150;   // (the library looks at the files every second)
+    });
+    add("prefab access", [this] {
+        auto partScale = [this](int root, uint32_t pid) {
+            for (const Object& o : a.m_scene.objects)
+                if (o.isInstancePart() && o.instanceRoot == a.m_scene.objects[root].id && o.instancePart == pid) return o.scale.x;
+            return -1.0f;
+        };
+        const int r1 = (int)v["r1"], r2 = (int)v["r2"], w = (int)v["w"];
+        const float s0 = (float)v["s1"], s1 = partScale(r1, (uint32_t)v["pid"]), s2 = partScale(r2, (uint32_t)v["pid"]);
+        check("back on the Scene tab: both instances updated (the part twice as big)", s0 > 0 && std::fabs(s1 - 2 * s0) < 1e-3f && std::fabs(s2 - 2 * s0) < 1e-3f,
+              fmt("%.3f -> %.3f, %.3f", s0, s1, s2));
+        // unsaved changes on this prefab, then the prefab of another instance: a question first
+        a.m_pf.asset.parts[0].visible = !a.m_pf.asset.parts[0].visible;
+        a.prefabOpenInstance(w);
+        check("unsaved changes in the studio: a question before opening another prefab", a.m_prefabAskOpen && a.m_pf.path.find(L"selftest_access") != std::wstring::npos);
+        a.m_prefabAskOpen = false;
+        a.m_prefabAskPath.clear();
+        a.m_pf.asset.parts[0].visible = !a.m_pf.asset.parts[0].visible;
+        a.m_workspace = 0;
+        // Dépaqueter, and Ctrl+Z
+        a.select(r2);
+        a.prefabUnpackSelected();
+        check("Dépaqueter: plain objects", !a.m_scene.objects[r2].isInstanceRoot());
+        a.undo();
+        check("Ctrl+Z: the instance is back", r2 < (int)a.m_scene.objects.size() && a.m_scene.objects[r2].isInstanceRoot());
+        DeleteFileW(a.absPath("game/prefabs/selftest_access.prefab").c_str());
+        a.m_pf.path.clear();
+        return 2;
+    });
+
     // ---------------------------------------------------------------- devices and touch (RtsPlay: layouts, gestures, simulator)
     add("touch", [this] {
         fresh();

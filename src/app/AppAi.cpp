@@ -307,6 +307,26 @@ std::string GameHost::extraCommand(const std::string& cmd, const Json& j, int& s
         a.prefabUnpackSelected();
         return "{\"ok\": true}";
     }
+    if (cmd == "prefab.openInstance") {   // {target}: Ouvrir le prefab of an instance (or of one of its parts)
+        const int o = resolveObject(j["target"]);
+        if (a.prefabInstanceUnder(o) < 0) return fail("not a prefab instance");
+        if (!a.m_pf.initialised) a.prefabInit();
+        a.prefabOpenInstance(o);
+        return std::string("{\"ok\": true, \"asked\": ") + (a.m_prefabAskOpen ? "true" : "false") + ", \"workspace\": " + std::to_string(a.m_workspace) + "}";
+    }
+    if (cmd == "ui.prefabMenu") {   // {target} or {close: true}: the right-click menu of an instance in the view (captures)
+        if (j["close"].type == Json::Bool && j["close"].b) { a.m_vpCtxClose = true; return "{\"ok\": true}"; }
+        const int o = resolveObject(j["target"]);
+        const int r = a.prefabInstanceUnder(o);
+        if (r < 0) return fail("not a prefab instance");
+        float2 sp;
+        if (!a.project(a.m_scene.objects[r].position + float3(0, 1.0f, 0), sp)) return fail("not in view");
+        a.select(r);
+        a.m_vpCtxObj = r;
+        a.m_vpCtxAt = ImVec2(sp.x, sp.y);
+        a.m_vpCtxRequest = true;
+        return "{\"ok\": true}";
+    }
     if (cmd == "prefab.animate") {   // {on}: the clips of the instances play in the editor viewport too
         a.m_prefabAnimate = j["on"].type == Json::Bool ? j["on"].b : !a.m_prefabAnimate;
         return std::string("{\"ok\": true, \"animate\": ") + (a.m_prefabAnimate ? "true" : "false") + "}";
@@ -315,6 +335,15 @@ std::string GameHost::extraCommand(const std::string& cmd, const Json& j, int& s
         App::PrefabStudio& P = a.m_pf;
         if (!P.initialised) a.prefabInit();
         if (cmd == "prefab.new") a.prefabNew(j["demo"].type == Json::Bool && j["demo"].b);
+        else if (cmd == "prefab.recolor") {   // {material, color}: the parts of the studio with that material recoloured (not saved)
+            float3 c;
+            if (!readVec(j["color"], c)) return fail("give color");
+            int n = 0;
+            for (PrefabPart& p : P.asset.parts)
+                if (p.material.name == j["material"].str()) { p.material.baseColor = c; ++n; }
+            if (!n) return fail("no part with the material " + j["material"].str());
+            P.rebuild = true;
+        }
         else if (cmd == "prefab.open") {
             if (!a.prefabOpen(pathArg("").wstring())) return fail("prefab not opened: " + j["path"].str());
         } else if (cmd == "prefab.save") {

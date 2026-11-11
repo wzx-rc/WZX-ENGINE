@@ -524,6 +524,20 @@ private:
     void prefabSetTime(float t);
     void prefabAddToScene();             // place the prefab in the main scene: a live instance (PrefabInstance.h)
     void prefabUnpackSelected();         // the selected instance becomes a plain group of objects
+    // the prefab of an instance from the scene (Inspector, right-click menus of the view and of the Scene Manager,
+    // double-click in the view); a part of an instance stands for the whole instance
+    int prefabInstanceUnder(int obj) const;   // its instance root (a prefab instance), or -1
+    void prefabOpenInstance(int obj);         // the Prefab tab on its .prefab (asks first: unsaved changes on another)
+    void prefabRevealInstance(int obj);       // its .prefab shown in the Explorer
+    void prefabInstanceMenuItems(int obj);    // « Ouvrir le prefab », « Sélectionner le fichier », « Dépaqueter »
+    void drawPrefabAsk();                     // the question when the studio has unsaved changes
+    std::wstring m_prefabAskPath;             // the prefab waiting for that answer
+    bool m_prefabAskOpen = false;
+    int m_vpCtxObj = -1;                      // the instance of the right-click menu of the view
+    bool m_vpCtxRequest = false, m_vpCtxClose = false;   // API ui.prefabMenu: open it at m_vpCtxAt / close it (captures)
+    ImVec2 m_vpCtxAt;
+    bool m_rmbArmed = false;
+    ImVec2 m_rmbPress;
     void prefabAddToSceneFlat();         // the former placement: the current pose as a group of plain objects
     // live prefab instances of the main scene: their prefab files, parts kept in sync and posed every frame (clips
     // play in Play, and in the editor when m_prefabAnimate)

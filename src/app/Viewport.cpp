@@ -82,6 +82,42 @@ void App::viewportCanvas(ImVec2 p0, ImVec2 size) {
     }
 
     viewportInput(hovered);
+    {   // a right click (not a drag of the camera) on a prefab instance or one of its parts: the menu of its prefab
+        ImGuiIO& io = ImGui::GetIO();
+        const bool play = m_game && (m_game->playing() || m_game->placementMode());
+        if (hovered && !play && ImGui::IsMouseClicked(1)) {
+            m_rmbArmed = true;
+            m_rmbPress = io.MousePos;
+        }
+        if (m_rmbArmed && ImGui::IsMouseReleased(1)) {
+            m_rmbArmed = false;
+            if (std::hypot(io.MousePos.x - m_rmbPress.x, io.MousePos.y - m_rmbPress.y) < 4 * m_dpi) {
+                float3 o, dir;
+                cameraRay(io.MousePos.x, io.MousePos.y, o, dir);
+                const PickResult pr = pick(m_scene, o, dir);
+                const int r = pr.object >= 0 && m_scene.objects[pr.object].selectable ? prefabInstanceUnder(pr.object) : -1;
+                if (r >= 0) {
+                    select(r);
+                    m_vpCtxObj = r;
+                    ImGui::OpenPopup("vpPrefabCtx");
+                }
+            }
+        }
+        if (m_vpCtxRequest) {   // (API ui.prefabMenu: the menu opened at a point, for the captures)
+            m_vpCtxRequest = false;
+            ImGui::OpenPopup("vpPrefabCtx");
+            ImGui::SetNextWindowPos(m_vpCtxAt, ImGuiCond_Always);
+        }
+        if (ImGui::BeginPopup("vpPrefabCtx")) {
+            if (m_vpCtxClose) {
+                m_vpCtxClose = false;
+                ImGui::CloseCurrentPopup();
+            }
+            if (m_vpCtxObj >= 0 && m_vpCtxObj < (int)m_scene.objects.size()) ImGui::TextDisabled("%s", m_scene.objects[m_vpCtxObj].name.c_str());
+            prefabInstanceMenuItems(m_vpCtxObj);
+            ImGui::EndPopup();
+        }
+    }
     dl->PushClipRect(p0, ImVec2(p0.x + size.x, p0.y + size.y), true);
     drawSelectionFx(dl);   // white glow on the outline vertices, reflection on the floor
     drawCameraIcons(dl);   // the camera objects
@@ -160,7 +196,9 @@ void App::viewportInput(bool hovered) {
             pr.object = camIcon;
             pr.position = m_scene.objects[camIcon].position;
         }
-        if (ImGui::IsMouseDoubleClicked(0)) {
+        if (ImGui::IsMouseDoubleClicked(0) && pr.object >= 0 && m_scene.objects[pr.object].selectable && prefabInstanceUnder(pr.object) >= 0) {
+            prefabOpenInstance(pr.object);   // a prefab instance: its prefab in the Prefab tab
+        } else if (ImGui::IsMouseDoubleClicked(0)) {
             if (pr.object >= 0 || pr.t < 1e29f) {
                 float3 p = pr.object >= 0 ? pr.position : o + d * dot(cam.target - o, d);
                 setPivotKeepEye(p);
