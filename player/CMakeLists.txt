@@ -42,6 +42,7 @@ add_library(wzx_engine STATIC
     ${WZX_ROOT}/src/app/Prefab.cpp
     ${WZX_ROOT}/src/app/Rig.cpp
     ${WZX_ROOT}/src/app/PrefabInstance.cpp
+    ${WZX_ROOT}/src/app/RtsPlay.cpp
     ${WZX_ROOT}/src/lit/LitRenderer.cpp
     ${WZX_ROOT}/src/game/Graph.cpp
     ${WZX_ROOT}/src/game/NodeLib.cpp
@@ -64,6 +65,7 @@ add_library(wzx_imgui STATIC
     ${WZX_ROOT}/third_party/imgui/imgui_widgets.cpp)
 target_include_directories(wzx_imgui PUBLIC ${WZX_ROOT}/third_party/imgui)
 target_compile_definitions(wzx_imgui PUBLIC IMGUI_DEFINE_MATH_OPERATORS)
+target_link_libraries(wzx_engine PUBLIC wzx_imgui)   # app/RtsPlay.cpp draws the RTS HUD with Dear ImGui
 if(APPLE)
     # ImageIO decodes the textures (jpg, png) on iOS (vp3d/AssetImport.cpp)
     target_link_libraries(wzx_engine PUBLIC "-framework ImageIO" "-framework CoreGraphics" "-framework CoreFoundation")

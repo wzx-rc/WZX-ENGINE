@@ -75,6 +75,7 @@ bool Game::init(Scene* scene, const std::string& dataDir, float uiScale, bool to
         return false;
     }
     ensureHouseModel();
+    if (m_prefabs) m_rts.begin(m_scene, m_prefabs, &m_rt);   // RTS units (before the graph starts)
     m_rt.start(&m_graph, this);   // Play
     return true;
 }
@@ -147,7 +148,18 @@ bool Game::keyPressed(int key, const char* name) const {
 // Game clicks and keys (GameHost::playInput).
 void Game::playInput() {
     ImGuiIO& io = ImGui::GetIO();
-    if (ImGui::IsMouseClicked(0) && mouseInView()) {
+    bool rtsClick = false;
+    if (m_rts.active()) {   // RTS units, as GameHost::playInput: a house click stays below
+        float3 o, d;
+        cameraRay(io.MousePos.x, io.MousePos.y, o, d);
+        float tHouse = 0;
+        const bool house = houseUnder(o, d, tHouse) >= 0 && tHouse <= pick(*m_scene, o, d).t;
+        if (!(house && ImGui::IsMouseClicked(0))) {
+            m_rts.input(app::RtsView{0, 0, m_viewW, m_viewH, m_s}, m_buildHud || io.WantCaptureMouse);
+            rtsClick = true;
+        }
+    }
+    if (!rtsClick && ImGui::IsMouseClicked(0) && mouseInView()) {
         float3 o, d;
         cameraRay(io.MousePos.x, io.MousePos.y, o, d);
         PickResult pr = pick(*m_scene, o, d);
@@ -347,7 +359,10 @@ void Game::destroy(int i) {
     if (m_selected == i) m_selected = -1;
 }
 
-void Game::select(int i) { m_selected = objectAlive(i) ? i : -1; }
+void Game::select(int i) {
+    m_selected = objectAlive(i) ? i : -1;
+    if (m_rts.active()) m_rts.setSelection(m_selected >= 0 ? std::vector<int>{m_selected} : std::vector<int>());
+}
 
 void Game::toast(const std::string& s) {
     m_toasts.push_back({s, m_time});
@@ -618,6 +633,16 @@ void Game::cellAt(float x, float z, int& cx, int& cz) const {
 
 // Bottom left: the buttons declared by the graph; on touch screens also the keys of the game (R, C, Del).
 void Game::drawRtsHud() {
+    if (m_hudButtons.empty() && m_build.buildings().empty() && !m_touch) {   // nothing to show in the button box
+        if (m_rts.active()) {
+            const app::RtsView rv{0, 0, m_viewW, m_viewH, m_s};
+            m_rts.drawOverlay(ImGui::GetBackgroundDrawList(), rv);
+            m_rts.drawHud(rv);
+            m_buildHud |= m_rts.hudHovered();
+        }
+        if (m_rtsCam) drawSunDial();
+        return;
+    }
     const float d = m_s;
     ImGui::SetNextWindowPos(ImVec2(m_safeL + 12 * d, m_viewH - m_safeB - 12 * d), ImGuiCond_Always, ImVec2(0.0f, 1.0f));
     ImGui::SetNextWindowBgAlpha(0.85f);
@@ -643,10 +668,16 @@ void Game::drawRtsHud() {
             ImGui::NewLine();
             ImGui::TextDisabled("Drag a house  ·  two fingers: move, pinch, turn");
         } else {
-            ImGui::TextDisabled("Drag a house onto the grid  ·  R rotate  ·  Del delete");
+            if (!m_build.buildings().empty()) ImGui::TextDisabled("Drag a house onto the grid  ·  R rotate  ·  Del delete");
         }
     }
     ImGui::End();
+    if (m_rts.active()) {   // RTS units: rings and bars over the 3D view (behind the windows), counters, objectives
+        const app::RtsView rv{0, 0, m_viewW, m_viewH, m_s};
+        m_rts.drawOverlay(ImGui::GetBackgroundDrawList(), rv);
+        m_rts.drawHud(rv);
+        m_buildHud |= m_rts.hudHovered();
+    }
     if (m_rtsCam) drawSunDial();
 }
 

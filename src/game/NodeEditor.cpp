@@ -89,6 +89,7 @@ static ImU32 catColor(const std::string& c) {
     if (c == "Math") return IM_COL32(134, 189, 144, 255);
     if (c == "RTS") return IM_COL32(178, 146, 223, 255);
     if (c == "Prefab") return IM_COL32(120, 214, 170, 255);
+    if (c == "Units") return IM_COL32(236, 132, 92, 255);
     if (c == "Native C++") return IM_COL32(255, 190, 40, 255);   // gold: the C++ node stands out
     return IM_COL32(150, 156, 166, 255);
 }
@@ -1105,7 +1106,7 @@ void NodeEditor::drawInspectorGroup(Graph& g, float w) {
 
     ImGui::Spacing();
     ImGui::TextDisabled("Colour");
-    static const char* cats[] = {"Events", "Input", "Flow Control", "Scene", "Data", "Math", "RTS", "Prefab"};
+    static const char* cats[] = {"Events", "Input", "Flow Control", "Scene", "Data", "Math", "RTS", "Prefab", "Units"};
     for (const char* c : cats) {
         ImGui::PushID(c);
         ImGui::PushStyleColor(ImGuiCol_Text, catColor(c));
@@ -1246,7 +1247,7 @@ void NodeEditor::drawInspectorGraph(Graph& g, const Runtime* rt, float w) {
 
     ImGui::Spacing();
     ImGui::TextDisabled("NODE FAMILIES");
-    static const char* fams[] = {"Events", "Input", "Flow Control", "Scene", "Data", "Math", "RTS", "Prefab"};
+    static const char* fams[] = {"Events", "Input", "Flow Control", "Scene", "Data", "Math", "RTS", "Prefab", "Units"};
     for (const char* f : fams) {
         ImVec2 c = ImGui::GetCursorScreenPos();
         ImGui::GetWindowDrawList()->AddCircleFilled(c + ImVec2(5 * m_dpi, 8 * m_dpi), 4 * m_dpi, catColor(f));

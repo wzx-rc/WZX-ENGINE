@@ -369,6 +369,10 @@ void GameHost::updatePlacement(float dt) {
 // RTS HUD, bottom left of the view: one button per house type. A click adds a house at the centre of
 // the view; a drag takes it from the button onto the grid. The sun dial comes with the RTS camera (Play).
 void GameHost::drawRtsHud() {
+    if (m_playing && m_hudButtons.empty() && m_build.buildings().empty()) {   // nothing to show in this box
+        if (m_rtsCam) drawSunDial();
+        return;
+    }
     const ScreenRect& v = m_app.m_rcView;
     float d = m_app.m_dpi;
     ImGuiIO& io = ImGui::GetIO();
@@ -412,7 +416,7 @@ void GameHost::drawRtsHud() {
             ImGui::SameLine();
         }
         ImGui::NewLine();
-        ImGui::TextDisabled("Drag a house onto the grid  ·  R rotate  ·  Del delete");
+        if (!m_playing || !m_build.buildings().empty()) ImGui::TextDisabled("Drag a house onto the grid  ·  R rotate  ·  Del delete");   // (a game without houses: no hint)
     }
     ImGui::End();
     if (m_rtsCam) drawSunDial();

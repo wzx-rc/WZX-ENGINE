@@ -2,6 +2,7 @@
 // command API. Lives beside App (friend) so the UI files stay untouched.
 #pragma once
 #include "Json.h"
+#include "RtsPlay.h"
 #include "game/CommandServer.h"
 #include "game/NodeEditor.h"
 #include "game/Placement.h"
@@ -91,6 +92,19 @@ public:
     bool playClip(int obj, const std::string& clip, bool loop, float speed) override;
     void stopClip(int obj) override;
     void clipFinished(int root, const std::string& clip);   // App::updatePrefabs: a non-looping clip ended (Play)
+    // RTS units (app/RtsPlay.h): selection, orders, navigation, placement, overlay and HUD of the Play session
+    std::vector<int> selection() const override { return m_rts.selection(); }
+    void setSelection(const std::vector<int>& objs) override;
+    std::string objectPrefab(int obj) const override { return m_rts.objectPrefab(obj); }
+    std::string objectCategory(int obj) const override { return m_rts.objectCategory(obj); }
+    void setYaw(int obj, float degrees) override { m_rts.setYaw(obj, degrees); m_app.markDirty(); }
+    std::vector<vp3d::float3> findPath(vp3d::float3 from, vp3d::float3 to) override { return m_rts.findPath(from, to); }
+    vp3d::float3 doorOf(int building) const override { return m_rts.doorOf(building); }
+    bool beginPlacement(const std::string& prefab) override { return m_rts.beginPlacement(prefab); }
+    void setPartColor(int obj, const std::string& part, vp3d::float3 rgb) override { m_rts.setPartColor(obj, part, rgb); m_app.markDirty(); }
+    void setPartGlow(int obj, const std::string& part, float k) override { m_rts.setPartGlow(obj, part, k); m_app.markDirty(); }
+    RtsPlay m_rts;
+    game::Runtime& runtime() { return m_rt; }   // (self-test)
 
 private:
     void play();

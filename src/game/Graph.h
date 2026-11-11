@@ -58,6 +58,11 @@ enum class Op {
     SnapGrid, CellFree, CountPart, SetRtsCamera, PlaceHouse, RemoveHouse, TurnHouse, HouseAt, HouseCount, OnHouseClicked, CellAt, SetSun, HudButton, OnHudButton,
     // live prefab instances
     SpawnPrefab, PlayClip, StopClip, OnClipFinished,
+    // RTS units: selection, orders, per-object variables and timers, movement, production, HUD
+    OnRightClickGround, OnRightClickObject, OnSelectionChanged, OnTimer,
+    GetSelected, CountSelected, IsSelected, ForEachSelected, SelectAdd, ClearSelection,
+    SetObjVar, AddObjVar, GetObjVar, StartTimer, FindNearest, ObjectType, ObjectCategory,
+    MoveUnit, StopUnit, PlaceBuilding, ProduceUnit, HudCounter, SetObjective, ShowMessage, SetPartColor, SetPartGlow, SetObjLink, GetObjLink,
 };
 
 struct NodeDef {

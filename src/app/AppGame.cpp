@@ -350,12 +350,14 @@ void GameHost::play() {
     m_app.m_multi.clear();
     m_app.m_gz = GizmoDrag();
     m_playing = true;
+    m_rts.begin(&m_app.m_scene, &m_app.m_prefabs, &m_rt);   // RTS units: selection, orders, HUD (before the graph starts)
     m_rt.start(&m_graph, this);
     m_app.markDirty();
 }
 
 void GameHost::stop() {
     if (!m_playing) return;
+    m_rts.end();
     m_rt.stop();
     m_playing = false;
     m_rtsCam = false;
@@ -555,11 +557,24 @@ void GameHost::destroy(int i) {
     m_app.markDirty();
 }
 
-int GameHost::selected() const { return m_app.m_selected; }
+int GameHost::selected() const {
+    if (m_rts.active()) return m_rts.selection().empty() ? -1 : m_rts.selection()[0];
+    return m_app.m_selected;
+}
 
 void GameHost::select(int i) {
+    if (m_rts.active()) { setSelection(objectAlive(i) ? std::vector<int>{i} : std::vector<int>()); return; }
     m_app.m_selected = objectAlive(i) ? i : -1;
     m_app.m_multi.clear();
+    m_app.markDirty();
+}
+
+// Play: the RTS selection, also outlined by the editor (the parts of an instance are its children)
+void GameHost::setSelection(const std::vector<int>& objs) {
+    m_rts.setSelection(objs);
+    const std::vector<int>& s = m_rts.selection();
+    m_app.m_selected = s.empty() ? -1 : s[0];
+    m_app.m_multi.assign(s.size() > 1 ? s.begin() + 1 : s.end(), s.end());
     m_app.markDirty();
 }
 
@@ -576,7 +591,27 @@ void GameHost::toast(const std::wstring& s) {
 void GameHost::playInput() {
     ImGuiIO& io = ImGui::GetIO();
     const ScreenRect& v = m_app.m_rcView;
-    if (viewVisible() && ImGui::IsMouseClicked(0) && !m_buildHud && v.contains(io.MousePos.x, io.MousePos.y) &&
+    bool rtsClick = false;
+    if (m_rts.active() && viewVisible() && !ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId)) {
+        // RTS units: selection, rectangle, orders (the graph click events fire from there); a house click stays below
+        float tHouse = 0;
+        float3 o, d;
+        m_app.cameraRay(io.MousePos.x, io.MousePos.y, o, d);
+        const bool house = placeActive() && houseUnder(o, d, tHouse) >= 0 && tHouse <= pick(m_app.m_scene, o, d).t;
+        if (!(house && ImGui::IsMouseClicked(0))) {
+            RtsView rv{v.x, v.y, v.w, v.h, m_app.m_dpi};
+            m_rts.input(rv, m_buildHud);
+            rtsClick = true;
+            const std::vector<int>& s = m_rts.selection();   // the editor outlines the selection too
+            const int first = s.empty() ? -1 : s[0];
+            if (m_app.m_selected != first || m_app.m_multi.size() + (first >= 0 ? 1 : 0) != s.size()) {
+                m_app.m_selected = first;
+                m_app.m_multi.assign(s.size() > 1 ? s.begin() + 1 : s.end(), s.end());
+                m_app.markDirty();
+            }
+        }
+    }
+    if (!rtsClick && viewVisible() && ImGui::IsMouseClicked(0) && !m_buildHud && v.contains(io.MousePos.x, io.MousePos.y) &&
         !ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId)) {
         float3 o, d;
         m_app.cameraRay(io.MousePos.x, io.MousePos.y, o, d);
@@ -914,6 +949,12 @@ void GameHost::draw() {
             ImGui::GetForegroundDrawList()->AddText(ImVec2(v.x + 10, v.y + 6), IM_COL32(170, 170, 170, 255), b);
         }
         if (placeActive()) drawRtsHud();
+        if (m_rts.active()) {   // RTS units: rings and bars over the view, counters, objectives, selection card
+            RtsView rv{v.x, v.y, v.w, v.h, m_app.m_dpi};
+            m_rts.drawOverlay(ImGui::GetForegroundDrawList(), rv);
+            m_rts.drawHud(rv);
+            m_buildHud |= m_rts.hudHovered();
+        }
         drawToasts();
         return;
     }
@@ -930,6 +971,13 @@ void GameHost::draw() {
             fg->AddText(ImVec2(tl.x + (240 - ts.x) * 0.5f, tl.y + (26 - ts.y) * 0.5f), IM_COL32(8, 19, 11, 255), tag);
         }
         if (placeActive()) drawRtsHud();
+        if (m_rts.active()) {   // RTS units (below the PLAY tag of the editor)
+            RtsView rv{v.x, v.y + 34 * m_app.m_dpi, v.w, v.h - 34 * m_app.m_dpi, m_app.m_dpi};
+            RtsView full{v.x, v.y, v.w, v.h, m_app.m_dpi};
+            m_rts.drawOverlay(ImGui::GetForegroundDrawList(), full);
+            m_rts.drawHud(rv);
+            m_buildHud |= m_rts.hudHovered();
+        }
     }
     if (m_showBuild) drawBuildWindow();
     if (m_showAi) drawAiWindow();
@@ -1353,6 +1401,7 @@ static const char* kHelp =
     "\"sun.set\": \"{azimuth?, elevation?} (degrés) -> soleil du cadran\", "
     "\"village.mode\": \"{on: true|false} -> mode village de l'éditeur (vue Scene)\", "
     "\"input.key\": \"{key: R|ESPACE|...} (pendant Play)\", \"input.click\": \"{target} ou {pos:[x,y,z]} (pendant Play)\", "
+    "\"input.select\": \"{targets: [index|name], add?} (Play: RTS selection)\", \"input.rightclick\": \"{target} or {pos} (Play: an order)\", \"input.place\": \"{pos} (Play: the building being placed)\", \"input.hud\": \"{id} (Play: a HUD button)\", \"rts.state\": \"{} (Play: variables, selection, objectives, units)\", "
     "\"graph.get\": \"{}\", \"graph.set\": \"{graph: {...}}\", \"graph.clear\": \"{}\", \"graph.nodeTypes\": \"{}\", "
     "\"graph.addNode\": \"{type, x?, y?, in?: {broche: valeur}} -> id\", \"graph.removeNode\": \"{id}\", "
     "\"graph.connect\": \"{from:[id, sortie], to:[id, entree]} (nom ou index de broche)\", "
@@ -1529,6 +1578,72 @@ std::string GameHost::command(const Json& j, int& status) {
             return fail("préciser target ou pos");
         }
         return ok();
+    }
+    // RTS units in Play (tests, AI): the selection as a click / rectangle would make it, an order as a right click
+    if (cmd == "input.select") {   // {targets: [index|name...], add?} -> the selection
+        if (!m_playing) return fail("Play is not running");
+        std::vector<int> objs = j["add"].type == Json::Bool && j["add"].b ? m_rts.selection() : std::vector<int>();
+        for (const Json& t : j["targets"].a) {
+            const int i = resolveObject(t);
+            if (i >= 0) objs.push_back(instanceRootOf(s, i));
+        }
+        setSelection(objs);
+        std::string out = ", \"selection\": [";
+        for (size_t k = 0; k < m_rts.selection().size(); ++k) out += (k ? ", " : "") + std::to_string(m_rts.selection()[k]);
+        return ok(out + "]");
+    }
+    if (cmd == "input.rightclick") {   // {target} or {pos}: an order
+        if (!m_playing) return fail("Play is not running");
+        float3 p;
+        if (j["target"].type != Json::Null) {
+            const int i = resolveObject(j["target"]);
+            if (i < 0) return fail("no such object");
+            const int r = instanceRootOf(s, i);
+            m_rt.fireRightClickObject(r, s.objects[r].position);
+        } else if (readVec(j["pos"], p)) {
+            m_rt.fireRightClickGround(p);
+        } else {
+            return fail("give target or pos");
+        }
+        return ok();
+    }
+    if (cmd == "input.place") {   // {pos}: the building being placed (Place Building) put there
+        if (!m_playing) return fail("Play is not running");
+        float3 p;
+        if (!readVec(j["pos"], p)) return fail("give pos");
+        if (!m_rts.placing()) return fail("no building is being placed");
+        const bool placed = m_rts.placeAt(p);
+        return ok(std::string(", \"placed\": ") + (placed ? "true" : "false"));
+    }
+    if (cmd == "input.hud") {   // {id}: a click on a HUD button
+        if (!m_playing) return fail("Play is not running");
+        m_rt.fireHudButton(j["id"].str());
+        return ok();
+    }
+    if (cmd == "rts.state") {   // variables, selection, objectives, message, units of the Play session
+        std::ostringstream js;
+        js << "{\"ok\": true, \"playing\": " << (m_playing ? "true" : "false") << ", \"vars\": {";
+        bool first = true;
+        for (auto& [k, val] : m_rt.variables()) { js << (first ? "" : ", ") << jstr(k) << ": " << val.asFloat(); first = false; }
+        js << "}, \"selection\": [";
+        for (size_t k = 0; k < m_rts.selection().size(); ++k) js << (k ? ", " : "") << m_rts.selection()[k];
+        js << "], \"objectives\": [";
+        for (size_t k = 0; k < m_rt.objectives.size(); ++k)
+            js << (k ? ", " : "") << "{\"id\": " << jstr(m_rt.objectives[k].id) << ", \"done\": " << (m_rt.objectives[k].done ? "true" : "false") << "}";
+        js << "], \"message\": " << jstr(m_rt.messageShown ? m_rt.messageTitle : "") << ", \"placing\": " << (m_rt.placementPending() ? "true" : "false")
+           << ", \"units\": [";
+        first = true;
+        for (int i = 0; i < (int)s.objects.size(); ++i) {
+            if (!objectAlive(i) || !s.objects[i].isInstanceRoot()) continue;
+            const std::string cat = m_rts.objectCategory(i);
+            if (cat != "Unit" && cat != "Building" && cat != "Resource") continue;
+            js << (first ? "" : ", ") << "{\"index\": " << i << ", \"prefab\": " << jstr(m_rts.objectPrefab(i)) << ", \"pos\": [" << s.objects[i].position.x
+               << ", " << s.objects[i].position.z << "], \"clip\": " << jstr(s.objects[i].clip) << ", \"moving\": " << (m_rt.unitMoving(i) ? "true" : "false")
+               << ", \"cargo\": " << m_rt.objectVar(i, "cargo") << ", \"stock\": " << m_rt.objectVar(i, "stock") << "}";
+            first = false;
+        }
+        js << "]}";
+        return js.str();
     }
     if (cmd == "sun.set") {
         if (j["azimuth"].type == Json::Number) m_sunAzimuth = radians((float)j["azimuth"].n);

@@ -5,6 +5,7 @@
 #pragma once
 #include "app/Json.h"
 #include "app/PrefabInstance.h"
+#include "app/RtsPlay.h"
 #include "game/Placement.h"
 #include "game/RtsCamera.h"
 #include "game/Runtime.h"
@@ -53,7 +54,7 @@ public:
     void setColor(int obj, vp3d::float3 rgb) override;
     int spawn(const std::string& part, vp3d::float3 pos, vp3d::float3 rgb) override;
     void destroy(int obj) override;
-    int selected() const override { return m_selected; }
+    int selected() const override { return m_rts.active() ? (m_rts.selection().empty() ? -1 : m_rts.selection()[0]) : m_selected; }
     void select(int obj) override;
     void message(const std::string& text) override { toast(text); }
     void setRtsCamera(bool on) override;
@@ -70,9 +71,21 @@ public:
     void stopClip(int obj) override;
     // live prefab instances (app/PrefabInstance.h): the library of the Player, its scene kept in sync and posed
     void setPrefabs(app::PrefabLibrary* lib) { m_prefabs = lib; }
+    // RTS units (app/RtsPlay.h)
+    std::vector<int> selection() const override { return m_rts.selection(); }
+    void setSelection(const std::vector<int>& objs) override { m_rts.setSelection(objs); }
+    std::string objectPrefab(int obj) const override { return m_rts.objectPrefab(obj); }
+    std::string objectCategory(int obj) const override { return m_rts.objectCategory(obj); }
+    void setYaw(int obj, float degrees) override { m_rts.setYaw(obj, degrees); }
+    std::vector<vp3d::float3> findPath(vp3d::float3 from, vp3d::float3 to) override { return m_rts.findPath(from, to); }
+    vp3d::float3 doorOf(int building) const override { return m_rts.doorOf(building); }
+    bool beginPlacement(const std::string& prefab) override { return m_rts.beginPlacement(prefab); }
+    void setPartColor(int obj, const std::string& part, vp3d::float3 rgb) override { m_rts.setPartColor(obj, part, rgb); }
+    void setPartGlow(int obj, const std::string& part, float k) override { m_rts.setPartGlow(obj, part, k); }
 
 private:
     app::PrefabLibrary* m_prefabs = nullptr;
+    app::RtsPlay m_rts;
     void cameraRay(float px, float py, vp3d::float3& o, vp3d::float3& d) const;
     bool groundAt(float px, float py, vp3d::float3& p) const;
     bool groundUnderMouse(vp3d::float3& p) const;

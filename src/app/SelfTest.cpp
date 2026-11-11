@@ -2586,6 +2586,105 @@ void App::SelfTest::build() {
         return 2;
     });
 
+    // ---------------------------------------------------------------- RTS units (RtsPlay.h, Runtime units)
+    add("rts units", [this] {
+        fresh();
+        PrefabLibrary& lib = a.m_prefabs;
+        v["hq"] = addPrefabInstance(a.m_scene, lib, lib.resolve("BastionHQ"), float3(0, 0, 0), 0.0f, "HQ");
+        v["w1"] = addPrefabInstance(a.m_scene, lib, lib.resolve("MechaWorker"), float3(-0.6f, 0, 4), 0.0f, "W1");
+        v["w2"] = addPrefabInstance(a.m_scene, lib, lib.resolve("MechaWorker"), float3(0.8f, 0, 4), 0.0f, "W2");
+        syncPrefabInstances(a.m_scene, lib, true);
+        // the graph: orders, a counter, an object variable and its timer, a building placed from a HUD button, a unit produced
+        Json g;
+        Json::parse(R"({"format": "wzx-graph", "version": 1, "nodes": [
+            {"id": 1, "type": "event.start", "x": 0, "y": 0},
+            {"id": 2, "type": "action.setVar", "x": 200, "y": 0, "in": {"Name": "vitae", "Value": 200}},
+            {"id": 3, "type": "hud.counter", "x": 400, "y": 0, "in": {"Id": "vitae", "Label": "Vitae", "Variable": "vitae"}},
+            {"id": 4, "type": "data.findObject", "x": 400, "y": 150, "in": {"Name": "W1"}},
+            {"id": 5, "type": "unit.setVar", "x": 600, "y": 0, "in": {"Name": "cargo", "Value": 5}},
+            {"id": 6, "type": "unit.startTimer", "x": 800, "y": 0, "in": {"Name": "work", "Seconds": 0.2}},
+            {"id": 7, "type": "event.timer", "x": 0, "y": 300},
+            {"id": 8, "type": "action.setVar", "x": 200, "y": 300, "in": {"Name": "timer", "Value": 1}},
+            {"id": 10, "type": "event.rightClickGround", "x": 0, "y": 500},
+            {"id": 11, "type": "unit.forEachSelected", "x": 200, "y": 500},
+            {"id": 12, "type": "unit.move", "x": 400, "y": 500, "in": {"Speed": 4}},
+            {"id": 13, "type": "action.addVar", "x": 650, "y": 560, "in": {"Name": "arrived", "Amount": 1}},
+            {"id": 20, "type": "event.hudButton", "x": 0, "y": 750},
+            {"id": 21, "type": "unit.placeBuilding", "x": 200, "y": 750, "in": {"Prefab": "MechaFactory", "Cost Var": "vitae", "Cost": 150}},
+            {"id": 22, "type": "unit.produce", "x": 450, "y": 750, "in": {"Prefab": "MechaWorker", "Seconds": 0.5}},
+            {"id": 23, "type": "action.setVar", "x": 700, "y": 810, "in": {"Name": "spawned", "Value": 1}}],
+            "links": [{"from": [1, 0], "to": [2, 0]}, {"from": [2, 0], "to": [3, 0]}, {"from": [3, 0], "to": [5, 0]}, {"from": [4, 0], "to": [5, 1]},
+                      {"from": [5, 0], "to": [6, 0]}, {"from": [4, 0], "to": [6, 1]}, {"from": [7, 0], "to": [8, 0]},
+                      {"from": [10, 0], "to": [11, 0]}, {"from": [11, 0], "to": [12, 0]}, {"from": [11, 1], "to": [12, 1]}, {"from": [10, 1], "to": [12, 2]},
+                      {"from": [12, 1], "to": [13, 0]},
+                      {"from": [20, 0], "to": [21, 0]}, {"from": [21, 1], "to": [22, 0]}, {"from": [21, 2], "to": [22, 1]}, {"from": [22, 1], "to": [23, 0]}]})", g);
+        a.m_game->loadSceneGraph(g);
+        a.m_game->requestPlay();
+        return 90;
+    });
+    add("rts units", [this] {
+        game::Runtime& rt = a.m_game->runtime();
+        RtsPlay& rp = a.m_game->m_rts;
+        const int w1 = (int)v["w1"], w2 = (int)v["w2"], hq = (int)v["hq"];
+        check("Play: RTS layer active, counter and variables", a.m_game->playing() && rp.active() && rt.hudCounters.size() == 1 && rt.variables().count("vitae"));
+        check("object variable set on a unit (cargo 5) and its timer fired", rt.objectVar(w1, "cargo") == 5.0f && rt.variables().count("timer"));
+        check("prefab categories: Unit, Building", rp.objectCategory(w1) == "Unit" && rp.objectCategory(hq) == "Building" && rp.objectPrefab(w1) == "MechaWorker");
+        check("navigation: the Bastion blocks its cells, the ground around is free", rp.blocked(0.0f, 0.0f) && rp.blocked(1.6f, 0.0f) && !rp.blocked(0.0f, 4.0f));
+        const std::vector<float3> path = rp.findPath(float3(0, 0, 4), float3(0, 0, -4));
+        bool clear = path.size() >= 2;
+        float3 prev(0, 0, 4);
+        for (const float3& p : path) {   // every segment stays off the building (sampled)
+            for (int k = 0; k <= 20 && clear; ++k) {
+                const float3 q = prev + (p - prev) * (k / 20.0f);
+                clear = !rp.blocked(q.x, q.z);
+            }
+            prev = p;
+        }
+        check("path behind the Bastion goes around it", clear && length(path.back() - float3(0, 0, -4)) < 0.1f, fmt("%d waypoints", (int)path.size()));
+        a.m_game->setSelection({w1, w2});
+        check("selection of two units", rp.selection().size() == 2 && a.m_selected == w1);
+        rt.fireRightClickGround(float3(0, 0, -4));
+        check("the order makes them walk (Walk clip)", rt.unitMoving(w1) && a.m_scene.objects[w1].clip == "Walk");
+        return 700;
+    });
+    add("rts units", [this] {
+        game::Runtime& rt = a.m_game->runtime();
+        const int w1 = (int)v["w1"], w2 = (int)v["w2"];
+        const float3 p1 = a.m_scene.objects[w1].position, p2 = a.m_scene.objects[w2].position;
+        check("both arrived behind the Bastion, Idle", !rt.unitMoving(w1) && !rt.unitMoving(w2) && p1.z < -3.0f && p2.z < -3.0f &&
+                                                       a.m_scene.objects[w1].clip == "Idle", fmt("z %.2f, %.2f", p1.z, p2.z));
+        check("they stand apart (separation)", length(p1 - p2) > 0.6f, fmt("%.2f apart", length(p1 - p2)));
+        check("Arrived fired for each", rt.variables().count("arrived") && rt.variables().at("arrived").asFloat() == 2.0f);
+        // a building placed from the HUD
+        rt.fireHudButton("factory");
+        check("Place Building: a ghost follows the mouse", a.m_game->m_rts.placing() && rt.placementPending());
+        check("a taken place is refused (red)", !a.m_game->m_rts.placeAt(float3(0, 0, 0)));
+        check("a free place is accepted", a.m_game->m_rts.placeAt(float3(8, 0, -8)));
+        check("its cost taken (200 - 150)", rt.variables().at("vitae").asFloat() == 50.0f);
+        int fac = -1;
+        for (int i = 0; i < (int)a.m_scene.objects.size(); ++i)
+            if (a.m_scene.objects[i].isInstanceRoot() && a.m_game->m_rts.objectPrefab(i) == "MechaFactory" && !a.m_scene.objects[i].ghost) fac = i;
+        v["fac"] = fac;
+        check("the factory is in the scene, not a ghost", fac >= 0);
+        check("its production started (progress bar)", fac >= 0 && rt.production(fac) >= 0.0f);
+        v["count"] = (double)a.m_scene.objects.size();
+        return 240;
+    });
+    add("rts units", [this] {
+        game::Runtime& rt = a.m_game->runtime();
+        int made = 0;
+        for (int i = 0; i < (int)a.m_scene.objects.size(); ++i)
+            if (a.m_scene.objects[i].isInstanceRoot() && a.m_game->m_rts.objectPrefab(i) == "MechaWorker" && a.m_scene.objects[i].visible) ++made;
+        check("Produce Unit: a third worker came out of the factory", made == 3 && rt.variables().count("spawned"), fmt("%d workers", made));
+        a.m_game->requestPlay();   // Stop
+        return 3;
+    });
+    add("rts units", [this] {
+        check("Stop: the session's buildings and units gone", !a.m_game->playing() && !a.m_game->m_rts.active());
+        a.m_game->loadSceneGraph(Json());
+        return 1;
+    });
+
     add("robustness", [this] { fresh(); a.select(obj("Cube")); return 2; });
     for (int n : {8, 1, 16, 4, 8, 16, 1, 4}) {
         add("robustness", [this, n] { a.m_msaa = n; return 2; });

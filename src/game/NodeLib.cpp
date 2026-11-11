@@ -145,6 +145,59 @@ std::vector<NodeDef> build() {
     v.push_back(B(Op::StopClip, "prefab.stopClip", "Stop Clip", PF, "Freezes the animation of a prefab instance where it is.").execIn().in("Object", O).execOut());
     v.push_back(B(Op::OnClipFinished, "event.clipFinished", "On Clip Finished", EV, "A clip played without Loop reached its end. Object = the instance, Clip = its name.")
                     .event().execOut().out("Object", O).out("Clip", S));
+    // RTS units: selection (click, drag rectangle, Shift adds), orders (right click), per-object variables and
+    // timers, movement around the buildings, production, placement of buildings, HUD
+    const char* UN = "Units";
+    v.push_back(B(Op::OnRightClickGround, "event.rightClickGround", "Ground Right Clicked", EV, "Right click on the ground during Play (an order). Point = where.")
+                    .event().execOut().out("Point", V));
+    v.push_back(B(Op::OnRightClickObject, "event.rightClickObject", "Object Right Clicked", EV, "Right click on an object during Play (an order on it). Object = the instance.")
+                    .event().execOut().out("Object", O).out("Point", V));
+    v.push_back(B(Op::OnSelectionChanged, "event.selectionChanged", "On Selection Changed", EV, "The player selected other units (click, rectangle, Shift).")
+                    .event().execOut());
+    v.push_back(B(Op::OnTimer, "event.timer", "On Timer", EV, "A timer started with « Start Timer » ran out. Object, Name = those of the timer.")
+                    .event().execOut().out("Object", O).out("Name", S));
+    v.push_back(B(Op::GetSelected, "unit.selected", "Get Selected Unit", UN, "The first selected unit or building (none: not valid).").pure().out("Object", O));
+    v.push_back(B(Op::CountSelected, "unit.countSelected", "Count Selected", UN, "Number of selected units and buildings.").pure().out("Count", F));
+    v.push_back(B(Op::IsSelected, "unit.isSelected", "Is Selected", UN, "True if the object is selected.").pure().in("Object", O).out("Selected", Bo));
+    v.push_back(B(Op::ForEachSelected, "unit.forEachSelected", "For Each Selected", UN, "Loops over the selected units and buildings.")
+                    .execIn().execOut("Loop").out("Object", O).execOut("Completed"));
+    v.push_back(B(Op::SelectAdd, "unit.select", "Select Unit", UN, "Selects an object (Add: keeps the others selected).").execIn().in("Object", O).inB("Add", false).execOut());
+    v.push_back(B(Op::ClearSelection, "unit.clearSelection", "Clear Selection", UN, "Nothing selected.").execIn().execOut());
+    v.push_back(B(Op::SetObjVar, "unit.setVar", "Set Object Variable", UN, "Stores a number on an object (its cargo, hit points, stock...).")
+                    .execIn().in("Object", O).inS("Name", "cargo").inF("Value", 0).execOut());
+    v.push_back(B(Op::AddObjVar, "unit.addVar", "Add to Object Variable", UN, "Adds an amount to a number stored on an object.")
+                    .execIn().in("Object", O).inS("Name", "cargo").inF("Amount", 1).execOut());
+    v.push_back(B(Op::GetObjVar, "unit.getVar", "Get Object Variable", UN, "A number stored on an object (0 if none).").pure().in("Object", O).inS("Name", "cargo").out("Value", F));
+    v.push_back(B(Op::SetObjLink, "unit.setLink", "Set Object Link", UN, "Remembers another object on an object (a worker's station, its depot...).")
+                    .execIn().in("Object", O).inS("Name", "station").in("Target", O).execOut());
+    v.push_back(B(Op::GetObjLink, "unit.getLink", "Get Object Link", UN, "The object remembered under a name (none: not valid).").pure().in("Object", O).inS("Name", "station").out("Target", O));
+    v.push_back(B(Op::StartTimer, "unit.startTimer", "Start Timer", UN, "« On Timer » fires for this object and name after Seconds (a running timer of the same name restarts).")
+                    .execIn().in("Object", O).inS("Name", "work").inF("Seconds", 2).execOut());
+    v.push_back(B(Op::FindNearest, "unit.findNearest", "Find Nearest", UN, "The nearest visible object of a type (prefab name, or Unit / Building / Resource) from a point. "
+                                                                             "Var Name / Min: only those whose variable is at least Min. None: not valid.")
+                    .pure().inV("From", float3(0, 0, 0)).inS("Type", "VitaeTanks").inS("Var Name", "").inF("Min", 0).out("Object", O));
+    v.push_back(B(Op::ObjectType, "unit.type", "Object Prefab", UN, "Name of the prefab of an instance (MechaWorker...).").pure().in("Object", O).out("Type", S));
+    v.push_back(B(Op::ObjectCategory, "unit.category", "Object Category", UN, "Category of the prefab: Unit, Building, Resource or Prop.").pure().in("Object", O).out("Category", S));
+    v.push_back(B(Op::MoveUnit, "unit.move", "Move Unit To", UN, "Walks a unit to a point around the buildings (it turns, plays Walk, then Idle). Arrived fires there; "
+                                                                   "a new order replaces the old one.")
+                    .execIn().in("Object", O).inV("Target", float3(0, 0, 0)).inF("Speed", 3).execOut().execOut("Arrived").out("Unit", O));
+    v.push_back(B(Op::StopUnit, "unit.stop", "Stop Unit", UN, "The unit stops where it is (Idle).").execIn().in("Object", O).execOut());
+    v.push_back(B(Op::PlaceBuilding, "unit.placeBuilding", "Place Building", UN, "The player places a prefab: a ghost follows the mouse on the grid (green: free, red: taken), "
+                                                                                  "a click places it and takes Cost from the variable, Esc or a right click cancels.")
+                    .execIn().inS("Prefab", "MechaFactory").inS("Cost Var", "vitae").inF("Cost", 150).execOut().execOut("Placed").out("Building", O).execOut("Cancelled"));
+    v.push_back(B(Op::ProduceUnit, "unit.produce", "Produce Unit", UN, "A building makes a unit in Seconds (its progress bar in the HUD): it comes out of the door. "
+                                                                        "Units queue up.")
+                    .execIn().in("Building", O).inS("Prefab", "MechaWorker").inF("Seconds", 6).execOut().execOut("Spawned").out("Unit", O));
+    v.push_back(B(Op::HudCounter, "hud.counter", "HUD Counter", RT, "A counter at the top of the screen showing a variable, with a coloured icon.")
+                    .execIn().inS("Id", "vitae").inS("Label", "Vitae").inS("Variable", "vitae").inV("Color", float3(0.3f, 1.0f, 0.45f)).execOut());
+    v.push_back(B(Op::SetObjective, "hud.objective", "Set Objective", RT, "A line of the objectives panel (same Id: updated). Done ticks it.")
+                    .execIn().inS("Id", "gather").inS("Text", "Gather 300 Vitae").inB("Done", false).execOut());
+    v.push_back(B(Op::ShowMessage, "hud.message", "Show Message", RT, "A message box in the middle of the screen (OK closes it).")
+                    .execIn().inS("Title", "Mission accomplie").inS("Text", "").execOut());
+    v.push_back(B(Op::SetPartColor, "prefab.setPartColor", "Set Part Color", PF, "Base colour of the parts of an instance whose name contains Part (empty: all).")
+                    .execIn().in("Object", O).inS("Part", "Stripe").inV("Color", float3(0.2f, 0.4f, 0.9f)).execOut());
+    v.push_back(B(Op::SetPartGlow, "prefab.setPartGlow", "Set Part Glow", PF, "Glow of the parts of an instance whose name contains Part: 1 = as modelled, 0 = off.")
+                    .execIn().in("Object", O).inS("Part", "Liquid").inF("Glow", 1).execOut());
     std::vector<NodeDef> out;
     for (auto& b : v) out.push_back(b.d);
     return out;

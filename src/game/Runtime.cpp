@@ -37,6 +37,17 @@ void Runtime::start(Graph* g, World* w) {
     m_timers.clear();
     m_movers.clear();
     m_doneOnce.clear();
+    m_objVars.clear();
+    m_objLinks.clear();
+    m_objTimers.clear();
+    m_unitMoves.clear();
+    m_production.clear();
+    m_placeNode = -1;
+    hudCounters.clear();
+    objectives.clear();
+    messageTitle.clear();
+    messageText.clear();
+    messageShown = false;
     lastError.clear();
     for (Node& n : g->nodes) if (!n.def) n.def = findNodeDef(n.type);
     log.push_back("--- Play ---");
@@ -101,6 +112,8 @@ void Runtime::tick(float dt) {
         execFrom(t.node, t.pin);
     }
     if (!m_graph) return;
+    tickUnits(dt);   // RTS units: paths, object timers, production
+    if (!m_graph) return;
     for (Node& n : m_graph->nodes)
         if (n.def->op == Op::OnTick) m_cache[n.id] = {Value(), Value::Float(dt)};
     fire(Op::OnTick);
@@ -125,6 +138,182 @@ void Runtime::fireClipFinished(int obj, const std::string& clip) {
     for (Node& n : m_graph->nodes)
         if (n.def->op == Op::OnClipFinished) m_cache[n.id] = {Value(), Value::Obj(obj), Value::Str(clip)};
     fire(Op::OnClipFinished);
+}
+
+// --------------------------------------------------------------------------- RTS units
+
+void Runtime::fireRightClickGround(float3 point) {
+    if (!m_graph) return;
+    for (Node& n : m_graph->nodes)
+        if (n.def->op == Op::OnRightClickGround) m_cache[n.id] = {Value(), Value::Vec3(point)};
+    fire(Op::OnRightClickGround);
+}
+
+void Runtime::fireRightClickObject(int obj, float3 point) {
+    if (!m_graph) return;
+    for (Node& n : m_graph->nodes)
+        if (n.def->op == Op::OnRightClickObject) m_cache[n.id] = {Value(), Value::Obj(obj), Value::Vec3(point)};
+    fire(Op::OnRightClickObject);
+}
+
+void Runtime::fireSelectionChanged() {
+    if (!m_graph) return;
+    fire(Op::OnSelectionChanged);
+}
+
+void Runtime::firePlacement(int building) {
+    if (!m_graph || m_placeNode < 0) return;
+    const int node = m_placeNode;
+    m_placeNode = -1;
+    Node* n = m_graph->node(node);
+    if (!n) return;
+    m_budget = kBudget;
+    if (building >= 0) {
+        if (!m_placeCostVar.empty()) m_vars[m_placeCostVar] = Value::Float(m_vars[m_placeCostVar].asFloat() - m_placeCost);
+        setOut(*n, 2, Value::Obj(building));
+        execFrom(node, 1);
+    } else {
+        execFrom(node, 3);
+    }
+}
+
+float Runtime::objectVar(int obj, const std::string& name, float def) const {
+    auto it = m_objVars.find(obj);
+    if (it == m_objVars.end()) return def;
+    auto k = it->second.find(name);
+    return k == it->second.end() ? def : k->second;
+}
+
+bool Runtime::hasObjectVar(int obj, const std::string& name) const {
+    auto it = m_objVars.find(obj);
+    return it != m_objVars.end() && it->second.count(name) > 0;
+}
+
+bool Runtime::unitMoving(int obj) const {
+    for (const UnitMove& m : m_unitMoves)
+        if (m.obj == obj) return true;
+    return false;
+}
+
+float Runtime::production(int building, int* queued, std::string* prefab) const {
+    int q = 0;
+    float progress = -1.0f;
+    for (const Production& p : m_production) {
+        if (p.building != building) continue;
+        if (q == 0) {
+            progress = 1.0f - p.left / std::max(p.total, 1e-3f);
+            if (prefab) *prefab = p.prefab;
+        }
+        ++q;
+    }
+    if (queued) *queued = q;
+    return progress;
+}
+
+// Units walking their paths (turned towards their motion, kept apart from the other units), object timers and
+// production queues: their continuations run after the updates (like the movers of « Move To »).
+void Runtime::tickUnits(float dt) {
+    // the units (for the separation): every alive instance of category Unit
+    std::vector<int> units;
+    for (int i = 0; i < m_world->objectCount(); ++i)
+        if (m_world->objectAlive(i) && m_world->objectCategory(i) == "Unit") units.push_back(i);
+    std::vector<std::pair<int, int>> arrived;   // (node, unit)
+    for (size_t i = 0; i < m_unitMoves.size();) {
+        UnitMove& m = m_unitMoves[i];
+        if (!m_world->objectAlive(m.obj)) { m_unitMoves.erase(m_unitMoves.begin() + i); continue; }
+        float3 p = m_world->getPosition(m.obj);
+        float3 t = m.path[m.next];
+        float3 d(t.x - p.x, 0, t.z - p.z);
+        float len = length(d);
+        const float step = m.speed * dt;
+        const bool last = m.next + 1 >= m.path.size();
+        // a group sent to one point: near it, a unit stops when another one already stands on it
+        bool taken = false;
+        if (last && len < 1.6f)
+            for (int u : units)
+                if (u != m.obj && !unitMoving(u)) {
+                    const float3 q = m_world->getPosition(u);
+                    if (length(float3(q.x - t.x, 0, q.z - t.z)) < 0.95f + 0.9f * (len > 0.95f ? 1.0f : 0.0f) && length(float3(q.x - p.x, 0, q.z - p.z)) < 1.0f) taken = true;
+                }
+        // arrived at a waypoint (the last one: within a little of it, another unit may stand there)
+        if (len <= step || len < (last ? 0.05f : 0.25f) || taken || (last && m.stuck > 0.6f && len < 1.6f)) {
+            if (!last) { ++m.next; ++i; continue; }
+            if (len <= step) m_world->setPosition(m.obj, float3(t.x, p.y, t.z));
+            m_world->playClip(m.obj, "Idle", true, 1.0f);
+            arrived.push_back({m.node, m.obj});
+            m_unitMoves.erase(m_unitMoves.begin() + i);
+            continue;
+        }
+        float3 dir = d * (1.0f / len);
+        float3 np = p + dir * step;
+        // separation: pushed out of the other units' circles (radius 0.45 each), a little sideways
+        for (int u : units) {
+            if (u == m.obj) continue;
+            const float3 q = m_world->getPosition(u);
+            float3 a(np.x - q.x, 0, np.z - q.z);
+            const float dd = length(a);
+            if (dd < 0.9f && dd > 1e-4f) np = np + a * ((0.9f - dd) / dd * 0.5f);
+        }
+        const float moved = length(float3(np.x - p.x, 0, np.z - p.z));
+        m.stuck = moved < step * 0.3f ? m.stuck + dt : 0.0f;
+        m_world->setPosition(m.obj, float3(np.x, p.y, np.z));
+        m_world->setYaw(m.obj, std::atan2(dir.x, dir.z) * 57.2957795f);
+        ++i;
+    }
+    for (auto& [node, unit] : arrived) {
+        if (!m_graph) return;
+        Node* n = m_graph->node(node);
+        if (!n) continue;
+        m_budget = kBudget;
+        setOut(*n, 2, Value::Obj(unit));
+        execFrom(node, 1);
+    }
+    // object timers
+    std::vector<ObjTimer> due;
+    for (size_t i = 0; i < m_objTimers.size();) {
+        m_objTimers[i].left -= dt;
+        if (m_objTimers[i].left <= 0) { due.push_back(m_objTimers[i]); m_objTimers.erase(m_objTimers.begin() + i); }
+        else ++i;
+    }
+    for (const ObjTimer& t : due) {
+        if (!m_graph) return;
+        for (Node& n : m_graph->nodes)
+            if (n.def->op == Op::OnTimer) m_cache[n.id] = {Value(), Value::Obj(t.obj), Value::Str(t.name)};
+        fire(Op::OnTimer);
+    }
+    // production: the first unit queued at each building counts down
+    std::vector<int> busy;
+    std::vector<Production> done;
+    for (size_t i = 0; i < m_production.size();) {
+        Production& p = m_production[i];
+        if (!m_world->objectAlive(p.building)) { m_production.erase(m_production.begin() + i); continue; }
+        if (std::find(busy.begin(), busy.end(), p.building) != busy.end()) { ++i; continue; }
+        busy.push_back(p.building);
+        p.left -= dt;
+        if (p.left <= 0) { done.push_back(p); m_production.erase(m_production.begin() + i); continue; }
+        ++i;
+    }
+    for (const Production& p : done) {
+        if (!m_graph) return;
+        const float3 door = m_world->doorOf(p.building);
+        const float3 c = m_world->getPosition(p.building);
+        float3 out(door.x - c.x, 0, door.z - c.z);
+        const float ol = length(out);
+        const float yaw = ol > 1e-3f ? std::atan2(out.x, out.z) * 57.2957795f : 0.0f;
+        const int u = m_world->spawnPrefab(p.prefab, door, yaw);
+        if (u < 0) { error("prefab not found: " + p.prefab); continue; }
+        // it walks out of the door
+        const float3 to = ol > 1e-3f ? door + out * (1.6f / ol) : door + float3(0, 0, 1.6f);
+        std::vector<float3> path = m_world->findPath(door, to);
+        if (path.empty()) path.push_back(to);
+        m_unitMoves.push_back({u, path, 0, 2.5f, -1, 0.0f, to});
+        m_world->playClip(u, "Walk", true, 1.0f);
+        Node* n = m_graph->node(p.node);
+        if (!n) continue;
+        m_budget = kBudget;
+        setOut(*n, 2, Value::Obj(u));
+        execFrom(p.node, 1);
+    }
 }
 
 void Runtime::fireHudButton(const std::string& id) {
@@ -219,6 +408,45 @@ Value Runtime::output(const Node& n, int pin) {
     case Op::ConstFloat: case Op::ConstBool: case Op::ConstVec3: case Op::ConstString: r = input(n, 0); break;
     case Op::GetVar: { auto it = m_vars.find(S(0)); r = it == m_vars.end() ? Value::Float(0) : it->second; break; }
     case Op::Selected: r = Value::Obj(m_world->selected()); break;
+    case Op::GetSelected: { std::vector<int> s = m_world->selection(); r = Value::Obj(s.empty() ? -1 : s[0]); break; }
+    case Op::CountSelected: r = Value::Float((float)m_world->selection().size()); break;
+    case Op::IsSelected: {
+        const int o = Ob(0);
+        const std::vector<int> s = m_world->selection();
+        r = Value::Bool(o >= 0 && std::find(s.begin(), s.end(), o) != s.end());
+        break;
+    }
+    case Op::GetObjVar: r = Value::Float(objectVar(Ob(0), S(1))); break;
+    case Op::GetObjLink: {
+        const int o = Ob(0);
+        int t = -1;
+        auto it = m_objLinks.find(o);
+        if (it != m_objLinks.end()) {
+            auto k = it->second.find(S(1));
+            if (k != it->second.end() && m_world->objectAlive(k->second)) t = k->second;
+        }
+        r = Value::Obj(t);
+        break;
+    }
+    case Op::ObjectType: { int o = Ob(0); r = Value::Str(o >= 0 ? m_world->objectPrefab(o) : ""); break; }
+    case Op::ObjectCategory: { int o = Ob(0); r = Value::Str(o >= 0 ? m_world->objectCategory(o) : ""); break; }
+    case Op::FindNearest: {
+        const float3 from = V(0);
+        const std::string type = S(1), var = S(2);
+        const float minV = F(3);
+        int best = -1;
+        float bestD = 1e30f;
+        for (int i = 0; i < m_world->objectCount(); ++i) {
+            if (!m_world->objectAlive(i)) continue;
+            if (m_world->objectPrefab(i) != type && m_world->objectCategory(i) != type) continue;
+            if (!var.empty() && objectVar(i, var) < minV) continue;
+            const float3 p = m_world->getPosition(i);
+            const float dd = (p.x - from.x) * (p.x - from.x) + (p.z - from.z) * (p.z - from.z);
+            if (dd < bestD) { bestD = dd; best = i; }
+        }
+        r = Value::Obj(best);
+        break;
+    }
     case Op::FindObject: {
         std::string name = S(0);
         int found = -1;
@@ -360,6 +588,121 @@ void Runtime::exec(Node& n) {
         break;
     }
     case Op::StopClip: { int o = Ob(1); if (o >= 0) m_world->stopClip(o); break; }
+    // ---- RTS units
+    case Op::ForEachSelected: {
+        const std::vector<int> objs = m_world->selection();
+        for (int o : objs) {
+            if (!m_graph || m_budget < 0) return;
+            if (!m_world->objectAlive(o)) continue;
+            setOut(n, 1, Value::Obj(o));
+            execFrom(n.id, 0);
+        }
+        if (m_graph) execFrom(n.id, 2);
+        return;
+    }
+    case Op::SelectAdd: {
+        const int o = Ob(1);
+        std::vector<int> s = input(n, 2).asBool() ? m_world->selection() : std::vector<int>();
+        if (o >= 0 && std::find(s.begin(), s.end(), o) == s.end()) s.push_back(o);
+        m_world->setSelection(s);
+        break;
+    }
+    case Op::ClearSelection: m_world->setSelection({}); break;
+    case Op::SetObjVar: { int o = Ob(1); if (o >= 0) m_objVars[o][S(2)] = F(3); break; }
+    case Op::AddObjVar: { int o = Ob(1); if (o >= 0) m_objVars[o][S(2)] += F(3); break; }
+    case Op::SetObjLink: {
+        const int o = Ob(1);
+        if (o >= 0) m_objLinks[o][S(2)] = Ob(3);
+        break;
+    }
+    case Op::StartTimer: {
+        const int o = Ob(1);
+        const std::string name = S(2);
+        m_objTimers.erase(std::remove_if(m_objTimers.begin(), m_objTimers.end(), [&](const ObjTimer& t) { return t.obj == o && t.name == name; }),
+                          m_objTimers.end());
+        m_objTimers.push_back({o, name, std::max(F(3), 0.0f)});
+        break;
+    }
+    case Op::MoveUnit: {
+        const int o = Ob(1);
+        if (o >= 0) {
+            m_unitMoves.erase(std::remove_if(m_unitMoves.begin(), m_unitMoves.end(), [&](const UnitMove& m) { return m.obj == o; }), m_unitMoves.end());
+            // formation: the units sent to the same point (one order to a group) each take a place around it
+            const float3 order = V(2);
+            int k = 0;
+            for (const UnitMove& m : m_unitMoves)
+                if (length(float3(m.order.x - order.x, 0, m.order.z - order.z)) < 0.05f) ++k;
+            float3 target = order;
+            if (k > 0) {   // rings of 6, 12... places, 0.95 apart
+                int ring = 1, first = 1;
+                while (k >= first + 6 * ring) { first += 6 * ring; ++ring; }
+                const float a = (k - first) * 6.2831853f / (6 * ring) + ring * 0.5f;
+                target = order + float3(std::cos(a), 0, std::sin(a)) * (0.95f * ring);
+            }
+            std::vector<float3> path = m_world->findPath(m_world->getPosition(o), target);
+            if (path.empty()) path.push_back(target);
+            m_unitMoves.push_back({o, path, 0, std::max(F(3), 0.1f), n.id, 0.0f, order});
+            m_world->playClip(o, "Walk", true, 1.0f);
+        }
+        break;
+    }
+    case Op::StopUnit: {
+        const int o = Ob(1);
+        if (o >= 0 && unitMoving(o)) {
+            m_unitMoves.erase(std::remove_if(m_unitMoves.begin(), m_unitMoves.end(), [&](const UnitMove& m) { return m.obj == o; }), m_unitMoves.end());
+            m_world->playClip(o, "Idle", true, 1.0f);
+        }
+        break;
+    }
+    case Op::PlaceBuilding: {
+        const std::string cv = S(2);
+        const float cost = F(3);
+        auto it = m_vars.find(cv);
+        const float have = it == m_vars.end() ? 0.0f : it->second.asFloat();
+        if (!cv.empty() && have < cost) {
+            m_world->message("Not enough " + cv + " (" + std::to_string((int)cost) + ")");
+            execFrom(n.id, 0);
+            if (m_graph) execFrom(n.id, 3);
+            return;
+        }
+        if (m_placeNode >= 0) m_world->message("A building is already being placed");
+        else if (m_world->beginPlacement(S(1))) {
+            m_placeNode = n.id;
+            m_placeCostVar = cv;
+            m_placeCost = cost;
+        } else error("prefab not found: " + S(1));
+        break;
+    }
+    case Op::ProduceUnit: {
+        const int b = Ob(1);
+        if (b >= 0) {
+            const float s = std::max(F(3), 0.1f);
+            m_production.push_back({b, S(2), s, s, n.id});
+        }
+        break;
+    }
+    case Op::HudCounter: {
+        HudCounter c{S(1), S(2), S(3), V(4)};
+        auto it = std::find_if(hudCounters.begin(), hudCounters.end(), [&](const HudCounter& h) { return h.id == c.id; });
+        if (it != hudCounters.end()) *it = c;
+        else hudCounters.push_back(c);
+        break;
+    }
+    case Op::SetObjective: {
+        Objective ob{S(1), S(2), input(n, 3).asBool()};
+        auto it = std::find_if(objectives.begin(), objectives.end(), [&](const Objective& h) { return h.id == ob.id; });
+        if (it != objectives.end()) *it = ob;
+        else objectives.push_back(ob);
+        break;
+    }
+    case Op::ShowMessage:
+        messageTitle = S(1);
+        messageText = S(2);
+        messageShown = true;
+        log.push_back(messageTitle + (messageText.empty() ? "" : ": " + messageText));
+        break;
+    case Op::SetPartColor: { int o = Ob(1); if (o >= 0) m_world->setPartColor(o, S(2), V(3)); break; }
+    case Op::SetPartGlow: { int o = Ob(1); if (o >= 0) m_world->setPartGlow(o, S(2), F(3)); break; }
     case Op::SetColor: { int o = Ob(1); if (o >= 0) m_world->setColor(o, V(2)); break; }
     case Op::SetScale: { int o = Ob(1); if (o >= 0) m_world->setScale(o, V(2)); break; }
     case Op::Select: m_world->select(Ob(1)); break;
