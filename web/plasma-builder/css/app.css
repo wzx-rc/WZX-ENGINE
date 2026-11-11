@@ -35,8 +35,7 @@ svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width:
 .topbar > .mainnav { justify-self: center; }
 .topbar > .topbar-right { justify-self: end; }
 .brand { display: flex; align-items: center; gap: 10px; }
-.brand > svg { width: 40px; height: 40px; stroke: none; }
-.brand-skull { fill: var(--accent); }
+.brand > img.brand-logo { width: 44px; height: 44px; display: block; flex: none; }
 .brand-name { font-family: var(--head); font-weight: 800; font-size: 22px; line-height: .92; letter-spacing: .02em; }
 .mainnav { display: flex; flex-wrap: nowrap; gap: 4px; }
 .mainnav a { display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 13px; border-radius: 8px; border: 1px solid transparent; color: var(--text2); text-decoration: none; font-size: 14px; font-weight: 500; }
@@ -254,6 +253,7 @@ html.desktop { overflow: hidden; scrollbar-gutter: auto; }
 html.desktop body { margin-top: 32px; height: calc(100vh - 32px); overflow-y: auto; scrollbar-gutter: stable; }
 .wintitle { position: fixed; z-index: 1000; top: 0; left: 0; right: 0; height: 32px; display: flex; align-items: center; gap: 8px; padding: 0 150px 0 12px; background: #0b0c0e; border-bottom: 1px solid #1a1c20; color: var(--text2); font-size: 12px; -webkit-app-region: drag; user-select: none; }
 .wintitle > svg { width: 16px; height: 16px; stroke: none; }
+.wintitle > img { width: 16px; height: 16px; display: block; flex: none; border-radius: 3px; }
 .wintitle b { font-family: var(--head); font-size: 14px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--text); }
 .wintitle span { color: var(--muted); }
 .wintitle span::before { content: '·'; margin-right: 8px; }

@@ -34,7 +34,7 @@ if (window.plasmaDesktop) {
   const page = document.title.split('·')[0].trim();
   const bar = document.createElement('div');
   bar.className = 'wintitle';
-  bar.innerHTML = `<svg viewBox="0 0 40 40" aria-hidden="true"><path fill="#f0435a" d="M20 4l4 6 7-4-1 8 7 1-5 6 4 6-8 0-2 8-6-5-6 5-2-8-8 0 4-6-5-6 7-1-1-8 7 4z"/><circle cx="15.5" cy="20" r="2.6" fill="#0b0c0e"/><circle cx="24.5" cy="20" r="2.6" fill="#0b0c0e"/><path d="M15 26h10l-2 3h-6z" fill="#0b0c0e"/></svg><b>Plasma Orks Builder</b>${page && !/plasma orks/i.test(page) ? `<span>${page.replace(/[<&]/g, '')}</span>` : ''}`;
+  bar.innerHTML = `<img src="assets/brand/plasma-orks-icon-32.png" alt=""><b>Plasma Orks Builder</b>${page && !/plasma orks/i.test(page) ? `<span>${page.replace(/[<&]/g, '')}</span>` : ''}`;
   const w = window.plasmaDesktop.win;
   if (w) {
     const ctl = document.createElement('div');
