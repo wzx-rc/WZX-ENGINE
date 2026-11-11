@@ -2353,6 +2353,7 @@ void App::atlInspectorActor(float x, float y, float w, float) {
     Text(x + 48 * s, y + 11 * s, o->name, P().text, 14);
     std::string type = o->prim.type != PRIM_NONE ? std::string("Primitive · ") + primitiveName(o->prim.type)
                      : pd ? "Primitive · " + o->part : (o->part == "WALL" ? "Wall · static mesh" : "Mesh · " + o->part);
+    if (o->isInstanceRoot()) type = "Instance de prefab";   // (not a mesh: its parts come from the prefab)
     if (!m_multi.empty()) type += "  (+" + std::to_string(m_multi.size()) + ")";
     Text(x + 48 * s, y + 33 * s, type, P().accent, 10);
     dl->PopClipRect();
@@ -2454,7 +2455,10 @@ void App::atlInspectorActor(float x, float y, float w, float) {
         if (ch && syncPrimitiveMesh(m_scene, m_selected)) markDirty();
         y += 4 * s;
     }
-    if (show("Static Mesh")) {
+    // a prefab instance: its root has no mesh nor material of its own (its parts come from the prefab, edited in the
+    // Prefab tab): no Static Mesh, no Material section for it
+    const bool instRoot = o->isInstanceRoot();
+    if (!instRoot && show("Static Mesh")) {
         Label(x, y, "STATIC MESH");
         y += 24 * s;
         R slot = {x, y, w, 44 * s};
@@ -2463,11 +2467,12 @@ void App::atlInspectorActor(float x, float y, float w, float) {
         std::string meshName = o->mesh >= 0 && o->mesh < (int)m_scene.meshNames.size() ? m_scene.meshNames[o->mesh] : o->part;
         dl->PushClipRect(slot.min(), slot.max(), true);
         Text(slot.x + 48 * s, slot.y + 8 * s, "SM_" + meshName, P().text, 11);
-        Text(slot.x + 48 * s, slot.y + 25 * s, std::to_string(m_scene.meshes[o->mesh].triangleCount()) + " triangles", P().muted, 9);
+        const size_t tris = o->mesh >= 0 && o->mesh < (int)m_scene.meshes.size() ? m_scene.meshes[o->mesh].triangleCount() : 0;   // (a group: none)
+        Text(slot.x + 48 * s, slot.y + 25 * s, std::to_string(tris) + " triangles", P().muted, 9);
         dl->PopClipRect();
         y += 56 * s;
     }
-    if (show("Material Colour Preset Roughness Metallic Transmission Subsurface Clearcoat Emission")) {
+    if (!instRoot && show("Material Colour Preset Roughness Metallic Transmission Subsurface Clearcoat Emission")) {
         Label(x, y, "MATERIAL");
         y += 24 * s;
         R slot = {x, y, w, 38 * s};

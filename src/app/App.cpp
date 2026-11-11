@@ -1211,6 +1211,11 @@ void App::setColor(int pi) {
 
 void App::setPreset(int preset) {
     if (m_selected < 0) return;
+    for (int sel : selectionAll())
+        if (m_scene.objects[sel].isInstanceRoot() || m_scene.objects[sel].isInstancePart()) {
+            status(L"Un prefab se modifie dans l'onglet Prefab (clic droit > Ouvrir le prefab)", 2);
+            return;
+        }
     pushUndo();
     for (int sel : selectionAll())
         if (!m_scene.objects[sel].group && !m_scene.objects[sel].camera) applyPreset(m_scene.materials[m_scene.objects[sel].material], preset, 1.0f);

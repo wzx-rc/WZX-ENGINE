@@ -72,7 +72,9 @@ void App::viewportCanvas(ImVec2 p0, ImVec2 size) {
             ImVec2 m = ImGui::GetMousePos();
             cameraRay(m.x, m.y, o, dir);
             PickResult pr = pick(m_scene, o, dir);
-            if (pr.object >= 0 && m_scene.objects[pr.object].selectable) {
+            if (pr.object >= 0 && m_scene.objects[pr.object].selectable && prefabInstanceUnder(pr.object) >= 0) {
+                status(L"Un prefab se modifie dans l'onglet Prefab (clic droit > Ouvrir le prefab)", 2);   // its parts come from it
+            } else if (pr.object >= 0 && m_scene.objects[pr.object].selectable) {
                 select(pr.object);
                 setPreset(preset);
                 status(L"Material applied: " + presetNames()[preset]);

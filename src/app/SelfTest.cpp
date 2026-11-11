@@ -2733,6 +2733,15 @@ void App::SelfTest::build() {
         };
         const int r1 = (int)v["r1"], r2 = (int)v["r2"], w = (int)v["w"];
         const float s0 = (float)v["s1"], s1 = partScale(r1, (uint32_t)v["pid"]), s2 = partScale(r2, (uint32_t)v["pid"]);
+        {   // the Inspector of an instance root: no mesh of its own (mesh -1), no Static Mesh / Material section; no material onto it
+            const Object& ro = a.m_scene.objects[r1];
+            check("instance root after the reload: no mesh of its own (the Inspector reads none)", ro.isInstanceRoot() && ro.mesh < 0, fmt("mesh %d", ro.mesh));
+            a.select(r1);
+            const Material before = a.m_scene.materials[ro.material];
+            a.setPreset(1);
+            check("no material assigned to an instance (setPreset refused)", a.m_scene.materials[ro.material].baseColor.x == before.baseColor.x &&
+                                                                              a.m_scene.materials[ro.material].preset == before.preset);
+        }
         check("back on the Scene tab: both instances updated (the part twice as big)", s0 > 0 && std::fabs(s1 - 2 * s0) < 1e-3f && std::fabs(s2 - 2 * s0) < 1e-3f,
               fmt("%.3f -> %.3f, %.3f", s0, s1, s2));
         // unsaved changes on this prefab, then the prefab of another instance: a question first
