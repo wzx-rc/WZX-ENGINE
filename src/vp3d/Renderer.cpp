@@ -2260,7 +2260,6 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
     vp.y = std::max(0, std::min(vp.y, (int)m_height - 1));
     vp.w = std::max(1, std::min(vp.w, (int)m_width - vp.x));
     vp.h = std::max(1, std::min(vp.h, (int)m_height - vp.y));
-    setMsaa((uint32_t)std::max(1, rs.msaaSamples));   // viewport anti-aliasing (rebuilds the MSAA passes when it changes)
     // GI mode, raster while moving: the camera, the objects or the lighting changed -> the raster view of the probes
     // (the probes keep updating), until giSettleFrames still frames; then the ray traced image, faded in from the last
     // raster image over giFadeFrames (no jump)
@@ -2354,13 +2353,19 @@ void Renderer::render(const Scene& scene, const RenderSettings& rs, const ViewRe
     const bool useHistory = rs.ddgi && !rs.raster && !giRaster;
     const bool needAS = (!rs.raster && !(liveProbes && rs.ddgiRaster)) || baking || (rs.raster && ((rs.bevel && rs.rasterBevel) || rs.rasterRT));
 
-    // AA quality of the GI raster modes: the sample count of the viewport (Lit and the others keep 4x)
-    const uint32_t msaa = (!rs.raster && giRaster && rs.aaQuality >= 1 && m_msaa8) ? 8u : 4u;
-    if (msaa != m_msaa) {
-        waitIdle();
-        m_msaa = msaa;
-        createRasterPipelines(nullptr, true);
-        createRasterTargets(m_rtW, m_rtH);
+    // the sample count of the viewport, set at one place per mode: the raster views (Rapide, HQ) take the one of the
+    // settings (setMsaa), the GI raster modes their AA quality (Lit and the others keep 4x). (Both were applied in turn:
+    // with 1 sample (BrickIt Rapide) the targets and the pipelines were rebuilt twice per frame after a GPU wait, 60 ms of
+    // CPU on an empty scene, BrickIt 13/11/2026)
+    if (rs.raster && !giRaster) setMsaa((uint32_t)std::max(1, rs.msaaSamples));
+    else {
+        const uint32_t msaa = (!rs.raster && giRaster && rs.aaQuality >= 1 && m_msaa8) ? 8u : 4u;
+        if (msaa != m_msaa) {
+            waitIdle();
+            m_msaa = msaa;
+            createRasterPipelines(nullptr, true);
+            createRasterTargets(m_rtW, m_rtH);
+        }
     }
 
     beginCommands();
