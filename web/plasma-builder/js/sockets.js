@@ -59,8 +59,19 @@ function gripRotations(model) {
   return out;
 }
 
-// À appeler avec l'ork au repos. Rend [{ id, label, type, bone, rest (Matrix4, espace ork), local (relatif au joint) }].
-export function orkSockets(model) {
+// Réglages des sockets faits dans le Rig Lab (locators déplacés / tournés) : repère relatif au joint, enregistré
+// sur l'appareil. Ils remplacent le repère calculé, dans le Builder comme dans l'Importer.
+export const SOCKET_OVERRIDES = 'plasmaork.sockets.overrides';
+export function loadSocketOverrides() {
+  try { return JSON.parse(localStorage.getItem(SOCKET_OVERRIDES) || '{}') || {}; } catch { return {}; }
+}
+export function saveSocketOverrides(o) {
+  try { localStorage.setItem(SOCKET_OVERRIDES, JSON.stringify(o)); return true; } catch { return false; }
+}
+
+// À appeler avec l'ork au repos. Rend [{ id, label, type, bone, rest (Matrix4, espace ork), local (relatif au joint),
+// def (local calculé, sans réglage), custom (réglé dans le Rig Lab) }].
+export function orkSockets(model, useOverrides = true) {
   const grip = gripRotations(model);
   model.setPose(null);
   model.root.updateMatrixWorld(true);
@@ -84,14 +95,18 @@ export function orkSockets(model) {
     ['base', 'Socle', 'base', null, new THREE.Vector3(hips.x, model.info.floor ?? 0, hips.z)],
   ];
   const orkInv = model.ork.matrixWorld.clone().invert();
+  const over = useOverrides ? loadSocketOverrides() : {};
   return defs.map(([id, label, type, boneName, p]) => {
     label = T(label);
     const bone = boneName ? model.bone(boneName) : null;
-    const rest = id.startsWith('grip_') ? grip[id.slice(-1)].clone().setPosition(p) : new THREE.Matrix4().makeTranslation(p.x, p.y, p.z);
+    let rest = id.startsWith('grip_') ? grip[id.slice(-1)].clone().setPosition(p) : new THREE.Matrix4().makeTranslation(p.x, p.y, p.z);
     // repère du joint au repos, dans l'espace ork
     const boneRest = bone ? orkInv.clone().multiply(bone.matrixWorld) : new THREE.Matrix4();
-    const local = boneRest.invert().multiply(rest);
-    return { id, label, type, bone, rest, local };
+    let local = boneRest.clone().invert().multiply(rest);
+    const def = local.clone();
+    const o = over[id]?.local;
+    if (Array.isArray(o) && o.length === 16 && o.every(Number.isFinite)) { local = new THREE.Matrix4().fromArray(o); rest = boneRest.clone().multiply(local); }
+    return { id, label, type, bone, rest, local, def, custom: !!over[id] };
   });
 }
 

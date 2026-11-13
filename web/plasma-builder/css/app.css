@@ -341,3 +341,67 @@ html[data-faction="jaune"] {
   --hot-bg: color-mix(in srgb, #fb7e3a 13%, #0e0e10); --hot-line: color-mix(in srgb, #fb7e3a 42%, #0e0e10);
   --hot-deep: color-mix(in srgb, #fb7e3a 9%, #0e0e10); --hot-glow: color-mix(in srgb, #fb7e3a 18%, transparent);
 }
+
+/* ===================== Builder : mode Build / Pose ===================== */
+.modesel { padding: 3px; border-radius: 10px; }
+.modesel button { display: flex; align-items: center; gap: 7px; min-height: 36px; padding: 0 14px; font-size: 14px; }
+.modesel button svg { width: 18px; height: 18px; }
+.modesel button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
+
+/* Low / High dans le HUD de la vue, à côté de Texture */
+.lodhud { display: inline-flex; gap: 2px; padding-right: 4px; margin-right: 2px; border-right: 1px solid var(--line2); }
+.lodhud button { min-width: 44px; height: 32px; padding: 0 8px; border: 0; border-radius: 6px; background: none; color: var(--text2); font-size: 12.5px; font-weight: 600; }
+.lodhud button[aria-pressed="true"] { background: var(--accent-bg); color: var(--accent); }
+.floatbar .lodhud { height: 40px; align-items: center; padding: 0 4px 0 0; }
+.floatbar .lodhud button { height: 40px; border-radius: 8px; }
+
+.vp-tip { position: absolute; z-index: 5; transform: translate(14px, -50%); padding: 3px 9px; border-radius: 999px; border: 1px solid #3a3c42; background: rgba(18,19,22,.88); font-size: 11.5px; color: #f2f2f3; pointer-events: none; white-space: nowrap; }
+.tools [data-ptool] { display: none; }
+body[data-mode="pose"] .tools [data-tool] { display: none; }
+body[data-mode="pose"] .tools [data-ptool] { display: flex; }
+body[data-mode="pose"] .tools [data-ptool][aria-pressed="true"] { border-color: var(--accent); background: var(--accent-bg); color: var(--accent); }
+
+/* En mode Pose : bibliothèque de poses à la place des briques, panneau Pose à la place de Personnaliser / Ork */
+body[data-mode="pose"] .rail, body[data-mode="pose"] .library, body[data-mode="pose"] #equip,
+body[data-mode="pose"] .rightcol > .panel:not(#posePanel), body[data-mode="pose"] .row-bottom,
+body[data-mode="pose"] #pins, body[data-mode="pose"] #steps, body[data-mode="pose"] #vpSteps, body[data-mode="pose"] #drawerOpen,
+body[data-mode="pose"] #socketsBtn { display: none !important; }
+body[data-mode="pose"] #poseLib, body[data-mode="pose"] #posePanel { display: flex !important; }
+
+.poselib { flex: 1 1 300px; max-width: 330px; min-width: 270px; padding: 14px 12px; flex-direction: column; gap: 10px; }
+.poselib-body { display: flex; flex-direction: column; gap: 8px; overflow: auto; flex: 1 1 auto; min-height: 0; max-height: 640px; padding: 2px; }
+.poselib-body h3 { margin: 6px 0 0; font-size: 12px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
+.poselib .posegrid { grid-template-columns: repeat(3, minmax(0, 1fr)); max-height: none; overflow: visible; }
+.posetile img { aspect-ratio: 3 / 4; }
+.addtile { justify-content: space-between; border: 2px dashed var(--line2); background: none; }
+.addtile .plus { flex: 1; display: grid; place-items: center; aspect-ratio: 3 / 4; color: var(--accent); }
+.addtile .plus svg { width: 34px; height: 34px; stroke-width: 2.4; }
+.addtile:hover { border-color: var(--accent); background: var(--accent-bg); }
+.posesave { display: flex; gap: 6px; align-items: center; padding: 8px; border-radius: 8px; border: 1px solid var(--accent); background: var(--accent-bg); }
+.posesave input { flex: 1; min-width: 0; height: 34px; }
+.posesave .primary { height: 34px; padding: 0 12px; font-size: 13px; }
+
+.posepanel { flex-direction: column; gap: 12px; }
+.posepanel h3 { margin: 4px 0 0; font-size: 12px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
+.posepanel .xf.rot { grid-template-columns: 22px minmax(0, 1fr) 62px; }
+.xf .ax.x { color: #e5655f; } .xf .ax.y { color: #8fc66a; } .xf .ax.z { color: #5f9de5; }
+.pm-row { display: flex; gap: 6px; flex-wrap: wrap; }
+.pm-row button { flex: 1 1 0; min-height: 34px; padding: 0 8px; font-size: 12.5px; }
+.pm-checks { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12.5px; color: var(--text2); }
+.pm-ctx { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.pm-ctx button { min-height: 38px; padding: 0 8px; border-radius: 8px; border: 1px solid var(--line2); background: var(--raised); color: var(--text); font-size: 12.5px; text-align: center; }
+.pm-ctx button:hover { border-color: var(--accent); background: var(--accent-bg); }
+.small-btn { min-height: 30px; padding: 0 10px; font-size: 12px; }
+
+.ui-atelier .poselib { width: var(--drawer-w); max-width: none; min-width: 0; flex: none; background: #121418; border-right: 1px solid var(--line); padding: 16px 14px; overflow: hidden; }
+.ui-atelier .poselib .posegrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.ui-atelier .poselib-body { max-height: none; }
+/* vue étroite : la barre du bas reste sur une ligne (libellé Texture masqué, écarts réduits) */
+.viewport-panel .vp-main { container-type: inline-size; }
+@container (max-width: 860px) {
+  .vp-foot { gap: 8px; }
+  .vp-foot-left { gap: 10px; }
+  .vp-foot button.texbtn .tlbl { display: none; }
+  .vp-foot button.texbtn { padding: 0 8px; }
+  .lodhud button { min-width: 36px; padding: 0 6px; }
+}

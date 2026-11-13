@@ -1,5 +1,6 @@
 // Poses de départ de l'ork riggé, partagées par le Rig Lab et le builder.
 // Construites par rotations dans l'espace de la figurine (gauche = +x, avant = +z, cm).
+import * as THREE from 'three';
 import { CHAINS } from './model.js';
 
 const HIPS = 'QuickRigCharacter_Hips';
@@ -8,8 +9,32 @@ export const MY_POSES = 'plasmaork.riglab.poses';
 
 // Les bras du rig sont au repos en A ; le genou et le coude plient autour de x.
 const X = [1, 0, 0], Y = [0, 1, 0], Z = [0, 0, 1];
+
+// Oriente le bras d'un côté (L = gauche de l'ork, +x) : direction du bras puis de l'avant-bras, espace figure.
+// Pour le côté droit, x est inversé : on donne toujours les directions du bras gauche.
+export function armTo(m, side, upper, lower = upper) {
+  const [a, b, c] = CHAINS[side === 'L' ? 'handL' : 'handR'].map(n => m.bone(n));
+  const sx = side === 'L' ? 1 : -1;
+  const dir = v => new THREE.Vector3(v[0] * sx, v[1], v[2]).normalize();
+  m.root.updateMatrixWorld(true);
+  if (upper) m.aim(a, m.figurePos(b).sub(m.figurePos(a)).normalize(), dir(upper));
+  m.root.updateMatrixWorld(true);
+  if (lower) m.aim(b, m.figurePos(c).sub(m.figurePos(b)).normalize(), dir(lower));
+  m.root.updateMatrixWorld(true);
+}
+// Directions de bras toutes faites (bras gauche ; le droit est le miroir).
+export const ARM = {
+  down: [[0.22, -1, 0.02], [0.16, -1, 0.18]],
+  T: [[1, 0, 0], [1, 0, 0]],
+  up: [[0.3, 1, 0.12], [0.2, 1, 0.2]],
+  front: [[0.12, -0.05, 1], [0.08, 0, 1]],
+};
+
+// La pose A est le repos du rig (le rig est modélisé bras en A).
 export const PRESETS = [
-  { id: 'repos', name: 'Repos', build: () => {} },
+  { id: 'neutre', name: 'Neutre', base: true, feet: false, curl: [0.35, 0.35], build: m => { for (const s of ['L', 'R']) armTo(m, s, ...ARM.down); } },
+  { id: 'repos', name: 'Pose A', base: true, build: () => {} },
+  { id: 'tpose', name: 'Pose T', base: true, feet: false, build: m => { for (const s of ['L', 'R']) armTo(m, s, ...ARM.T); } },
   { id: 'garde', name: 'Garde', curl: [1.1, 1.1], build: m => {
     m.hips.position.y -= 0.9;
     for (const s of ['', '1']) {
@@ -58,7 +83,7 @@ export function buildPreset(model, p) {
   p.build(model);
   model.root.updateMatrixWorld(true);
   // les pieds restent posés : on ramène les chevilles à hauteur du repos sans changer leur x / z
-  if (p.id !== 'repos') for (const id of ['footL', 'footR']) {
+  if (p.id !== 'repos' && p.feet !== false) for (const id of ['footL', 'footR']) {
     const end = model.bone(CHAINS[id][2]), t = model.figurePos(end);
     t.y = end.userData.restW.y;
     model.solveIK(id, t);

@@ -4,6 +4,7 @@
 // plus une translation du bassin.
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { applySlots } from './meshslots.js';
 
 const HIPS = 'QuickRigCharacter_Hips';
 const Q = n => 'QuickRigCharacter_' + n;
@@ -68,7 +69,10 @@ export class OrkModel {
       const bin = Uint8Array.from(atob((await res.text()).trim()), c => c.charCodeAt(0));
       gltf = await loader.parseAsync(bin.buffer, '');
     }
-    return new OrkModel(gltf);
+    const model = new OrkModel(gltf);
+    // meshes remplacés dans le Rig Lab (Meshes) : même rig, autre maillage
+    await applySlots(model);
+    return model;
   }
 
   constructor(gltf) {

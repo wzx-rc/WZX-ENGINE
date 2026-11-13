@@ -9,6 +9,7 @@ import { Viewport } from '../viewport.js';
 import { exportMerged, exportJSON } from '../io.js';
 import { OrkModel, GROUPS, CHAINS, label } from './model.js';
 import { PRESETS, buildPreset, MY_POSES } from './poses.js';
+import { createStudio } from './studio.js';
 
 const $ = id => document.getElementById(id);
 const DEG = THREE.MathUtils.RAD2DEG;
@@ -23,6 +24,7 @@ const vp = new Viewport($('vpCanvas'));
 if (!window.plasmaDesktop) $('qualitySel').querySelector('option[value="pt"]').remove();
 vp.controls.target.set(0, 1.0, 0);
 let model = null;
+let studio = null;   // sockets et meshes (studio.js)
 const state = {
   tool: 'fk', mesh: 'high', shade: 'resin', bones: true, weights: false,
   sel: null, hover: null, curl: { L: 0, R: 0 }, preset: null,
@@ -132,6 +134,7 @@ function chainOf(b) {
   return null;
 }
 function select(b) {
+  if (b && studio?.sel) studio.selectSocket(null, true);
   state.sel = b;
   HL.uSel.value = b ? model.bones.indexOf(b) : -1;
   attachGizmo();
@@ -144,6 +147,7 @@ function select(b) {
 }
 function attachGizmo() {
   const b = state.sel;
+  if (!b && studio?.attach()) return;
   gizmo.detach();
   if (!b) return;
   const chain = chainOf(b);
@@ -158,12 +162,14 @@ function attachGizmo() {
   gizmo.setMode('rotate'); gizmo.setSpace('local'); gizmo.attach(b);
 }
 gizmo.addEventListener('mouseDown', () => {
+  if (studio?.isSocket(gizmo.object)) return;
   pushUndo();
   state.preset = null;
   pins = $('pinChk').checked ? { footL: model.figurePos(model.bone(CHAINS.footL[2])), footR: model.figurePos(model.bone(CHAINS.footR[2])) } : null;
 });
-gizmo.addEventListener('mouseUp', () => { pins = null; renderPresets(); });
+gizmo.addEventListener('mouseUp', () => { if (studio?.isSocket(gizmo.object)) { studio.onGizmoUp(); return; } pins = null; renderPresets(); });
 gizmo.addEventListener('objectChange', () => {
+  if (studio?.isSocket(gizmo.object)) { studio.onGizmo(); return; }
   const b = state.sel;
   if (!b) return;
   if (gizmo.object === ikTarget) {
@@ -289,7 +295,10 @@ vp.canvas.addEventListener('pointerdown', e => {
 vp.canvas.addEventListener('pointerup', e => {
   if (!down || e.button !== 0) return;
   const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y) > 5;
-  if (!down.gizmo && !moved && model) select(pick(e));
+  if (!down.gizmo && !moved && model) {
+    const sk = studio?.pickSocket(e);
+    if (sk) { select(null); studio.selectSocket(sk); } else { studio?.selectSocket(null, true); select(pick(e)); }
+  }
   down = null;
 });
 vp.canvas.addEventListener('pointermove', e => {
@@ -299,11 +308,12 @@ vp.canvas.addEventListener('pointermove', e => {
   requestAnimationFrame(() => {
     const ev = hoverQueued.e;
     hoverQueued = null;
-    const b = gizmo.axis !== null ? null : pick(ev);
+    const sk = gizmo.axis !== null ? null : studio?.pickSocket(ev);
+    const b = gizmo.axis !== null || sk ? null : pick(ev);
     setHover(b);
     const tip = $('vpTip'), r = vp.canvas.getBoundingClientRect();
-    tip.hidden = !b;
-    if (b) { tip.textContent = label(b.name); tip.style.left = (ev.clientX - r.left) + 'px'; tip.style.top = (ev.clientY - r.top) + 'px'; }
+    tip.hidden = !b && !sk;
+    if (b || sk) { tip.textContent = sk ? 'Socket · ' + studio.tipFor(sk) : label(b.name); tip.style.left = (ev.clientX - r.left) + 'px'; tip.style.top = (ev.clientY - r.top) + 'px'; }
   });
 });
 vp.canvas.addEventListener('pointerleave', () => { setHover(null); $('vpTip').hidden = true; });
@@ -452,7 +462,7 @@ addEventListener('keydown', e => {
   else if (k === 'b') toggleBones();
   else if (k === 'h') toggleWeights();
   else if (k === 'm' && state.sel) $('mirrorBoneBtn').click();
-  else if (k === 'escape') select(null);
+  else if (k === 'escape') { studio?.selectSocket(null, true); select(null); }
   else if (k === 'arrowup' && state.sel?.parent?.isBone) select(state.sel.parent);
   else if (k === 'arrowdown' && state.sel) { const c = state.sel.children.find(x => x.isBone); if (c) select(c); }
 });
@@ -479,6 +489,13 @@ try {
   model.fit();
   vp.scene.add(model.root);
   model.ork.add(ikTarget);
+  // sockets calculés l'ork au repos, avant de reprendre la pose enregistrée
+  studio = createStudio({
+    vp, model, toast,
+    deselectBone: () => { if (state.sel) select(null); },
+    tool: () => state.tool,
+    changedMeshes: () => { applyMaterials(); applyMeshes(); },
+  });
   applyMaterials();
   applyMeshes();
   buildBoneViz();
@@ -491,7 +508,7 @@ try {
   vp.frameObject(model.root, new THREE.Vector3(0.45, 0.2, 1), true);
   $('loading').hidden = true;
   $('vpInfo').textContent = `${model.bones.length} joints · ${tr('skin Maya', 'Maya skin')} ${model.meshes.BODY_low.geometry.attributes.position.count.toLocaleString(window.plasmaLang === 'fr' ? 'fr-FR' : 'en-US')} ${tr('sommets', 'vertices')} · high ${(model.meshes.BODY_high.geometry.index.count / 3).toLocaleString(window.plasmaLang === 'fr' ? 'fr-FR' : 'en-US')} triangles`;
-  window.riglab = { model, vp, state, select, applyPreset: id => applyPreset(PRESETS.find(p => p.id === id)) };
+  window.riglab = { model, vp, state, select, studio, applyPreset: id => applyPreset(PRESETS.find(p => p.id === id)) };
 } catch (err) {
   console.error(err);
   const l = $('loading');

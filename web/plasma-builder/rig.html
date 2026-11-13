@@ -63,10 +63,34 @@
   <div class="body">
     <div class="work">
       <div class="row-top">
-        <section class="panel library skel" aria-label="Squelette">
-          <div class="panel-head"><h2>Squelette</h2><span class="count" id="boneCount">0</span></div>
-          <p class="hint">Clique sur la figurine ou sur un os de la liste. Caméra : clic gauche glissé pour tourner, clic milieu pour déplacer, clic droit pour zoomer, F pour cadrer.</p>
-          <div class="bonetree" id="boneTree"></div>
+        <section class="panel library skel" aria-label="Studio">
+          <div class="tabs" role="tablist" aria-label="Studio" id="leftTabs">
+            <button type="button" role="tab" data-ltab="bones">Squelette <span class="count" id="boneCount">0</span></button>
+            <button type="button" role="tab" data-ltab="sockets">Sockets</button>
+            <button type="button" role="tab" data-ltab="meshes">Meshes</button>
+          </div>
+          <div class="lpane" id="lpane-bones">
+            <p class="hint">Clique sur la figurine ou sur un os de la liste. Caméra : clic gauche glissé pour tourner, clic milieu pour déplacer, clic droit pour zoomer, F pour cadrer.</p>
+            <div class="bonetree" id="boneTree"></div>
+          </div>
+          <div class="lpane" id="lpane-sockets" hidden>
+            <div class="sock-top"><label class="check"><input type="checkbox" id="sockShow" checked>Afficher les sockets</label><span class="grow"></span><button type="button" id="sockResetAll" class="small-btn">Tout réinitialiser</button></div>
+            <p class="hint">Clique la boule d'un socket (ou la liste). W : déplacer, E : tourner. La flèche est l'axe Y : le haut de la brique, le manche d'une arme modélisée debout dans Maya. Le réglage est relatif au joint et sert au Builder.</p>
+            <div class="sockedit" id="sockEdit" hidden>
+              <div class="cur"><b id="sockName"></b><span class="grow"></span><code id="sockCode"></code></div>
+              <div class="sockxf" id="sockXf">
+                <span>Position (cm)</span><input type="number" step="0.1" data-k="px" aria-label="Position X"><input type="number" step="0.1" data-k="py" aria-label="Position Y"><input type="number" step="0.1" data-k="pz" aria-label="Position Z">
+                <span>Rotation (°)</span><input type="number" step="1" data-k="rx" aria-label="Rotation X"><input type="number" step="1" data-k="ry" aria-label="Rotation Y"><input type="number" step="1" data-k="rz" aria-label="Rotation Z">
+              </div>
+              <div class="pm-row"><button type="button" id="sockSnap" title="Flèche vers le haut, avant de la figurine">Redresser</button><button type="button" id="sockReset">Réinitialiser</button></div>
+            </div>
+            <div class="socklist" id="sockList"></div>
+          </div>
+          <div class="lpane" id="lpane-meshes" hidden>
+            <p class="hint">Glisse un OBJ exporté de Maya sur un slot (cm, Y en haut, l'ork à sa place). Il remplace ce maillage et suit le même rig : poids repris du maillage d'origine. Les sockets et les poses restent. « Exporter OBJ » donne la référence à reprendre dans Maya.</p>
+            <div class="slots" id="meshSlots"></div>
+            <input type="file" id="slotInput" accept=".obj" hidden>
+          </div>
         </section>
 
         <section class="panel viewport-panel" aria-label="Viewport">

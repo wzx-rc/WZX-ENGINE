@@ -41,6 +41,10 @@
     </nav>
     <script src="js/early.js"></script>
     <div class="topbar-right">
+      <div class="seg modesel" id="modeSel" role="group" aria-label="Mode du Builder">
+        <button type="button" data-mode="build" title="Build : poser les briques sur l'ork"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8l8-4 8 4-8 4zM4 12l8 4 8-4M4 16l8 4 8-4"/></svg>Build</button>
+        <button type="button" data-mode="pose" title="Pose : poser l'ork avec son squelette, les briques suivent"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="4" r="2"/><path d="M12 6v8M6 9l6 1 6-3M12 14l-4 7M12 14l4 7"/></svg>Pose</button>
+      </div>
       <label class="projname"><span class="sr">Nom du projet</span><input id="projName" type="text" value="Da_Big_Boy_01" spellcheck="false">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16zM14 6l4 4"/></svg></label>
       <div class="btngroup">
@@ -86,19 +90,30 @@
           <p class="hint">Clic : la brique va sur son socket. Glisser vers le viewport : choisir le socket.</p>
         </section>
 
+        <section class="panel poselib" id="poseLib" aria-label="Poses" hidden>
+          <div class="panel-head">
+            <h2>Poses</h2><span class="count" id="poseLibCount">0</span>
+            <span class="grow"></span>
+            <button type="button" id="poseAddTop" class="icon small" aria-label="Enregistrer la pose actuelle" title="Enregistrer la pose actuelle"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
+          </div>
+          <div class="poselib-body" id="poseLibBody"></div>
+          <p class="hint">Clic : appliquer la pose. Clic droit sur une de tes poses : renommer, supprimer.</p>
+        </section>
+
         <section class="panel viewport-panel" aria-label="Viewport">
           <div class="tools" role="toolbar" aria-label="Outils" id="tools">
             <button type="button" data-tool="select" aria-label="Sélection (Q)" title="Sélection (Q)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3l14 8-6 2-2 6z"/></svg></button>
             <button type="button" data-tool="translate" aria-label="Déplacer (G)" title="Déplacer (G)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2v20M2 12h20M12 2l-3 3M12 2l3 3M12 22l-3-3M12 22l3-3M2 12l3-3M2 12l3 3M22 12l-3-3M22 12l-3 3"/></svg></button>
             <button type="button" data-tool="rotate" aria-label="Tourner (R)" title="Tourner (R)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-3-6.2M20 4v5h-5"/></svg></button>
             <button type="button" data-tool="scale" aria-label="Échelle (S)" title="Échelle (S)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10h10v10zM14 10l6-6M15 4h5v5"/></svg></button>
+            <button type="button" data-ptool="fk" aria-label="Tourner l'os (E)" title="Tourner l'os (E)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-3-6.2M20 4v5h-5"/></svg></button>
+            <button type="button" data-ptool="ik" aria-label="IK : déplacer main, pied, bassin (W)" title="IK : déplacer main, pied, bassin (W)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20l5-7 4 3 5-9M17 7h2v2"/></svg></button>
           </div>
           <div class="vp-main">
             <div class="vp-bar">
               <div class="steps" role="group" aria-label="Étapes" id="steps">
                 <button type="button" data-step="lib">Bibliothèque</button>
                 <button type="button" data-step="asm">Assemblage</button>
-                <button type="button" data-step="pose">Pose</button>
                 <button type="button" data-step="render">Rendu</button>
               </div>
               <div class="vp-right">
@@ -117,6 +132,7 @@
                 <canvas id="vpCanvas"></canvas>
                 <div class="pins" id="pins"></div>
                 <div class="vp-info" id="vpInfo"></div>
+                <div class="vp-tip" id="vpTip" hidden></div>
                 <button type="button" id="drawerOpen" class="drawer-open" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>Bibliothèque</button>
                 <div class="vp-steps" id="vpSteps"></div>
                 <div class="floatbar" id="floatbar" role="toolbar" aria-label="Outils de la vue" hidden></div>
@@ -133,7 +149,8 @@
                 </label>
               </div>
               <div class="btngroup" role="group" aria-label="Affichage" id="shading">
-                <button type="button" id="texBtn" class="texbtn" aria-pressed="false" title="Afficher les textures (6) · résine grise (5) · filaire (4)"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 15l5-5 4 4 3-3 6 6M15.5 8.5h.01"/></svg>Texture</button>
+                <span class="lodhud" id="lodSel" role="group" aria-label="Définition"><button type="button" data-lod="low" title="Basemesh low et version low des briques">Low</button><button type="button" data-lod="high" title="High-poly de l'ork et des briques">High</button></span>
+                <button type="button" id="texBtn" class="texbtn" aria-pressed="false" title="Afficher les textures (6) · résine grise (5) · filaire (4)"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 15l5-5 4 4 3-3 6 6M15.5 8.5h.01"/></svg><span class="tlbl">Texture</span></button>
                 <button type="button" class="icon" data-shade="resin" aria-label="Résine grise" title="Résine grise"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/></svg></button>
                 <button type="button" class="icon" data-shade="paint" aria-label="Peint" title="Peint"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 0 0 0 18c1.5 0 2-1 2-2s-1-1.5-1-2.5 1-1.5 2-1.5h2a4 4 0 0 0 4-4c0-4.4-4-8-9-8zM7.5 11h.01M10 7h.01M15 7h.01"/></svg></button>
                 <button type="button" class="icon" data-shade="wire" aria-label="Filaire" title="Filaire"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9zM12 12l8-4.5M12 12v9M12 12L4 7.5"/></svg></button>
@@ -145,6 +162,34 @@
         </section>
 
         <div class="rightcol">
+          <section class="panel posepanel" id="posePanel" aria-label="Pose" hidden>
+            <div class="panel-head">
+              <h2>Pose</h2><span class="grow"></span>
+              <button type="button" id="pmResetAll" class="small-btn" title="Tout remettre au repos">Pose A</button>
+            </div>
+            <div class="cur"><b id="pmBone">Aucun os</b><span class="grow"></span><code id="pmMaya"></code></div>
+            <div class="xf rot" id="pmXf"></div>
+            <div class="pm-row">
+              <button type="button" id="pmReset" title="Remettre l'os au repos">Réinitialiser l'os</button>
+              <button type="button" id="pmMirror" title="Copie la rotation de cet os sur l'os opposé">Copier sur l'autre côté (M)</button>
+            </div>
+            <div class="pm-checks">
+              <label class="check"><input type="checkbox" id="pmSym">Symétrie</label>
+              <label class="check"><input type="checkbox" id="pmPins">Pieds ancrés au sol</label>
+            </div>
+            <h3 id="pmCtxTitle">Mains</h3>
+            <div class="pm-ctx" id="pmCtx"></div>
+            <div class="orkset" id="pmCurl">
+              <label>Main gauche <output id="pmCurlLOut"></output><input type="range" id="pmCurlL" min="0" max="1.6" step="0.05" aria-label="Fermeture de la main gauche"></label>
+              <label>Main droite <output id="pmCurlROut"></output><input type="range" id="pmCurlR" min="0" max="1.6" step="0.05" aria-label="Fermeture de la main droite"></label>
+            </div>
+            <h3>Miroir de la pose</h3>
+            <div class="pm-row">
+              <button type="button" data-pmirror="LtoR" title="Le côté gauche est copié sur le droit">G → D</button>
+              <button type="button" data-pmirror="RtoL" title="Le côté droit est copié sur le gauche">D → G</button>
+              <button type="button" data-pmirror="swap" title="Échange gauche et droite">Inverser</button>
+            </div>
+          </section>
           <section class="panel" aria-label="Personnaliser">
             <div class="panel-head">
               <h2>Personnaliser</h2><span class="grow"></span>
@@ -211,10 +256,6 @@
           <section class="panel kits" aria-label="Ork">
             <div class="panel-head"><h2>Ork</h2><span class="grow"></span><a class="muted small-link" href="rig.html">Poser dans le Rig Lab</a></div>
             <div class="orkset">
-              <div class="seg" role="group" aria-label="Définition" id="lodSel">
-                <button type="button" data-lod="low" title="Basemesh low et version low des briques">Low</button>
-                <button type="button" data-lod="high" title="High-poly de l'ork et des briques">High</button>
-              </div>
               <label>Main gauche <output id="curlLOut"></output><input type="range" id="curlL" min="0" max="1.6" step="0.05" aria-label="Fermeture de la main gauche"></label>
               <label>Main droite <output id="curlROut"></output><input type="range" id="curlR" min="0" max="1.6" step="0.05" aria-label="Fermeture de la main droite"></label>
               <p class="muted" id="orkInfo"></p>
