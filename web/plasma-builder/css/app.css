@@ -79,7 +79,7 @@ button.primary:hover { filter: brightness(1.08); }
 /* Corps */
 .body { display: flex; flex-wrap: wrap; gap: 12px; padding-block: 12px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); flex: 1 1 auto; }
 .rail { flex: 0 1 158px; min-width: 140px; display: flex; flex-direction: column; gap: 2px; }
-.rail-head { display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 0 12px; border-radius: 6px; background: #1a1214; color: var(--accent); font-size: 14px; font-weight: 600; }
+.rail-head { display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 0 12px; border-radius: 6px; background: color-mix(in srgb, var(--accent) 8%, #121316); color: var(--accent); font-size: 14px; font-weight: 600; }
 .rail-head svg, .rail button svg { width: 22px; height: 22px; }
 #rail { display: flex; flex-direction: column; gap: 2px; }
 .rail button { display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 0 12px; border: 0; border-left: 3px solid transparent; border-radius: 6px; background: none; color: #b5b7bd; font-size: 14px; text-align: left; }

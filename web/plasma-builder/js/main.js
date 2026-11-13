@@ -769,7 +769,10 @@ try {
   vp.unitsPerMeter = eyeUnits() / (state.scale / 1000);
   orkSocketDefs = orkSockets(model);   // au repos, avant la pose
   skel = new THREE.SkeletonHelper(model.root);
-  skel.material.color.set(0xf0435a);
+  // couleur d'accent du thème de faction (theme.js), suivie quand on change de faction
+  const accent3d = () => skel.material.color.set(getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#f0435a');
+  accent3d();
+  addEventListener('plasma-faction', accent3d);
   skel.material.depthTest = false;
   skel.material.transparent = true;
   skel.renderOrder = 10;

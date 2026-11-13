@@ -12,7 +12,9 @@ import { PRESETS, buildPreset, MY_POSES } from './poses.js';
 
 const $ = id => document.getElementById(id);
 const DEG = THREE.MathUtils.RAD2DEG;
-const ACCENT = new THREE.Color(0xf0435a);
+// couleur d'accent du thème de faction (theme.js) : os sélectionné, surbrillance du maillage
+const cssAccent = () => getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#f0435a';
+const ACCENT = new THREE.Color(cssAccent());
 const STORE = MY_POSES;
 const HIPS = 'QuickRigCharacter_Hips';
 
@@ -30,6 +32,7 @@ const state = {
 // Les matériaux du viewport reçoivent deux uniformes partagés : l'os survolé et l'os sélectionné.
 // Le vertex shader lit skinIndex / skinWeight pour connaître le poids de cet os à chaque sommet.
 const HL = { uSel: { value: -1 }, uHov: { value: -1 }, uWeights: { value: 0 }, uAccent: { value: ACCENT.clone().convertSRGBToLinear() } };
+addEventListener('plasma-faction', () => { ACCENT.set(cssAccent()); HL.uAccent.value.copy(ACCENT).convertSRGBToLinear(); });
 function patch(mat) {
   if (mat.userData.riglab) return mat;
   mat.userData.riglab = true;
