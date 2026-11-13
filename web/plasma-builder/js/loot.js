@@ -21,11 +21,12 @@ export const RULES = {
 export const RARITY = { c: T('Commune'), r: T('Rare'), x: T('Extrême') };
 export const RCOL = { c: '#b9c0c8', r: '#3e8ef7', x: '#ff2e88' };
 export const ICON = { head: 'assets/ui/icon_head.png', weapon: 'assets/ui/icon_weapon.png', back: 'assets/ui/icon_back.png', shoulder: 'assets/ui/icon_shoulder.png', chest: 'assets/ui/icon_chest.png', belt: 'assets/ui/icon_belt.png', base: 'assets/ui/icon_base.png' };
+// Les 4 factions = les 4 thèmes de couleur de l'app (theme.js) : choisir sa faction change l'accent partout.
 export const FACTIONS = [
-  { id: 'rose', label: T('Klan rose'), img: 'assets/hub/faction_rose.png', col: '#ff2e88' },
-  { id: 'bleu', label: T('Klan bleu'), img: 'assets/hub/faction_bleu.png', col: '#3e8ef7' },
-  { id: 'jaune', label: T('Klan jaune'), img: 'assets/hub/faction_jaune.png', col: '#f2c230' },
-  { id: 'vert', label: T('Klan vert'), img: 'assets/hub/faction_vert.png', col: '#6bbf3a' },
+  { id: 'rose', label: 'Cyber-Boys', img: 'assets/hub/faction_rose.png', col: '#ff2e88' },
+  { id: 'bleu', label: 'Plasma Tek', img: 'assets/hub/faction_bleu.png', col: '#4caee4' },
+  { id: 'vert', label: 'Neon', img: 'assets/hub/faction_vert.png', col: '#b1ff41' },
+  { id: 'jaune', label: 'Rampage', img: 'assets/hub/faction_jaune.png', col: '#fb7e3a' },
 ];
 
 // ---------------------------------------------------------------- catalogue provisoire
@@ -59,6 +60,8 @@ function load() {
   return s;
 }
 export const S = load();
+// thème choisi ailleurs (Réglages) : la faction du joueur suit
+if (globalThis.plasmaFaction && FACTIONS.some(f => f.id === globalThis.plasmaFaction())) S.faction = globalThis.plasmaFaction();
 export const save = () => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch { /* stockage indisponible */ } };
 export const ownedCount = () => Object.keys(S.owned).filter(k => S.owned[k] > 0).length;
 export const dupes = () => Object.entries(S.owned).reduce((n, [, c]) => n + Math.max(0, c - 1), 0);

@@ -23,7 +23,7 @@
     'Interface du Builder': 'Builder interface', 'Classique': 'Classic', 'Atelier': 'Workshop',
     'Classique : l\'interface d\'origine. Atelier : la vue d\'abord, l\'équipement à gauche, la bibliothèque en tiroir.': 'Classic: the original interface. Workshop: viewport first, gear on the left, library in a drawer.',
     'Choix enregistrés sur cet appareil.': 'Choices are saved on this device.',
-    'Langue': 'Language', 'La page se recharge pour changer de langue.': 'The page reloads to switch language.',
+    'Langue': 'Language', 'La couleur de la faction devient l\'accent de toute l\'app.': 'The faction color becomes the accent of the whole app.', 'La page se recharge pour changer de langue.': 'The page reloads to switch language.',
     'Hub · Plasma Orks Builder': 'Hub · Plasma Orks Builder', 'Importer · Plasma Orks Builder': 'Importer · Plasma Orks Builder',
     'Builder · Plasma Orks Builder': 'Builder · Plasma Orks Builder', 'Plasma Library · Plasma Orks Builder': 'Plasma Library · Plasma Orks Builder',
     'Rig Lab · Plasma Orks Builder': 'Rig Lab · Plasma Orks Builder',

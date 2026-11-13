@@ -172,7 +172,7 @@ function cutOpen() {
   $('bigPack').className = 'bigpack open';
   $('packHint').hidden = true;
   const [x, y] = center($('cutZone'));
-  sparks(x, y, '#ff2e88', 30);
+  sparks(x, y, getComputedStyle(document.body).getPropertyValue('--pink').trim() || '#ff2e88', 30);
   $('packStep').textContent = 'Étape 2 sur 2 · retourner les cartes';
   setTimeout(() => {
     $('bigPack').hidden = true;
@@ -214,7 +214,7 @@ function openChest() {
 function updateChest() {
   const h = chest.hits, glow = [0, 14, 28, 60][Math.min(h, 3)];
   $('seam').style.boxShadow = `0 0 ${glow}px rgba(242,194,48,.9)`;
-  $('lock').style.boxShadow = `0 0 ${12 + glow}px rgba(255,46,136,.7)`;
+  $('lock').style.boxShadow = `0 0 ${12 + glow}px color-mix(in srgb, var(--pink) 70%, transparent)`;
   $('chestPrompt').textContent = ['Frappe le coffre pour l’ouvrir', 'Encore !', 'Une dernière fois !', ''][h];
   $('chestDots').querySelectorAll('i').forEach((d, i) => d.classList.toggle('on', i < h));
   $('chest').setAttribute('aria-label', h < 3 ? tr(`Frapper le coffre (${h} sur 3)`, `Smash the chest (${h} of 3)`) : 'Coffre ouvert');
@@ -260,7 +260,7 @@ document.querySelector('.shop').addEventListener('click', e => {
   else toast('Abonnement : à brancher sur le site.');
   const [x, y] = center(b); sparks(x, y, '#f2c230', 12);
 });
-$('shopTop').addEventListener('click', () => { $('shop').scrollIntoView({ behavior: 'smooth', block: 'center' }); $('shop').animate([{ boxShadow: '0 0 0 0 rgba(255,46,136,.7)' }, { boxShadow: '0 0 0 14px rgba(255,46,136,0)' }], { duration: 900 }); });
+$('shopTop').addEventListener('click', () => { $('shop').scrollIntoView({ behavior: 'smooth', block: 'center' }); $('shop').animate([{ boxShadow: '0 0 0 0 color-mix(in srgb, var(--pink) 70%, transparent)' }, { boxShadow: '0 0 0 14px transparent' }], { duration: 900 }); });
 $('recycle').addEventListener('click', () => {
   let gain = 0;
   for (const [id, c] of Object.entries(S.owned)) if (c > 1) { gain += (c - 1) * RULES.recycle[byId[id]?.rk || 'c']; S.owned[id] = 1; }
@@ -271,7 +271,9 @@ $('recycle').addEventListener('click', () => {
 });
 $('openPack').addEventListener('click', openPack);
 $('openChest').addEventListener('click', openChest);
-$('factions').addEventListener('click', e => { const b = e.target.closest('[data-faction]'); if (b) { S.faction = b.dataset.faction; save(); render(); } });
+$('factions').addEventListener('click', e => { const b = e.target.closest('[data-faction]'); if (b) { S.faction = b.dataset.faction; save(); window.plasmaSetFaction?.(S.faction); render(); } });
+// thème changé dans les Réglages
+window.addEventListener('plasma-faction', e => { if (S.faction !== e.detail) { S.faction = e.detail; save(); render(); } });
 
 const DAY = 24 * 3600 * 1000;
 function nextDrop() { if (!S.dropAt) return 0; const d = new Date(S.dropAt); d.setHours(24, 0, 0, 0); return d.getTime(); }

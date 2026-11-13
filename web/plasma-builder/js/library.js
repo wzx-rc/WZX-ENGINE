@@ -147,7 +147,7 @@ $('pgrid').addEventListener('keydown', e => {
 });
 $('dFac').addEventListener('click', e => {
   const b = e.target.closest('[data-faction]'); if (!b) return;
-  S.faction = b.dataset.faction; save(); renderDetail();
+  S.faction = b.dataset.faction; save(); window.plasmaSetFaction?.(S.faction); renderDetail();
   const [x, y] = center($('dPrev')); sparks(x, y, FACTIONS.find(f => f.id === S.faction).col, 14);
 });
 $('dStl').addEventListener('click', () => toast('Export STL de la pièce : à brancher sur l’exporteur du builder.'));
@@ -170,3 +170,5 @@ const h = new URLSearchParams(location.hash.slice(1));
 if (h.get('cat') && NAMES[h.get('cat')]) ui.cat = h.get('cat');
 if (h.get('piece') && byId[h.get('piece')]) { ui.sel = h.get('piece'); ui.cat = byId[ui.sel].cat; }
 renderAll();
+// thème changé dans les Réglages
+window.addEventListener('plasma-faction', e => { if (S.faction !== e.detail) { S.faction = e.detail; save(); renderDetail(); } });

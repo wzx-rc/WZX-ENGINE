@@ -19,7 +19,7 @@
 .xf .ax.x { color: #e5655f; } .xf .ax.y { color: #8fc66a; } .xf .ax.z { color: #5f9de5; }
 .sym3 button { flex: 1 1 0; padding: 0 6px; }
 h3.sub { margin: 4px 0 0; font: 700 15px/1.2 'Barlow Condensed', sans-serif; letter-spacing: .04em; text-transform: uppercase; color: var(--text2); }
-.chips button[aria-pressed="true"] { background: var(--accent); color: #fff; }
+.chips button[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); }
 .mine { display: flex; flex-direction: column; gap: 4px; }
 .mine .row { display: flex; align-items: center; gap: 6px; }
 .mine .row > button:first-child { flex: 1 1 auto; min-height: 34px; padding: 0 10px; border: 1px solid var(--line2); border-radius: 6px; background: var(--raised); color: var(--text); text-align: left; }
