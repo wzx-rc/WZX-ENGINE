@@ -284,7 +284,7 @@ export class SoftGI {
     if (!this.queue.length && this.passes > 1) { this.passes--; this.queue = Array.from({ length: this.count }, (_, i) => i); }
     if (!this.queue.length) { this.passes = 0; this.stats.state = 'au repos'; return; }
     if (this.freeze && !resting) { this.stats.state = 'figée'; return; }
-    this.stats.state = `mise à jour · passe ${4 - this.passes}/3`;
+    this.stats.state = tr(`mise à jour · passe ${4 - this.passes}/3`, `updating · pass ${4 - this.passes}/3`);
     const batch = this.queue.splice(0, this.perFrame);
     withCapture(() => { for (const i of batch) this.captureProbe(scene, i); });
   }

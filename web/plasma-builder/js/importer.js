@@ -5,8 +5,9 @@
 // - low / high : un objet dont le nom (ou celui du fichier) contient high, hd, decim… est rangé en high, le reste en
 //   low ; modifiable fichier par fichier. Pas de high : le low sert aux deux.
 // - locators SOCKET_<type>_<nom> et PLUG_<type> : sockets offerts par la brique et point qui vient sur le socket.
-// - placement : « en place » (la brique a été modélisée sur l'ork, dans la scène de BOY_32mm : elle garde sa position),
-//   « au plug » (locator PLUG_ ou point cliqué), ou « à l'origine » de la scène.
+// - la brique reste à l'origine, comme dans la scène Maya. Elle s'accroche par son plug (locator PLUG_<type>, point
+//   cliqué, sinon l'origine) au socket que l'utilisateur choisit dans le Builder. « Essai sur l'ork » la montre sur
+//   le premier socket de son type, pour vérifier le plug.
 import * as THREE from 'three';
 import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
@@ -18,12 +19,15 @@ import { OrkModel } from './riglab/model.js';
 import { orkSockets, SOCKET_TYPES, parseLocatorName } from './sockets.js';
 import { CATEGORIES, catById, Store, newId, geoToRec, recToGeo, triCount, mat4, packLibrary, unpackLibrary } from './bricks.js';
 import { saveFile } from './io.js';
+import { brickMenu } from './brickmenu.js';
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const ICON = d => `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${d}"/></svg>`;
 const TRASH = 'M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13';
-const MODEL_EXT = /\.(fbx|obj|glb|gltf)$/i, IMAGE_EXT = /\.(jpe?g|png|webp|tga)$/i;
+const MODEL_EXT = /\.(fbx|obj|glb|gltf)$/i, IMAGE_EXT = /\.(jpe?g|png|webp|tga)$/i, SCENE_EXT = /\.(ma|mb)$/i;
+// Édition développeur de l'app Windows : passerelle Maya (étagère PlasmaOrks, scènes .ma / .mb converties par mayapy).
+const maya = window.plasmaDesktop?.maya || null;
 
 const vp = new Viewport($('vpCanvas'));
 vp.controls.target.set(0, 1.0, 0);
@@ -32,7 +36,7 @@ let model = null, orkDefs = [];
 let library = [];
 let filter = 'all';
 let draft = null;
-const ui = { tool: 'orbit', show: 'low', ork: true, shade: 'resin', sel: null };
+const ui = { tool: 'orbit', show: 'low', ork: false, shade: 'resin', sel: null };
 const preview = new THREE.Group();
 preview.matrixAutoUpdate = false;
 const orkMat = new THREE.MeshStandardMaterial({ color: 0x55585e, roughness: 0.85 });
@@ -43,7 +47,7 @@ function emptyDraft() {
   return {
     id: null, created: 0, name: '', cat: cat.id, tags: [], meshes: [], locators: [], unit: 1, zup: false,
     texture: null, textureName: '', mask: null, maskName: '', flipY: true,
-    home: cat.home, plugType: cat.type, placement: 'inplace', sockets: [], plugM: null, plugFrom: null, files: [], catAuto: filter === 'all',
+    home: cat.home, plugType: cat.type, placement: 'origin', sockets: [], plugM: null, plugFrom: null, files: [], catAuto: filter === 'all',
   };
 }
 // Scène source -> espace brique (cm, Y en haut).
@@ -108,6 +112,41 @@ async function readModel(file, urls) {
   return { meshes, locators, flipY, unit };
 }
 
+// Un high sans UV (sculpt décimé) reprend celles du low : pour chaque sommet du high, le point le plus proche sur le low
+// et ses UV interpolées dans ce triangle (comme le transfert des poids). Le long des coutures d'UV, les triangles du high
+// à cheval sur deux îlots s'étirent un peu.
+function transferUVs() {
+  const lows = draft.meshes.filter(m => m.lod === 'low' && m.geo.attributes.uv && m.geo.index);
+  const highs = draft.meshes.filter(m => m.lod === 'high' && !m.geo.attributes.uv);
+  if (!lows.length || !highs.length) return 0;
+  const lowG = mergeGeometries(lows.map(m => {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', m.geo.attributes.position);
+    g.setAttribute('uv', m.geo.attributes.uv);
+    g.setIndex(m.geo.index.clone());
+    return g;
+  }));
+  const bvh = new MeshBVH(lowG);
+  const idx = lowG.index.array, lp = lowG.attributes.position, luv = lowG.attributes.uv;
+  const p = new THREE.Vector3(), a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3(), w = new THREE.Vector3(), hit = {};
+  let n = 0;
+  for (const h of highs) {
+    const pos = h.geo.attributes.position, uv = new Float32Array(pos.count * 2);
+    for (let i = 0; i < pos.count; i++) {
+      p.fromBufferAttribute(pos, i);
+      if (!bvh.closestPointToPoint(p, hit)) continue;
+      const f = hit.faceIndex * 3, ia = idx[f], ib = idx[f + 1], ic = idx[f + 2];
+      a.fromBufferAttribute(lp, ia); b.fromBufferAttribute(lp, ib); c.fromBufferAttribute(lp, ic);
+      THREE.Triangle.getBarycoord(hit.point, a, b, c, w);
+      uv[i * 2] = luv.getX(ia) * w.x + luv.getX(ib) * w.y + luv.getX(ic) * w.z;
+      uv[i * 2 + 1] = luv.getY(ia) * w.x + luv.getY(ib) * w.y + luv.getY(ic) * w.z;
+    }
+    h.geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+    h.uv = true; h.uvFrom = 'low'; n++;
+  }
+  return n;
+}
+
 async function addFiles(files) {
   if (!model) return;
   if (!draft) draft = emptyDraft();
@@ -127,7 +166,7 @@ async function addFiles(files) {
       } else if (IMAGE_EXT.test(f.name)) {
         const blob = new Blob([await f.arrayBuffer()], { type: f.type || 'image/' + f.name.split('.').pop().toLowerCase().replace('jpg', 'jpeg') });
         if (/(^|[^a-z])(mask|id|faction)([^a-z]|$)/i.test(f.name)) { draft.mask = blob; draft.maskName = f.name; }
-        else { draft.texture = blob; draft.textureName = f.name; }
+        else { draft.texture = blob; draft.textureName = f.name; if (ui.shade === 'resin') { ui.shade = 'paint'; renderBar(); } }
       } else if (/\.json$/i.test(f.name)) {
         const j = JSON.parse(await f.text());
         for (const l of j.locators || []) draft.locators.push({ name: l.name, m: new THREE.Matrix4().fromArray(l.matrix) });
@@ -136,7 +175,7 @@ async function addFiles(files) {
       }
     } catch (err) {
       console.error(err);
-      toast(`Impossible de lire ${f.name}`);
+      toast(tr(`Impossible de lire ${f.name}`, `Couldn't read ${f.name}`));
     }
   }
   setTimeout(() => urls.forEach(u => URL.revokeObjectURL(u)), 4000);
@@ -148,52 +187,77 @@ async function addFiles(files) {
     for (const m of draft.meshes) m.lod = m.file === heavy ? 'high' : 'low';
   }
   if (draft.meshes.length && !draft.meshes.some(m => m.lod === 'low')) draft.meshes.filter(m => m.lod === 'high').forEach(m => { m.lod = 'low'; });
+  if (draft.meshes.some(m => m.lod === 'high' && !m.geo.attributes.uv)) {
+    setBusy('UV du high reprises du low…');
+    await new Promise(r => requestAnimationFrame(() => setTimeout(r, 0)));
+    try { transferUVs(); } catch (err) { console.error(err); }
+    setBusy(null);
+  }
   applyLocators();
   // un locator PLUG_<type> dit aussi ce qu'est la brique
   if (draft.catAuto && draft.plugFrom === 'file') {
     const cat = CATEGORIES.find(c => c.type === draft.plugType);
     if (cat) { draft.cat = cat.id; draft.home = cat.home; }
   }
-  if (fresh && draft.meshes.length) guessPlacement();
+  draft.placement = draft.plugM ? 'plug' : 'origin';
   if (found) toast(`${found} objet${found > 1 ? 's' : ''} lu${found > 1 ? 's' : ''}${draft.locators.length ? `, ${draft.locators.length} locator${draft.locators.length > 1 ? 's' : ''}` : ''}`);
   refresh(true);
 }
 
-// En place si la brique est déjà autour d'un socket de l'ork (modélisée sur l'ork dans Maya) : ce socket devient son
-// socket par défaut et, tant que la catégorie n'a pas été choisie à la main, sa catégorie. Sinon au plug s'il existe,
-// sinon à l'origine. Le socle n'est jamais deviné (une brique à l'origine de la scène est entre les pieds).
-function guessPlacement(type = null) {
-  const box = new THREE.Box3();
-  for (const g of lodGeos('low')) { g.computeBoundingBox(); box.union(g.boundingBox); }
-  if (box.isEmpty()) return;
-  const c = box.getCenter(new THREE.Vector3()), reach = Math.max(8, box.getSize(new THREE.Vector3()).length() * 0.6);
-  let best = null, bd = Infinity;
-  for (const s of orkDefs) {
-    if (type ? s.type !== type : s.type === 'base') continue;
-    const d = c.distanceTo(new THREE.Vector3().setFromMatrixPosition(s.rest));
-    if (d < bd) { bd = d; best = s; }
-  }
-  if (best && bd < reach && !draft.plugM) {
-    draft.placement = 'inplace';
-    draft.home = best.id;
-    if (!type && draft.catAuto) {
-      const cat = CATEGORIES.find(x => x.type === best.type);
-      if (cat) { draft.cat = cat.id; if (draft.plugFrom !== 'file') draft.plugType = cat.type; }
-    }
-  } else draft.placement = draft.plugM ? 'plug' : 'origin';
+// Fichiers déposés ou choisis : les scènes Maya partent à la conversion (édition développeur), le reste est lu ici.
+function takeFiles(files) {
+  const scenes = files.filter(f => SCENE_EXT.test(f.name));
+  const rest = files.filter(f => !SCENE_EXT.test(f.name));
+  if (rest.length) addFiles(rest);
+  if (!scenes.length) return;
+  if (!maya) { toast('Les scènes Maya (.ma / .mb) s\'importent seulement dans l\'édition développeur de l\'app. Exporte la brique en .fbx.'); return; }
+  for (const f of scenes) convertScene(f);
+}
+async function convertScene(f) {
+  setBusy(tr(`Maya convertit ${f.name}…`, `Maya is converting ${f.name}…`));
+  try {
+    const res = await maya.convert(f);
+    if (res?.error) { setBusy(null); toast(res.error, 8000); }
+    // le résultat arrive par maya.onFiles, comme un envoi de l'étagère
+  } catch (err) { console.error(err); setBusy(null); toast('Conversion Maya impossible : ' + (err.message || err), 8000); }
+}
+function setBusy(msg) {
+  const l = $('loading');
+  l.classList.toggle('busy', !!msg);
+  l.hidden = !msg;
+  if (msg) l.querySelector('span').textContent = msg;
+}
+// Une brique envoyée depuis Maya remplace le brouillon en cours (nouvelle brique).
+async function fromMaya(p) {
+  setBusy(null);
+  if (p.error) { toast(p.error, 8000); return; }
+  draft = emptyDraft();
+  ui.sel = null;
+  const files = p.files.map(f => new File([f.data], f.name));
+  await addFiles(files);
+  if (p.name) draft.name = p.name;
+  // catégorie choisie dans la fenêtre Plasma Bridge (sinon celle du PLUG, ou devinée par le placement)
+  const cat = p.manifest?.category && catById(p.manifest.category);
+  if (cat && cat.id === p.manifest.category && draft.plugFrom !== 'file') { draft.cat = cat.id; draft.home = cat.home; draft.plugType = cat.type; draft.catAuto = false; }
+  refresh(true);
+  for (const w of p.manifest?.warnings || []) console.warn('[Maya]', w);
+  const nw = p.manifest?.warnings?.length || 0;
+  toast(tr(`Reçu de Maya : ${p.name || files[0].name}${nw ? ` (${nw} remarque${nw > 1 ? 's' : ''}, voir la console F12)` : ''}`, `Received from Maya: ${p.name || files[0].name}${nw ? ` (${nw} note${nw > 1 ? 's' : ''}, see the F12 console)` : ''}`), 4000);
+  renderLibrary();
 }
 
 // ---------------------------------------------------------------- aperçu
-// La brique est montrée là où elle tombera sur l'ork au repos : socket par défaut ∘ plug⁻¹.
-function plugMatrix() {
-  const home = orkDefs.find(s => s.id === draft.home);
-  if (draft.placement === 'inplace' && home) return home.rest.clone();
-  if (draft.placement === 'plug' && draft.plugM) return draft.plugM.clone();
-  return new THREE.Matrix4();
+// Seule, la brique est à l'origine comme dans Maya. En essai sur l'ork : socket ∘ plug⁻¹, comme dans le Builder.
+const plugMatrix = () => draft.plugM ? draft.plugM.clone() : new THREE.Matrix4();
+// socket de l'ork pour l'essai (et proposé en premier dans le Builder) : celui de la catégorie, sinon le premier du type
+function homeSocket() {
+  const ok = s => s && (draft.plugType === 'any' || s.type === draft.plugType);
+  const cur = orkDefs.find(s => s.id === draft.home);
+  return ok(cur) ? cur : orkDefs.find(ok) || null;
 }
 function previewMatrix() {
-  const home = orkDefs.find(s => s.id === draft.home);
-  return (home ? home.rest.clone() : new THREE.Matrix4()).multiply(plugMatrix().invert());
+  const home = ui.ork && homeSocket();
+  return home ? home.rest.clone().multiply(plugMatrix().invert()) : new THREE.Matrix4();
 }
 let texture = null, textureBlob = null;
 function brickMaterial() {
@@ -245,14 +309,13 @@ function buildPreview() {
     return o;
   };
   draft.sockets.forEach((s, i) => axis(s.m, 2.5, i));
-  if (draft.placement === 'plug' && draft.plugM) axis(draft.plugM, 3, 'plug');
-  else if (draft.placement === 'inplace') axis(plugMatrix(), 3, 'plug');
+  if (draft.plugM) axis(draft.plugM, 3, 'plug');
   attachGizmo();
   renderPins();
 }
 function attachGizmo() {
   const o = markers.find(m => m.userData.key === ui.sel);
-  const editable = o && (ui.sel !== 'plug' || draft.placement === 'plug');
+  const editable = o && (ui.sel !== 'plug' || !!draft.plugM);
   if (!editable || !['translate', 'rotate'].includes(ui.tool)) { vp.gizmo.detach(); return; }
   vp.gizmo.setMode(ui.tool);
   vp.gizmo.setSpace('local');
@@ -298,21 +361,18 @@ function runChecks() {
   if (!draft || !draft.meshes.length) { $('fChecks').innerHTML = '<li class="muted">Dépose une brique pour lancer les contrôles.</li>'; return; }
   const low = lodGeos('low'), high = lodGeos('high');
   const tri = gs => Math.round(gs.reduce((n, g) => n + (g.index ? g.index.count : g.attributes.position.count) / 3, 0));
-  add(low.length ? 'ok' : 'bad', low.length ? `Low : ${tri(low).toLocaleString('fr-FR')} triangles (${low.length} objet${low.length > 1 ? 's' : ''})` : 'Aucun objet en low');
-  add(high.length ? 'ok' : 'warn', high.length ? `High : ${tri(high).toLocaleString('fr-FR')} triangles` : 'Pas de high : le low servira aussi en high et à l\'impression');
-  const uv = draft.meshes.filter(m => m.lod !== 'skip').every(m => m.uv);
-  add(uv ? 'ok' : 'warn', uv ? 'UV présentes' : 'Objets sans UV : la texture ne s\'appliquera pas dessus');
-  add(draft.texture ? 'ok' : 'warn', draft.texture ? `Texture : ${esc(draft.textureName)}` : 'Pas de texture (mode Peint en gris)');
+  add(low.length ? 'ok' : 'bad', low.length ? tr(`Low : ${tri(low).toLocaleString(window.plasmaLang === 'fr' ? 'fr-FR' : 'en-US')} triangles (${low.length} objet${low.length > 1 ? 's' : ''})`, `Low: ${tri(low).toLocaleString(window.plasmaLang === 'fr' ? 'fr-FR' : 'en-US')} triangles (${low.length} object${low.length > 1 ? 's' : ''})`) : 'Aucun objet en low');
+  add(high.length ? 'ok' : 'warn', high.length ? tr(`High : ${tri(high).toLocaleString(window.plasmaLang === 'fr' ? 'fr-FR' : 'en-US')} triangles`, `High: ${tri(high).toLocaleString(window.plasmaLang === 'fr' ? 'fr-FR' : 'en-US')} triangles`) : 'Pas de high : le low servira aussi en high et à l\'impression');
+  const used = draft.meshes.filter(m => m.lod !== 'skip'), uv = used.every(m => m.uv), moved = used.filter(m => m.uvFrom === 'low');
+  add(uv ? 'ok' : 'warn', !uv ? 'Objets sans UV : la texture ne s\'appliquera pas dessus'
+    : moved.length ? tr('UV du high reprises du low (point le plus proche) : ', 'High UVs copied from the low (closest point): ') + moved.map(m => esc(m.name)).join(', ') : 'UV présentes');
+  add(draft.texture ? 'ok' : 'warn', draft.texture ? tr('Texture : ', 'Texture: ') + esc(draft.textureName) : 'Pas de texture (mode Peint en gris)');
   const box = new THREE.Box3();
   for (const g of low) { g.computeBoundingBox(); box.union(g.boundingBox); }
   const size = box.getSize(new THREE.Vector3()).multiplyScalar(mmPerCm());
-  add(size.length() > 0.5 && size.length() < 60 ? 'ok' : 'warn', `Taille à l'échelle 32 mm : ${size.x.toFixed(1)} × ${size.y.toFixed(1)} × ${size.z.toFixed(1)} mm${size.length() < 0.5 ? ' (minuscule : vérifie les unités)' : size.length() > 60 ? ' (énorme : vérifie les unités)' : ''}`);
-  const home = orkDefs.find(s => s.id === draft.home);
-  if (draft.placement === 'inplace' && home) {
-    const d = box.getCenter(new THREE.Vector3()).distanceTo(new THREE.Vector3().setFromMatrixPosition(home.rest));
-    add(d < 15 ? 'ok' : 'warn', d < 15 ? `En place : à ${(d * mmPerCm()).toFixed(1)} mm de ${home.label.toLowerCase()}` : `En place, mais à ${(d * mmPerCm()).toFixed(0)} mm de ${home.label.toLowerCase()} : la brique a-t-elle été modélisée sur l'ork ?`);
-  }
-  if (draft.placement === 'plug' && !draft.plugM) add('bad', 'Pas de plug : ajoute un locator PLUG_ ou place-le au clic');
+  add(size.length() > 0.5 && size.length() < 60 ? 'ok' : 'warn', tr(`Taille à l'échelle 32 mm : ${size.x.toFixed(1)} × ${size.y.toFixed(1)} × ${size.z.toFixed(1)} mm${size.length() < 0.5 ? ' (minuscule : vérifie les unités)' : size.length() > 60 ? ' (énorme : vérifie les unités)' : ''}`, `Size at 32 mm scale: ${size.x.toFixed(1)} × ${size.y.toFixed(1)} × ${size.z.toFixed(1)} mm${size.length() < 0.5 ? ' (tiny: check the units)' : size.length() > 60 ? ' (huge: check the units)' : ''}`));
+  add(draft.plugM ? 'ok' : 'warn', draft.plugM ? tr(`Plug ${draft.plugFrom === 'file' ? 'lu dans le fichier' : 'placé à la main'} : la brique s'accroche par lui`, `Plug ${draft.plugFrom === 'file' ? 'read from the file' : 'placed by hand'}: the brick attaches by it`)
+    : 'Pas de PLUG_ : la brique s\'accrochera par son origine (0, 0, 0). Ajoute un locator PLUG_ dans Maya ou place-le au clic (outil prise)');
   // le high doit recouvrir le low (même scène, même position)
   if (high.length && low.length) {
     const bvh = new MeshBVH(positionsOnly(low));
@@ -321,22 +381,21 @@ function runChecks() {
     let sum = 0, max = 0, n = 0;
     for (let i = 0; i < hp.count; i += step) { p.fromBufferAttribute(hp, i); bvh.closestPointToPoint(p, hit); sum += hit.distance; max = Math.max(max, hit.distance); n++; }
     const mean = sum / n * mmPerCm(), mx = max * mmPerCm();
-    add(mean < 0.6 ? 'ok' : mean < 2 ? 'warn' : 'bad', `Écart high / low : ${mean.toFixed(2)} mm en moyenne, ${mx.toFixed(2)} mm au plus${mean >= 2 ? ' : ils ne se superposent pas (même scène, même position ?)' : ''}`);
+    add(mean < 0.6 ? 'ok' : mean < 2 ? 'warn' : 'bad', tr(`Écart high / low : ${mean.toFixed(2)} mm en moyenne, ${mx.toFixed(2)} mm au plus${mean >= 2 ? ' : ils ne se superposent pas (même scène, même position ?)' : ''}`, `High / low gap: ${mean.toFixed(2)} mm on average, ${mx.toFixed(2)} mm at most${mean >= 2 ? ': they don\'t overlap (same scene, same position?)' : ''}`));
   }
   const print = high.length ? high : low;
   if (print.length) {
     const open = openEdges(positionsOnly(print));
-    add(open ? 'warn' : 'ok', open ? `${open.toLocaleString('fr-FR')} arêtes ouvertes sur le ${high.length ? 'high' : 'low'} : à fermer pour l'impression` : `Maillage ${high.length ? 'high' : 'low'} fermé (imprimable)`);
+    add(open ? 'warn' : 'ok', open ? tr(`${open.toLocaleString(window.plasmaLang === 'fr' ? 'fr-FR' : 'en-US')} arêtes ouvertes sur le ${high.length ? 'high' : 'low'} : à fermer pour l'impression`, `${open.toLocaleString(window.plasmaLang === 'fr' ? 'fr-FR' : 'en-US')} open edges on the ${high.length ? 'high' : 'low'}: close them for printing`) : tr(`Maillage ${high.length ? 'high' : 'low'} fermé (imprimable)`, `Closed ${high.length ? 'high' : 'low'} mesh (printable)`));
   }
   const ns = draft.sockets.length;
-  add('ok', `${ns ? `${ns} socket${ns > 1 ? 's' : ''}` : 'Aucun socket'} sur la brique, plug ${draft.placement === 'inplace' ? 'en place sur ' + (home?.label.toLowerCase() || '?') : draft.placement === 'plug' ? (draft.plugM ? (draft.plugFrom === 'file' ? 'lu dans le fichier' : 'placé à la main') : 'manquant') : 'à l\'origine'}`);
+  add('ok', tr(`${ns ? `${ns} socket${ns > 1 ? 's' : ''}` : 'Aucun socket'} sur la brique pour d'autres briques`, `${ns ? `${ns} socket${ns > 1 ? 's' : ''}` : 'No socket'} on the brick for other bricks`));
   $('fChecks').innerHTML = out.join('');
 }
 
 // ---------------------------------------------------------------- formulaire
 function fillSelects() {
   $('fCat').innerHTML = CATEGORIES.map(c => `<option value="${c.id}">${c.label}</option>`).join('');
-  $('fHome').innerHTML = orkDefs.map(s => `<option value="${s.id}">${s.label}</option>`).join('');
   $('fPlugType').innerHTML = Object.entries(SOCKET_TYPES).map(([k, v]) => `<option value="${k}">${v} (${k})</option>`).join('');
 }
 const typeOptions = cur => Object.entries(SOCKET_TYPES).map(([k, v]) => `<option value="${k}" ${k === cur ? 'selected' : ''}>${v}</option>`).join('');
@@ -351,12 +410,10 @@ function renderForm() {
   $('fZup').checked = d.zup;
   const anySrc = d.meshes.some(m => m.src);
   $('fUnit').disabled = $('fZup').disabled = !anySrc;
-  $('fHome').value = d.home;
   $('fPlugType').value = d.plugType;
-  document.querySelectorAll('input[name="placement"]').forEach(r => { r.checked = r.value === d.placement; });
   $('fFiles').innerHTML = d.meshes.length ? d.meshes.map((m, i) => {
     const t = Math.round((m.geo.index ? m.geo.index.count : m.geo.attributes.position.count) / 3);
-    return `<div class="it"><span title="${esc(m.file)}">${esc(m.name)} <small>${t.toLocaleString('fr-FR')} tri</small></span><select data-lod="${i}" aria-label="Version de ${esc(m.name)}"><option value="low" ${m.lod === 'low' ? 'selected' : ''}>Low</option><option value="high" ${m.lod === 'high' ? 'selected' : ''}>High</option><option value="skip" ${m.lod === 'skip' ? 'selected' : ''}>Ignorer</option></select><button type="button" class="icon" data-rmesh="${i}" aria-label="Retirer ${esc(m.name)}">${ICON(TRASH)}</button></div>`;
+    return `<div class="it"><span title="${esc(m.file)}" data-noi18n>${esc(m.name)} <small>${t.toLocaleString(window.plasmaLang === 'fr' ? 'fr-FR' : 'en-US')} tri</small></span><select data-lod="${i}" aria-label="${tr('Version de', 'Version of')} ${esc(m.name)}"><option value="low" ${m.lod === 'low' ? 'selected' : ''}>Low</option><option value="high" ${m.lod === 'high' ? 'selected' : ''}>High</option><option value="skip" ${m.lod === 'skip' ? 'selected' : ''}>Ignorer</option></select><button type="button" class="icon" data-rmesh="${i}" aria-label="Retirer ${esc(m.name)}">${ICON(TRASH)}</button></div>`;
   }).join('') : '<span class="muted">Aucun fichier.</span>';
   $('fSockets').innerHTML = d.sockets.length ? d.sockets.map((s, i) => `<div class="it${ui.sel === i ? ' sel' : ''}"><input type="text" data-sname="${i}" value="${esc(s.name)}" aria-label="Nom du socket" spellcheck="false"><select data-stype="${i}" aria-label="Type du socket">${typeOptions(s.type)}</select><button type="button" class="icon" data-rsock="${i}" aria-label="Supprimer le socket ${esc(s.name)}">${ICON(TRASH)}</button></div>`).join('')
     : '<span class="muted">Aucun socket : la brique ne porte rien.</span>';
@@ -367,7 +424,8 @@ function renderForm() {
   $('saveBtn').disabled = !d.meshes.some(m => m.lod === 'low');
   $('saveBtn').textContent = d.id ? 'Enregistrer les modifications' : 'Enregistrer dans la bibliothèque';
   $('dropzone').hidden = !!d.meshes.length;
-  $('vpInfo').textContent = d.meshes.length ? `${d.files.join(', ') || d.name}\nAperçu sur ${orkDefs.find(s => s.id === d.home)?.label.toLowerCase() || 'l\'ork'}, ork au repos` : '';
+  const home = ui.ork && draft && homeSocket();
+  $('vpInfo').textContent = d.meshes.length ? `${d.files.join(', ') || d.name}\n${home ? tr(`Essai sur ${home.label.toLowerCase()}, ork au repos`, `Trying on ${home.label.toLowerCase()}, ork at rest`) : tr('Brique seule, à l\'origine comme dans Maya', 'Brick alone, at the origin as in Maya')}` : '';
 }
 function refresh(frame = false) {
   renderForm();
@@ -392,15 +450,12 @@ $('fCat').addEventListener('change', e => {
   const c = catById(e.target.value);
   draft.cat = c.id; draft.home = c.home; draft.catAuto = false;
   if (draft.plugFrom !== 'file') draft.plugType = c.type;
-  if (draft.meshes.length && draft.placement !== 'plug') guessPlacement(c.type);
   refresh(true);
 });
-$('fHome').addEventListener('change', e => { draft ||= emptyDraft(); draft.home = e.target.value; refresh(true); });
-$('fPlugType').addEventListener('change', e => { draft ||= emptyDraft(); draft.plugType = e.target.value; renderPins(); runChecks(); });
+$('fPlugType').addEventListener('change', e => { draft ||= emptyDraft(); draft.plugType = e.target.value; refresh(ui.ork); });
 $('fUnit').addEventListener('change', e => { draft.unit = +e.target.value; applyLocators(); refresh(true); });
 $('fZup').addEventListener('change', e => { draft.zup = e.target.checked; applyLocators(); refresh(true); });
-$('fPlacement').addEventListener('change', e => { draft ||= emptyDraft(); draft.placement = e.target.value; refresh(true); });
-$('fFiles').addEventListener('change', e => { const i = e.target.dataset.lod; if (i != null) { draft.meshes[+i].lod = e.target.value; refresh(); } });
+$('fFiles').addEventListener('change', e => { const i = e.target.dataset.lod; if (i != null) { draft.meshes[+i].lod = e.target.value; transferUVs(); refresh(); } });
 $('fSockets').addEventListener('change', e => {
   const t = e.target;
   if (t.dataset.sname != null) { const s = draft.sockets[+t.dataset.sname]; const v = t.value.trim().replace(/[^\w-]+/g, '_'); s.name = v && !draft.sockets.some(x => x !== s && x.name === v) ? v : s.name; s.from = 'click'; }
@@ -428,13 +483,18 @@ function renderBar() {
   document.querySelectorAll('[data-show]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.show === ui.show)));
   $('orkBtn').setAttribute('aria-pressed', String(ui.ork));
   $('shading').querySelectorAll('[data-shade]').forEach(b => b.classList.toggle('on', b.dataset.shade === ui.shade));
+  $('texBtn').setAttribute('aria-pressed', String(ui.shade === 'paint'));
   $('vpCanvas').style.cursor = ui.tool === 'socket' || ui.tool === 'plug' ? 'crosshair' : '';
 }
-$('orkBtn').addEventListener('click', () => { ui.ork = !ui.ork; model.root.visible = ui.ork; renderBar(); });
+// L'aperçu de la brique vit dans l'espace de l'ork : on cache ses maillages, pas l'ork lui-même.
+const showOrk = () => { for (const [n, m] of Object.entries(model.meshes)) m.visible = ui.ork && !/_low$/.test(n); };
+function setShade(s) { ui.shade = s; renderBar(); buildPreview(); }
+$('texBtn').addEventListener('click', () => setShade(ui.shade === 'paint' ? 'resin' : 'paint'));
+$('orkBtn').addEventListener('click', () => { ui.ork = !ui.ork; showOrk(); renderBar(); refresh(true); });
 $('frameBtn').addEventListener('click', frameBrick);
 $('newBtn').addEventListener('click', () => { draft = emptyDraft(); ui.sel = null; refresh(); renderLibrary(); });
 $('pickBtn').addEventListener('click', () => $('fileInput').click());
-$('fileInput').addEventListener('change', e => { addFiles([...e.target.files]); e.target.value = ''; });
+$('fileInput').addEventListener('change', e => { takeFiles([...e.target.files]); e.target.value = ''; });
 $('libMenuBtn').addEventListener('click', () => { const m = $('libMenu'); m.hidden = !m.hidden; $('libMenuBtn').setAttribute('aria-expanded', String(!m.hidden)); });
 
 // Clic sur la brique avec l'outil socket ou plug : un repère au point touché, axes de la scène.
@@ -465,9 +525,21 @@ $('vpCanvas').addEventListener('pointerup', e => {
 const vpEl = $('vp');
 vpEl.addEventListener('dragover', e => { e.preventDefault(); $('drop').hidden = false; });
 vpEl.addEventListener('dragleave', e => { if (!vpEl.contains(e.relatedTarget)) $('drop').hidden = true; });
-vpEl.addEventListener('drop', e => { e.preventDefault(); $('drop').hidden = true; addFiles([...e.dataTransfer.files]); });
+vpEl.addEventListener('drop', e => { e.preventDefault(); $('drop').hidden = true; takeFiles([...e.dataTransfer.files]); });
 
 // ---------------------------------------------------------------- bibliothèque
+brickMenu($('libGrid'), {
+  get: id => library.find(r => r.id === id),
+  toast,
+  edit: r => loadRec(r),
+  changed: (kind, r) => {
+    if (draft?.id === r.id) {
+      if (kind === 'delete') { draft = emptyDraft(); ui.sel = null; refresh(); }
+      else { draft.name = r.name; renderForm(); }
+    }
+    loadLibrary();
+  },
+});
 async function loadLibrary() {
   try { library = await Store.all(); } catch (err) { console.error(err); library = []; toast('Stockage du navigateur indisponible : la bibliothèque ne peut pas être enregistrée ici'); }
   renderLibrary();
@@ -476,7 +548,7 @@ function renderLibrary() {
   $('catFilter').innerHTML = [['all', 'Toutes'], ...CATEGORIES.map(c => [c.id, c.label])].map(([id, l]) => `<button type="button" data-cat="${id}" aria-pressed="${filter === id}">${l}</button>`).join('');
   const list = library.filter(r => filter === 'all' || r.cat === filter);
   $('libCount').textContent = library.length;
-  $('libGrid').innerHTML = list.length ? list.map(r => `<button type="button" class="tile" data-brick="${r.id}" aria-pressed="${draft?.id === r.id}" title="${esc(catById(r.cat).label)} · ${Math.round(triCount(r.lods.low) / 1000)}k tri low">${r.lods.high?.length ? '<em class="badge">HD</em>' : ''}${r.thumb ? `<img alt="" src="${r.thumb}">` : '<span class="ph"></span>'}<span>${esc(r.name)}</span></button>`).join('')
+  $('libGrid').innerHTML = list.length ? list.map(r => `<button type="button" class="tile" data-brick="${r.id}" aria-pressed="${draft?.id === r.id}" title="${esc(catById(r.cat).label)} · ${Math.round(triCount(r.lods.low) / 1000)}k tri low">${r.lods.high?.length ? '<em class="badge">HD</em>' : ''}${r.thumb ? `<img alt="" src="${r.thumb}">` : '<span class="ph"></span>'}<span data-noi18n>${esc(r.name)}</span></button>`).join('')
     : `<div class="libempty">${library.length ? 'Aucune brique dans cette catégorie.' : 'La bibliothèque est vide. Dépose les fichiers d\'une première brique dans l\'aperçu.'}</div>`;
 }
 function loadRec(r) {
@@ -486,8 +558,8 @@ function loadRec(r) {
     meshes: [...r.lods.low.map(g => ({ name: g.name || 'low', file: '', geo: recToGeo(g), lod: 'low', src: false, uv: !!g.uv })),
       ...(r.lods.high || []).map(g => ({ name: g.name || 'high', file: '', geo: recToGeo(g), lod: 'high', src: false, uv: !!g.uv }))],
     locators: [], texture: r.texture, textureName: r.textureName || 'basecolor', mask: r.mask, maskName: r.maskName || 'masque', flipY: r.flipY !== false,
-    home: r.home, plugType: r.plug.type, placement: r.placement, sockets: r.sockets.map(s => ({ name: s.name, type: s.type, m: mat4(s.m), from: 'click' })),
-    plugM: r.placement === 'plug' ? mat4(r.plug.m) : null, plugFrom: r.placement === 'plug' ? 'click' : null,
+    home: r.home, plugType: r.plug.type, placement: r.placement === 'origin' ? 'origin' : 'plug', sockets: r.sockets.map(s => ({ name: s.name, type: s.type, m: mat4(s.m), from: 'click' })),
+    plugM: r.placement !== 'origin' ? mat4(r.plug.m) : null, plugFrom: r.placement !== 'origin' ? 'click' : null,
   };
   ui.sel = null;
   refresh(true);
@@ -517,7 +589,7 @@ $('saveBtn').addEventListener('click', async () => {
     lods: { low: lowG.map((g, i) => geoToRec(g, low[i].name)), high: highG.map((g, i) => geoToRec(g, high[i].name)) },
     texture: draft.texture, textureName: draft.textureName, mask: draft.mask, maskName: draft.maskName, flipY: draft.flipY,
     plug: { type: draft.plugType, m: plugMatrix().toArray() },
-    home: draft.home, placement: draft.placement,
+    home: homeSocket()?.id || draft.home, placement: draft.plugM ? 'plug' : 'origin',
     sockets: draft.sockets.map(s => ({ name: s.name, type: s.type, m: s.m.toArray() })),
     thumb: thumbnail(lowG, highG),
     stats: { low: triCount(lowG.map(g => geoToRec(g))), high: highG.length ? triCount(highG.map(g => geoToRec(g))) : 0 },
@@ -525,7 +597,7 @@ $('saveBtn').addEventListener('click', async () => {
   };
   try {
     await Store.put(rec);
-    toast(`« ${rec.name} » enregistrée dans ${catById(rec.cat).label}`);
+    toast(tr(`« ${rec.name} » enregistrée dans ${catById(rec.cat).label}`, `"${rec.name}" saved in ${catById(rec.cat).label}`));
     await loadLibrary();
     loadRec(library.find(r => r.id === rec.id));
   } catch (err) {
@@ -540,7 +612,7 @@ $('deleteBtn').addEventListener('click', async () => {
   if (Date.now() - armed > 2500) { armed = Date.now(); toast('Clique encore pour supprimer la brique'); return; }
   armed = 0;
   await Store.delete(draft.id);
-  toast(`« ${draft.name} » supprimée`);
+  toast(tr(`« ${draft.name} » supprimée`, `"${draft.name}" deleted`));
   draft = emptyDraft();
   refresh();
   loadLibrary();
@@ -549,7 +621,7 @@ $('deleteBtn').addEventListener('click', async () => {
 async function exportLibrary() {
   if (!library.length) { toast('La bibliothèque est vide'); return; }
   toast('Préparation du ZIP…');
-  try { await saveFile('plasma_bricks.zip', await packLibrary(library)); toast(`${library.length} brique${library.length > 1 ? 's' : ''} exportée${library.length > 1 ? 's' : ''}`); }
+  try { await saveFile('plasma_bricks.zip', await packLibrary(library)); toast(tr(`${library.length} brique${library.length > 1 ? 's' : ''} exportée${library.length > 1 ? 's' : ''}`, `${library.length} brick${library.length > 1 ? 's' : ''} exported`)); }
   catch (err) { console.error(err); toast('Export impossible : ' + (err.message || err)); }
 }
 $('libInput').addEventListener('change', async e => {
@@ -559,7 +631,7 @@ $('libInput').addEventListener('change', async e => {
   try {
     const list = unpackLibrary(await f.arrayBuffer());
     for (const r of list) await Store.put(r);
-    toast(`${list.length} brique${list.length > 1 ? 's' : ''} importée${list.length > 1 ? 's' : ''}`);
+    toast(tr(`${list.length} brique${list.length > 1 ? 's' : ''} importée${list.length > 1 ? 's' : ''}`, `${list.length} brick${list.length > 1 ? 's' : ''} imported`));
     loadLibrary();
   } catch (err) { console.error(err); toast('Ce fichier n\'est pas une bibliothèque de briques : ' + (err.message || err)); }
 });
@@ -572,16 +644,17 @@ addEventListener('keydown', e => {
   else if (k === 'w') setTool('translate');
   else if (k === 'e' || k === 'r') setTool('rotate');
   else if (k === 'f') frameBrick();
+  else if (k === '4' || k === '5' || k === '6') setShade({ 4: 'wire', 5: 'resin', 6: 'paint' }[k]);
   else if (k === 'escape') { ui.sel = null; setTool('orbit'); }
 });
 
 let toastTimer = 0;
-function toast(msg) {
+function toast(msg, ms = 2800) {
   const t = $('toast');
   t.textContent = msg;
   t.classList.add('show');
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => t.classList.remove('show'), 2800);
+  toastTimer = setTimeout(() => t.classList.remove('show'), ms);
 }
 
 // Pastilles des sockets à l'écran.
@@ -601,13 +674,18 @@ vp.onFrame = () => {
 };
 
 // ---------------------------------------------------------------- démarrage
+if (maya) {
+  $('fileInput').accept += ',.ma,.mb';
+  $('dropHint').textContent = 'Modèle .fbx, .obj, .glb ou .gltf, ou directement la scène Maya .ma / .mb (convertie par Maya en arrière-plan), texture .jpg / .png. Depuis Maya : étagère PlasmaOrks, bouton Envoyer.';
+}
 renderBar();
 loadLibrary();
 try {
   model = await OrkModel.load('assets/ork_boy.glb', e => { if (e.total) $('loading').style.setProperty('--p', (e.loaded / e.total * 100).toFixed(0) + '%'); });
   model.fit();
   vp.scene.add(model.root);
-  for (const [n, m] of Object.entries(model.meshes)) { m.material = orkMat; m.visible = !/_low$/.test(n); }
+  for (const m of Object.values(model.meshes)) m.material = orkMat;
+  showOrk();
   orkDefs = orkSockets(model);
   model.ork.add(preview);
   fillSelects();
@@ -616,6 +694,15 @@ try {
   vp.frameObject(model.root, new THREE.Vector3(0.55, 0.25, 1), true);
   $('loading').hidden = true;
   window.importer = { model, vp, draft: () => draft, addFiles, orkDefs, refresh };
+  // « Modifier » depuis le Builder : import.html?edit=<id> rouvre la brique
+  const editId = new URLSearchParams(location.search).get('edit');
+  if (editId) {
+    try { library = await Store.all(); renderLibrary(); } catch (err) { console.error(err); }
+    const r = library.find(x => x.id === editId);
+    if (r) { loadRec(r); renderLibrary(); } else toast('Brique introuvable dans la bibliothèque');
+    history.replaceState(null, '', location.pathname);
+  }
+  if (maya) { maya.onFiles(p => fromMaya(p).catch(err => { console.error(err); toast('Envoi Maya illisible : ' + (err.message || err), 8000); })); maya.ready(); }
 } catch (err) {
   console.error(err);
   const l = $('loading');

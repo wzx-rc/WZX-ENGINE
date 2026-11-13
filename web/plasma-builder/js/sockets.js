@@ -4,10 +4,13 @@
 // Une brique modélisée en place sur l'ork dans Maya retombe donc exactement là où elle a été modélisée.
 import * as THREE from 'three';
 import { CHAINS, FINGERS } from './riglab/model.js';
+import { PRESETS, buildPreset } from './riglab/poses.js';
 
-export const SOCKET_TYPES = {
+// Libellés traduits par i18n.js (plasmaT) quand l'interface est en anglais.
+const T = s => (globalThis.plasmaT ? globalThis.plasmaT(s) : s);
+export const SOCKET_TYPES = Object.fromEntries(Object.entries({
   head: 'Tête', grip: 'Main', back: 'Dos', shoulder: 'Épaule', chest: 'Torse', belt: 'Ceinture', base: 'Socle', any: 'Libre',
-};
+}).map(([k, v]) => [k, T(v)]));
 
 const Q = n => 'QuickRigCharacter_' + n;
 
@@ -22,8 +25,54 @@ function surface(model, at, dir) {
   return hits.length ? ork.worldToLocal(hits[hits.length - 1].point.clone()) : at.clone();
 }
 
-// À appeler avec l'ork au repos. Rend [{ id, label, type, bone, rest (Matrix4, espace ork), local (relatif au joint) }].
-export function orkSockets(model) {
+// Repère des mains (grip) : le manche passe dans le poing. Y = axe du poing (de l'auriculaire vers l'index), Z = l'avant
+// de l'ork, X = Y × Z, réglés dans la pose de garde (celle du Builder) : une arme modélisée debout dans Maya (manche
+// selon Y, à l'origine, PLUG sans rotation au milieu de la prise) apparaît en garde comme dans Maya, juste inclinée
+// dans l'axe du poing, puis suit la main dans les autres poses.
+function gripRotations(model) {
+  const ork = model.ork, out = {};
+  const sample = () => {
+    ork.updateMatrixWorld(true);
+    const inv = ork.matrixWorld.clone().invert(), res = {};
+    for (const side of ['L', 'R']) {
+      const at = n => new THREE.Vector3().setFromMatrixPosition(inv.clone().multiply(model.bone(n).matrixWorld));
+      const hand = new THREE.Matrix4().extractRotation(inv.clone().multiply(model.bone(CHAINS[side === 'L' ? 'handL' : 'handR'][2]).matrixWorld));
+      res[side] = { hand, fist: at(FINGERS[side][1][0]).sub(at(FINGERS[side][4][0])).normalize() };
+    }
+    return res;
+  };
+  model.setPose(null);
+  const rest = sample();
+  const garde = PRESETS.find(p => p.id === 'garde');
+  if (garde) buildPreset(model, garde);
+  const pose = sample();
+  model.setPose(null);
+  model.root.updateMatrixWorld(true);
+  for (const side of ['L', 'R']) {
+    const y = pose[side].fist;
+    const z = new THREE.Vector3(0, 0, 1).addScaledVector(y, -y.z).normalize();
+    const x = new THREE.Vector3().crossVectors(y, z);
+    const inGarde = new THREE.Matrix4().makeBasis(x, y, z);
+    // la main porte le socket : repos = main au repos · (main en garde)⁻¹ · repère voulu en garde
+    out[side] = rest[side].hand.clone().multiply(pose[side].hand.clone().invert()).multiply(inGarde);
+  }
+  return out;
+}
+
+// Réglages des sockets faits dans le Rig Lab (locators déplacés / tournés) : repère relatif au joint, enregistré
+// sur l'appareil. Ils remplacent le repère calculé, dans le Builder comme dans l'Importer.
+export const SOCKET_OVERRIDES = 'plasmaork.sockets.overrides';
+export function loadSocketOverrides() {
+  try { return JSON.parse(localStorage.getItem(SOCKET_OVERRIDES) || '{}') || {}; } catch { return {}; }
+}
+export function saveSocketOverrides(o) {
+  try { localStorage.setItem(SOCKET_OVERRIDES, JSON.stringify(o)); return true; } catch { return false; }
+}
+
+// À appeler avec l'ork au repos. Rend [{ id, label, type, bone, rest (Matrix4, espace ork), local (relatif au joint),
+// def (local calculé, sans réglage), custom (réglé dans le Rig Lab) }].
+export function orkSockets(model, useOverrides = true) {
+  const grip = gripRotations(model);
   model.setPose(null);
   model.root.updateMatrixWorld(true);
   const pos = name => model.bone(name).userData.restW.clone();
@@ -46,20 +95,25 @@ export function orkSockets(model) {
     ['base', 'Socle', 'base', null, new THREE.Vector3(hips.x, model.info.floor ?? 0, hips.z)],
   ];
   const orkInv = model.ork.matrixWorld.clone().invert();
+  const over = useOverrides ? loadSocketOverrides() : {};
   return defs.map(([id, label, type, boneName, p]) => {
+    label = T(label);
     const bone = boneName ? model.bone(boneName) : null;
-    const rest = new THREE.Matrix4().makeTranslation(p.x, p.y, p.z);
+    let rest = id.startsWith('grip_') ? grip[id.slice(-1)].clone().setPosition(p) : new THREE.Matrix4().makeTranslation(p.x, p.y, p.z);
     // repère du joint au repos, dans l'espace ork
     const boneRest = bone ? orkInv.clone().multiply(bone.matrixWorld) : new THREE.Matrix4();
-    const local = boneRest.invert().multiply(rest);
-    return { id, label, type, bone, rest, local };
+    let local = boneRest.clone().invert().multiply(rest);
+    const def = local.clone();
+    const o = over[id]?.local;
+    if (Array.isArray(o) && o.length === 16 && o.every(Number.isFinite)) { local = new THREE.Matrix4().fromArray(o); rest = boneRest.clone().multiply(local); }
+    return { id, label, type, bone, rest, local, def, custom: !!over[id] };
   });
 }
 
-// Noms des locators Maya : SOCKET_<type>[_<nom>] et PLUG_<type>.
+// Noms des locators Maya : SOCKET_<type>[_<nom>] et PLUG_<type> (préfixe en majuscules ou non : Socket_grip passe).
 export function parseLocatorName(name) {
-  const m = /^(SOCKET|PLUG)_([A-Za-z]+)(?:_(.+))?$/.exec(name.replace(/^.*[|:]/, ''));
+  const m = /^(SOCKET|PLUG)_([A-Za-z]+)(?:_(.+))?$/i.exec(name.replace(/^.*[|:]/, ''));
   if (!m) return null;
   const type = m[2].toLowerCase();
-  return { kind: m[1] === 'PLUG' ? 'plug' : 'socket', type: SOCKET_TYPES[type] ? type : 'any', name: m[3] || type };
+  return { kind: m[1].toUpperCase() === 'PLUG' ? 'plug' : 'socket', type: SOCKET_TYPES[type] ? type : 'any', name: m[3] || type };
 }

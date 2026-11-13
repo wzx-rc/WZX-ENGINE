@@ -7,6 +7,8 @@ import { CATEGORIES } from './categories.js';
 export const $ = id => document.getElementById(id);
 export const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 export const KEY = 'plasmaork.hub';
+// Textes affichés : traduits par i18n.js quand l'interface est en anglais (les ids et l'état restent identiques).
+export const T = s => (globalThis.plasmaT ? globalThis.plasmaT(s) : s);
 
 // ---------------------------------------------------------------- réglages (à équilibrer)
 export const RULES = {
@@ -16,14 +18,15 @@ export const RULES = {
   packInDents: 300,
   start: { dents: 120, packs: 3, chests: 1 },
 };
-export const RARITY = { c: 'Commune', r: 'Rare', x: 'Extrême' };
+export const RARITY = { c: T('Commune'), r: T('Rare'), x: T('Extrême') };
 export const RCOL = { c: '#b9c0c8', r: '#3e8ef7', x: '#ff2e88' };
 export const ICON = { head: 'assets/ui/icon_head.png', weapon: 'assets/ui/icon_weapon.png', back: 'assets/ui/icon_back.png', shoulder: 'assets/ui/icon_shoulder.png', chest: 'assets/ui/icon_chest.png', belt: 'assets/ui/icon_belt.png', base: 'assets/ui/icon_base.png' };
+// Les 4 factions = les 4 thèmes de couleur de l'app (theme.js) : choisir sa faction change l'accent partout.
 export const FACTIONS = [
-  { id: 'rose', label: 'Klan rose', img: 'assets/hub/faction_rose.png', col: '#ff2e88' },
-  { id: 'bleu', label: 'Klan bleu', img: 'assets/hub/faction_bleu.png', col: '#3e8ef7' },
-  { id: 'jaune', label: 'Klan jaune', img: 'assets/hub/faction_jaune.png', col: '#f2c230' },
-  { id: 'vert', label: 'Klan vert', img: 'assets/hub/faction_vert.png', col: '#6bbf3a' },
+  { id: 'rose', label: 'Cyber-Boys', img: 'assets/hub/faction_rose.png', col: '#ff2e88' },
+  { id: 'bleu', label: 'Plasma Tek', img: 'assets/hub/faction_bleu.png', col: '#4caee4' },
+  { id: 'vert', label: 'Neon', img: 'assets/hub/faction_vert.png', col: '#b1ff41' },
+  { id: 'jaune', label: 'Rampage', img: 'assets/hub/faction_jaune.png', col: '#fb7e3a' },
 ];
 
 // ---------------------------------------------------------------- catalogue provisoire
@@ -36,11 +39,11 @@ export const NAMES = {
   belt: [['Bourse à dents', 'c'], ['Grenades stikk', 'c'], ['Ceinture simple', 'c'], ['Cartouchière', 'c'], ['Pochette', 'c'], ['Chaîne', 'c'], ['Ceinture à crânes', 'r'], ['Trophées', 'r'], ['Boucle du klan', 'r'], ['Ceinture de Mek', 'r'], ['Ceinture de Warboss', 'x'], ['Bombe plasma', 'x']],
   base: [['Socle rond', 'c'], ['Socle en terre', 'c'], ['Socle rocheux', 'c'], ['Socle de ferraille', 'c'], ['Socle en ruines', 'c'], ['Socle de rouille', 'c'], ['Socle de tranchée', 'r'], ['Socle d’épave', 'r'], ['Socle de crânes', 'r'], ['Socle de lave', 'r'], ['Socle plasma', 'x'], ['Trône de Warboss', 'x']],
 };
-export const CATALOG = Object.entries(NAMES).flatMap(([cat, list]) => list.map(([name, rk], i) => ({ id: cat + '_' + i, cat, name, rk })));
+export const CATALOG = Object.entries(NAMES).flatMap(([cat, list]) => list.map(([name, rk], i) => ({ id: cat + '_' + i, cat, name: T(name), rk })));
 export const byId = Object.fromEntries(CATALOG.map(p => [p.id, p]));
-export const KIT = { name: 'Kit Rokkit', pieces: ['back_6', 'shoulder_6', 'chest_9', 'weapon_9', 'belt_1'], reward: 'skin plasma offert' };
+export const KIT = { name: T('Kit Rokkit'), pieces: ['back_6', 'shoulder_6', 'chest_9', 'weapon_9', 'belt_1'], reward: T('skin plasma offert') };
 export const catLabel = id => CATEGORIES.find(c => c.id === id)?.label || id;
-export const catSingular = { head: 'Tête', weapon: 'Arme', back: 'Dos', shoulder: 'Épaulière', chest: 'Torse', belt: 'Ceinture', base: 'Socle' };
+export const catSingular = Object.fromEntries(Object.entries({ head: 'Tête', weapon: 'Arme', back: 'Dos', shoulder: 'Épaulière', chest: 'Torse', belt: 'Ceinture', base: 'Socle' }).map(([k, v]) => [k, T(v)]));
 
 // ---------------------------------------------------------------- état
 export function fresh() {
@@ -57,6 +60,8 @@ function load() {
   return s;
 }
 export const S = load();
+// thème choisi ailleurs (Réglages) : la faction du joueur suit
+if (globalThis.plasmaFaction && FACTIONS.some(f => f.id === globalThis.plasmaFaction())) S.faction = globalThis.plasmaFaction();
 export const save = () => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch { /* stockage indisponible */ } };
 export const ownedCount = () => Object.keys(S.owned).filter(k => S.owned[k] > 0).length;
 export const dupes = () => Object.entries(S.owned).reduce((n, [, c]) => n + Math.max(0, c - 1), 0);
@@ -70,7 +75,7 @@ export function pick(rk) {
   for (let i = 0; i < pool.length; i++) { t -= w[i]; if (t <= 0) return pool[i]; }
   return pool[pool.length - 1];
 }
-export const SOURCE = { pack: 'Pack Boyz', chest: 'Coffre de Nob', drop: 'Drop du jour', start: 'Kit de départ' };
+export const SOURCE = { pack: T('Pack Boyz'), chest: T('Coffre de Nob'), drop: T('Drop du jour'), start: T('Kit de départ') };
 export function draw(kind) {
   let third = 'r';
   if (kind === 'chest') third = 'x';
@@ -93,7 +98,7 @@ export function commit(kind, got) {
 // ---------------------------------------------------------------- petites animations
 export function tween(el, from, to, ms = 900) {
   if (!el) return;
-  const t0 = performance.now(), fmt = n => Math.round(n).toLocaleString('fr-FR');
+  const t0 = performance.now(), fmt = n => Math.round(n).toLocaleString(globalThis.plasmaLang === 'fr' ? 'fr-FR' : 'en-US');
   if (from === to || matchMedia('(prefers-reduced-motion: reduce)').matches) { el.textContent = fmt(to); return; }
   const step = now => {
     const k = Math.min(1, (now - t0) / ms), e = 1 - Math.pow(1 - k, 3);

@@ -1,7 +1,8 @@
 /* Hub : page d'accueil où l'on débloque les pièces (packs, coffres, Plasma Library). Style « board » repris de la
    maquette A, remis droit : grille de cartes, fond pointillé, plaques et bordures de couleur. */
 body.hub {
-  --pink: #ff2e88; --pink-ink: #2a0014; --pink-soft: #ffb3d3; --pink-bg: #2a0b1a; --pink-line: #6e1440;
+  /* couleur vive = thème de faction (variables --hot dans app.css) */
+  --pink: var(--hot); --pink-ink: var(--hot-ink); --pink-soft: var(--hot-soft); --pink-bg: var(--hot-bg); --pink-line: var(--hot-line);
   --gold: #f2c230; --gold-ink: #241a05; --gold-soft: #f2d27a;
   --blue: #3e8ef7; --blue-soft: #8fbbff;
   --r-c: #b9c0c8; --r-r: #3e8ef7; --r-x: #ff2e88;
@@ -43,7 +44,7 @@ body.hub {
 .factions button[aria-checked="true"] img, .factions button:hover img { opacity: 1; }
 .grid { max-width: 1400px; margin: 0 auto; display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 20px; }
 .hcard { background: var(--card); border: 1px solid var(--ln); border-radius: 24px; padding: 18px 20px; box-shadow: 0 24px 60px rgba(0,0,0,.45); display: flex; flex-direction: column; gap: 14px; min-width: 0; }
-.hcard.hero { grid-column: span 7; flex-direction: row; padding: 14px; border: 3px solid #c2125e; min-height: 430px; }
+.hcard.hero { grid-column: span 7; flex-direction: row; padding: 14px; border: 3px solid color-mix(in srgb, var(--pink) 78%, #000); min-height: 430px; }
 .hcard.lib { grid-column: span 5; border: 3px solid #2c6fd0; }
 .hcard.last { grid-column: span 5; }
 .hcard.shop { grid-column: span 4; }
@@ -59,10 +60,10 @@ body.hub {
 }
 
 /* carte ork + packs */
-.cover { flex: 0 0 250px; border-radius: 16px; background: #a8094b; position: relative; overflow: hidden; display: flex; flex-direction: column; }
+.cover { flex: 0 0 250px; border-radius: 16px; background: color-mix(in srgb, var(--pink) 66%, #000); position: relative; overflow: hidden; display: flex; flex-direction: column; }
 .plate { margin: 8px; border-radius: 12px; padding: 8px 12px; display: flex; flex-direction: column; align-items: center; background: var(--pink); position: relative; z-index: 1; }
-.plate b { font-family: var(--disp); font-size: 24px; letter-spacing: .04em; color: #3a0018; line-height: 1.1; }
-.plate span { font-size: 11px; font-weight: 600; color: #5c0a2e; }
+.plate b { font-family: var(--disp); font-size: 24px; letter-spacing: .04em; color: var(--pink-ink); line-height: 1.1; }
+.plate span { font-size: 11px; font-weight: 600; color: color-mix(in srgb, var(--pink-ink) 60%, var(--pink)); }
 .cover-img { position: absolute; left: 0; right: 0; bottom: 0; width: 100%; height: 82%; object-fit: cover; mix-blend-mode: lighten; }
 .cover-go { position: absolute; left: 10px; right: 10px; bottom: 10px; z-index: 1; min-height: 44px; border-radius: 12px; background: rgba(14,14,16,.82); color: #ecebe6; text-decoration: none; display: flex; align-items: center; justify-content: center; gap: 8px; font-weight: 600; font-size: 14px; }
 .cover-go:hover { background: rgba(14,14,16,.95); }
@@ -72,14 +73,14 @@ body.hub {
 .brackets::after { right: 0; bottom: 0; border-width: 0 2px 2px 0; border-radius: 0 0 6px 0; }
 .packzone { flex: 1 1 auto; min-width: 0; display: grid; grid-template-columns: minmax(170px, 230px) minmax(0, 1fr); gap: 24px; align-items: center; padding: 16px 20px 16px 24px; }
 .packstack { position: relative; height: 320px; }
-.pack { position: absolute; border-radius: 18px; background: #1b0b14; border: 2px solid var(--pink); overflow: hidden; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; box-shadow: 0 24px 50px rgba(0,0,0,.6), 0 0 40px rgba(255,46,136,.22); }
+.pack { position: absolute; border-radius: 18px; background: var(--hot-deep); border: 2px solid var(--pink); overflow: hidden; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; box-shadow: 0 24px 50px rgba(0,0,0,.6), 0 0 40px rgba(255,46,136,.22); }
 .pack.mini { left: 10px; top: 20px; width: 175px; height: 260px; animation: bob 2.6s ease-in-out infinite; }
 .pack.mini.back2 { border-color: var(--blue); background: #0b1424; left: 26px; top: 28px; transform: rotate(7deg); animation: none; box-shadow: 0 20px 40px rgba(0,0,0,.6); }
 .pack.mini img { width: 90px; height: 90px; position: relative; }
 .pack b { font-family: var(--disp); font-size: 20px; letter-spacing: .06em; position: relative; }
 .pack span { font-size: 12px; color: var(--pink-soft); position: relative; }
 .packstack.empty .pack { filter: grayscale(1) brightness(.5); animation: none; }
-.foil { position: absolute; inset: 0; background: repeating-linear-gradient(135deg, rgba(255,46,136,.10) 0 14px, rgba(255,255,255,0) 14px 28px); }
+.foil { position: absolute; inset: 0; background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--hot) 10%, transparent) 0 14px, rgba(255,255,255,0) 14px 28px); }
 .shine { position: absolute; top: -50%; left: -60%; width: 40%; height: 200%; background: linear-gradient(90deg, rgba(255,255,255,0), rgba(255,255,255,.2), rgba(255,255,255,0)); transform: rotate(20deg); animation: shine 2.8s ease-in-out infinite; }
 @keyframes shine { 0% { left: -60%; } 60%, 100% { left: 130%; } }
 @keyframes bob { 0%, 100% { transform: translateY(0) rotate(-2deg); } 50% { transform: translateY(-9px) rotate(.5deg); } }
@@ -162,7 +163,7 @@ body.hub {
 .ovhead b { font-family: var(--disp); font-size: 24px; letter-spacing: .05em; }
 .stage { position: relative; flex: 1 1 auto; overflow: hidden; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 520px; }
 .halo { position: absolute; width: 640px; height: 640px; border-radius: 50%; left: 50%; top: 50%; transform: translate(-50%, -55%); pointer-events: none; }
-.pinkhalo { background: radial-gradient(circle, rgba(255,46,136,.18) 0%, rgba(11,11,13,0) 65%); }
+.pinkhalo { background: radial-gradient(circle, var(--hot-glow) 0%, rgba(11,11,13,0) 65%); }
 .goldhalo { background: radial-gradient(circle, rgba(242,194,48,.18) 0%, rgba(11,11,13,0) 65%); }
 .hint { position: relative; display: flex; flex-direction: column; align-items: center; gap: 8px; margin-top: 30px; text-align: center; }
 .hint b { font-family: var(--disp); font-size: 28px; }
@@ -172,7 +173,7 @@ body.hub {
 /* gros pack */
 .bigpack { position: relative; width: 300px; height: 440px; animation: bob 2.4s ease-in-out infinite; }
 .bigpack.dragging { animation: none; }
-.bigpack .flap, .bigpack .pbody { position: absolute; left: 0; width: 300px; border: 3px solid var(--pink); background: #1b0b14; overflow: hidden; }
+.bigpack .flap, .bigpack .pbody { position: absolute; left: 0; width: 300px; border: 3px solid var(--pink); background: var(--hot-deep); overflow: hidden; }
 .bigpack .flap { top: 0; height: 100px; border-radius: 22px 22px 0 0; border-bottom: 0; }
 .bigpack .pbody { top: 100px; height: 340px; border-radius: 0 0 22px 22px; border-top: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; box-shadow: 0 30px 60px rgba(0,0,0,.6); }
 .bigpack .pbody img { width: 130px; height: 130px; position: relative; }
@@ -180,7 +181,7 @@ body.hub {
 .bigpack .pbody span { color: var(--pink-soft); font-size: 14px; position: relative; }
 .cutzone { position: absolute; left: -30px; top: 76px; width: 360px; height: 48px; cursor: ew-resize; touch-action: none; outline-offset: 4px; }
 .cutzone .dash { position: absolute; left: 30px; right: 30px; top: 23px; border-top: 2px dashed rgba(255,255,255,.5); }
-.cutzone .blade { position: absolute; left: 30px; top: 20px; width: 0; height: 6px; border-radius: 3px; background: #ffe0ee; box-shadow: 0 0 18px var(--pink), 0 0 40px var(--pink); }
+.cutzone .blade { position: absolute; left: 30px; top: 20px; width: 0; height: 6px; border-radius: 3px; background: color-mix(in srgb, var(--pink) 18%, #fff); box-shadow: 0 0 18px var(--pink), 0 0 40px var(--pink); }
 .bigpack.open { animation: none; }
 .bigpack.open .flap { animation: flapOff .7s cubic-bezier(.2,.7,.3,1) forwards; }
 .bigpack.open .pbody { animation: bodyOff .6s .25s ease-in forwards; }
@@ -197,7 +198,7 @@ body.hub {
 .flip.on { transform: rotateY(180deg); cursor: default; }
 .flip:hover:not(.on) { transform: translateY(-8px) rotate(-1deg); }
 .face { position: absolute; inset: 0; border-radius: 20px; backface-visibility: hidden; -webkit-backface-visibility: hidden; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; overflow: hidden; padding: 20px; }
-.face.back { background: #1b0b14; border: 3px solid var(--pink-line); }
+.face.back { background: var(--hot-deep); border: 3px solid var(--pink-line); }
 .face.back img { width: 120px; height: 120px; object-fit: contain; position: relative; }
 .face.front { transform: rotateY(180deg); border: 3px solid; }
 .face.front img { width: 104px; height: 104px; position: relative; }
@@ -224,7 +225,7 @@ body.hub {
 .chest .seam { position: absolute; left: 0; top: 108px; width: 300px; height: 14px; background: var(--gold); transition: box-shadow .3s; }
 .chest .strap { position: absolute; top: 0; width: 22px; height: 320px; background: #4a3a1c; border-left: 2px solid #6b5627; border-right: 2px solid #6b5627; }
 .chest .strap.l { left: 36px; } .chest .strap.r { right: 36px; }
-.chest .lock { position: absolute; left: 110px; top: 92px; width: 80px; height: 92px; border-radius: 14px; background: #1b0b14; border: 3px solid var(--pink); display: flex; align-items: center; justify-content: center; transition: box-shadow .3s; }
+.chest .lock { position: absolute; left: 110px; top: 92px; width: 80px; height: 92px; border-radius: 14px; background: var(--hot-deep); border: 3px solid var(--pink); display: flex; align-items: center; justify-content: center; transition: box-shadow .3s; }
 .chest .lock img { width: 56px; height: 56px; }
 @keyframes breathe { 50% { transform: translateY(-6px); } }
 .chest.hitA { animation: shakeA .45s cubic-bezier(.3,.1,.3,1); } .chest.hitB { animation: shakeB .45s cubic-bezier(.3,.1,.3,1); }

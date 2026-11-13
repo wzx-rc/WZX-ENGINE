@@ -11,6 +11,13 @@
   --muted: #9a9ca3;
   --accent: #f0435a;
   --accent-bg: #2a1418;
+  --accent-soft: #ff8fa0;                       /* texte accent sur fond sombre */
+  --accent-tint: rgba(240,67,90,.16);           /* fond d'un bouton actif */
+  --on-accent: #fff;                            /* texte sur un aplat accent */
+  --accent-ink: #16070a;                        /* texte sombre sur un aplat accent */
+  --danger: #f0435a;                            /* supprimer, erreurs : rouge quel que soit le thème */
+  /* couleur vive du Hub et de la Library (rose néon pour Cyber-Boys) */
+  --hot: #ff2e88; --hot-ink: #2a0014; --hot-soft: #ffb3d3; --hot-bg: #2a0b1a; --hot-line: #6e1440; --hot-deep: #1b0b14; --hot-glow: rgba(255,46,136,.18);
   --ok: #7bc67e;
   --head: 'Barlow Condensed', 'Arial Narrow', sans-serif;
   color-scheme: dark;
@@ -35,14 +42,13 @@ svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width:
 .topbar > .mainnav { justify-self: center; }
 .topbar > .topbar-right { justify-self: end; }
 .brand { display: flex; align-items: center; gap: 10px; }
-.brand > svg { width: 40px; height: 40px; stroke: none; }
-.brand-skull { fill: var(--accent); }
+.brand > img.brand-logo { width: 44px; height: 44px; display: block; flex: none; }
 .brand-name { font-family: var(--head); font-weight: 800; font-size: 22px; line-height: .92; letter-spacing: .02em; }
 .mainnav { display: flex; flex-wrap: nowrap; gap: 4px; }
 .mainnav a { display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 13px; border-radius: 8px; border: 1px solid transparent; color: var(--text2); text-decoration: none; font-size: 14px; font-weight: 500; }
 .mainnav a.active { border-color: var(--accent); background: var(--accent-bg); color: var(--accent); }
 .mainnav a:not(.active):hover { background: var(--panel); color: var(--text); }
-.navbadge { min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; background: #ff2e88; color: #1a0610; font-size: 11px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; }
+.navbadge { min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; background: var(--hot); color: var(--hot-ink); font-size: 11px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; }
 /* Fenêtre étroite : le menu passe en icônes (le nom reste en info-bulle) */
 .topbar { min-width: 0; flex: none; }
 /* Pas assez de place (voir js/chrome.js) : le menu passe en icônes (le nom reste en info-bulle), puis tout se resserre */
@@ -63,7 +69,7 @@ button.icon[aria-pressed="true"], button.icon.on { background: var(--accent-bg);
 button.icon.small { width: 36px; height: 36px; border: 1px solid var(--line2); background: var(--raised); }
 button.icon:disabled { color: #55575d; cursor: default; background: none; }
 .export { position: relative; display: flex; }
-button.primary { display: flex; white-space: nowrap; align-items: center; gap: 8px; min-height: 44px; padding: 0 14px; border: 0; border-radius: 8px 0 0 8px; background: var(--accent); color: #fff; font-family: var(--head); font-size: 17px; font-weight: 700; }
+button.primary { display: flex; white-space: nowrap; align-items: center; gap: 8px; min-height: 44px; padding: 0 14px; border: 0; border-radius: 8px 0 0 8px; background: var(--accent); color: var(--on-accent); font-family: var(--head); font-size: 17px; font-weight: 700; }
 button.primary.caret { border-radius: 0 8px 8px 0; padding: 0 10px; border-left: 1px solid rgba(0,0,0,.25); }
 button.primary:hover { filter: brightness(1.08); }
 .menu { position: absolute; right: 0; top: calc(100% + 6px); z-index: 20; min-width: 290px; display: flex; flex-direction: column; padding: 6px; border-radius: 8px; background: var(--raised); border: 1px solid var(--line2); box-shadow: 0 12px 30px rgba(0,0,0,.45); }
@@ -73,7 +79,7 @@ button.primary:hover { filter: brightness(1.08); }
 /* Corps */
 .body { display: flex; flex-wrap: wrap; gap: 12px; padding-block: 12px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); flex: 1 1 auto; }
 .rail { flex: 0 1 158px; min-width: 140px; display: flex; flex-direction: column; gap: 2px; }
-.rail-head { display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 0 12px; border-radius: 6px; background: #1a1214; color: var(--accent); font-size: 14px; font-weight: 600; }
+.rail-head { display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 0 12px; border-radius: 6px; background: color-mix(in srgb, var(--accent) 8%, #121316); color: var(--accent); font-size: 14px; font-weight: 600; }
 .rail-head svg, .rail button svg { width: 22px; height: 22px; }
 #rail { display: flex; flex-direction: column; gap: 2px; }
 .rail button { display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 0 12px; border: 0; border-left: 3px solid transparent; border-radius: 6px; background: none; color: #b5b7bd; font-size: 14px; text-align: left; }
@@ -98,7 +104,7 @@ button.primary:hover { filter: brightness(1.08); }
 .search input { flex: 1 1 auto; min-width: 0; border: 0; background: transparent; color: var(--text); outline: none; }
 .chips, .sidepick { display: flex; flex-wrap: wrap; gap: 6px; }
 .chips button, .sidepick button { min-height: 32px; padding: 0 12px; border: 0; border-radius: 4px; background: var(--chip); color: var(--text2); }
-.chips button[aria-pressed="true"], .sidepick button[aria-pressed="true"] { background: var(--accent); color: #fff; }
+.chips button[aria-pressed="true"], .sidepick button[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); }
 .libgrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; max-height: 560px; overflow: auto; padding: 2px; align-content: start; }
 .tile { position: relative; display: flex; flex-direction: column; gap: 4px; padding: 0 0 6px; border-radius: 6px; border: 2px solid transparent; background: var(--raised); color: var(--text2); overflow: hidden; text-align: center; font-size: 11px; line-height: 1.2; }
 .tile img, .tile .ph { width: 100%; aspect-ratio: 4 / 5; object-fit: cover; display: block; background: #121316; }
@@ -223,6 +229,9 @@ button.wide:hover, .mirror button:hover { background: var(--chip); }
 .loading { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; background: #111214; color: var(--text2); font-family: var(--head); font-size: 20px; letter-spacing: .04em; text-transform: uppercase; }
 .loading i { width: 220px; height: 4px; border-radius: 2px; background: linear-gradient(90deg, var(--accent) var(--p, 0%), var(--chip) var(--p, 0%)); }
 .loading.err { color: var(--accent); font-family: Inter, sans-serif; font-size: 14px; text-transform: none; letter-spacing: 0; padding: 20px; text-align: center; }
+.loading.busy { background: rgba(14,15,18,.74); backdrop-filter: blur(2px); font-size: 17px; }
+.loading.busy i { background: linear-gradient(90deg, transparent 0 30%, var(--accent) 45% 55%, transparent 70% 100%), var(--chip); background-size: 200% 100%, auto; animation: busybar 1.2s linear infinite; }
+@keyframes busybar { from { background-position: 100% 0, 0 0; } to { background-position: -100% 0, 0 0; } }
 
 /* Builder sur l'ork riggé */
 a.icon.small.btnlink { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: 6px; border: 1px solid var(--line2); background: var(--raised); color: var(--text2); }
@@ -251,6 +260,7 @@ html.desktop { overflow: hidden; scrollbar-gutter: auto; }
 html.desktop body { margin-top: 32px; height: calc(100vh - 32px); overflow-y: auto; scrollbar-gutter: stable; }
 .wintitle { position: fixed; z-index: 1000; top: 0; left: 0; right: 0; height: 32px; display: flex; align-items: center; gap: 8px; padding: 0 150px 0 12px; background: #0b0c0e; border-bottom: 1px solid #1a1c20; color: var(--text2); font-size: 12px; -webkit-app-region: drag; user-select: none; }
 .wintitle > svg { width: 16px; height: 16px; stroke: none; }
+.wintitle > img { width: 16px; height: 16px; display: block; flex: none; border-radius: 3px; }
 .wintitle b { font-family: var(--head); font-size: 14px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--text); }
 .wintitle span { color: var(--muted); }
 .wintitle span::before { content: '·'; margin-right: 8px; }
@@ -278,5 +288,120 @@ html.desktop .wintitle { padding-right: 0; }
 .wbtn svg { width: 15px; height: 15px; }
 .wbtn:hover { background: rgba(255,255,255,.08); color: #fff; }
 .wbtn:active { background: rgba(255,255,255,.14); }
-.wbtn.close:hover { background: var(--accent); color: #fff; }
+.wbtn.close:hover { background: var(--danger); color: #fff; }
 .wbtn:focus-visible { outline-offset: -2px; }
+
+/* Bouton Texture (vues du Builder et de l'Importeur) : bascule résine grise / texture, comme la touche 6 de Maya */
+button.texbtn { display: inline-flex; align-items: center; gap: 6px; padding: 0 12px; font-size: 13px; font-weight: 600; white-space: nowrap; }
+button.texbtn svg { width: 16px; height: 16px; flex: none; }
+.btngroup button.texbtn { height: 34px; border-radius: 8px; color: var(--text2); }
+.btngroup button.texbtn[aria-pressed="true"] { color: var(--accent-soft); background: var(--accent-tint); }
+.floatbar .btngroup button.texbtn { height: 40px; border: 0; }
+
+/* Menu du clic droit (vignettes de briques) */
+.ctxmenu { position: fixed; z-index: 1000; min-width: 190px; max-width: 280px; display: flex; flex-direction: column; gap: 2px; padding: 6px; border-radius: 10px; background: #16171b; border: 1px solid var(--line2); box-shadow: 0 12px 32px rgba(0,0,0,.5); font-size: 13px; }
+.ctxmenu .ctx-title { padding: 4px 8px 6px; color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ctxmenu > button { display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 8px; border: 0; border-radius: 6px; background: none; color: var(--text); text-align: left; }
+.ctxmenu > button svg { width: 16px; height: 16px; }
+.ctxmenu > button:hover, .ctxmenu > button:focus-visible { background: rgba(255,255,255,.06); }
+.ctxmenu > button.danger { color: #ff8fa0; }
+.ctxmenu input { margin: 0 4px 6px; height: 32px; }
+.ctxmenu .ctx-note { margin: 0 8px 8px; color: var(--text2); font-size: 12px; line-height: 1.4; white-space: normal; }
+.ctxmenu .ctx-row { display: flex; justify-content: flex-end; gap: 6px; padding: 0 4px 2px; }
+.ctxmenu .ctx-row button { height: 30px; padding: 0 12px; border-radius: 6px; font-size: 12.5px; }
+.ctxmenu .ctx-row .danger-btn, .ctxmenu .ctx-row .go-btn { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
+.ctxmenu .ctx-row .danger-btn { background: var(--danger); border-color: var(--danger); color: #16070a; }
+
+.facsel { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.facsel button { display: flex; align-items: center; gap: 8px; min-height: 38px; padding: 0 10px; border: 1px solid var(--line2); border-radius: 8px; background: var(--raised); color: var(--text2); text-align: left; }
+.facsel button i { width: 14px; height: 14px; border-radius: 50%; background: var(--fc); box-shadow: 0 0 8px color-mix(in srgb, var(--fc) 60%, transparent); flex: none; }
+.facsel button:hover { border-color: var(--fc); }
+.facsel button[aria-checked="true"] { border-color: var(--fc); color: #fff; background: color-mix(in srgb, var(--fc) 14%, var(--raised)); }
+
+/* ---------------------------------------------------------------- thèmes de faction (Réglages > Faction)
+   Cyber-Boys = valeurs de :root. Les autres : une couleur, le reste en est tiré. html[data-faction] est posé par theme.js. */
+html[data-faction="bleu"] {
+  --accent: #4caee4; --accent-bg: color-mix(in srgb, #4caee4 15%, #0e0f11); --accent-soft: color-mix(in srgb, #4caee4 65%, #fff);
+  --accent-tint: color-mix(in srgb, #4caee4 16%, transparent); --on-accent: #0b0d10; --accent-ink: #0b0d10;
+  --hot: #4caee4; --hot-ink: color-mix(in srgb, #4caee4 15%, #000); --hot-soft: color-mix(in srgb, #4caee4 55%, #fff);
+  --hot-bg: color-mix(in srgb, #4caee4 13%, #0e0e10); --hot-line: color-mix(in srgb, #4caee4 42%, #0e0e10);
+  --hot-deep: color-mix(in srgb, #4caee4 9%, #0e0e10); --hot-glow: color-mix(in srgb, #4caee4 18%, transparent);
+}
+html[data-faction="vert"] {
+  --accent: #b1ff41; --accent-bg: color-mix(in srgb, #b1ff41 15%, #0e0f11); --accent-soft: color-mix(in srgb, #b1ff41 65%, #fff);
+  --accent-tint: color-mix(in srgb, #b1ff41 16%, transparent); --on-accent: #0b0d10; --accent-ink: #0b0d10;
+  --hot: #b1ff41; --hot-ink: color-mix(in srgb, #b1ff41 15%, #000); --hot-soft: color-mix(in srgb, #b1ff41 55%, #fff);
+  --hot-bg: color-mix(in srgb, #b1ff41 13%, #0e0e10); --hot-line: color-mix(in srgb, #b1ff41 42%, #0e0e10);
+  --hot-deep: color-mix(in srgb, #b1ff41 9%, #0e0e10); --hot-glow: color-mix(in srgb, #b1ff41 18%, transparent);
+}
+html[data-faction="jaune"] {
+  --accent: #fb7e3a; --accent-bg: color-mix(in srgb, #fb7e3a 15%, #0e0f11); --accent-soft: color-mix(in srgb, #fb7e3a 65%, #fff);
+  --accent-tint: color-mix(in srgb, #fb7e3a 16%, transparent); --on-accent: #0b0d10; --accent-ink: #0b0d10;
+  --hot: #fb7e3a; --hot-ink: color-mix(in srgb, #fb7e3a 15%, #000); --hot-soft: color-mix(in srgb, #fb7e3a 55%, #fff);
+  --hot-bg: color-mix(in srgb, #fb7e3a 13%, #0e0e10); --hot-line: color-mix(in srgb, #fb7e3a 42%, #0e0e10);
+  --hot-deep: color-mix(in srgb, #fb7e3a 9%, #0e0e10); --hot-glow: color-mix(in srgb, #fb7e3a 18%, transparent);
+}
+
+/* ===================== Builder : mode Build / Pose ===================== */
+.modesel { padding: 3px; border-radius: 10px; }
+.modesel button { display: flex; align-items: center; gap: 7px; min-height: 36px; padding: 0 14px; font-size: 14px; }
+.modesel button svg { width: 18px; height: 18px; }
+.modesel button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
+
+/* Low / High dans le HUD de la vue, à côté de Texture */
+.lodhud { display: inline-flex; gap: 2px; padding-right: 4px; margin-right: 2px; border-right: 1px solid var(--line2); }
+.lodhud button { min-width: 44px; height: 32px; padding: 0 8px; border: 0; border-radius: 6px; background: none; color: var(--text2); font-size: 12.5px; font-weight: 600; }
+.lodhud button[aria-pressed="true"] { background: var(--accent-bg); color: var(--accent); }
+.floatbar .lodhud { height: 40px; align-items: center; padding: 0 4px 0 0; }
+.floatbar .lodhud button { height: 40px; border-radius: 8px; }
+
+.vp-tip { position: absolute; z-index: 5; transform: translate(14px, -50%); padding: 3px 9px; border-radius: 999px; border: 1px solid #3a3c42; background: rgba(18,19,22,.88); font-size: 11.5px; color: #f2f2f3; pointer-events: none; white-space: nowrap; }
+.tools [data-ptool] { display: none; }
+body[data-mode="pose"] .tools [data-tool] { display: none; }
+body[data-mode="pose"] .tools [data-ptool] { display: flex; }
+body[data-mode="pose"] .tools [data-ptool][aria-pressed="true"] { border-color: var(--accent); background: var(--accent-bg); color: var(--accent); }
+
+/* En mode Pose : bibliothèque de poses à la place des briques, panneau Pose à la place de Personnaliser / Ork */
+body[data-mode="pose"] .rail, body[data-mode="pose"] .library, body[data-mode="pose"] #equip,
+body[data-mode="pose"] .rightcol > .panel:not(#posePanel), body[data-mode="pose"] .row-bottom,
+body[data-mode="pose"] #pins, body[data-mode="pose"] #steps, body[data-mode="pose"] #vpSteps, body[data-mode="pose"] #drawerOpen,
+body[data-mode="pose"] #socketsBtn { display: none !important; }
+body[data-mode="pose"] #poseLib, body[data-mode="pose"] #posePanel { display: flex !important; }
+
+.poselib { flex: 1 1 300px; max-width: 330px; min-width: 270px; padding: 14px 12px; flex-direction: column; gap: 10px; }
+.poselib-body { display: flex; flex-direction: column; gap: 8px; overflow: auto; flex: 1 1 auto; min-height: 0; max-height: 640px; padding: 2px; }
+.poselib-body h3 { margin: 6px 0 0; font-size: 12px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
+.poselib .posegrid { grid-template-columns: repeat(3, minmax(0, 1fr)); max-height: none; overflow: visible; }
+.posetile img { aspect-ratio: 3 / 4; }
+.addtile { justify-content: space-between; border: 2px dashed var(--line2); background: none; }
+.addtile .plus { flex: 1; display: grid; place-items: center; aspect-ratio: 3 / 4; color: var(--accent); }
+.addtile .plus svg { width: 34px; height: 34px; stroke-width: 2.4; }
+.addtile:hover { border-color: var(--accent); background: var(--accent-bg); }
+.posesave { display: flex; gap: 6px; align-items: center; padding: 8px; border-radius: 8px; border: 1px solid var(--accent); background: var(--accent-bg); }
+.posesave input { flex: 1; min-width: 0; height: 34px; }
+.posesave .primary { height: 34px; padding: 0 12px; font-size: 13px; }
+
+.posepanel { flex-direction: column; gap: 12px; }
+.posepanel h3 { margin: 4px 0 0; font-size: 12px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
+.posepanel .xf.rot { grid-template-columns: 22px minmax(0, 1fr) 62px; }
+.xf .ax.x { color: #e5655f; } .xf .ax.y { color: #8fc66a; } .xf .ax.z { color: #5f9de5; }
+.pm-row { display: flex; gap: 6px; flex-wrap: wrap; }
+.pm-row button { flex: 1 1 0; min-height: 34px; padding: 0 8px; font-size: 12.5px; }
+.pm-checks { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12.5px; color: var(--text2); }
+.pm-ctx { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.pm-ctx button { min-height: 38px; padding: 0 8px; border-radius: 8px; border: 1px solid var(--line2); background: var(--raised); color: var(--text); font-size: 12.5px; text-align: center; }
+.pm-ctx button:hover { border-color: var(--accent); background: var(--accent-bg); }
+.small-btn { min-height: 30px; padding: 0 10px; font-size: 12px; }
+
+.ui-atelier .poselib { width: var(--drawer-w); max-width: none; min-width: 0; flex: none; background: #121418; border-right: 1px solid var(--line); padding: 16px 14px; overflow: hidden; }
+.ui-atelier .poselib .posegrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.ui-atelier .poselib-body { max-height: none; }
+/* vue étroite : la barre du bas reste sur une ligne (libellé Texture masqué, écarts réduits) */
+.viewport-panel .vp-main { container-type: inline-size; }
+@container (max-width: 860px) {
+  .vp-foot { gap: 8px; }
+  .vp-foot-left { gap: 10px; }
+  .vp-foot button.texbtn .tlbl { display: none; }
+  .vp-foot button.texbtn { padding: 0 8px; }
+  .lodhud button { min-width: 36px; padding: 0 6px; }
+}

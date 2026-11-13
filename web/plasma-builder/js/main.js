@@ -10,7 +10,9 @@ import { PRESETS, buildPreset, loadMyPoses } from './riglab/poses.js';
 import { orkSockets, SOCKET_TYPES } from './sockets.js';
 import { CATEGORIES, catById, Store, brickMeshes, refreshBrickMaterials, mat4, triCount } from './bricks.js';
 import { exportMerged, exportParts, exportJSON } from './io.js';
+import { brickMenu } from './brickmenu.js';
 import { applyTheme, savedTheme, SOCKET_ICONS } from './atelier.js';
+import { createPoseMode } from './posemode.js';
 
 // Le path tracing n'est proposé que dans l'app Windows (desktop/ : Electron expose window.plasmaDesktop).
 const DESKTOP = !!window.plasmaDesktop;
@@ -25,9 +27,10 @@ const TAGS = { BODY_high: 'skin', BODY_low: 'skin', HEAD_high: 'skin', HEAD_low:
 // placed : une brique par socket, { brick, xf } ; xf = décalage manuel par rapport au socket (cm, degrés).
 // Les sockets offerts par une brique posée s'appellent « socketParent>nom ».
 export function defaultXf() { return { p: [0, 0, 0], r: [0, 0, 0], s: 1, m: [false, false, false] }; }
-function freshState() { return { placed: {}, pose: null, poseId: 'garde', curl: { L: 1.1, R: 1.1 }, scale: 32 }; }
+// fingers : 'curl' = doigts réglés par la fermeture des mains, 'pose' = doigts tournés un par un (mode Pose)
+function freshState() { return { placed: {}, pose: null, poseId: 'garde', curl: { L: 1.1, R: 1.1 }, fingers: 'curl', scale: 32 }; }
 let state = freshState();
-const ui = { cat: 'weapon', sel: null, tool: 'select', step: 'asm', tab: 'T', rig: false, sockets: true, view: 1, shade: 'resin', quality: 'rt', search: '', lod: 'high', test: false, info: '', theme: savedTheme(), drawer: true };
+const ui = { mode: 'build', cat: 'weapon', sel: null, tool: 'select', step: 'asm', tab: 'T', rig: false, sockets: true, view: 1, shade: 'resin', quality: 'rt', search: '', lod: 'high', test: false, info: '', theme: savedTheme(), drawer: true };
 const STORE = 'plasmaork.builder';
 try {
   const saved = JSON.parse(localStorage.getItem(STORE) || 'null');
@@ -35,6 +38,7 @@ try {
   const n = localStorage.getItem('plasmaork.name'); if (n) $('projName').value = n;
   const u = JSON.parse(localStorage.getItem(STORE + '.ui') || '{}');
   if (u.lod) ui.lod = u.lod;
+  if (u.mode === 'pose') ui.mode = 'pose';
 } catch { /* stockage indisponible : on part de l'état par défaut */ }
 let renderSet = { ...RENDER_DEFAULTS };
 try { Object.assign(renderSet, JSON.parse(localStorage.getItem('plasmaork.render') || '{}')); if (renderSet.env === 'hdri') renderSet.env = 'studio'; } catch { /* idem */ }
@@ -141,6 +145,7 @@ function applyMaterials() {
   for (const [n, m] of Object.entries(model.meshes)) m.material = vp.material(TAGS[n] || 'skin');
   refreshBrickMaterials(model.root, vp, rec);
   testModel?.refresh();
+  poseMode?.refresh();
 }
 function setSelected(id) {
   ui.sel = id;
@@ -153,7 +158,7 @@ let hIndex = -1;
 function save() {
   try {
     localStorage.setItem(STORE, JSON.stringify(state));
-    localStorage.setItem(STORE + '.ui', JSON.stringify({ lod: ui.lod }));
+    localStorage.setItem(STORE + '.ui', JSON.stringify({ lod: ui.lod, mode: ui.mode }));
     localStorage.setItem('plasmaork.name', $('projName').value);
   } catch { /* ignoré */ }
 }
@@ -174,6 +179,7 @@ function travel(d) {
   rebuild();
   renderAll();
   syncUndo();
+  poseMode?.refresh();
 }
 function syncUndo() { $('undoBtn').disabled = hIndex <= 0; $('redoBtn').disabled = hIndex >= history.length - 1; }
 
@@ -183,15 +189,16 @@ function poseList() { return [...PRESETS.map(p => ({ id: 'preset:' + p.id, name:
 function applyPose() {
   if (state.pose) { model.setPose(state.pose); }
   else {
-    const p = PRESETS.find(x => 'preset:' + x.id === state.poseId) || PRESETS.find(x => x.id === state.poseId) || PRESETS[1];
+    const p = PRESETS.find(x => 'preset:' + x.id === state.poseId) || PRESETS.find(x => x.id === state.poseId) || PRESETS.find(x => x.id === 'garde');
     buildPreset(model, p);
   }
-  model.curl('L', state.curl.L); model.curl('R', state.curl.R);
+  if (state.fingers !== 'pose') { model.curl('L', state.curl.L); model.curl('R', state.curl.R); }
   model.root.updateMatrixWorld(true);
 }
 function setPose(entry) {
   if (entry.preset) { state.pose = null; state.poseId = entry.id; state.curl = { L: entry.preset.curl?.[0] || 0, R: entry.preset.curl?.[1] || 0 }; }
   else { state.pose = entry.mine.pose; state.poseId = entry.id; state.curl = { ...(entry.mine.curl || { L: 0, R: 0 }) }; }
+  state.fingers = 'curl';
   applyPose();
   commit();
   renderPoses(); renderOrk(); renderPrintInfo();
@@ -204,6 +211,7 @@ const VIEWS = [
   { name: 'Dos', dir: [-0.3, 0.2, -1] }, { name: 'Profil', dir: [1, 0.12, 0] },
 ];
 let figureThumbTimer = 0;
+const poseThumbs = new Map();   // id de pose -> vignette (bandeau Poses et bibliothèque du mode Pose)
 function scheduleFigureThumbs() { clearTimeout(figureThumbTimer); figureThumbTimer = setTimeout(renderFigureThumbs, 500); }
 function renderFigureThumbs() {
   if (!model || ui.test) return;
@@ -217,12 +225,18 @@ function renderFigureThumbs() {
   const views = VIEWS.map(v => thumbs.render(model.root, new THREE.Vector3(...v.dir), 1.0));
   thumbs.setSize(120, 170);
   const keep = { pose: model.getPose(), curl: { ...state.curl } };
-  const poses = poseList().map(p => {
+  poseMode?.highlight(false);
+  const list = poseList();
+  const poses = list.map(p => {
     if (p.preset) buildPreset(model, p.preset); else model.setPose(p.mine.pose);
     model.root.updateMatrixWorld(true);
-    return thumbs.render(model.root, new THREE.Vector3(0.45, 0.15, 1), 1.0);
+    const url = thumbs.render(model.root, new THREE.Vector3(0.45, 0.15, 1), 1.0);
+    poseThumbs.set(p.id, url);
+    return url;
   });
   model.setPose(keep.pose);
+  poseMode?.highlight(true);
+  document.querySelectorAll('[data-pose-thumb]').forEach(img => { const u = poseThumbs.get(img.dataset.poseThumb); if (u) img.src = u; });
   for (const [n, m] of Object.entries(model.meshes)) m.visible = vis[n];
   setSelected(sel);
   vp.scene.add(model.root);
@@ -243,21 +257,22 @@ function renderLibrary() {
   const list = all.filter(r => !q || r.name.toLowerCase().includes(q) || (r.tags || []).some(t => t.toLowerCase().includes(q)));
   $('libCount').textContent = all.length;
   const onSel = id => Object.values(state.placed).some(p => p.brick === id);
-  $('libGrid').innerHTML = list.length ? list.map(r => `<button type="button" class="tile" title="Clic : poser · Glisser : choisir le socket" data-brick="${r.id}" aria-pressed="${onSel(r.id)}">${r.lods.high?.length ? '<em class="badge">HD</em>' : ''}${r.thumb ? `<img alt="" draggable="false" src="${r.thumb}">` : '<span class="ph"></span>'}<span>${esc(r.name)}</span></button>`).join('')
-    : `<div class="libempty">${all.length ? 'Aucune brique ne correspond à la recherche.' : `Pas encore de brique dans « ${cat.label} ».<a href="import.html">Importer une brique</a>`}</div>`;
+  $('libGrid').innerHTML = list.length ? list.map(r => `<button type="button" class="tile" title="Clic : poser · Glisser : choisir le socket" data-brick="${r.id}" aria-pressed="${onSel(r.id)}">${r.lods.high?.length ? '<em class="badge">HD</em>' : ''}${r.thumb ? `<img alt="" draggable="false" src="${r.thumb}">` : '<span class="ph"></span>'}<span data-noi18n>${esc(r.name)}</span></button>`).join('')
+    : `<div class="libempty">${all.length ? 'Aucune brique ne correspond à la recherche.' : `${tr(`Pas encore de brique dans « ${cat.label} ».`, `No brick in "${cat.label}" yet.`)}<a href="import.html">${tr('Importer une brique', 'Import a brick')}</a>`}</div>`;
 }
 function renderSteps() {
   $('steps').querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.step === ui.step)));
-  $('tools').querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.tool === ui.tool)));
+  $('tools').querySelectorAll('[data-tool]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.tool === ui.tool)));
   $('socketsBtn').setAttribute('aria-pressed', String(ui.sockets));
   $('rigBtn').setAttribute('aria-pressed', String(ui.rig));
   $('shading').querySelectorAll('[data-shade]').forEach(b => b.classList.toggle('on', b.dataset.shade === ui.shade));
+  $('texBtn').setAttribute('aria-pressed', String(ui.shade === 'paint'));
   $('qualitySel').value = ui.quality;
   document.body.dataset.step = ui.step;
   $('scaleSel').value = String(state.scale);
 }
 function renderViews() {
-  if (!$('views').children.length) $('views').innerHTML = VIEWS.map((v, i) => `<button type="button" data-view="${i}" aria-label="Vue ${v.name}" title="${v.name}"><img alt=""></button>`).join('');
+  if (!$('views').children.length) $('views').innerHTML = VIEWS.map((v, i) => `<button type="button" data-view="${i}" aria-label="${tr('Vue', 'View')} ${plasmaT(v.name)}" title="${plasmaT(v.name)}"><img alt=""></button>`).join('');
   $('views').querySelectorAll('button').forEach((b, i) => b.setAttribute('aria-pressed', String(i === ui.view)));
 }
 // Pastilles des sockets dans le viewport (libres : anneau creux ; occupés : plein).
@@ -269,7 +284,7 @@ function renderPins() {
 // Interface Atelier : la liste Équipement (un bouton par socket, mêmes numéros que les pastilles).
 function renderEquip() {
   const list = [...sockets.values()];
-  $('equipCount').textContent = `${list.filter(s => state.placed[s.id]).length} / ${list.length} posés`;
+  $('equipCount').textContent = tr(`${list.filter(s => state.placed[s.id]).length} / ${list.length} posés`, `${list.filter(s => state.placed[s.id]).length} / ${list.length} placed`);
   $('equipList').innerHTML = list.map((s, n) => {
     const p = state.placed[s.id], r = p && rec(p.brick);
     const sub = r ? esc(r.name) : s.id === 'head' && !state.placed.head ? 'Tête d\u2019origine' : 'Vide · ' + esc(SOCKET_TYPES[s.type] || s.type);
@@ -309,21 +324,21 @@ function renderPrintInfo() {
   if (!model) return;
   const box = new THREE.Box3().setFromObject(model.root);
   const h = box.isEmpty() ? 0 : (box.max.y - box.min.y) * mmPerUnit();
-  $('printHeight').textContent = `${h.toFixed(1)} mm (échelle ${state.scale} mm aux yeux)`;
+  $('printHeight').textContent = tr(`${h.toFixed(1)} mm (échelle ${state.scale} mm aux yeux)`, `${h.toFixed(1)} mm (${state.scale} mm scale at eye level)`);
   let t = 0;
   model.root.traverseVisible(m => { if (m.isMesh && !m.userData.helper) t += (m.geometry.index ? m.geometry.index.count : m.geometry.attributes.position.count) / 3; });
-  $('printTris').textContent = Math.round(t).toLocaleString('fr-FR');
-  $('printParts').textContent = `ork + ${Object.keys(state.placed).length} brique${Object.keys(state.placed).length > 1 ? 's' : ''}`;
+  $('printTris').textContent = Math.round(t).toLocaleString(window.plasmaLang === 'fr' ? 'fr-FR' : 'en-US');
+  $('printParts').textContent = tr(`ork + ${Object.keys(state.placed).length} brique${Object.keys(state.placed).length > 1 ? 's' : ''}`, `ork + ${Object.keys(state.placed).length} brick${Object.keys(state.placed).length > 1 ? 's' : ''}`);
   if (!ui.test) ui.info = `${Math.round(t / 1000)}k triangles · ${h.toFixed(0)} mm`;
   renderInfo();
   $('asmInfo').textContent = `${Math.round(t / 1000)}k triangles`;
 }
-const QUALITY = { rt: 'Temps réel', hq: 'Haute qualité', bhq: 'HQ BrickIt', pt: 'Path tracing' };
+const QUALITY = { rt: tr('Temps réel', 'Real time'), hq: tr('Haute qualité', 'High quality'), bhq: 'HQ BrickIt', pt: 'Path tracing' };
 function renderInfo() {
   const s = vp.settings;
   let q = QUALITY[ui.quality];
   if (ui.quality === 'bhq' && vp.gi) q += ` · GI ${vp.gi.stats.state}`;
-  if (ui.quality === 'pt') q += vp.ptLoading ? ' · chargement…' : vp.spp ? ` · ${Math.floor(vp.spp)} spp` : ' · préparation…';
+  if (ui.quality === 'pt') q += vp.ptLoading ? tr(' · chargement…', ' · loading…') : vp.spp ? ` · ${Math.floor(vp.spp)} spp` : tr(' · préparation…', ' · preparing…');
   $('vpInfo').textContent = `${q} · ${TONEMAPPERS[s.tonemapper].name}\n${ui.info || ''}`;
 }
 const R_FMT = { ev: v => (v > 0 ? '+' : '') + (+v).toFixed(1) + ' EV', vignette: v => (+v).toFixed(2), envIntensity: v => (+v).toFixed(2), envRotation: v => Math.round(v * 180 / Math.PI) + '°', bounces: v => v, filterGlossy: v => (+v).toFixed(2), giStrength: v => (+v).toFixed(2), aoStrength: v => (+v).toFixed(2), aoRadius: v => (+v).toFixed(2) };
@@ -334,7 +349,7 @@ function renderRenderPanel() {
   $('bhqSet').hidden = ui.quality !== 'bhq';
   const hdriOpt = $('renderSet').querySelector('option[value="hdri"]');
   hdriOpt.disabled = !vp.studio.hdri;
-  hdriOpt.textContent = vp.studio.hdri ? 'HDRI · ' + vp.studio.hdri.name : 'HDRI (à charger)';
+  hdriOpt.textContent = vp.studio.hdri ? 'HDRI · ' + vp.studio.hdri.name : tr('HDRI (à charger)', 'HDRI (to load)');
 }
 function setRender(patch) {
   vp.setRender(patch);
@@ -349,7 +364,7 @@ function renderOrk() {
   for (const side of ['L', 'R']) { $('curl' + side).value = state.curl[side]; $('curl' + side + 'Out').textContent = Math.round(state.curl[side] / 1.6 * 100) + ' %'; }
   if (!model) return;
   const tris = n => Math.round(model.meshes[n].geometry.index.count / 3 / 1000) + 'k';
-  $('orkInfo').textContent = `Ork Boy riggé : ${model.bones.length} joints, low ${tris('BODY_low')} / high ${tris('BODY_high')} triangles.${state.placed.head ? ' Tête d\'origine masquée (brique de tête posée).' : ''}`;
+  $('orkInfo').textContent = tr(`Ork Boy riggé : ${model.bones.length} joints, low ${tris('BODY_low')} / high ${tris('BODY_high')} triangles.${state.placed.head ? ' Tête d\'origine masquée (brique de tête posée).' : ''}`, `Rigged Ork Boy: ${model.bones.length} joints, low ${tris('BODY_low')} / high ${tris('BODY_high')} triangles.${state.placed.head ? ' Original head hidden (head brick placed).' : ''}`);
 }
 function renderAssembly() {
   const ids = placedOrder();
@@ -360,7 +375,7 @@ function renderAssembly() {
 }
 function renderPoses() {
   const list = poseList();
-  if ($('poseRow').children.length !== list.length) $('poseRow').innerHTML = list.map(p => `<div class="card"><button type="button" class="thumb" data-pose="${esc(p.id)}" aria-label="Pose ${esc(p.name)}"><img alt=""></button><span class="lbl">${esc(p.name)}</span></div>`).join('');
+  if ($('poseRow').children.length !== list.length) $('poseRow').innerHTML = list.map(p => `<div class="card"><button type="button" class="thumb" data-pose="${esc(p.id)}" aria-label="Pose ${esc(plasmaT(p.name))}"><img alt=""></button><span class="lbl">${esc(p.name)}</span></div>`).join('');
   $('poseRow').querySelectorAll('[data-pose]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.pose === state.poseId)));
   $('poseName').textContent = list.find(p => p.id === state.poseId)?.name || '';
 }
@@ -402,7 +417,7 @@ function removeAt(sid) {
 }
 function renderGIInfo() {
   const g = vp.gi;
-  $('giInfo').textContent = g ? `${g.count} sondes (${g.dims.x}×${g.dims.y}×${g.dims.z}) · ${g.stats.state}` : '';
+  $('giInfo').textContent = g ? tr(`${g.count} sondes (${g.dims.x}×${g.dims.y}×${g.dims.z}) · ${g.stats.state}`, `${g.count} probes (${g.dims.x}×${g.dims.y}×${g.dims.z}) · ${g.stats.state}`) : '';
 }
 function setStep(step) {
   ui.step = step;
@@ -410,9 +425,40 @@ function setStep(step) {
   if (step === 'asm') { ui.sockets = true; ui.rig = false; ui.tab = 'T'; }
   if (step === 'pose') { ui.sockets = false; ui.rig = true; }
   if (step === 'render') { ui.sockets = false; ui.rig = false; ui.tab = 'V'; if (ui.quality === 'rt') setQuality('hq'); }
-  if (skel) skel.visible = ui.rig;
+  if (skel) skel.visible = ui.rig && ui.mode !== 'pose';
   renderSteps(); renderPins(); renderCustomize();
 }
+// ---------- mode Build / Pose ----------
+let poseMode = null;
+function setMode(mode) {
+  ui.mode = mode;
+  document.body.dataset.mode = mode;
+  $('modeSel').querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.mode === mode)));
+  save();
+  if (!poseMode) return;
+  if (mode === 'pose') {
+    if (hold.active) hold.cancel();
+    vp.gizmo.detach();
+    setSelected(null);
+    if (skel) skel.visible = false;
+    poseMode.enter();
+  } else {
+    poseMode.leave();
+    if (skel) skel.visible = ui.rig;
+    renderAll();
+    attachGizmo();
+  }
+}
+// une pose modifiée dans le mode Pose (final : fin du geste)
+function poseEdited(final) {
+  state.pose = model.getPose();
+  state.poseId = 'custom';
+  if (!final) return;
+  commit();
+  renderPoses(); renderPrintInfo();
+  scheduleFigureThumbs();
+}
+
 function setQuality(q) {
   ui.quality = q;
   vp.setQuality(q).then(renderInfo, err => { console.error(err); toast('Path tracing indisponible : ' + (err.message || err)); setQuality('hq'); });
@@ -453,7 +499,7 @@ let hiddenAt = null;
 function showHidden() { if (hiddenAt && inst[hiddenAt]) inst[hiddenAt].holder.visible = true; hiddenAt = null; }
 function startHold(r, auto) {
   const cands = targetsFor(r, auto);
-  if (!cands.length) { toast(`Aucun socket « ${SOCKET_TYPES[r.plug.type] || r.plug.type} » pour ${r.name}`); return; }
+  if (!cands.length) { toast(tr(`Aucun socket « ${SOCKET_TYPES[r.plug.type] || r.plug.type} » pour ${r.name}`, `No "${SOCKET_TYPES[r.plug.type] || r.plug.type}" socket for ${r.name}`)); return; }
   vp.gizmo.detach();
   hold.start({
     candidates: cands, auto,
@@ -465,7 +511,7 @@ function startHold(r, auto) {
       const g = mountBrick(r, sockets.get(id), state.placed[id]?.brick === r.id ? state.placed[id].xf : defaultXf(), hold.ghostMat);
       return [g.holder];
     },
-    onDrop: id => { showHidden(); place(id, r.id); toast(`${r.name} posé sur ${sockets.get(id).label}`); },
+    onDrop: id => { showHidden(); place(id, r.id); toast(tr(`${r.name} posé sur ${sockets.get(id).label}`, `${r.name} placed on ${sockets.get(id).label}`)); },
     onCancel: () => { showHidden(); attachGizmo(); },
   });
 }
@@ -501,11 +547,11 @@ async function doExport(kind) {
   try {
     if (kind === 'merged') {
       const tris = await exportMerged([...orkPrintMeshes(), ...placedOrder().flatMap(brickPrintMeshes)], mmPerUnit(), projectName());
-      toast(`STL exporté : ${Math.round(tris).toLocaleString('fr-FR')} triangles, échelle ${state.scale} mm`);
+      toast(tr(`STL exporté : ${Math.round(tris).toLocaleString(window.plasmaLang === 'fr' ? 'fr-FR' : 'en-US')} triangles, échelle ${state.scale} mm`, `STL exported: ${Math.round(tris).toLocaleString(window.plasmaLang === 'fr' ? 'fr-FR' : 'en-US')} triangles, ${state.scale} mm scale`));
     } else if (kind === 'parts') {
       const groups = [{ id: 'ork', objects: orkPrintMeshes() }, ...placedOrder().map(sid => ({ id: sid.replace(/>/g, '-') + '_' + rec(state.placed[sid].brick).name.replace(/[^\w-]+/g, '_'), objects: brickPrintMeshes(sid) }))];
       const n = await exportParts(groups, mmPerUnit(), projectName());
-      toast(`${n} pièces STL exportées dans un ZIP`);
+      toast(tr(`${n} pièces STL exportées dans un ZIP`, `${n} STL pieces exported in a ZIP`));
     } else {
       await exportJSON({ name: $('projName').value, app: 'plasma-ork-builder', version: 2, state, bricks: Object.fromEntries([...new Set(Object.values(state.placed).map(p => p.brick))].map(id => [id, rec(id).name])) }, projectName());
       toast('Projet exporté');
@@ -533,6 +579,7 @@ document.addEventListener('click', e => {
   else if (d.clear) removeAt(d.clear);
   else if (d.tool) { ui.tool = d.tool; attachGizmo(); renderSteps(); }
   else if (d.step) setStep(d.step);
+  else if (d.mode) { if (d.mode !== ui.mode) setMode(d.mode); }
   else if (d.tab) { ui.tab = d.tab; renderCustomize(); }
   else if (d.view) { ui.view = +d.view; vp.frameObject(model.root, new THREE.Vector3(...VIEWS[ui.view].dir)); renderViews(); }
   else if (d.pose) { const p = poseList().find(x => x.id === d.pose); if (p) setPose(p); }
@@ -548,8 +595,9 @@ $('undoBtn').addEventListener('click', () => travel(-1));
 $('redoBtn').addEventListener('click', () => travel(1));
 $('frameBtn').addEventListener('click', () => model && vp.frameObject(model.root));
 $('socketsBtn').addEventListener('click', () => { ui.sockets = !ui.sockets; renderSteps(); renderPins(); });
-$('rigBtn').addEventListener('click', () => { ui.rig = !ui.rig; if (skel) skel.visible = ui.rig; renderSteps(); });
+$('rigBtn').addEventListener('click', () => { ui.rig = !ui.rig; if (skel) skel.visible = ui.rig && ui.mode !== 'pose'; renderSteps(); });
 $('lightBtn').addEventListener('click', () => vp.rotateLight());
+$('texBtn').addEventListener('click', () => { ui.shade = ui.shade === 'paint' ? 'resin' : 'paint'; applyMaterials(); renderSteps(); });
 $('fullBtn').addEventListener('click', () => { const el = $('vp'); if (document.fullscreenElement) document.exitFullscreen(); else el.requestFullscreen?.(); });
 $('qualitySel').addEventListener('change', e => setQuality(e.target.value));
 $('scaleSel').addEventListener('change', e => { state.scale = +e.target.value; vp.unitsPerMeter = eyeUnits() / (state.scale / 1000); vp.configurePT(); commit(); renderPrintInfo(); });
@@ -576,7 +624,7 @@ $('sceneSel').addEventListener('change', async e => {
     if (testModel.maps[1001] && ui.shade !== 'paint') { ui.shade = 'paint'; applyMaterials(); renderSteps(); }
     let tris = 0;
     testModel.root.traverse(m => { if (m.isMesh) tris += m.geometry.index.count / 3; });
-    ui.info = `Modèle test ${testModel.def.label} · ${Math.round(tris / 1000)}k triangles`;
+    ui.info = tr(`Modèle test ${testModel.def.label} · ${Math.round(tris / 1000)}k triangles`, `Test model ${testModel.def.label} · ${Math.round(tris / 1000)}k triangles`);
   } else renderPrintInfo();
   model.root.visible = !test;
   vp.gizmo.detach();
@@ -597,16 +645,16 @@ $('texInput').addEventListener('change', async e => {
     const udim = await testModel.loadMapFile(f);
     if (ui.shade !== 'paint') { ui.shade = 'paint'; applyMaterials(); renderSteps(); }
     testModel.refresh();
-    toast(`${f.name} appliquée (UDIM ${udim})`);
-  } catch (err) { console.error(err); toast(`Impossible de lire ${f.name}`); }
+    toast(tr(`${f.name} appliquée (UDIM ${udim})`, `${f.name} applied (UDIM ${udim})`));
+  } catch (err) { console.error(err); toast(tr(`Impossible de lire ${f.name}`, `Couldn't read ${f.name}`)); }
 });
 $('hdriInput').addEventListener('change', async e => {
   const f = e.target.files[0];
   e.target.value = '';
   if (!f) { renderRenderPanel(); return; }
-  toast(`Chargement de ${f.name}…`);
-  try { await vp.setHDRI(f); setRender({}); toast(`HDRI ${f.name} chargé${vp.studio.hdri.sun ? ' (soleil extrait en lumière ombrée)' : ''}`); }
-  catch (err) { console.error(err); toast(`Impossible de lire ${f.name}`); renderRenderPanel(); }
+  toast(tr(`Chargement de ${f.name}…`, `Loading ${f.name}…`));
+  try { await vp.setHDRI(f); setRender({}); toast(tr(`HDRI ${f.name} chargé${vp.studio.hdri.sun ? ' (soleil extrait en lumière ombrée)' : ''}`, `HDRI ${f.name} loaded${vp.studio.hdri.sun ? ' (sun extracted as a shadowed light)' : ''}`)); }
+  catch (err) { console.error(err); toast(tr(`Impossible de lire ${f.name}`, `Couldn't read ${f.name}`)); renderRenderPanel(); }
 });
 $('gridChk').addEventListener('change', e => { vp.grid.visible = e.target.checked; });
 $('baseChk').addEventListener('change', e => { if (inst.base) inst.base.holder.visible = e.target.checked; renderPrintInfo(); });
@@ -636,6 +684,7 @@ $('xf').addEventListener('change', e => onXfInput(e, true));
 
 // Gizmo : le réglage manuel de la brique (relatif à son socket).
 vp.gizmo.addEventListener('objectChange', () => {
+  if (ui.mode === 'pose') return;
   const o = vp.gizmo.object, p = state.placed[ui.sel];
   if (!o || !p) return;
   p.xf.p = o.position.toArray().map(v => +v.toFixed(3));
@@ -643,14 +692,14 @@ vp.gizmo.addEventListener('objectChange', () => {
   p.xf.s = +Math.abs(o.scale.y).toFixed(3);
   applyXf(o, p.xf);
 });
-vp.gizmo.addEventListener('mouseUp', () => { commit(); renderCustomize(); scheduleFigureThumbs(); });
+vp.gizmo.addEventListener('mouseUp', () => { if (ui.mode === 'pose') return; commit(); renderCustomize(); scheduleFigureThumbs(); });
 
 // Sélection au clic dans le viewport : une brique posée, ou rien.
 const ray = new THREE.Raycaster();
 let downAt = null;
 $('vpCanvas').addEventListener('pointerdown', e => { downAt = e.button === 0 ? [e.clientX, e.clientY] : null; });
 $('vpCanvas').addEventListener('pointerup', e => {
-  if (!model || ui.test || !downAt || Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]) > 4 || vp.gizmo.dragging) return;
+  if (!model || ui.test || ui.mode === 'pose' || !downAt || Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]) > 4 || vp.gizmo.dragging) return;
   const r = e.target.getBoundingClientRect();
   ray.setFromCamera(new THREE.Vector2((e.clientX - r.left) / r.width * 2 - 1, -(e.clientY - r.top) / r.height * 2 + 1), vp.camera);
   const meshes = [];
@@ -696,10 +745,17 @@ document.addEventListener('keydown', e => {
   if ((e.ctrlKey || e.metaKey) && k === 'z') { e.preventDefault(); travel(e.shiftKey ? 1 : -1); return; }
   if ((e.ctrlKey || e.metaKey) && k === 'y') { e.preventDefault(); travel(1); return; }
   if (e.ctrlKey || e.metaKey || e.altKey) return;
+  if (ui.mode === 'pose') {
+    if (poseMode?.onKey(e)) return;
+    if (k === '4' || k === '5' || k === '6') { ui.shade = { 4: 'wire', 5: 'resin', 6: 'paint' }[k]; applyMaterials(); renderSteps(); }
+    return;
+  }
   // comme Maya et le Rig Lab : W déplacer, E / R tourner, Q sélection, S échelle
   const tool = { q: 'select', w: 'translate', g: 'translate', e: 'rotate', r: 'rotate', s: 'scale' }[k];
   if (tool) { ui.tool = tool; attachGizmo(); renderSteps(); }
-  else if (k === 'f' && model) vp.frameObject(model.root);
+  else if (k === 'f' && model) vp.frameObject(ui.sel && inst[ui.sel] ? inst[ui.sel].meshes : model.root);   // la brique sélectionnée, sinon l'ork
+  // affichage comme Maya : 4 filaire, 5 résine, 6 texture
+  else if (k === '4' || k === '5' || k === '6') { ui.shade = { 4: 'wire', 5: 'resin', 6: 'paint' }[k]; applyMaterials(); renderSteps(); }
   else if (k === 'delete' || k === 'backspace') $('removeBtn').click();
 });
 
@@ -708,8 +764,9 @@ const tmp = new THREE.Vector3();
 let infoT = 0;
 vp.onFrame = dt => {
   hold.update(dt, applySquash);
+  poseMode?.update();
   if ((ui.quality === 'pt' || ui.quality === 'bhq') && (infoT += dt) > 0.25) { infoT = 0; renderInfo(); renderGIInfo(); }
-  if (!model || !ui.sockets) return;
+  if (!model || !ui.sockets || ui.mode === 'pose') return;
   const el = $('vp'), w = el.clientWidth, h = el.clientHeight;
   for (const b of $('pins').children) {
     if (!sockets.has(b.dataset.socket)) continue;
@@ -720,6 +777,20 @@ vp.onFrame = dt => {
     b.style.top = ((1 - tmp.y) / 2 * h) + 'px';
   }
 };
+
+// Clic droit sur une vignette : renommer, supprimer (retirée aussi de la figurine).
+brickMenu($('libGrid'), {
+  get: id => recs.get(id),
+  toast,
+  edit: r => { location.href = 'import.html?edit=' + encodeURIComponent(r.id); },
+  changed: async kind => {
+    const n = Object.keys(state.placed).length;
+    await loadLibrary();
+    rebuild();
+    if (kind === 'delete' && Object.keys(state.placed).length !== n) commit();
+    renderAll();
+  },
+});
 
 // La bibliothèque peut changer dans l'importeur (autre onglet) : on la relit au retour sur la page.
 async function loadLibrary() {
@@ -738,6 +809,8 @@ document.addEventListener('visibilitychange', async () => {
 
 // ---------- démarrage ----------
 applyTheme(ui.theme);
+document.body.dataset.mode = ui.mode;
+$('modeSel').querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.mode === ui.mode)));
 renderSteps(); renderViews(); renderOrk(); renderPoses(); renderRenderPanel(); syncUndo();
 try {
   const [m] = await Promise.all([
@@ -750,7 +823,10 @@ try {
   vp.unitsPerMeter = eyeUnits() / (state.scale / 1000);
   orkSocketDefs = orkSockets(model);   // au repos, avant la pose
   skel = new THREE.SkeletonHelper(model.root);
-  skel.material.color.set(0xf0435a);
+  // couleur d'accent du thème de faction (theme.js), suivie quand on change de faction
+  const accent3d = () => skel.material.color.set(getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#f0435a');
+  accent3d();
+  addEventListener('plasma-faction', accent3d);
   skel.material.depthTest = false;
   skel.material.transparent = true;
   skel.renderOrder = 10;
@@ -763,9 +839,19 @@ try {
   commit();
   renderAll();
   setStep('asm');
+  poseMode = createPoseMode({
+    vp, model, toast,
+    state: () => state,
+    edited: poseEdited,
+    list: poseList,
+    apply: setPose,
+    thumb: id => poseThumbs.get(id),
+    listChanged: () => { $('poseRow').innerHTML = ''; renderPoses(); scheduleFigureThumbs(); },
+  });
+  setMode(ui.mode);
   vp.frameObject(model.root, new THREE.Vector3(0.55, 0.28, 1), true);
   $('loading').hidden = true;
-  window.builder = { model, vp, get state() { return state; }, ui, sockets: () => sockets, inst, recs, place, select, startHold, hold };
+  window.builder = { model, vp, get state() { return state; }, ui, sockets: () => sockets, inst, recs, place, select, startHold, hold, setMode, poseMode };
 } catch (err) {
   console.error(err);
   const l = $('loading');

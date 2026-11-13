@@ -4,6 +4,7 @@
 // plus une translation du bassin.
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { applySlots } from './meshslots.js';
 
 const HIPS = 'QuickRigCharacter_Hips';
 const Q = n => 'QuickRigCharacter_' + n;
@@ -42,14 +43,17 @@ export const CHAINS = {
   footR: [Q('LeftUpLeg1'), Q('LeftLeg1'), Q('LeftFoot1')],
 };
 
+// Libellés traduits par i18n.js (plasmaT) quand l'interface est en anglais ; côté G / D devient L / R.
+const T = s => (globalThis.plasmaT ? globalThis.plasmaT(s) : s);
+const SIDE = globalThis.plasmaLang === 'fr' ? { L: 'G', R: 'D' } : { L: 'L', R: 'R' };
 export function label(name) {
   for (const side of ['L', 'R']) {
     const f = FINGERS[side].findIndex(c => c.includes(name));
-    if (f >= 0) return `${FINGER_NAMES[f]} ${FINGERS[side][f].indexOf(name) + 1} ${side === 'L' ? 'G' : 'D'}`;
+    if (f >= 0) return `${T(FINGER_NAMES[f])} ${FINGERS[side][f].indexOf(name) + 1} ${SIDE[side]}`;
   }
   const g = GROUPS.find(g => g.bones.includes(name));
-  const side = g && /L$/.test(g.id) ? ' G' : g && /R$/.test(g.id) ? ' D' : '';
-  return (LABELS[name] || name) + side;
+  const side = g && /L$/.test(g.id) ? ' ' + SIDE.L : g && /R$/.test(g.id) ? ' ' + SIDE.R : '';
+  return T(LABELS[name] || name) + side;
 }
 
 const _q = new THREE.Quaternion(), _q2 = new THREE.Quaternion(), _v = new THREE.Vector3(), _v2 = new THREE.Vector3(), _v3 = new THREE.Vector3();
@@ -65,7 +69,10 @@ export class OrkModel {
       const bin = Uint8Array.from(atob((await res.text()).trim()), c => c.charCodeAt(0));
       gltf = await loader.parseAsync(bin.buffer, '');
     }
-    return new OrkModel(gltf);
+    const model = new OrkModel(gltf);
+    // meshes remplacés dans le Rig Lab (Meshes) : même rig, autre maillage
+    await applySlots(model);
+    return model;
   }
 
   constructor(gltf) {

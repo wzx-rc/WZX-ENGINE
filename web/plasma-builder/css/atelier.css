@@ -25,7 +25,7 @@ button.icon.framed[aria-expanded="true"] { border-color: var(--accent); color: v
 .ui-atelier .steps button::before { content: counter(step); width: 20px; height: 20px; border-radius: 50%; border: 1px solid #3a3e46; display: grid; place-items: center; font-size: 11px; font-weight: 600; }
 .ui-atelier .steps button:hover { color: var(--text); }
 .ui-atelier .steps button[aria-pressed="true"] { background: var(--raised); color: #fff; border: 0; }
-.ui-atelier .steps button[aria-pressed="true"]::before { background: var(--accent); border-color: var(--accent); color: #16070a; }
+.ui-atelier .steps button[aria-pressed="true"]::before { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
 
 /* Corps : Équipement | tiroir bibliothèque | vue | inspecteur */
 .ui-atelier .body { flex-wrap: nowrap; gap: 0; padding: 0; min-height: 0; }
@@ -43,7 +43,7 @@ button.icon.framed[aria-expanded="true"] { border-color: var(--accent); color: v
 .equip-list { display: flex; flex-direction: column; gap: 4px; }
 .equip-row { display: flex; align-items: center; gap: 10px; min-height: 52px; padding: 6px 8px; border-radius: 10px; border: 1px solid transparent; background: none; text-align: left; color: var(--text); }
 .equip-row:hover { background: rgba(255,255,255,.04); }
-.equip-row[aria-pressed="true"] { border-color: var(--accent); background: rgba(240,67,90,.12); }
+.equip-row[aria-pressed="true"] { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
 .equip-ic { width: 36px; height: 36px; flex: none; display: grid; place-items: center; border-radius: 8px; background: #1a1c21; border: 1px solid var(--line2); }
 .equip-ic img { width: 22px; height: 22px; display: block; opacity: .9; }
 .equip-row.fitted .equip-ic { border-color: #3d4a3d; }
@@ -54,7 +54,7 @@ button.icon.framed[aria-expanded="true"] { border-color: var(--accent); color: v
 .equip-txt small { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .equip-row.fitted small { color: var(--ok); }
 .equip-n { width: 22px; height: 22px; flex: none; border-radius: 50%; display: grid; place-items: center; font-size: 11px; font-weight: 600; background: #24272d; color: var(--text2); }
-.equip-row[aria-pressed="true"] .equip-n { background: var(--accent); color: #16070a; }
+.equip-row[aria-pressed="true"] .equip-n { background: var(--accent); color: var(--accent-ink); }
 .equip-hint { margin: auto 8px 0; padding-top: 12px; border-top: 1px solid var(--line); line-height: 1.45; }
 
 /* Bibliothèque en tiroir */
@@ -86,7 +86,7 @@ button.icon.framed[aria-expanded="true"] { border-color: var(--accent); color: v
 .floatbar { position: absolute; z-index: 4; left: 50%; bottom: 18px; transform: translateX(-50%); display: flex; align-items: center; gap: 6px; padding: 6px; border-radius: 12px; background: rgba(14,15,18,.92); border: 1px solid #23262c; box-shadow: 0 10px 30px rgba(0,0,0,.4); }
 .floatbar .tools, .floatbar .btngroup { flex-direction: row; padding: 0; border: 0; background: none; gap: 4px; }
 .floatbar .tools button, .floatbar .btngroup button.icon { width: 40px; height: 40px; border: 0; border-radius: 8px; }
-.floatbar .tools button[aria-pressed="true"], .floatbar .btngroup button.icon.on { background: rgba(240,67,90,.16); color: #ff8fa0; }
+.floatbar .tools button[aria-pressed="true"], .floatbar .btngroup button.icon.on { background: var(--accent-tint); color: var(--accent-soft); }
 .floatbar .btngroup { padding-left: 6px; margin-left: 2px; border-left: 1px solid var(--line2); border-radius: 0; }
 .floatbar .select { height: 40px; margin-left: 2px; border: 0; background: #1a1c21; }
 .floatbar .select select { font-weight: 600; }
@@ -98,7 +98,7 @@ button.icon.framed[aria-expanded="true"] { border-color: var(--accent); color: v
 .ui-atelier .pin.free b { border-style: dashed; }
 .ui-atelier .pin span { display: none; position: absolute; left: 100%; top: 50%; transform: translateY(-50%); white-space: nowrap; margin-left: 6px; padding: 4px 10px; border-radius: 6px; background: #0e0f12; border: 1px solid var(--line2); font-size: 12px; }
 .ui-atelier .pin:hover span, .ui-atelier .pin[aria-pressed="true"] span { display: block; }
-.ui-atelier .pin[aria-pressed="true"] b { background: var(--accent); border-color: var(--accent); color: #16070a; }
+.ui-atelier .pin[aria-pressed="true"] b { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
 .ui-atelier .pin[aria-pressed="true"] span { border-color: var(--accent); }
 
 /* Inspecteur contextuel */
