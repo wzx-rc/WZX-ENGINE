@@ -8,6 +8,7 @@
 import * as THREE from 'three';
 import { CHAINS, GROUPS, label } from './riglab/model.js';
 import { PRESETS, MY_POSES, loadMyPoses, armTo, ARM } from './riglab/poses.js';
+import { createControls } from './riglab/controls.js';
 
 const $ = id => document.getElementById(id);
 const DEG = THREE.MathUtils.RAD2DEG;
@@ -28,9 +29,9 @@ const SIDE_BONES = {
 export function createPoseMode(opts) {
   const { vp, model, toast } = opts;
   const gizmo = vp.gizmo;
-  const ui = { active: false, sel: null, hover: null, tool: 'fk', sym: false, pins: true, saving: false };
+  const ui = { active: false, sel: null, hover: null, tool: 'fk', sym: false, pins: true, saving: false, ctrls: true, bones: true, hoverCtrl: null };
   try { Object.assign(ui, JSON.parse(localStorage.getItem('plasmaork.builder.posemode') || '{}'), { active: false, sel: null, hover: null, saving: false }); } catch { /* défaut */ }
-  const keep = () => { try { localStorage.setItem('plasmaork.builder.posemode', JSON.stringify({ tool: ui.tool, sym: ui.sym, pins: ui.pins })); } catch { /* ignoré */ } };
+  const keep = () => { try { localStorage.setItem('plasmaork.builder.posemode', JSON.stringify({ tool: ui.tool, sym: ui.sym, pins: ui.pins, ctrls: ui.ctrls, bones: ui.bones })); } catch { /* ignoré */ } };
 
   // ------------------------------------------------------------ surbrillance de l'influence (comme le Rig Lab)
   const ACCENT = new THREE.Color(cssAccent());
@@ -88,8 +89,12 @@ export function createPoseMode(opts) {
   viz.add(lines);
   const _p = new THREE.Vector3();
   const posed = b => b.quaternion.angleTo(b.userData.restQ) > 1e-3 || (b.name === HIPS && b.position.distanceToSquared(b.userData.restP) > 1e-6);
+  // contrôleurs façon Maya (cercles FK, boîtes / rectangles IK, carré du bassin)
+  const controls = createControls(model, vp);
   function updateViz() {
     if (!ui.active) return;
+    controls.update(ui.sel, ui.tool, ui.hoverCtrl);
+    viz.visible = ui.bones;
     const pos = lineGeo.attributes.position;
     model.bones.forEach((b, i) => {
       const s = spheres[i];
@@ -168,7 +173,7 @@ export function createPoseMode(opts) {
     ndc.set(((ev.clientX - r.left) / r.width) * 2 - 1, -((ev.clientY - r.top) / r.height) * 2 + 1);
     ray.setFromCamera(ndc, vp.camera);
     let best = null, bd = Infinity;
-    for (const s of spheres) {
+    if (ui.bones) for (const s of spheres) {
       const d = ray.ray.distanceSqToPoint(s.position), rad = s.scale.x * 1.6;
       if (d < rad * rad && d < bd) { bd = d; best = s.userData.bone; }
     }
@@ -187,7 +192,12 @@ export function createPoseMode(opts) {
   });
   vp.canvas.addEventListener('pointerup', e => {
     if (!ui.active || !down || e.button !== 0) return;
-    if (!down.gizmo && Math.hypot(e.clientX - down.x, e.clientY - down.y) <= 5) select(pick(e));
+    if (!down.gizmo && Math.hypot(e.clientX - down.x, e.clientY - down.y) <= 5) {
+      // un contrôleur choisit l'os et l'outil (cercle = tourner, boîte / rectangle / carré = déplacer en IK)
+      const c = controls.pick(e);
+      if (c) { if (ui.tool !== c.mode) { ui.tool = c.mode; keep(); } select(c.bone); }
+      else select(pick(e));
+    }
     down = null;
   });
   vp.canvas.addEventListener('pointermove', e => {
@@ -199,15 +209,17 @@ export function createPoseMode(opts) {
       const ev = hoverQueued.e;
       hoverQueued = null;
       if (!ui.active) return;
-      const b = gizmo.axis !== null ? null : pick(ev);
+      const c = gizmo.axis !== null ? null : controls.pick(ev);
+      ui.hoverCtrl = c;
+      const b = c ? c.bone : gizmo.axis !== null ? null : pick(ev);
       ui.hover = b;
       highlight(true);
       const r = vp.canvas.getBoundingClientRect();
       tip.hidden = !b;
-      if (b) { tip.textContent = label(b.name); tip.style.left = (ev.clientX - r.left) + 'px'; tip.style.top = (ev.clientY - r.top) + 'px'; }
+      if (b) { tip.textContent = label(b.name) + (c ? (c.mode === 'ik' ? ' · IK' : ' · FK') : ''); tip.style.left = (ev.clientX - r.left) + 'px'; tip.style.top = (ev.clientY - r.top) + 'px'; }
     });
   });
-  vp.canvas.addEventListener('pointerleave', () => { ui.hover = null; highlight(ui.active); $('vpTip').hidden = true; });
+  vp.canvas.addEventListener('pointerleave', () => { ui.hover = null; ui.hoverCtrl = null; highlight(ui.active); $('vpTip').hidden = true; });
 
   // ------------------------------------------------------------ presets selon la sélection
   const sideOf = b => {
@@ -301,7 +313,7 @@ export function createPoseMode(opts) {
     $('pmMaya').textContent = b ? b.name.replace('QuickRigCharacter_', '') : '';
     $('pmReset').disabled = $('pmMirror').disabled = !b;
     const box = $('pmXf');
-    if (!b) box.innerHTML = `<p class="muted" style="grid-column:1/-1">${tr('Clique sur une partie de l\'ork (ou une boule du squelette) pour la sélectionner. E : rotation, W : IK des mains, des pieds et du bassin.', 'Click a part of the ork (or a skeleton ball) to select it. E: rotate, W: IK for hands, feet and hips.')}</p>`;
+    if (!b) box.innerHTML = `<p class="muted" style="grid-column:1/-1">${tr('Clique un contrôleur : cercle = tourner l\'os, boîte de la main, rectangle du pied ou carré du bassin = déplacer en IK. Tu peux aussi cliquer sur l\'ork ou une boule du squelette. E : rotation, W : IK.', 'Click a controller: circle = rotate the bone, hand box, foot rectangle or hips square = move in IK. You can also click the ork or a skeleton ball. E: rotate, W: IK.')}</p>`;
     else {
       const e = boneEuler(b);
       box.innerHTML = ['x', 'y', 'z'].map(a => `<span class="ax ${a}">${a.toUpperCase()}</span>
@@ -319,6 +331,8 @@ export function createPoseMode(opts) {
       $('pmCurl' + s + 'Out').textContent = Math.round(st.curl[s] / 1.6 * 100) + ' %';
     }
     $('pmSym').checked = ui.sym;
+    $('pmCtrls').checked = ui.ctrls;
+    $('pmBones').checked = ui.bones;
     $('pmPins').checked = ui.pins;
     document.querySelectorAll('#tools [data-ptool]').forEach(x => x.setAttribute('aria-pressed', String(x.dataset.ptool === ui.tool)));
   }
@@ -378,6 +392,8 @@ export function createPoseMode(opts) {
   }
   $('pmSym').addEventListener('change', e => { ui.sym = e.target.checked; keep(); renderPanel(); });
   $('pmPins').addEventListener('change', e => { ui.pins = e.target.checked; keep(); });
+  $('pmCtrls').addEventListener('change', e => { ui.ctrls = e.target.checked; controls.visible = ui.active && ui.ctrls; keep(); });
+  $('pmBones').addEventListener('change', e => { ui.bones = e.target.checked; keep(); });
 
   // ------------------------------------------------------------ bibliothèque de poses (gauche)
   function renderLib() {
@@ -516,7 +532,8 @@ export function createPoseMode(opts) {
   function enter() {
     ui.active = true;
     patchOrk();
-    viz.visible = true;
+    viz.visible = ui.bones;
+    controls.visible = ui.ctrls;
     updateViz();
     highlight(true);
     attach();
@@ -528,6 +545,8 @@ export function createPoseMode(opts) {
     ui.saving = false;
     closeMenu();
     viz.visible = false;
+    controls.visible = false;
+    ui.hoverCtrl = null;
     gizmo.detach();
     highlight(false);
     $('vpTip').hidden = true;
@@ -540,5 +559,5 @@ export function createPoseMode(opts) {
     renderPanel();
     renderLib();
   }
-  return { enter, leave, refresh, renderLib, onKey, update: updateViz, highlight: on => highlight(on && ui.active), get active() { return ui.active; }, ui, select };
+  return { enter, leave, refresh, renderLib, onKey, update: updateViz, highlight: on => highlight(on && ui.active), get active() { return ui.active; }, ui, select, controls };
 }

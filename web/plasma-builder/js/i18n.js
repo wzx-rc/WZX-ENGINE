@@ -202,7 +202,7 @@
     'Tourner l\'os (E)': 'Rotate the bone (E)', 'IK : déplacer main, pied, bassin (W)': 'IK: move hand, foot, hips (W)', 'Enregistrer la pose actuelle': 'Save the current pose',
     'Clic : appliquer la pose. Clic droit sur une de tes poses : renommer, supprimer.': 'Click: apply the pose. Right click one of your poses: rename, delete.',
     'Pose A': 'A-pose', 'Pose T': 'T-pose', 'Neutre': 'Neutral', 'Réinitialiser l\'os': 'Reset the bone', 'Copier sur l\'autre côté (M)': 'Copy to the other side (M)',
-    'Pieds ancrés au sol': 'Feet pinned to the ground', 'Mains': 'Hands', 'Jambe': 'Leg', 'Miroir de la pose': 'Pose mirror',
+    'Pieds ancrés au sol': 'Feet pinned to the ground', 'Contrôleurs de pose (C)': 'Pose controllers (C)', 'Contrôleurs': 'Controllers', 'Mains': 'Hands', 'Jambe': 'Leg', 'Miroir de la pose': 'Pose mirror',
     'Le côté gauche est copié sur le droit': 'The left side is copied to the right', 'Le côté droit est copié sur le gauche': 'The right side is copied to the left',
     'G → D': 'L → R', 'D → G': 'R → L', 'Inverser': 'Swap',
     'Main ouverte': 'Open hand', 'Main détendue': 'Relaxed hand', 'Prise d\'arme': 'Weapon grip', 'Poing fermé': 'Closed fist', 'Poignet droit': 'Straight wrist',

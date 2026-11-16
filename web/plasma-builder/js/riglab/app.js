@@ -10,6 +10,7 @@ import { exportMerged, exportJSON } from '../io.js';
 import { OrkModel, GROUPS, CHAINS, label } from './model.js';
 import { PRESETS, buildPreset, MY_POSES } from './poses.js';
 import { createStudio } from './studio.js';
+import { createControls } from './controls.js';
 
 const $ = id => document.getElementById(id);
 const DEG = THREE.MathUtils.RAD2DEG;
@@ -25,6 +26,8 @@ if (!window.plasmaDesktop) $('qualitySel').querySelector('option[value="pt"]').r
 vp.controls.target.set(0, 1.0, 0);
 let model = null;
 let studio = null;   // sockets et meshes (studio.js)
+let controls = null; // contrôleurs de pose (controls.js)
+let hoverCtrl = null;
 const state = {
   tool: 'fk', mesh: 'high', shade: 'resin', bones: true, weights: false,
   sel: null, hover: null, curl: { L: 0, R: 0 }, preset: null,
@@ -96,6 +99,7 @@ function buildBoneViz() {
 }
 const _p = new THREE.Vector3(), _p2 = new THREE.Vector3();
 function updateBoneViz() {
+  controls?.update(state.sel, state.tool, hoverCtrl);
   boneViz.visible = state.bones;
   if (!state.bones) return;
   const pos = lines.geometry.attributes.position;
@@ -297,7 +301,10 @@ vp.canvas.addEventListener('pointerup', e => {
   const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y) > 5;
   if (!down.gizmo && !moved && model) {
     const sk = studio?.pickSocket(e);
-    if (sk) { select(null); studio.selectSocket(sk); } else { studio?.selectSocket(null, true); select(pick(e)); }
+    const c = sk ? null : controls?.pick(e);
+    if (sk) { select(null); studio.selectSocket(sk); }
+    else if (c) { studio?.selectSocket(null, true); if (state.tool !== c.mode) setTool(c.mode); select(c.bone); }
+    else { studio?.selectSocket(null, true); select(pick(e)); }
   }
   down = null;
 });
@@ -309,14 +316,15 @@ vp.canvas.addEventListener('pointermove', e => {
     const ev = hoverQueued.e;
     hoverQueued = null;
     const sk = gizmo.axis !== null ? null : studio?.pickSocket(ev);
-    const b = gizmo.axis !== null || sk ? null : pick(ev);
+    hoverCtrl = gizmo.axis !== null || sk ? null : controls?.pick(ev) || null;
+    const b = gizmo.axis !== null || sk ? null : hoverCtrl ? hoverCtrl.bone : pick(ev);
     setHover(b);
     const tip = $('vpTip'), r = vp.canvas.getBoundingClientRect();
     tip.hidden = !b && !sk;
-    if (b || sk) { tip.textContent = sk ? 'Socket · ' + studio.tipFor(sk) : label(b.name); tip.style.left = (ev.clientX - r.left) + 'px'; tip.style.top = (ev.clientY - r.top) + 'px'; }
+    if (b || sk) { tip.textContent = sk ? 'Socket · ' + studio.tipFor(sk) : label(b.name) + (hoverCtrl ? (hoverCtrl.mode === 'ik' ? ' · IK' : ' · FK') : ''); tip.style.left = (ev.clientX - r.left) + 'px'; tip.style.top = (ev.clientY - r.top) + 'px'; }
   });
 });
-vp.canvas.addEventListener('pointerleave', () => { setHover(null); $('vpTip').hidden = true; });
+vp.canvas.addEventListener('pointerleave', () => { hoverCtrl = null; setHover(null); $('vpTip').hidden = true; });
 
 // ---------------------------------------------------------------- outils, affichage
 function setTool(t) {
@@ -335,6 +343,13 @@ $('shading').addEventListener('click', e => {
 });
 $('lightBtn').addEventListener('click', () => vp.rotateLight());
 $('frameBtn').addEventListener('click', () => vp.frameObject(model.root));
+function toggleCtrls() {
+  if (!controls) return;
+  controls.visible = !controls.visible;
+  $('ctrlBtn').setAttribute('aria-pressed', controls.visible);
+  try { localStorage.setItem('plasmaork.riglab.ctrls', controls.visible ? '1' : '0'); } catch { /* ignoré */ }
+}
+$('ctrlBtn').addEventListener('click', toggleCtrls);
 function toggleBones() { state.bones = !state.bones; $('bonesBtn').setAttribute('aria-pressed', state.bones); }
 function toggleWeights() {
   state.weights = !state.weights;
@@ -460,6 +475,7 @@ addEventListener('keydown', e => {
   else if (k === 'e' || k === 'r') setTool('fk');
   else if (k === 'f') $('frameBtn').click();
   else if (k === 'b') toggleBones();
+  else if (k === 'c') toggleCtrls();
   else if (k === 'h') toggleWeights();
   else if (k === 'm' && state.sel) $('mirrorBoneBtn').click();
   else if (k === 'escape') { studio?.selectSocket(null, true); select(null); }
@@ -499,6 +515,9 @@ try {
   applyMaterials();
   applyMeshes();
   buildBoneViz();
+  controls = createControls(model, vp);
+  try { controls.visible = localStorage.getItem('plasmaork.riglab.ctrls') !== '0'; } catch { controls.visible = true; }
+  $('ctrlBtn').setAttribute('aria-pressed', controls.visible);
   renderTree();
   try {
     const cur = JSON.parse(localStorage.getItem(STORE + '.current') || 'null');
@@ -508,7 +527,7 @@ try {
   vp.frameObject(model.root, new THREE.Vector3(0.45, 0.2, 1), true);
   $('loading').hidden = true;
   $('vpInfo').textContent = `${model.bones.length} joints · ${tr('skin Maya', 'Maya skin')} ${model.meshes.BODY_low.geometry.attributes.position.count.toLocaleString(window.plasmaLang === 'fr' ? 'fr-FR' : 'en-US')} ${tr('sommets', 'vertices')} · high ${(model.meshes.BODY_high.geometry.index.count / 3).toLocaleString(window.plasmaLang === 'fr' ? 'fr-FR' : 'en-US')} triangles`;
-  window.riglab = { model, vp, state, select, studio, applyPreset: id => applyPreset(PRESETS.find(p => p.id === id)) };
+  window.riglab = { model, vp, state, select, studio, get controls() { return controls; }, applyPreset: id => applyPreset(PRESETS.find(p => p.id === id)) };
 } catch (err) {
   console.error(err);
   const l = $('loading');
