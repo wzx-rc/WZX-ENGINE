@@ -131,7 +131,7 @@ export function createStudio(opts) {
     if (st.tab !== 'sockets') return;
     const o = loadSocketOverrides();
     $('sockList').innerHTML = defs.map((d, n) => `<button type="button" class="sockrow${o[d.id] ? ' custom' : ''}" data-sock="${d.id}" aria-pressed="${st.sel === d.id}">
-      <span class="sock-n">${n + 1}</span><span class="sock-txt"><b>${esc(d.label)}</b><small>${esc(SOCKET_TYPES[d.type] || d.type)} · ${d.bone ? esc(d.bone.name.replace('QuickRigCharacter_', '')) : 'ORK_BOY'}${o[d.id] ? ' · ' + tr('réglé', 'adjusted') : ''}</small></span></button>`).join('');
+      <span class="sock-n">${n + 1}</span><span class="sock-txt"><b>${esc(d.label)}</b><small>${esc(SOCKET_TYPES[d.type] || d.type)} · ${d.bone ? esc(d.bone.name) : 'ORK_BOY'}${o[d.id] ? ' · ' + tr('réglé', 'adjusted') : ''}</small></span></button>`).join('');
     const d = st.sel && defs.find(x => x.id === st.sel);
     $('sockEdit').hidden = !d;
     $('sockShow').checked = st.show;

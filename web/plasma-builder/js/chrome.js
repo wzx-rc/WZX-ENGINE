@@ -29,12 +29,15 @@ const WIN_ICONS = {
   close: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6.2 5.6 Q10.4 9.4 13.4 13.3 Q15.6 16.2 17.6 18.8"/><path d="M17.8 5.6 Q13.6 9.4 10.6 13.3 Q8.4 16.2 6.4 18.8"/><path d="M4.9 17.4 L7.9 20.1 M19.1 17.4 L16.1 20.1" stroke-width="1.6"/></svg>',
 };
 
+// Version affichée dans la barre de titre de l'app (et le titre des pages).
+export const APP_VERSION = 'Alpha : 0.5.0';
+
 if (window.plasmaDesktop) {
   document.documentElement.classList.add('desktop');
   const page = document.title.split('·')[0].trim();
   const bar = document.createElement('div');
   bar.className = 'wintitle';
-  bar.innerHTML = `<img src="assets/brand/plasma-orks-icon-32.png" alt=""><b>Plasma Orks Builder</b>${page && !/plasma orks/i.test(page) ? `<span>${page.replace(/[<&]/g, '')}</span>` : ''}`;
+  bar.innerHTML = `<img src="assets/brand/plasma-orks-icon-32.png" alt=""><b>Plasma Orks Builder</b><i class="ver">${APP_VERSION}</i>${page && !/plasma orks/i.test(page) ? `<span>${page.replace(/[<&]/g, '')}</span>` : ''}`;
   const w = window.plasmaDesktop.win;
   if (w) {
     const ctl = document.createElement('div');

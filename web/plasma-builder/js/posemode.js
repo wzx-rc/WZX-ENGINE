@@ -6,22 +6,22 @@
 // - à droite, l'os sélectionné et des presets qui dépendent de la sélection (main : ouvrir / fermer, etc.).
 // Les briques restent accrochées à leurs os : elles suivent la pose.
 import * as THREE from 'three';
-import { CHAINS, GROUPS, label } from './riglab/model.js';
+import { CHAINS, GROUPS, label, isFinger } from './riglab/model.js';
+import { B, Q } from './riglab/rigdef.js';
 import { PRESETS, MY_POSES, loadMyPoses, armTo, ARM } from './riglab/poses.js';
 import { createControls } from './riglab/controls.js';
 
 const $ = id => document.getElementById(id);
 const DEG = THREE.MathUtils.RAD2DEG;
-const HIPS = 'QuickRigCharacter_Hips';
-const Q = n => 'QuickRigCharacter_' + n;
+const HIPS = B.hips;
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const ICON = d => `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${d}"/></svg>`;
 const cssAccent = () => getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#f0435a';
 
-// Os du bras / de la jambe de chaque côté (côté gauche de l'ork = noms QuickRig « Left… », droit = « Left…1 »).
+// Os du bras / de la jambe de chaque côté (rigdef.js).
 const SIDE_BONES = {
-  L: { arm: ['joint40', Q('LeftArm'), Q('LeftForeArm'), Q('LeftHand')], leg: [Q('LeftUpLeg'), Q('LeftLeg'), Q('LeftFoot'), Q('LeftToeBase')], s: '' },
-  R: { arm: ['joint41', Q('LeftArm1'), Q('LeftForeArm1'), Q('LeftHand1')], leg: [Q('LeftUpLeg1'), Q('LeftLeg1'), Q('LeftFoot1'), Q('LeftToeBase1')], s: '1' },
+  L: { arm: [B.clav('L'), ...CHAINS.handL], leg: [...CHAINS.footL, B.toe('L')], s: '' },
+  R: { arm: [B.clav('R'), ...CHAINS.handR], leg: [...CHAINS.footR, B.toe('R')], s: '1' },
 };
 
 // opts : { vp, model, thumbs, state() (état du builder), edited(final) (pose modifiée), apply(entry) (charge une
@@ -99,7 +99,7 @@ export function createPoseMode(opts) {
     model.bones.forEach((b, i) => {
       const s = spheres[i];
       b.getWorldPosition(s.position);
-      const finger = /^joint\d+$/.test(b.name) && !['joint40', 'joint41'].includes(b.name);
+      const finger = isFinger(b.name);
       s.scale.setScalar((finger ? 0.008 : 0.018) * (b === ui.sel ? 1.5 : b === ui.hover ? 1.3 : 1));
       s.material.color.set(b === ui.sel ? ACCENT : b === ui.hover ? 0xffffff : posed(b) ? 0x7bc67e : 0xb5b7bd);
       const p = b.parent?.isBone ? b.parent.getWorldPosition(_p) : s.position;
@@ -147,7 +147,7 @@ export function createPoseMode(opts) {
     if (pole) model.solveIK(chain, model.figurePos(model.bone(CHAINS[chain][2])), true, ikTarget.position);
     else model.solveIK(chain, ikTarget.position);
   }
-  const fingerBone = b => /^joint\d+$/.test(b.name) && !['joint40', 'joint41'].includes(b.name);
+  const fingerBone = b => isFinger(b.name);
   gizmo.addEventListener('mouseDown', () => {
     if (!ui.active) return;
     pins = ui.pins ? { footL: model.figurePos(model.bone(CHAINS.footL[2])), footR: model.figurePos(model.bone(CHAINS.footR[2])) } : null;
@@ -322,7 +322,7 @@ export function createPoseMode(opts) {
     if (!ui.active) return;
     const b = ui.sel, st = opts.state(), zone = zoneOf(b), side = sideOf(b);
     $('pmBone').textContent = b ? label(b.name) : tr('Aucun os', 'No bone');
-    $('pmMaya').textContent = b ? b.name.replace('QuickRigCharacter_', '') : '';
+    $('pmMaya').textContent = b ? b.name : '';
     $('pmReset').disabled = $('pmMirror').disabled = !b;
     const box = $('pmXf');
     if (!b) box.innerHTML = `<p class="muted" style="grid-column:1/-1">${tr('Clique un contrôleur : boîte de la main ou semelle du pied = déplacer en IK, losange = orienter le coude / genou, anneau à flèches = bassin, anneau de la tête = tourner. Tu peux aussi cliquer sur l\'ork ou une boule du squelette. E : rotation, W : IK.', 'Click a controller: hand box or foot sole = move in IK, diamond = aim the elbow / knee, arrow ring = hips, head ring = rotate. You can also click the ork or a skeleton ball. E: rotate, W: IK.')}</p>`;

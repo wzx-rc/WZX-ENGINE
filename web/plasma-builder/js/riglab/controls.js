@@ -9,7 +9,7 @@
 import * as THREE from 'three';
 import { CHAINS, FINGERS } from './model.js';
 
-const Q = n => 'QuickRigCharacter_' + n;
+import { Q } from './rigdef.js';
 const COLORS = { L: 0x46a6ff, R: 0xff5b6b, C: 0xffc23d };
 const AX_Z = new THREE.Vector3(0, 0, 1);
 const UP = new THREE.Vector3(0, 1, 0);

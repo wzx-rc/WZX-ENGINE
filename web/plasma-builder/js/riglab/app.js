@@ -7,7 +7,8 @@
 import * as THREE from 'three';
 import { Viewport } from '../viewport.js';
 import { exportMerged, exportJSON } from '../io.js';
-import { OrkModel, GROUPS, CHAINS, label } from './model.js';
+import { OrkModel, GROUPS, CHAINS, label, isFinger } from './model.js';
+import { B, scaleOf } from './rigdef.js';
 import { PRESETS, buildPreset, MY_POSES } from './poses.js';
 import { createStudio } from './studio.js';
 import { createControls } from './controls.js';
@@ -18,7 +19,7 @@ const DEG = THREE.MathUtils.RAD2DEG;
 const cssAccent = () => getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#f0435a';
 const ACCENT = new THREE.Color(cssAccent());
 const STORE = MY_POSES;
-const HIPS = 'QuickRigCharacter_Hips';
+const HIPS = B.hips;
 
 const vp = new Viewport($('vpCanvas'));
 // Comme le builder : le path tracing n'est proposé que dans l'app Windows (desktop/).
@@ -69,7 +70,7 @@ function patch(mat) {
 const TAGS = { BODY_high: 'skin', BODY_low: 'skin', HEAD_high: 'skin', HEAD_low: 'skin', TEETH: 'bone', EYES: 'eye' };
 function applyMaterials() {
   vp.setMode(state.shade);
-  for (const [n, m] of Object.entries(model.meshes)) m.material = patch(vp.material(TAGS[n] || 'skin'));
+  for (const [n, m] of Object.entries(model.meshes)) m.material = patch(model.materialFor(vp, n, TAGS[n] || 'skin'));
 }
 function applyMeshes() {
   const high = state.mesh === 'high';
@@ -106,7 +107,7 @@ function updateBoneViz() {
   model.bones.forEach((b, i) => {
     const s = spheres[i];
     b.getWorldPosition(s.position);
-    const finger = /^joint\d+$/.test(b.name) && !['joint40', 'joint41'].includes(b.name);
+    const finger = isFinger(b.name);
     s.scale.setScalar((finger ? 0.008 : 0.018) * (b === state.sel ? 1.5 : b === state.hover ? 1.3 : 1));
     s.material.color.set(b === state.sel ? ACCENT : b === state.hover ? 0xffffff : posed(b) ? 0x7bc67e : 0xb5b7bd);
     const p = b.parent && b.parent.isBone ? b.parent.getWorldPosition(_p2) : s.position;
@@ -211,7 +212,7 @@ function boneEuler(b) { return new THREE.Euler().setFromQuaternion(model.offset(
 function renderBonePanel() {
   const b = state.sel, box = $('boneXf');
   $('curBone').textContent = b ? label(b.name) : 'Aucun os';
-  $('curMaya').textContent = b ? b.name.replace('QuickRigCharacter_', '') : '';
+  $('curMaya').textContent = b ? b.name : '';
   $('curMaya').title = b ? b.name : '';
   $('resetBoneBtn').disabled = $('mirrorBoneBtn').disabled = !b;
   box.className = 'xf rot';
@@ -297,7 +298,7 @@ function pick(ev) {
   const hits = ray.intersectObjects(targets, false);
   if (!hits.length) return null;
   const h = hits[0];
-  if (h.object.name === 'HEAD_low') return model.bone('QuickRigCharacter_Head');
+  if (h.object.name === 'HEAD_low') return model.bone(B.head);
   return model.boneAtFace(h.face, h.barycoord);
 }
 let down = null, hoverQueued = null;
@@ -530,6 +531,9 @@ try {
     changedMeshes: () => { applyMaterials(); applyMeshes(); },
   });
   applyMaterials();
+  model.loadTextures(!!window.plasmaDesktop).then(applyMaterials);
+  // échelle de figurine : tête un peu plus petite en Nob / Boss (comme dans le Builder)
+  $('scaleSel').addEventListener('change', () => { model.setHeadScale(scaleOf(+$('scaleSel').value).head); updateBoneViz(); });
   applyMeshes();
   buildBoneViz();
   controls = createControls(model, vp);

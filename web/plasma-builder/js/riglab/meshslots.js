@@ -7,6 +7,7 @@
 // appliqué au chargement de l'ork dans toutes les pages (OrkModel.load).
 import * as THREE from 'three';
 import { MeshBVH } from 'three-mesh-bvh';
+import { RIG } from './rigdef.js';
 
 export const SLOTS = [
   { id: 'BODY_low', label: 'Corps low', from: 'BODY_low' },
@@ -80,7 +81,8 @@ export async function applySlots(model) {
   try { list = await slotStore.all(); } catch { /* stockage indisponible */ }
   model.slots = {};
   for (const rec of list) {
-    if (!model.meshes[rec.id]) continue;
+    // meshes enregistrés pour un autre rig (indices de joints différents) : ignorés
+    if (!model.meshes[rec.id] || (rec.rig || 'quickrig') !== RIG) continue;
     try { setSlotGeometry(model, rec.id, geometryFrom(rec)); model.slots[rec.id] = { file: rec.file, date: rec.date, verts: rec.position.length / 3 }; }
     catch (err) { console.error('mesh ' + rec.id, err); }
   }
@@ -153,7 +155,7 @@ export function transferToSlot(model, slotId, srcGeo, file) {
   }
   g.computeVertexNormals();
   const rec = {
-    id: slotId, file, date: Date.now(),
+    id: slotId, rig: RIG, file, date: Date.now(),
     position: new Float32Array(pos.array),
     normal: new Float32Array(g.attributes.normal.array),
     uv: g.attributes.uv ? new Float32Array(g.attributes.uv.array) : null,

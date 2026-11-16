@@ -6,6 +6,7 @@ import { Hold } from './hold.js';
 import { TONEMAPPERS } from './render.js';
 import { TestModel } from './testmodel.js';
 import { OrkModel } from './riglab/model.js';
+import { scaleOf } from './riglab/rigdef.js';
 import { PRESETS, buildPreset, loadMyPoses } from './riglab/poses.js';
 import { orkSockets, SOCKET_TYPES } from './sockets.js';
 import { CATEGORIES, catById, Store, brickMeshes, refreshBrickMaterials, mat4, triCount } from './bricks.js';
@@ -144,7 +145,7 @@ function rebuild() {
 
 function applyMaterials() {
   vp.setMode(ui.shade);
-  for (const [n, m] of Object.entries(model.meshes)) m.material = vp.material(TAGS[n] || 'skin');
+  for (const [n, m] of Object.entries(model.meshes)) m.material = model.materialFor(vp, n, TAGS[n] || 'skin');
   refreshBrickMaterials(model.root, vp, rec);
   testModel?.refresh();
   poseMode?.refresh();
@@ -177,6 +178,7 @@ function travel(d) {
   if (i < 0 || i >= history.length) return;
   hIndex = i;
   state = JSON.parse(history[i]);
+  applyScale();
   applyPose();
   rebuild();
   renderAll();
@@ -188,6 +190,12 @@ function syncUndo() { $('undoBtn').disabled = hIndex <= 0; $('redoBtn').disabled
 // ---------- pose ----------
 // La pose vient du Rig Lab : poses de départ partagées, ou « Mes poses » enregistrées là-bas.
 function poseList() { return [...PRESETS.map(p => ({ id: 'preset:' + p.id, name: p.name, preset: p })), ...loadMyPoses().map(p => ({ id: 'mine:' + p.name, name: p.name, mine: p }))]; }
+// Échelle de la figurine : unités physiques du rendu et tête un peu plus petite en Nob / Boss (rigdef.js).
+function applyScale() {
+  state.scale = scaleOf(state.scale).mm;
+  vp.unitsPerMeter = eyeUnits() / (state.scale / 1000);
+  model?.setHeadScale(scaleOf(state.scale).head);
+}
 function applyPose() {
   if (state.pose) { model.setPose(state.pose); }
   else {
@@ -441,25 +449,30 @@ function renderNavMode() {
     if (on) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
   });
   $('libBoxTitle').textContent = ui.mode === 'pose' ? 'Posing presets' : tr('Bibliothèque', 'Library');
+  syncLibThumb();
 }
 document.querySelectorAll('.mainnav [data-navmode]').forEach(a => a.addEventListener('click', e => {
   e.preventDefault();
   if (a.dataset.navmode !== ui.mode) setMode(a.dataset.navmode);
   window.history.replaceState(null, '', 'index.html' + (ui.mode === 'pose' ? '?mode=pose' : ''));
 }));
-// Taille des vignettes et largeur du panneau, gardées sur ce poste
+// Taille des vignettes (une par panneau : Bibliothèque, Posing presets) et largeur du panneau, gardées sur ce poste
+let syncLibThumb = () => {};
 {
   const box = $('libBox'), k = 'plasmaork.builder.libbox';
   let st = {};
   try { st = JSON.parse(localStorage.getItem(k)) || {}; } catch { /* ignoré */ }
   const keepBox = () => { try { localStorage.setItem(k, JSON.stringify(st)); } catch { /* ignoré */ } };
+  if (typeof st.thumbs !== 'object' || !st.thumbs) st.thumbs = st.thumb ? { build: st.thumb } : {};
+  delete st.thumb;
+  const panel = () => (ui.mode === 'pose' ? 'pose' : 'build');
   const apply = () => {
-    if (st.thumb) box.style.setProperty('--thumb', st.thumb + 'px');
+    box.style.setProperty('--thumb', (st.thumbs[panel()] || 96) + 'px');
     if (st.w) box.style.setProperty('--lib-w', st.w + 'px');
   };
-  apply();
-  $('thumbSize').value = st.thumb || 96;
-  $('thumbSize').addEventListener('input', e => { st.thumb = +e.target.value; apply(); keepBox(); });
+  syncLibThumb = () => { apply(); $('thumbSize').value = st.thumbs[panel()] || 96; };
+  syncLibThumb();
+  $('thumbSize').addEventListener('input', e => { st.thumbs[panel()] = +e.target.value; apply(); keepBox(); });
   $('libGrip').addEventListener('pointerdown', e => {
     if (e.button !== 0) return;
     e.preventDefault();
@@ -649,7 +662,7 @@ $('lightBtn').addEventListener('click', () => vp.rotateLight());
 $('texBtn').addEventListener('click', () => { ui.shade = ui.shade === 'paint' ? 'resin' : 'paint'; applyMaterials(); renderSteps(); });
 $('fullBtn').addEventListener('click', () => { const el = $('vp'); if (document.fullscreenElement) document.exitFullscreen(); else el.requestFullscreen?.(); });
 $('qualitySel').addEventListener('change', e => setQuality(e.target.value));
-$('scaleSel').addEventListener('change', e => { state.scale = +e.target.value; vp.unitsPerMeter = eyeUnits() / (state.scale / 1000); vp.configurePT(); commit(); renderPrintInfo(); });
+$('scaleSel').addEventListener('change', e => { state.scale = +e.target.value; applyScale(); vp.configurePT(); commit(); renderPrintInfo(); });
 $('renderSet').addEventListener('input', e => {
   const el = e.target, k = el.dataset.r;
   if (!k) return;
@@ -873,8 +886,8 @@ try {
   model = m;
   model.fit();
   vp.scene.add(model.root);
-  vp.unitsPerMeter = eyeUnits() / (state.scale / 1000);
-  orkSocketDefs = orkSockets(model);   // au repos, avant la pose
+  orkSocketDefs = orkSockets(model);   // au repos, avant la pose (et avant l'échelle de la tête)
+  applyScale();
   skel = new THREE.SkeletonHelper(model.root);
   // couleur d'accent du thème de faction (theme.js), suivie quand on change de faction
   const accent3d = () => skel.material.color.set(getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#f0435a');
@@ -889,6 +902,7 @@ try {
   applyPose();
   rebuild();
   applyMaterials();
+  model.loadTextures(DESKTOP).then(applyMaterials);
   commit();
   renderAll();
   setStep('asm');

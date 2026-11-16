@@ -5,6 +5,7 @@
 import * as THREE from 'three';
 import { CHAINS, FINGERS } from './riglab/model.js';
 import { PRESETS, buildPreset } from './riglab/poses.js';
+import { Q, RIG } from './riglab/rigdef.js';
 
 // Libellés traduits par i18n.js (plasmaT) quand l'interface est en anglais.
 const T = s => (globalThis.plasmaT ? globalThis.plasmaT(s) : s);
@@ -12,7 +13,6 @@ export const SOCKET_TYPES = Object.fromEntries(Object.entries({
   head: 'Tête', grip: 'Main', back: 'Dos', shoulder: 'Épaule', chest: 'Torse', belt: 'Ceinture', base: 'Socle', any: 'Libre',
 }).map(([k, v]) => [k, T(v)]));
 
-const Q = n => 'QuickRigCharacter_' + n;
 
 // Rayon vers le joint (espace ork) : la surface du low la plus proche du joint de ce côté (un bras qui pend
 // devant la hanche ne compte pas), sinon le joint lui-même.
@@ -61,7 +61,8 @@ function gripRotations(model) {
 
 // Réglages des sockets faits dans le Rig Lab (locators déplacés / tournés) : repère relatif au joint, enregistré
 // sur l'appareil. Ils remplacent le repère calculé, dans le Builder comme dans l'Importer.
-export const SOCKET_OVERRIDES = 'plasmaork.sockets.overrides';
+// Clé propre au rig : les réglages faits sur l'ancien ork (autre corps, autres joints) ne s'appliquent pas au nouveau.
+export const SOCKET_OVERRIDES = 'plasmaork.sockets.overrides.' + RIG;
 export function loadSocketOverrides() {
   try { return JSON.parse(localStorage.getItem(SOCKET_OVERRIDES) || '{}') || {}; } catch { return {}; }
 }

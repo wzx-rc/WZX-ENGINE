@@ -2,8 +2,9 @@
 // Construites par rotations dans l'espace de la figurine (gauche = +x, avant = +z, cm).
 import * as THREE from 'three';
 import { CHAINS } from './model.js';
+import { B, Q } from './rigdef.js';
 
-const HIPS = 'QuickRigCharacter_Hips';
+const HIPS = B.hips;
 // Clé localStorage des poses enregistrées dans le Rig Lab (« Mes poses »), lues aussi par le builder.
 export const MY_POSES = 'plasmaork.riglab.poses';
 
@@ -38,42 +39,42 @@ export const PRESETS = [
   { id: 'garde', name: 'Garde', curl: [1.1, 1.1], build: m => {
     m.hips.position.y -= 0.9;
     for (const s of ['', '1']) {
-      m.rotateWorld('QuickRigCharacter_LeftUpLeg' + s, X, -18);
-      m.rotateWorld('QuickRigCharacter_LeftLeg' + s, X, 30);
-      m.rotateWorld('QuickRigCharacter_LeftFoot' + s, X, -12);
+      m.rotateWorld(Q('LeftUpLeg' + s), X, -18);
+      m.rotateWorld(Q('LeftLeg' + s), X, 30);
+      m.rotateWorld(Q('LeftFoot' + s), X, -12);
     }
-    m.rotateWorld('QuickRigCharacter_Spine1', X, 8);
-    m.rotateWorld('QuickRigCharacter_LeftArm', X, -25); m.rotateWorld('QuickRigCharacter_LeftForeArm', X, -55);
-    m.rotateWorld('QuickRigCharacter_LeftArm1', X, -25); m.rotateWorld('QuickRigCharacter_LeftForeArm1', X, -55);
+    m.rotateWorld(Q('Spine1'), X, 8);
+    m.rotateWorld(Q('LeftArm'), X, -25); m.rotateWorld(Q('LeftForeArm'), X, -55);
+    m.rotateWorld(Q('LeftArm1'), X, -25); m.rotateWorld(Q('LeftForeArm1'), X, -55);
   } },
   { id: 'charge', name: 'Charge', curl: [1.4, 1.2], build: m => {
     m.hips.position.y -= 0.6; m.hips.position.z += 1.2;
     m.rotateWorld(HIPS, X, 10);
-    m.rotateWorld('QuickRigCharacter_Spine', X, 12);
-    m.rotateWorld('QuickRigCharacter_Neck', X, -8);
-    m.rotateWorld('QuickRigCharacter_LeftUpLeg', X, -55); m.rotateWorld('QuickRigCharacter_LeftLeg', X, 60);
-    m.rotateWorld('QuickRigCharacter_LeftUpLeg1', X, 20); m.rotateWorld('QuickRigCharacter_LeftLeg1', X, 45);
-    m.rotateWorld('QuickRigCharacter_LeftFoot1', X, 25);
-    m.rotateWorld('QuickRigCharacter_LeftArm', X, -95); m.rotateWorld('QuickRigCharacter_LeftForeArm', X, -30);
-    m.rotateWorld('QuickRigCharacter_LeftArm1', X, 35); m.rotateWorld('QuickRigCharacter_LeftForeArm1', X, -70);
+    m.rotateWorld(Q('Spine'), X, 12);
+    m.rotateWorld(Q('Neck'), X, -8);
+    m.rotateWorld(Q('LeftUpLeg'), X, -55); m.rotateWorld(Q('LeftLeg'), X, 60);
+    m.rotateWorld(Q('LeftUpLeg1'), X, 20); m.rotateWorld(Q('LeftLeg1'), X, 45);
+    m.rotateWorld(Q('LeftFoot1'), X, 25);
+    m.rotateWorld(Q('LeftArm'), X, -95); m.rotateWorld(Q('LeftForeArm'), X, -30);
+    m.rotateWorld(Q('LeftArm1'), X, 35); m.rotateWorld(Q('LeftForeArm1'), X, -70);
   } },
   { id: 'waaagh', name: 'Waaagh !', curl: [1.5, 1.5], build: m => {
-    m.rotateWorld('QuickRigCharacter_Spine2', X, -10);
-    m.rotateWorld('QuickRigCharacter_Neck', X, -22);
-    m.rotateWorld('QuickRigCharacter_LeftArm', Z, 105); m.rotateWorld('QuickRigCharacter_LeftForeArm', Z, 35);
-    m.rotateWorld('QuickRigCharacter_LeftArm1', Z, -105); m.rotateWorld('QuickRigCharacter_LeftForeArm1', Z, -35);
-    m.rotateWorld('QuickRigCharacter_LeftUpLeg', Z, 8); m.rotateWorld('QuickRigCharacter_LeftUpLeg1', Z, -8);
+    m.rotateWorld(Q('Spine2'), X, -10);
+    m.rotateWorld(Q('Neck'), X, -22);
+    m.rotateWorld(Q('LeftArm'), Z, 105); m.rotateWorld(Q('LeftForeArm'), Z, 35);
+    m.rotateWorld(Q('LeftArm1'), Z, -105); m.rotateWorld(Q('LeftForeArm1'), Z, -35);
+    m.rotateWorld(Q('LeftUpLeg'), Z, 8); m.rotateWorld(Q('LeftUpLeg1'), Z, -8);
     m.hips.position.y -= 0.4;
   } },
   { id: 'tir', name: 'Tir', curl: [1.2, 0.9], build: m => {
-    m.rotateWorld('QuickRigCharacter_Spine1', Y, 18);
-    m.rotateWorld('QuickRigCharacter_Neck', Y, -14);
-    m.rotateWorld('QuickRigCharacter_LeftArm1', X, -70); m.rotateWorld('QuickRigCharacter_LeftArm1', Y, 15);
-    m.rotateWorld('QuickRigCharacter_LeftForeArm1', X, -15);
-    m.rotateWorld('QuickRigCharacter_LeftArm', X, -55); m.rotateWorld('QuickRigCharacter_LeftArm', Y, -30);
-    m.rotateWorld('QuickRigCharacter_LeftForeArm', X, -50);
-    m.rotateWorld('QuickRigCharacter_LeftUpLeg', X, -15); m.rotateWorld('QuickRigCharacter_LeftLeg', X, 18);
-    m.rotateWorld('QuickRigCharacter_LeftUpLeg1', X, 12); m.rotateWorld('QuickRigCharacter_LeftLeg1', X, 10);
+    m.rotateWorld(Q('Spine1'), Y, 18);
+    m.rotateWorld(Q('Neck'), Y, -14);
+    m.rotateWorld(Q('LeftArm1'), X, -70); m.rotateWorld(Q('LeftArm1'), Y, 15);
+    m.rotateWorld(Q('LeftForeArm1'), X, -15);
+    m.rotateWorld(Q('LeftArm'), X, -55); m.rotateWorld(Q('LeftArm'), Y, -30);
+    m.rotateWorld(Q('LeftForeArm'), X, -50);
+    m.rotateWorld(Q('LeftUpLeg'), X, -15); m.rotateWorld(Q('LeftLeg'), X, 18);
+    m.rotateWorld(Q('LeftUpLeg1'), X, 12); m.rotateWorld(Q('LeftLeg1'), X, 10);
   } },
 ];
 

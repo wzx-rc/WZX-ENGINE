@@ -51,7 +51,6 @@ export function createNavUI(vp) {
   <button type="button" data-nav="zoom">${svg('zoom')}</button>
   <hr>
   <button type="button" data-nav="frame">${svg('frame')}</button>
-  <button type="button" data-nav="pivot">${svg('pivot')}</button>
 </div>`;
   host.appendChild(root);
   const tips = () => ({
@@ -67,7 +66,7 @@ export function createNavUI(vp) {
 
   // ------------------------------------------------------------ outils de la barre
   const btn = id => root.querySelector(`[data-nav="${id}"]`);
-  function render() { for (const id of ['orbit', 'pan', 'zoom', 'pivot']) btn(id).setAttribute('aria-pressed', String(vp.navTool === id)); }
+  function render() { for (const id of ['orbit', 'pan', 'zoom']) btn(id).setAttribute('aria-pressed', String(vp.navTool === id)); }
   function setTool(t) { vp.setNavTool(vp.navTool === t ? null : t); render(); }
   addEventListener('keydown', e => { if (e.key === 'Escape' && vp.navTool) { vp.setNavTool(null); render(); } });
 
@@ -111,7 +110,6 @@ export function createNavUI(vp) {
       b.addEventListener('pointerup', up);
     });
   }
-  btn('pivot').addEventListener('click', () => setTool('pivot'));
   btn('frame').addEventListener('click', () => vp.focus());
   btn('home').addEventListener('click', () => vp.homeView());
 

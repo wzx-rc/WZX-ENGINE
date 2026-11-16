@@ -272,7 +272,8 @@ export class Viewport {
     const s = box.getSize(new THREE.Vector3()), bc = box.getCenter(new THREE.Vector3());
     const vf = THREE.MathUtils.degToRad(this.camera.fov), t = Math.tan(vf / 2);
     const off = Math.abs(center.y - bc.y), offx = Math.hypot(center.x - bc.x, center.z - bc.z);
-    const dist = Math.max((s.y / 2 + off) / t, (Math.max(s.x, s.z) / 2 + offx) / t / this.camera.aspect) * 1.02 + Math.max(s.x, s.z) / 4;
+    // demandé : 50 % plus près que le cadrage du perso entier
+    const dist = (Math.max((s.y / 2 + off) / t, (Math.max(s.x, s.z) / 2 + offx) / t / this.camera.aspect) * 1.02 + Math.max(s.x, s.z) / 4) * 0.5;
     const d = this.camera.position.clone().sub(this.controls.target).normalize();
     this.camAnim = { t: 0, fromP: this.camera.position.clone(), toP: center.clone().addScaledVector(d, THREE.MathUtils.clamp(dist, this.controls.minDistance, this.controls.maxDistance)), fromT: this.controls.target.clone(), toT: center.clone() };
   }
