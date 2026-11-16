@@ -17,7 +17,7 @@ import subprocess
 
 import maya.cmds as cmds
 
-VERSION = '0.1.0'
+VERSION = '0.2.0'
 TYPES = ['grip', 'head', 'back', 'shoulder', 'chest', 'belt', 'base', 'any']
 TYPE_LABELS = {'grip': u'Main (arme)', 'head': u'Tête', 'back': u'Dos', 'shoulder': u'Épaule', 'chest': u'Torse',
                'belt': u'Ceinture', 'base': u'Socle', 'any': u'Libre'}
@@ -119,8 +119,16 @@ def _textures(meshes):
     return color, other
 
 
-def analyse(sel=None):
-    """Décrit la brique sélectionnée : nom, maillages (low / high), locators, catégorie, textures, problèmes."""
+def looks_like_head(info):
+    """Tête complète probable (pour pré-cocher l'option Tête) : nom en head / tete / tête et pas de PLUG_."""
+    return bool(re.search(u'(?i)(head|t[eê]te)', info['name'] or '')) and not any(
+        l['valid'] and l['kind'] == 'plug' for l in info['locators'])
+
+
+def analyse(sel=None, head=False):
+    """Décrit la brique sélectionnée : nom, maillages (low / high), locators, catégorie, textures, problèmes.
+    head : tête complète « en place » - enregistrée là où elle est modélisée sur l'ork (rig ORK_V3 au repos), sans
+    PLUG ; dans le Builder elle se pose sur le socket Tête et remplace la tête de l'ork (et les autres têtes)."""
     roots = _roots(sel)
     meshes, locs = [], []
     for r in roots:
@@ -159,7 +167,7 @@ def analyse(sel=None):
         x['frozen'] = frozen_offset(x['node']) is not None
 
     plugs = [x for x in loc_info if x['valid'] and x['kind'] == 'plug']
-    plug_type = plugs[0]['type'] if plugs else None
+    plug_type = 'head' if head else (plugs[0]['type'] if plugs else None)
     color, other = _textures(meshes)
 
     issues = []
@@ -179,9 +187,15 @@ def analyse(sel=None):
             issues.append(('warn', u'« %s » a été gelé (Freeze Transformations) : sa position est restée dans le locator, '
                                    u'l\'Importer le verrait en (0, 0, 0). Plasma Bridge le replace à l\'envoi (ou bouton '
                                    u'« Dégeler »), mais sa rotation est perdue : oriente-le à nouveau, sans le geler.' % x['name']))
-    if len(plugs) > 1:
+    if head:
+        if plugs:
+            issues.append(('info', u'Tête en place : le PLUG_ « %s » est ignoré, la tête garde sa position de la scène.' % plugs[0]['name']))
+        if roots and meshes:
+            issues.append(('ok', u'Tête en place : enregistrée là où elle est sur l\'ork (rig ORK_V3 au repos). Dans le Builder '
+                                 u'elle remplace la tête de l\'ork et les autres têtes.'))
+    elif len(plugs) > 1:
         issues.append(('warn', u'%d PLUG_ : un seul est utilisé.' % len(plugs)))
-    if roots and meshes and not plugs:
+    if roots and meshes and not plugs and not head:
         issues.append(('info', u'Pas de PLUG_ : la brique s\'accrochera par son origine (0, 0, 0). Ajoute un PLUG_ (bouton PLUG).'))
     for p in color:
         if not os.path.isfile(p):
@@ -191,6 +205,7 @@ def analyse(sel=None):
 
     return {'roots': roots, 'name': name, 'meshes': mesh_info, 'locators': loc_info, 'plugType': plug_type,
             'category': TYPE_TO_CATEGORY.get(plug_type) if plug_type else None, 'textures': color, 'otherTextures': other,
+            'head': bool(head),
             'units': cmds.currentUnit(query=True, linear=True), 'issues': issues, 'bbox': _bbox(meshes)}
 
 
@@ -324,7 +339,9 @@ def send(info=None, name=None, category=None, inbox=None, open_app=True, extra_t
             files.append(dst)
         manifest = {
             'bridge': 1, 'version': VERSION, 'name': name,
-            'category': category or info['category'], 'plugType': info['plugType'],
+            'category': 'head' if info.get('head') else (category or info['category']), 'plugType': info['plugType'],
+            # tête en place : l'Importer prend le socket Tête de l'ork comme PLUG (la tête reste où elle est modélisée)
+            'head': bool(info.get('head')), 'placement': 'inPlace' if info.get('head') else 'plug',
             'units': info['units'], 'files': files,
             'meshes': [{'name': m['name'], 'lod': m['lod'], 'tris': m['tris']} for m in info['meshes']],
             'locators': [{'name': l['name'], 'kind': l['kind'], 'type': l['type'], 'valid': l['valid']} for l in info['locators']],

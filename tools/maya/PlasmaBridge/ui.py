@@ -180,6 +180,14 @@ class BridgeWindow(QtWidgets.QWidget):
             self.catCombo.addItem(lab, k)
         form.addRow(_label(u'Nom', 'muted'), self.nameEdit)
         form.addRow(_label(u'Catégorie', 'muted'), self.catCombo)
+        # Tête complète : enregistrée en place sur l'ork (pas de PLUG), remplace la tête de l'ork dans le Builder
+        self.headChk = QtWidgets.QCheckBox(u'Head : tête complète, en place sur l\'ork')
+        self.headChk.setToolTip(u'Modélise la tête directement sur l\'ork (rig ORK_V3 au repos). Elle est enregistrée à cette '
+                                u'position : dans le Builder elle se pose sur le socket Tête et remplace la tête de l\'ork '
+                                u'et les autres têtes, sans PLUG.')
+        self.headChk.toggled.connect(self._head_toggled)
+        self._headUser = None   # choix fait à la main (sinon deviné d'après le nom)
+        form.addRow(_label(u'Head', 'muted'), self.headChk)
         self.sizeLbl = _label('', 'muted')
         form.addRow(_label(u'Taille', 'muted'), self.sizeLbl)
         self.cardBrick.body.addLayout(form)
@@ -249,10 +257,27 @@ class BridgeWindow(QtWidgets.QWidget):
         self.appPill.setStyleSheet('color: %s; background: %s; border: 1px solid %s; border-radius: 10px; padding: 3px 4px; font-size: 11px;'
                                    % (col, C['raised'], C['line2']))
 
+    def _selection_changed(self, *_):
+        self._headUser = None   # nouvelle brique : l'option Head est redevinée d'après son nom
+        self.refresh()
+
+    def _head_toggled(self, on):
+        if getattr(self, '_headSync', False):
+            return
+        self._headUser = on
+        self.refresh()
+
     def refresh(self, *_):
         self._pill()
         try:
-            self.info = core.analyse()
+            head = self.headChk.isChecked()
+            if self._headUser is None:
+                head = core.looks_like_head(core.analyse())
+            self.info = core.analyse(head=head)
+            self._headSync = True
+            self.headChk.setChecked(head)
+            self._headSync = False
+            self.catCombo.setEnabled(not head)
         except Exception as e:
             self.info = None
             self.status.setText(u'Analyse impossible : %s' % e)
@@ -262,7 +287,10 @@ class BridgeWindow(QtWidgets.QWidget):
             self.nameEdit.setText(i['name'])
         b = i['bbox']
         self.sizeLbl.setText(u'%.1f × %.1f × %.1f %s' % (b[0], b[1], b[2], i['units']) if b else u'—')
-        if i['category']:
+        if i['head']:
+            self.catCombo.setCurrentIndex(0)
+            self.catCombo.setItemText(0, u'Têtes (tête en place)')
+        elif i['category']:
             k = self.catCombo.findData(i['category'])
             self.catCombo.setItemText(0, u'Automatique : %s' % (self.catCombo.itemText(k) if k > 0 else i['category']))
         else:
@@ -430,7 +458,7 @@ class BridgeWindow(QtWidgets.QWidget):
         super().showEvent(e)
         if self._job is None:
             try:
-                self._job = cmds.scriptJob(event=['SelectionChanged', self.refresh], killWithScene=False)
+                self._job = cmds.scriptJob(event=['SelectionChanged', self._selection_changed], killWithScene=False)
             except Exception:
                 self._job = None
 
@@ -464,6 +492,8 @@ def show():
 def quick_send():
     """Bouton d'étagère « Envoi rapide » : envoie la sélection telle quelle, sans fenêtre."""
     info = core.analyse()
+    if core.looks_like_head(info):
+        info = core.analyse(head=True)
     bad = [m for lvl, m in info['issues'] if lvl == 'bad']
     if bad:
         cmds.warning(u'Plasma Bridge : ' + bad[0])

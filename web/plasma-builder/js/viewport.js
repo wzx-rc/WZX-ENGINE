@@ -111,6 +111,25 @@ export class Viewport {
       const up = () => { canvas.removeEventListener('pointermove', mv); canvas.removeEventListener('pointerup', up); };
       canvas.addEventListener('pointermove', mv); canvas.addEventListener('pointerup', up);
     }, true);
+    // Shift + clic droit glissé : tourne la lumière (environnement et lumières studio) comme Substance Painter.
+    canvas.addEventListener('pointerdown', e => {
+      if (!(e.shiftKey && !e.altKey && e.button === 2)) return;
+      e.preventDefault(); e.stopImmediatePropagation();
+      canvas.setPointerCapture(e.pointerId);
+      let x = e.clientX;
+      canvas.style.cursor = 'ew-resize';
+      const mv = ev => {
+        const dx = ev.clientX - x; x = ev.clientX;
+        const T = Math.PI * 2;
+        this.setRender({ envRotation: (((this.settings.envRotation + dx * 0.01) % T) + T) % T });
+      };
+      const up = () => {
+        canvas.removeEventListener('pointermove', mv); canvas.removeEventListener('pointerup', up);
+        canvas.style.cursor = '';
+        canvas.dispatchEvent(new CustomEvent('plasma-light', { bubbles: true }));
+      };
+      canvas.addEventListener('pointermove', mv); canvas.addEventListener('pointerup', up);
+    }, true);
     canvas.addEventListener('contextmenu', e => e.preventDefault());
     canvas.addEventListener('pointerdown', e => {
       const L = this.navTool === 'pan' ? THREE.MOUSE.PAN : this.navTool === 'zoom' ? THREE.MOUSE.DOLLY : THREE.MOUSE.ROTATE;

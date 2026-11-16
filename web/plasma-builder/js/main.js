@@ -659,6 +659,8 @@ vp.onFocus = () => {
 $('socketsBtn').addEventListener('click', () => { ui.sockets = !ui.sockets; renderSteps(); renderPins(); });
 $('rigBtn').addEventListener('click', () => { ui.rig = !ui.rig; if (skel) skel.visible = ui.rig && ui.mode !== 'pose'; renderSteps(); });
 $('lightBtn').addEventListener('click', () => vp.rotateLight());
+// Shift + clic droit glissé dans le viewport (viewport.js) : le panneau Rendu suit l'angle de la lumière.
+$('vpCanvas').addEventListener('plasma-light', () => renderRenderPanel());
 $('texBtn').addEventListener('click', () => { ui.shade = ui.shade === 'paint' ? 'resin' : 'paint'; applyMaterials(); renderSteps(); });
 $('fullBtn').addEventListener('click', () => { const el = $('vp'); if (document.fullscreenElement) document.exitFullscreen(); else el.requestFullscreen?.(); });
 $('qualitySel').addEventListener('change', e => setQuality(e.target.value));

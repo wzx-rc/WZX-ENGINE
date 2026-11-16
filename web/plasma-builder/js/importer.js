@@ -48,6 +48,7 @@ function emptyDraft() {
     id: null, created: 0, name: '', cat: cat.id, tags: [], meshes: [], locators: [], unit: 1, zup: false,
     texture: null, textureName: '', mask: null, maskName: '', flipY: true,
     home: cat.home, plugType: cat.type, placement: 'origin', sockets: [], plugM: null, plugFrom: null, files: [], catAuto: filter === 'all',
+    headInPlace: false,
   };
 }
 // Scène source -> espace brique (cm, Y en haut).
@@ -239,6 +240,8 @@ async function fromMaya(p) {
   // catégorie choisie dans la fenêtre Plasma Bridge (sinon celle du PLUG, ou devinée par le placement)
   const cat = p.manifest?.category && catById(p.manifest.category);
   if (cat && cat.id === p.manifest.category && draft.plugFrom !== 'file') { draft.cat = cat.id; draft.home = cat.home; draft.plugType = cat.type; draft.catAuto = false; }
+  // option Head de Plasma Bridge : tête complète modélisée en place sur l'ork
+  if (p.manifest?.head) setHeadInPlace(true);
   refresh(true);
   for (const w of p.manifest?.warnings || []) console.warn('[Maya]', w);
   const nw = p.manifest?.warnings?.length || 0;
@@ -248,7 +251,16 @@ async function fromMaya(p) {
 
 // ---------------------------------------------------------------- aperçu
 // Seule, la brique est à l'origine comme dans Maya. En essai sur l'ork : socket ∘ plug⁻¹, comme dans le Builder.
-const plugMatrix = () => draft.plugM ? draft.plugM.clone() : new THREE.Matrix4();
+// Tête en place (option Head de Plasma Bridge) : le plug est le socket Tête de l'ork au repos, la tête reste donc
+// exactement là où elle a été modélisée sur l'ork dans Maya, et toutes les têtes se remplacent au même endroit.
+const headSocket = () => orkDefs.find(s => s.id === 'head');
+const plugMatrix = () => draft.headInPlace && headSocket() ? headSocket().rest.clone() : draft.plugM ? draft.plugM.clone() : new THREE.Matrix4();
+function setHeadInPlace(on) {
+  draft.headInPlace = !!on;
+  if (on) { const c = catById('head'); draft.cat = c.id; draft.home = 'head'; draft.plugType = 'head'; draft.catAuto = false; draft.placement = 'plug'; }
+  else draft.placement = draft.plugM ? 'plug' : 'origin';
+  showOrk();
+}
 // socket de l'ork pour l'essai (et proposé en premier dans le Builder) : celui de la catégorie, sinon le premier du type
 function homeSocket() {
   const ok = s => s && (draft.plugType === 'any' || s.type === draft.plugType);
@@ -411,6 +423,8 @@ function renderForm() {
   const anySrc = d.meshes.some(m => m.src);
   $('fUnit').disabled = $('fZup').disabled = !anySrc;
   $('fPlugType').value = d.plugType;
+  $('fHead').checked = !!d.headInPlace;
+  $('fPlugType').disabled = !!d.headInPlace;
   $('fFiles').innerHTML = d.meshes.length ? d.meshes.map((m, i) => {
     const t = Math.round((m.geo.index ? m.geo.index.count : m.geo.attributes.position.count) / 3);
     return `<div class="it"><span title="${esc(m.file)}" data-noi18n>${esc(m.name)} <small>${t.toLocaleString(window.plasmaLang === 'fr' ? 'fr-FR' : 'en-US')} tri</small></span><select data-lod="${i}" aria-label="${tr('Version de', 'Version of')} ${esc(m.name)}"><option value="low" ${m.lod === 'low' ? 'selected' : ''}>Low</option><option value="high" ${m.lod === 'high' ? 'selected' : ''}>High</option><option value="skip" ${m.lod === 'skip' ? 'selected' : ''}>Ignorer</option></select><button type="button" class="icon" data-rmesh="${i}" aria-label="Retirer ${esc(m.name)}">${ICON(TRASH)}</button></div>`;
@@ -428,6 +442,7 @@ function renderForm() {
   $('vpInfo').textContent = d.meshes.length ? `${d.files.join(', ') || d.name}\n${home ? tr(`Essai sur ${home.label.toLowerCase()}, ork au repos`, `Trying on ${home.label.toLowerCase()}, ork at rest`) : tr('Brique seule, à l\'origine comme dans Maya', 'Brick alone, at the origin as in Maya')}` : '';
 }
 function refresh(frame = false) {
+  showOrk();
   renderForm();
   buildPreview();
   runChecks();
@@ -453,6 +468,7 @@ $('fCat').addEventListener('change', e => {
   refresh(true);
 });
 $('fPlugType').addEventListener('change', e => { draft ||= emptyDraft(); draft.plugType = e.target.value; refresh(ui.ork); });
+$('fHead').addEventListener('change', e => { draft ||= emptyDraft(); setHeadInPlace(e.target.checked); refresh(true); });
 $('fUnit').addEventListener('change', e => { draft.unit = +e.target.value; applyLocators(); refresh(true); });
 $('fZup').addEventListener('change', e => { draft.zup = e.target.checked; applyLocators(); refresh(true); });
 $('fFiles').addEventListener('change', e => { const i = e.target.dataset.lod; if (i != null) { draft.meshes[+i].lod = e.target.value; transferUVs(); refresh(); } });
@@ -487,7 +503,9 @@ function renderBar() {
   $('vpCanvas').style.cursor = ui.tool === 'socket' || ui.tool === 'plug' ? 'crosshair' : '';
 }
 // L'aperçu de la brique vit dans l'espace de l'ork : on cache ses maillages, pas l'ork lui-même.
-const showOrk = () => { for (const [n, m] of Object.entries(model.meshes)) m.visible = ui.ork && !/_low$/.test(n); };
+// en essai, une tête complète cache la tête de l'ork (comme dans le Builder)
+const HEAD_PARTS = /^(HEAD_|EYES|TEETH)/;
+const showOrk = () => { if (!model) return; for (const [n, m] of Object.entries(model.meshes)) m.visible = ui.ork && !/_low$/.test(n) && !(draft?.headInPlace && HEAD_PARTS.test(n)); };
 function setShade(s) { ui.shade = s; renderBar(); buildPreview(); }
 $('texBtn').addEventListener('click', () => setShade(ui.shade === 'paint' ? 'resin' : 'paint'));
 $('orkBtn').addEventListener('click', () => { ui.ork = !ui.ork; showOrk(); renderBar(); refresh(true); });
@@ -561,6 +579,7 @@ function loadRec(r) {
     locators: [], texture: r.texture, textureName: r.textureName || 'basecolor', mask: r.mask, maskName: r.maskName || 'masque', flipY: r.flipY !== false,
     home: r.home, plugType: r.plug.type, placement: r.placement === 'origin' ? 'origin' : 'plug', sockets: r.sockets.map(s => ({ name: s.name, type: s.type, m: mat4(s.m), from: 'click' })),
     plugM: r.placement !== 'origin' ? mat4(r.plug.m) : null, plugFrom: r.placement !== 'origin' ? 'click' : null,
+    headInPlace: r.inPlace === 'head' || (r.placement === 'inplace' && r.home === 'head'),
   };
   ui.sel = null;
   refresh(true);
@@ -590,7 +609,9 @@ $('saveBtn').addEventListener('click', async () => {
     lods: { low: lowG.map((g, i) => geoToRec(g, low[i].name)), high: highG.map((g, i) => geoToRec(g, high[i].name)) },
     texture: draft.texture, textureName: draft.textureName, mask: draft.mask, maskName: draft.maskName, flipY: draft.flipY,
     plug: { type: draft.plugType, m: plugMatrix().toArray() },
-    home: homeSocket()?.id || draft.home, placement: draft.plugM ? 'plug' : 'origin',
+    home: draft.headInPlace ? 'head' : homeSocket()?.id || draft.home, placement: draft.headInPlace ? 'inplace' : draft.plugM ? 'plug' : 'origin',
+    // tête complète : posée sur le socket Tête, elle cache la tête de l'ork (et remplace la tête déjà posée)
+    inPlace: draft.headInPlace ? 'head' : undefined, replaceHead: draft.headInPlace || undefined,
     sockets: draft.sockets.map(s => ({ name: s.name, type: s.type, m: s.m.toArray() })),
     thumb: thumbnail(lowG, highG),
     stats: { low: triCount(lowG.map(g => geoToRec(g))), high: highG.length ? triCount(highG.map(g => geoToRec(g))) : 0 },

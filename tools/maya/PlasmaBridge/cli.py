@@ -30,6 +30,7 @@ def main():
     ap.add_argument('scene')
     ap.add_argument('--root', help='noeud de la brique (par défaut : toutes les racines avec des maillages)')
     ap.add_argument('--inbox', help='dossier de la boîte d\'envoi (par défaut celle de l\'app)')
+    ap.add_argument('--head', action='store_true', help='tête complète en place (remplace la tête de l\'ork)')
     a = ap.parse_args()
     if not os.path.isfile(a.scene):
         _result({'error': u'Scène introuvable : %s' % a.scene}, 1)
@@ -55,7 +56,7 @@ def main():
                         sel.append(t)
         if not sel:
             _result({'error': u'Aucun maillage dans la scène.'}, 1)
-        info = core.analyse(sel)
+        info = core.analyse(sel, head=a.head)
         if not a.root and len(sel) > 1:
             info['name'] = os.path.splitext(os.path.basename(a.scene))[0]
         folder = core.send(info, inbox=a.inbox, open_app=False)
