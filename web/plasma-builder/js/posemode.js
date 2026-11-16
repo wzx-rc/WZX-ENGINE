@@ -529,10 +529,7 @@ export function createPoseMode(opts) {
   // F : l'os choisi et ce qu'il porte (main = main et doigts), sinon tout l'ork
   function focus() {
     if (!ui.sel) { vp.frameObject(model.root); return; }
-    const pts = [];
-    ui.sel.traverse(o => { if (o.isBone) pts.push(o.getWorldPosition(new THREE.Vector3())); });
-    if (ui.sel.parent?.isBone && pts.length < 2) pts.push(ui.sel.parent.getWorldPosition(new THREE.Vector3()));
-    vp.framePoints(pts, 0.16);
+    vp.focusAt(ui.sel.getWorldPosition(new THREE.Vector3()), model.root);
   }
   $('tools').addEventListener('click', e => { const b = e.target.closest('[data-ptool]'); if (b && ui.active) setTool(b.dataset.ptool); });
   function onKey(e) {

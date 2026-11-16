@@ -183,7 +183,7 @@
     'Modèle test introuvable': 'Test model not found', 'Bibliothèque indisponible (stockage du navigateur bloqué)': 'Library unavailable (browser storage blocked)',
 
     // ---------------------------------------------------------------- Rig Lab
-    'Rotation des os (E)': 'Rotate bones (E)', 'Déplacer en IK : mains, pieds, bassin (W)': 'Move in IK: hands, feet, pelvis (W)',
+    'Rotation des os (E)': 'Rotate bones (E)', 'Taille des vignettes': 'Thumbnail size', 'Largeur de la bibliothèque': 'Library width', 'Glisser pour changer la largeur': 'Drag to change the width', 'Posing presets': 'Posing presets', 'Déplacer en IK : mains, pieds, bassin (W)': 'Move in IK: hands, feet, pelvis (W)',
     'Maillage affiché': 'Displayed mesh', 'Afficher les os (B)': 'Show bones (B)', 'Poids de l\'os (H)': 'Bone weights (H)',
     'Os sélectionné': 'Selected bone', 'Remettre l\'os au repos': 'Reset the bone to rest', 'Copie la rotation de cet os sur l\'os opposé': 'Copy this bone\'s rotation to the opposite bone',
     'Tout remettre au repos': 'Reset everything to rest', 'Échange gauche et droite': 'Swap left and right',

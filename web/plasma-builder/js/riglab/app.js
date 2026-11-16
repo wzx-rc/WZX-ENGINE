@@ -357,10 +357,7 @@ $('frameBtn').addEventListener('click', () => vp.frameObject(model.root));
 vp.onFocus = () => {
   if (!model) return;
   if (!state.sel) { vp.frameObject(model.root); return; }
-  const pts = [];
-  state.sel.traverse(o => { if (o.isBone) pts.push(o.getWorldPosition(new THREE.Vector3())); });
-  if (state.sel.parent?.isBone && pts.length < 2) pts.push(state.sel.parent.getWorldPosition(new THREE.Vector3()));
-  vp.framePoints(pts, 0.16);
+  vp.focusAt(state.sel.getWorldPosition(new THREE.Vector3()), model.root);
 };
 function toggleCtrls() {
   if (!controls) return;

@@ -24,8 +24,8 @@ const svg = k => `<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke
 const CSS = `
 .navui{position:absolute;top:10px;right:10px;z-index:6;display:flex;flex-direction:column;align-items:center;gap:10px;pointer-events:none}
 .navui>*{pointer-events:auto}
-.navcube{position:relative;width:118px;height:118px;border-radius:50%;background:radial-gradient(circle,rgba(255,255,255,.07),rgba(255,255,255,.02) 62%,transparent 70%)}
-.navcube canvas{width:118px;height:118px;display:block;cursor:pointer}
+.navcube{position:relative;width:96px;height:96px;border-radius:50%;background:radial-gradient(circle,rgba(255,255,255,.07),rgba(255,255,255,.02) 62%,transparent 70%)}
+.navcube canvas{width:96px;height:96px;display:block;cursor:pointer}
 .navcube .home{position:absolute;left:2px;top:2px;width:24px;height:24px;border:0;border-radius:6px;background:rgba(20,21,24,.7);color:#bfc1c7;display:grid;place-items:center;cursor:pointer;padding:0}
 .navcube .home svg{width:15px;height:15px}
 .navcube .home:hover{color:#fff}
@@ -44,7 +44,7 @@ export function createNavUI(vp) {
   const host = vp.canvas.parentElement;
   const root = document.createElement('div');
   root.className = 'navui';
-  root.innerHTML = `<div class="navcube"><canvas width="236" height="236"></canvas><button type="button" class="home" data-nav="home">${svg('home')}</button></div>
+  root.innerHTML = `<div class="navcube"><canvas width="192" height="192"></canvas><button type="button" class="home" data-nav="home">${svg('home')}</button></div>
 <div class="navbar" role="toolbar">
   <button type="button" data-nav="orbit">${svg('orbit')}</button>
   <button type="button" data-nav="pan">${svg('pan')}</button>
@@ -138,24 +138,38 @@ export function createNavUI(vp) {
   r3.setPixelRatio(1);
   r3.setClearColor(0x000000, 0);
   const scene = new THREE.Scene();
-  const ocam = new THREE.OrthographicCamera(-1.75, 1.75, 1.75, -1.75, 0.1, 20);
+  const ocam = new THREE.OrthographicCamera(-1.85, 1.85, 1.85, -1.85, 0.1, 20);
+  // brique 2x2 translucide (corps 2 x 1.3 x 2, quatre tenons sur le dessus), comme une brique de construction
+  const HY = 0.65, HALF = new THREE.Vector3(1, HY, 1);
   const labels = () => fr() ? ['DROITE', 'GAUCHE', 'HAUT', 'BAS', 'FACE', 'DOS'] : ['RIGHT', 'LEFT', 'TOP', 'BOTTOM', 'FRONT', 'BACK'];
-  function faceTex(txt, hot) {
-    const c = document.createElement('canvas'); c.width = c.height = 128;
+  function faceTex(txt, hot, side) {
+    const c = document.createElement('canvas'); c.width = 160; c.height = side ? 104 : 160;
     const g = c.getContext('2d');
-    g.fillStyle = hot ? accent() : '#34363d'; g.fillRect(0, 0, 128, 128);
-    g.fillStyle = hot ? 'rgba(255,255,255,.18)' : 'rgba(255,255,255,.04)'; g.fillRect(6, 6, 116, 116);
-    g.fillStyle = hot ? '#fff' : '#e2e3e7';
-    g.font = `700 ${txt.length > 6 ? 19 : 22}px system-ui, sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle';
-    g.fillText(txt, 64, 66);
+    g.fillStyle = hot ? accent() : 'rgba(150,156,168,.20)'; g.fillRect(0, 0, c.width, c.height);
+    g.fillStyle = hot ? '#fff' : 'rgba(235,236,240,.92)';
+    g.font = `600 ${txt.length > 6 ? 21 : 24}px system-ui, sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.save(); g.translate(c.width / 2, c.height / 2 + 2);
+    if (side) g.scale(1, 1.25);
+    g.fillText(txt, 0, 0); g.restore();
     const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4;
     return t;
   }
   let lastLang = null, lastAccent = null, hoverFace = -1;
-  const mats = Array.from({ length: 6 }, () => new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.94 }));
-  const cube = new THREE.Mesh(new THREE.BoxGeometry(2, 2, 2), mats);
-  const edges = new THREE.LineSegments(new THREE.EdgesGeometry(cube.geometry), new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.8 }));
+  const mats = Array.from({ length: 6 }, () => new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.9, depthWrite: false }));
+  const cube = new THREE.Mesh(new THREE.BoxGeometry(2, 2 * HY, 2), mats);
+  const lineMat = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85 });
+  const edges = new THREE.LineSegments(new THREE.EdgesGeometry(cube.geometry), lineMat);
   cube.add(edges);
+  // tenons : cylindres translucides, contour en trait
+  const studMat = new THREE.MeshBasicMaterial({ color: 0xc8ccd6, transparent: true, opacity: 0.16, depthWrite: false });
+  const studGeo = new THREE.CylinderGeometry(0.3, 0.3, 0.24, 24);
+  const studEdge = new THREE.EdgesGeometry(studGeo, 30);
+  for (const x of [-0.5, 0.5]) for (const z of [-0.5, 0.5]) {
+    const st = new THREE.Mesh(studGeo, studMat);
+    st.position.set(x, HY + 0.12, z);
+    st.add(new THREE.LineSegments(studEdge, lineMat));
+    cube.add(st);
+  }
   scene.add(cube);
   // repère : petites lignes X / Y / Z au coin arrière-bas-gauche, comme Maya
   const axes = new THREE.Group();
@@ -163,7 +177,7 @@ export function createNavUI(vp) {
     const g = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3(...d).multiplyScalar(1.1)]);
     axes.add(new THREE.Line(g, new THREE.LineBasicMaterial({ color: c })));
   }
-  axes.position.set(-1.02, -1.02, -1.02);
+  axes.position.set(-1.02, -HY - 0.02, -1.02);
   scene.add(axes);
   // zone survolée (arête / coin) : petit carré qui suit le pointeur
   const hot = new THREE.Mesh(new THREE.SphereGeometry(0.28, 16, 12), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.85, depthTest: false }));
@@ -175,10 +189,10 @@ export function createNavUI(vp) {
     if (lang === lastLang && ac === lastAccent && mats[0].userData.hot === hoverFace) return;
     if (lang !== lastLang) setTips();
     lastLang = lang; lastAccent = ac;
-    labels().forEach((t, i) => { mats[i].map?.dispose(); mats[i].map = faceTex(t, i === hoverFace); mats[i].needsUpdate = true; });
+    labels().forEach((t, i) => { mats[i].map?.dispose(); mats[i].map = faceTex(t, i === hoverFace, i !== 2 && i !== 3); mats[i].needsUpdate = true; });
     mats[0].userData.hot = hoverFace;
     hot.material.color.set(ac);
-    edges.material.color.set(ac);
+    lineMat.color.set(0xffffff);
   }
 
   // direction de vue sous le pointeur : face, arête ou coin selon la position sur la face
@@ -190,8 +204,8 @@ export function createNavUI(vp) {
     const h = ray2.intersectObject(cube, false)[0];
     if (!h) return null;
     const p = h.point, d = new THREE.Vector3();
-    for (const a of ['x', 'y', 'z']) d[a] = Math.abs(p[a]) > 0.62 ? Math.sign(p[a]) : 0;
-    return { dir: d, face: h.face.materialIndex, point: d.clone().multiplyScalar(1.0) };
+    for (const a of ['x', 'y', 'z']) d[a] = Math.abs(p[a] / HALF[a]) > 0.62 ? Math.sign(p[a]) : 0;
+    return { dir: d, face: h.face.materialIndex, point: d.clone().multiply(HALF) };
   }
   let cdown = null;
   cv.addEventListener('pointerdown', e => { if (e.button !== 0) return; cv.setPointerCapture(e.pointerId); cdown = { x: e.clientX, y: e.clientY, lx: e.clientX, ly: e.clientY, moved: 0 }; vp.camAnim = null; });
@@ -206,7 +220,7 @@ export function createNavUI(vp) {
     const nz = h ? [h.dir.x, h.dir.y, h.dir.z].filter(v => v).length : 0;
     hoverFace = h && nz === 1 ? h.face : -1;
     hot.visible = !!h && nz > 1;
-    if (hot.visible) hot.position.copy(h.dir).multiplyScalar(1);
+    if (hot.visible) hot.position.copy(h.point);
   });
   cv.addEventListener('pointerleave', () => { hoverFace = -1; hot.visible = false; });
   cv.addEventListener('pointerup', e => {

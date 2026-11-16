@@ -35,16 +35,13 @@
     <nav class="mainnav" aria-label="Navigation">
       <a href="hub.html" title="Hub"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="8" height="8" rx="2"/><rect x="13" y="3" width="8" height="5" rx="2"/><rect x="13" y="10" width="8" height="11" rx="2"/><rect x="3" y="13" width="8" height="8" rx="2"/></svg><span class="navlbl">Hub</span> <span class="navbadge" id="navBadge" hidden></span></a>
       <a href="library.html" title="Library"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h4v14H4zM10 5h4v14h-4zM16 6l3.5-1 3 13.5-3.5 1z"/></svg><span class="navlbl">Library</span></a>
-      <a href="index.html" class="active" aria-current="page" title="Builder"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20v-2a4 4 0 0 1 4-4h6a4 4 0 0 1 4 4v2M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z"/></svg><span class="navlbl">Builder</span></a>
+      <a href="index.html?mode=build" data-navmode="build" class="active" aria-current="page" title="Builder"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20v-2a4 4 0 0 1 4-4h6a4 4 0 0 1 4 4v2M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z"/></svg><span class="navlbl">Builder</span></a>
+      <a href="index.html?mode=pose" data-navmode="pose" title="Pose"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="4" r="2"/><path d="M12 6v8M6 9l6 1 6-3M12 14l-4 7M12 14l4 7"/></svg><span class="navlbl">Pose</span></a>
       <a href="rig.html" title="Rig Lab"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="4" r="2"/><path d="M12 6v8M6 9h12M12 14l-4 7M12 14l4 7"/></svg><span class="navlbl">Rig Lab</span></a>
       <a href="import.html" title="Importer"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M4 20h16"/></svg><span class="navlbl">Importer</span></a>
     </nav>
     <script src="js/early.js"></script>
     <div class="topbar-right">
-      <div class="seg modesel" id="modeSel" role="group" aria-label="Mode du Builder">
-        <button type="button" data-mode="build" title="Build : poser les briques sur l'ork"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8l8-4 8 4-8 4zM4 12l8 4 8-4M4 16l8 4 8-4"/></svg>Build</button>
-        <button type="button" data-mode="pose" title="Pose : poser l'ork avec son squelette, les briques suivent"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="4" r="2"/><path d="M12 6v8M6 9l6 1 6-3M12 14l-4 7M12 14l4 7"/></svg>Pose</button>
-      </div>
       <label class="projname"><span class="sr">Nom du projet</span><input id="projName" type="text" value="Da_Big_Boy_01" spellcheck="false">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16zM14 6l4 4"/></svg></label>
       <div class="btngroup">
@@ -69,14 +66,14 @@
       <div class="equip-list" id="equipList"></div>
       <p class="muted equip-hint">Clic : choisir le socket et ouvrir la bibliothèque. Les numéros sont ceux des pastilles sur l'ork.</p>
     </nav>
-    <nav class="rail" aria-label="Catégories">
-      <div class="rail-head"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a8 8 0 0 0-8 8v3l2 2v4h12v-4l2-2v-3a8 8 0 0 0-8-8zM9 12h.01M15 12h.01M10 20v-3M14 20v-3"/></svg>Ork Builder</div>
-      <div id="rail"></div>
-    </nav>
 
     <div class="work">
       <div class="row-top">
-        <section class="panel library" aria-label="Bibliothèque">
+        <section class="panel libbox" id="libBox" aria-label="Bibliothèque">
+          <div class="libbox-head"><h2 id="libBoxTitle">Bibliothèque</h2></div>
+          <div class="libbox-body">
+          <nav class="rail" aria-label="Catégories"><div id="rail"></div></nav>
+        <section class="library" aria-label="Bibliothèque">
           <div class="panel-head">
             <h2 id="libTitle">Têtes</h2><span class="count" id="libCount">0</span>
             <span class="grow"></span>
@@ -90,7 +87,7 @@
           <p class="hint">Clic : la brique va sur son socket. Glisser vers le viewport : choisir le socket.</p>
         </section>
 
-        <section class="panel poselib" id="poseLib" aria-label="Poses" hidden>
+        <section class="poselib" id="poseLib" aria-label="Posing presets" hidden>
           <div class="panel-head">
             <h2>Poses</h2><span class="count" id="poseLibCount">0</span>
             <span class="grow"></span>
@@ -98,6 +95,14 @@
           </div>
           <div class="poselib-body" id="poseLibBody"></div>
           <p class="hint">Clic : appliquer la pose. Clic droit sur une de tes poses : renommer, supprimer.</p>
+        </section>
+          </div>
+          <div class="libbox-foot">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="2"/></svg>
+            <input type="range" id="thumbSize" min="64" max="200" step="2" value="96" aria-label="Taille des vignettes" title="Taille des vignettes">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"/></svg>
+          </div>
+          <div class="libbox-grip" id="libGrip" role="separator" aria-orientation="vertical" aria-label="Largeur de la bibliothèque" title="Glisser pour changer la largeur"></div>
         </section>
 
         <section class="panel viewport-panel" aria-label="Viewport">
@@ -271,7 +276,7 @@
           <div class="panel-head"><h2>Assemblage</h2><span class="grow"></span><span class="muted" id="asmInfo"></span></div>
           <div class="striprow" id="asmRow"></div>
         </section>
-        <section class="panel strip" aria-label="Poses">
+        <section class="panel strip posestrip" aria-label="Poses" hidden>
           <div class="panel-head"><h2>Poses</h2><span class="muted" id="poseName"></span></div>
           <div class="striprow" id="poseRow"></div>
         </section>

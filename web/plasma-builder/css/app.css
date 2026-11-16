@@ -361,12 +361,37 @@ body[data-mode="pose"] .tools [data-tool] { display: none; }
 body[data-mode="pose"] .tools [data-ptool] { display: flex; }
 body[data-mode="pose"] .tools [data-ptool][aria-pressed="true"] { border-color: var(--accent); background: var(--accent-bg); color: var(--accent); }
 
-/* En mode Pose : bibliothèque de poses à la place des briques, panneau Pose à la place de Personnaliser / Ork */
-body[data-mode="pose"] .rail, body[data-mode="pose"] .library, body[data-mode="pose"] #equip,
-body[data-mode="pose"] .rightcol > .panel:not(#posePanel), body[data-mode="pose"] .row-bottom,
+/* En mode Pose : la mise en page ne bouge pas. Le panneau Bibliothèque devient « Posing presets » (poses à la place
+   des catégories et des briques), la colonne de droite montre le panneau Pose à la place de Personnaliser / Ork. */
+body[data-mode="pose"] .libbox .rail, body[data-mode="pose"] .libbox .library, body[data-mode="pose"] #equip,
+body[data-mode="pose"] .rightcol > .panel:not(#posePanel),
 body[data-mode="pose"] #pins, body[data-mode="pose"] #steps, body[data-mode="pose"] #vpSteps, body[data-mode="pose"] #drawerOpen,
 body[data-mode="pose"] #socketsBtn { display: none !important; }
 body[data-mode="pose"] #poseLib, body[data-mode="pose"] #posePanel { display: flex !important; }
+
+/* Panneau Bibliothèque / Posing presets : catégories + briques, curseur de taille des vignettes, poignée de largeur */
+.libbox { --thumb: 96px; contain: size; position: relative; flex: 0 0 var(--lib-w, 500px); width: var(--lib-w, 500px); max-width: 60vw; min-width: 280px; padding: 14px 12px 10px; gap: 10px; }
+.libbox-head h2 { font-size: 26px; }
+.libbox-body { flex: 1 1 auto; min-height: 0; display: flex; gap: 12px; }
+.libbox .rail { flex: 0 0 150px; min-width: 0; padding-right: 10px; border-right: 1px solid var(--line); }
+.libbox .library, .libbox .poselib { flex: 1 1 auto; max-width: none; min-width: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.libbox .library h2, .libbox .poselib h2 { font-size: 18px; }
+.libbox .libgrid, .libbox .poselib .posegrid { grid-template-columns: repeat(auto-fill, minmax(var(--thumb), 1fr)); max-height: none; flex: 1 1 auto; min-height: 0; }
+.libbox .libgrid { overflow: auto; }
+.libbox .poselib .posegrid { flex: none; overflow: visible; }
+.libbox .poselib-body { overflow: auto; flex: 1 1 auto; min-height: 0; }
+.libbox .poselib-body { max-height: none; }
+.libbox-foot { display: flex; align-items: center; gap: 8px; justify-content: flex-end; padding-top: 8px; border-top: 1px solid var(--line); color: var(--muted); }
+.libbox-foot svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; }
+.libbox-foot svg:last-child { width: 18px; height: 18px; }
+.libbox-foot input { width: 140px; accent-color: var(--accent); }
+.libbox-grip { position: absolute; top: 12px; bottom: 12px; right: -8px; width: 10px; cursor: ew-resize; z-index: 3; touch-action: none; }
+.libbox-grip::after { content: ""; position: absolute; left: 4px; top: 50%; width: 3px; height: 44px; margin-top: -22px; border-radius: 2px; background: var(--line2); transition: background .15s; }
+.libbox-grip:hover::after, .libbox-grip.on::after { background: var(--accent); }
+.posestrip { display: none !important; }
+.ui-atelier .libbox { display: contents; }
+.ui-atelier .libbox-head, .ui-atelier .libbox-foot, .ui-atelier .libbox-grip { display: none; }
+.ui-atelier .libbox-body { display: contents; }
 
 .poselib { flex: 1 1 300px; max-width: 330px; min-width: 270px; padding: 14px 12px; flex-direction: column; gap: 10px; }
 .poselib-body { display: flex; flex-direction: column; gap: 8px; overflow: auto; flex: 1 1 auto; min-height: 0; max-height: 640px; padding: 2px; }

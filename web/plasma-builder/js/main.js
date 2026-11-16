@@ -114,7 +114,9 @@ function mountBrick(r, s, xf, ghostMat = null) {
 function applyXf(offset, xf = defaultXf(), sq = 1) {
   offset.position.fromArray(xf.p);
   offset.rotation.set(xf.r[0] * D2R, xf.r[1] * D2R, xf.r[2] * D2R);
-  offset.scale.set(xf.s * (xf.m[0] ? -1 : 1) / Math.sqrt(sq), xf.s * (xf.m[1] ? -1 : 1) * sq, xf.s * (xf.m[2] ? -1 : 1) / Math.sqrt(sq));
+  // s : échelle uniforme (panneau Transfo) ; sc : facteurs par axe du gizmo d'échelle (X, Y, Z), 1 par défaut
+  const sc = xf.sc || [1, 1, 1];
+  offset.scale.set(xf.s * sc[0] * (xf.m[0] ? -1 : 1) / Math.sqrt(sq), xf.s * sc[1] * (xf.m[1] ? -1 : 1) * sq, xf.s * sc[2] * (xf.m[2] ? -1 : 1) / Math.sqrt(sq));
 }
 
 function rebuild() {
@@ -430,10 +432,49 @@ function setStep(step) {
 }
 // ---------- mode Build / Pose ----------
 let poseMode = null;
+// « Builder » et « Pose » dans la barre du haut : même page, on change seulement de mode (pas de rechargement).
+// Le panneau de gauche reste le même : Bibliothèque en Build, Posing presets en Pose.
+function renderNavMode() {
+  document.querySelectorAll('.mainnav [data-navmode]').forEach(a => {
+    const on = a.dataset.navmode === ui.mode;
+    a.classList.toggle('active', on);
+    if (on) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
+  });
+  $('libBoxTitle').textContent = ui.mode === 'pose' ? 'Posing presets' : tr('Bibliothèque', 'Library');
+}
+document.querySelectorAll('.mainnav [data-navmode]').forEach(a => a.addEventListener('click', e => {
+  e.preventDefault();
+  if (a.dataset.navmode !== ui.mode) setMode(a.dataset.navmode);
+  window.history.replaceState(null, '', 'index.html' + (ui.mode === 'pose' ? '?mode=pose' : ''));
+}));
+// Taille des vignettes et largeur du panneau, gardées sur ce poste
+{
+  const box = $('libBox'), k = 'plasmaork.builder.libbox';
+  let st = {};
+  try { st = JSON.parse(localStorage.getItem(k)) || {}; } catch { /* ignoré */ }
+  const keepBox = () => { try { localStorage.setItem(k, JSON.stringify(st)); } catch { /* ignoré */ } };
+  const apply = () => {
+    if (st.thumb) box.style.setProperty('--thumb', st.thumb + 'px');
+    if (st.w) box.style.setProperty('--lib-w', st.w + 'px');
+  };
+  apply();
+  $('thumbSize').value = st.thumb || 96;
+  $('thumbSize').addEventListener('input', e => { st.thumb = +e.target.value; apply(); keepBox(); });
+  $('libGrip').addEventListener('pointerdown', e => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    const g = $('libGrip'); g.setPointerCapture(e.pointerId); g.classList.add('on');
+    const x0 = e.clientX, w0 = box.getBoundingClientRect().width;
+    const mv = ev => { st.w = Math.round(Math.min(Math.max(w0 + ev.clientX - x0, 280), Math.min(980, innerWidth * 0.6))); apply(); };
+    const up = () => { g.removeEventListener('pointermove', mv); g.removeEventListener('pointerup', up); g.classList.remove('on'); keepBox(); };
+    g.addEventListener('pointermove', mv); g.addEventListener('pointerup', up);
+  });
+  $('libGrip').addEventListener('dblclick', () => { delete st.w; box.style.removeProperty('--lib-w'); keepBox(); });
+}
 function setMode(mode) {
   ui.mode = mode;
   document.body.dataset.mode = mode;
-  $('modeSel').querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.mode === mode)));
+  renderNavMode();
   save();
   if (!poseMode) return;
   if (mode === 'pose') {
@@ -598,7 +639,9 @@ $('frameBtn').addEventListener('click', () => model && vp.frameObject(model.root
 vp.onFocus = () => {
   if (!model) return;
   if (ui.mode === 'pose' && poseMode) { poseMode.focus(); return; }
-  vp.frameObject(ui.sel && inst[ui.sel] ? inst[ui.sel].meshes : model.root);
+  if (!(ui.sel && inst[ui.sel])) { vp.frameObject(model.root); return; }
+  const c = new THREE.Box3().setFromObject(inst[ui.sel].meshes).getCenter(new THREE.Vector3());
+  vp.focusAt(c, model.root);
 };
 $('socketsBtn').addEventListener('click', () => { ui.sockets = !ui.sockets; renderSteps(); renderPins(); });
 $('rigBtn').addEventListener('click', () => { ui.rig = !ui.rig; if (skel) skel.visible = ui.rig && ui.mode !== 'pose'; renderSteps(); });
@@ -695,7 +738,10 @@ vp.gizmo.addEventListener('objectChange', () => {
   if (!o || !p) return;
   p.xf.p = o.position.toArray().map(v => +v.toFixed(3));
   p.xf.r = [o.rotation.x, o.rotation.y, o.rotation.z].map(v => +(v / D2R).toFixed(1));
-  p.xf.s = +Math.abs(o.scale.y).toFixed(3);
+  // échelle : cube central = uniforme (s), un axe = facteur de cet axe (sc)
+  const a = [o.scale.x, o.scale.y, o.scale.z].map(Math.abs), sc = p.xf.sc || [1, 1, 1];
+  if (vp.gizmo.mode === 'scale' && vp.gizmo.axis && vp.gizmo.axis !== 'XYZ') p.xf.sc = a.map(v => +(v / p.xf.s).toFixed(4));
+  else p.xf.s = +(a[1] / sc[1]).toFixed(3);
   applyXf(o, p.xf);
 });
 vp.gizmo.addEventListener('mouseUp', () => { if (ui.mode === 'pose') return; commit(); renderCustomize(); scheduleFigureThumbs(); });
@@ -815,8 +861,9 @@ document.addEventListener('visibilitychange', async () => {
 
 // ---------- démarrage ----------
 applyTheme(ui.theme);
+{ const q = new URLSearchParams(location.search).get('mode'); if (q === 'pose' || q === 'build') ui.mode = q; }
 document.body.dataset.mode = ui.mode;
-$('modeSel').querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.mode === ui.mode)));
+renderNavMode();
 renderSteps(); renderViews(); renderOrk(); renderPoses(); renderRenderPanel(); syncUndo();
 try {
   const [m] = await Promise.all([

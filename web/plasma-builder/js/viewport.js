@@ -76,7 +76,7 @@ export class Viewport {
     this.controls = new OrbitControls(this.camera, canvas);
     this.controls.target.set(0, 1.05, 0);
     this.controls.enableDamping = true;
-    this.controls.minDistance = 1;
+    this.controls.minDistance = 0.25;
     this.controls.maxDistance = 12;
     // Navigation demandée par Wzx : clic gauche tourner, clic milieu déplacer, clic droit zoom (glisser), F cadrer.
     // Un clic gauche sans glisser (moins de 4 px) sélectionne toujours ; le gizmo coupe la caméra pendant qu'on le tire.
@@ -94,6 +94,24 @@ export class Viewport {
     this.navTool = null;
     this.onFocus = null;      // cadrer la sélection (F, bouton Cadrer), fourni par la page
     this.home = null;         // vue de départ (maison du ViewCube)
+    // Alt + clic droit : zoom comme Maya (glisser à droite / en bas = avancer, à gauche / en haut = reculer),
+    // vers le centre de rotation, sans limite trop proche.
+    canvas.addEventListener('pointerdown', e => {
+      if (!(e.altKey && e.button === 2)) return;
+      e.preventDefault(); e.stopImmediatePropagation();
+      canvas.setPointerCapture(e.pointerId);
+      this.camAnim = null;
+      let x = e.clientX, y = e.clientY;
+      const mv = ev => {
+        const d = (ev.clientX - x) + (ev.clientY - y); x = ev.clientX; y = ev.clientY;
+        const off = this.camera.position.clone().sub(this.controls.target);
+        off.setLength(THREE.MathUtils.clamp(off.length() * Math.exp(-d * 0.006), this.controls.minDistance, this.controls.maxDistance));
+        this.camera.position.copy(this.controls.target).add(off);
+      };
+      const up = () => { canvas.removeEventListener('pointermove', mv); canvas.removeEventListener('pointerup', up); };
+      canvas.addEventListener('pointermove', mv); canvas.addEventListener('pointerup', up);
+    }, true);
+    canvas.addEventListener('contextmenu', e => e.preventDefault());
     canvas.addEventListener('pointerdown', e => {
       const L = this.navTool === 'pan' ? THREE.MOUSE.PAN : this.navTool === 'zoom' ? THREE.MOUSE.DOLLY : THREE.MOUSE.ROTATE;
       this.controls.mouseButtons.LEFT = e.altKey ? THREE.MOUSE.ROTATE : L;
@@ -238,6 +256,26 @@ export class Viewport {
     this.camAnim = { t: 0, fromP: this.camera.position.clone(), toP: to, fromT: this.controls.target.clone(), toT: c.clone() };
   }
   focus() { if (this.onFocus) this.onFocus(); else if (this.home) this.frameObject(this.home.obj); }
+  // Focus façon Maya pour un perso : la sélection devient le centre de rotation, mais la caméra recule assez pour
+  // garder tout le personnage (whole) à l'écran.
+  focusAt(center, whole) {
+    const box = new THREE.Box3();
+    whole.updateWorldMatrix(true, true);
+    whole.traverseVisible(o => {
+      if (!o.isMesh || o.userData.helper || o.userData.rasterOnly) return;
+      if (o.isSkinnedMesh) { o.computeBoundingBox(); box.union(o.boundingBox.clone().applyMatrix4(o.matrixWorld)); return; }
+      if (!o.geometry.boundingBox) o.geometry.computeBoundingBox();
+      box.union(o.geometry.boundingBox.clone().applyMatrix4(o.matrixWorld));
+    });
+    if (box.isEmpty()) return;
+    // distance qui cadre la boîte du perso (hauteur et largeur), plus le décalage du nouveau centre
+    const s = box.getSize(new THREE.Vector3()), bc = box.getCenter(new THREE.Vector3());
+    const vf = THREE.MathUtils.degToRad(this.camera.fov), t = Math.tan(vf / 2);
+    const off = Math.abs(center.y - bc.y), offx = Math.hypot(center.x - bc.x, center.z - bc.z);
+    const dist = Math.max((s.y / 2 + off) / t, (Math.max(s.x, s.z) / 2 + offx) / t / this.camera.aspect) * 1.02 + Math.max(s.x, s.z) / 4;
+    const d = this.camera.position.clone().sub(this.controls.target).normalize();
+    this.camAnim = { t: 0, fromP: this.camera.position.clone(), toP: center.clone().addScaledVector(d, THREE.MathUtils.clamp(dist, this.controls.minDistance, this.controls.maxDistance)), fromT: this.controls.target.clone(), toT: center.clone() };
+  }
   homeView() { if (this.home) this.frameObject(this.home.obj, this.home.dir || new THREE.Vector3(0.55, 0.25, 1)); }
   // Vue alignée depuis une direction (ViewCube) : même centre, même distance, rotation en arc de cercle.
   viewFrom(dir) {

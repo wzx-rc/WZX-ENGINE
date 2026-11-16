@@ -86,8 +86,9 @@ export class MayaGizmo extends THREE.EventDispatcher {
 .mm svg{position:absolute;overflow:visible;pointer-events:none}
 .mm b{position:absolute;transform:translate(-50%,-50%);padding:6px 12px;border-radius:7px;font:600 12px/1.2 system-ui,sans-serif;white-space:nowrap;
 background:rgba(30,33,37,.94);color:#e9e6df;border:1px solid rgba(255,255,255,.14);box-shadow:0 4px 14px rgba(0,0,0,.45)}
-.mm b.cur{border-color:var(--accent,#f0435a)}
-.mm b.on{background:var(--accent,#f0435a);color:#fff;border-color:var(--accent,#f0435a)}
+.mm b{transition:background .08s,border-color .08s,color .08s}
+.mm b.cur{border-color:var(--line2,#3a3c42);color:var(--accent,#f0435a)}
+.mm b.on{background:var(--accent-bg,#2a1418);color:var(--accent,#f0435a);border-color:var(--accent,#f0435a)}
 .mm i{position:absolute;transform:translate(-50%,0);font:11px system-ui,sans-serif;color:rgba(255,255,255,.6);font-style:normal;white-space:nowrap}`;
       document.head.appendChild(st);
     }
