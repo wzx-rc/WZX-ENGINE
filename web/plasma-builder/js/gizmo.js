@@ -48,7 +48,7 @@ export class MayaGizmo extends THREE.EventDispatcher {
     canvas.addEventListener('pointerdown', this._onDown, true);
     // marking menu : sur tout le viewport (y compris les pastilles posées sur le canvas)
     (canvas.parentElement || canvas).addEventListener('pointerdown', e => {
-      if (!this.enabled || e.button !== 0 || !this._held || this.dragging) return;
+      if (!this.enabled || e.button !== 0 || !this._held || this.dragging || e.altKey || e.target.closest?.('.navui')) return;
       e.stopImmediatePropagation(); e.preventDefault();
       this._menu(e);
     }, true);
@@ -86,18 +86,18 @@ export class MayaGizmo extends THREE.EventDispatcher {
 .mm svg{position:absolute;overflow:visible;pointer-events:none}
 .mm b{position:absolute;transform:translate(-50%,-50%);padding:6px 12px;border-radius:7px;font:600 12px/1.2 system-ui,sans-serif;white-space:nowrap;
 background:rgba(30,33,37,.94);color:#e9e6df;border:1px solid rgba(255,255,255,.14);box-shadow:0 4px 14px rgba(0,0,0,.45)}
-.mm b.cur{border-color:#d9a54b}
-.mm b.on{background:#d9a54b;color:#1e2125;border-color:#d9a54b}
+.mm b.cur{border-color:var(--accent,#f0435a)}
+.mm b.on{background:var(--accent,#f0435a);color:#fff;border-color:var(--accent,#f0435a)}
 .mm i{position:absolute;transform:translate(-50%,0);font:11px system-ui,sans-serif;color:rgba(255,255,255,.6);font-style:normal;white-space:nowrap}`;
       document.head.appendChild(st);
     }
-    const R = 70;
-    const x = Math.min(Math.max(e.clientX, R + 60), innerWidth - R - 60), y = Math.min(Math.max(e.clientY, R + 30), innerHeight - R - 50);
+    const R = 140;   // options deux fois plus loin du centre
+    const x = Math.min(Math.max(e.clientX, R + 70), innerWidth - R - 70), y = Math.min(Math.max(e.clientY, R + 30), innerHeight - R - 50);
     const el = document.createElement('div');
     el.className = 'mm';
-    el.innerHTML = `<svg style="left:${x}px;top:${y}px" width="0" height="0"><circle r="2.5" fill="rgba(255,255,255,.85)"/><circle r="${R * 0.42}" fill="none" stroke="rgba(255,255,255,.55)" stroke-width="1.2" stroke-dasharray="3 4"/></svg>`
+    el.innerHTML = `<svg style="left:${x}px;top:${y}px" width="0" height="0"><circle r="2.5" fill="var(--accent,#f0435a)"/><circle r="${R * 0.21}" fill="none" stroke="rgba(255,255,255,.55)" stroke-width="1.2" stroke-dasharray="3 4"/></svg>`
       + items.map((it, i) => `<b data-i="${i}" class="${it.id === this.userSpace ? 'cur' : ''}" style="left:${x + Math.cos(it.a) * R}px;top:${y + Math.sin(it.a) * R}px">${it.label}</b>`).join('')
-      + `<i style="left:${x}px;top:${y + R + 22}px">${fr ? 'Espace du gizmo' : 'Gizmo space'}</i>`;
+      + `<i style="left:${x}px;top:${y + R * 0.21 + 14}px">${fr ? 'Espace du gizmo' : 'Gizmo space'}</i>`;
     document.body.appendChild(el);
     let pick = -1;
     const move = ev => {
@@ -250,6 +250,7 @@ background:rgba(30,33,37,.94);color:#e9e6df;border:1px solid rgba(255,255,255,.1
     for (const h of this.handles) {
       const on = h.id === this.axis || (!this.axis && h.id === this.last);
       const m = h.obj.material;
+      if (h.id === 'E') { m.color.set(on ? 0xd8d8d8 : h.color); m.opacity = on ? 0.16 : h.opacity; continue; }   // boule libre : gris très léger, comme Maya
       m.color.set(on ? COL.ACTIVE : h.color);
       if (h.kind === 'line') { m.resolution.copy(this._res); m.linewidth = on ? 3 : 2; }
       else m.opacity = on ? Math.max(h.opacity, 0.7) : h.opacity;
@@ -321,7 +322,7 @@ background:rgba(30,33,37,.94);color:#e9e6df;border:1px solid rgba(255,255,255,.1
     return Math.abs(den) < 1e-9 ? 0 : (b * ee - c * d) / den;
   }
   _onDown(e) {
-    if (!this.enabled || e.button !== 0 || !this.object) return;
+    if (!this.enabled || e.button !== 0 || !this.object || this.blocked?.(e)) return;
     const id = this._pick(e);
     if (!id) return;
     e.stopImmediatePropagation();
@@ -378,7 +379,7 @@ background:rgba(30,33,37,.94);color:#e9e6df;border:1px solid rgba(255,255,255,.1
     if (!this.object || !this.root.visible) return;
     if (!this.dragging) {
       if (e.buttons) return;
-      const id = this._pick(e);
+      const id = e.altKey || this.blocked?.(e) ? null : this._pick(e);
       if (id !== this.axis) this.axis = id;
       this.canvas.style.cursor = id ? 'pointer' : '';
       return;

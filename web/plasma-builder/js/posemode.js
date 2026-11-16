@@ -199,6 +199,7 @@ export function createPoseMode(opts) {
   let down = null, hoverQueued = null;
   vp.canvas.addEventListener('pointerdown', e => {
     if (!ui.active || e.button !== 0) return;
+    if (vp.navBlocks(e)) { down = null; return; }
     down = { x: e.clientX, y: e.clientY, gizmo: gizmo.dragging || gizmo.axis !== null };
   });
   vp.canvas.addEventListener('pointerup', e => {
@@ -525,6 +526,14 @@ export function createPoseMode(opts) {
 
   // ------------------------------------------------------------ outils, clavier
   function setTool(t) { ui.tool = t; keep(); attach(); renderPanel(); }
+  // F : l'os choisi et ce qu'il porte (main = main et doigts), sinon tout l'ork
+  function focus() {
+    if (!ui.sel) { vp.frameObject(model.root); return; }
+    const pts = [];
+    ui.sel.traverse(o => { if (o.isBone) pts.push(o.getWorldPosition(new THREE.Vector3())); });
+    if (ui.sel.parent?.isBone && pts.length < 2) pts.push(ui.sel.parent.getWorldPosition(new THREE.Vector3()));
+    vp.framePoints(pts, 0.16);
+  }
   $('tools').addEventListener('click', e => { const b = e.target.closest('[data-ptool]'); if (b && ui.active) setTool(b.dataset.ptool); });
   function onKey(e) {
     const k = e.key.toLowerCase();
@@ -534,7 +543,7 @@ export function createPoseMode(opts) {
     else if (k === 'e') setTool('fk');
     else if (k === 'escape') select(null);
     else if (k === 'm' && ui.sel) $('pmMirror').click();
-    else if (k === 'f') vp.frameObject(model.root);
+    else if (k === 'f') focus();
     else if (k === 'arrowup' && ui.sel?.parent?.isBone) select(ui.sel.parent);
     else if (k === 'arrowdown' && ui.sel) { const c = ui.sel.children.find(x => x.isBone); if (c) select(c); }
     else return false;
@@ -572,5 +581,5 @@ export function createPoseMode(opts) {
     renderPanel();
     renderLib();
   }
-  return { enter, leave, refresh, renderLib, onKey, update: updateViz, highlight: on => highlight(on && ui.active), get active() { return ui.active; }, ui, select, controls };
+  return { enter, leave, refresh, renderLib, onKey, update: updateViz, highlight: on => highlight(on && ui.active), get active() { return ui.active; }, ui, select, controls, focus };
 }

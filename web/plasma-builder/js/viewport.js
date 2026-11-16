@@ -10,6 +10,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { MayaGizmo } from './gizmo.js';
+import { createNavUI } from './navui.js';
 import { Post, Studio } from './render.js';
 import { PathTrace } from './pathtrace.js';
 import { SoftGI, SSAO, HQ_UNIFORMS, hookMaterial } from './hqgi.js';
@@ -86,7 +87,19 @@ export class Viewport {
     this.gizmo.setSize(0.8);
     this.gizmo.setSpace('local');
     this.gizmo.addEventListener('dragging-changed', e => { this.controls.enabled = !e.value; });
+    this.gizmo.blocked = e => this.navBlocks(e);
     this.overlay.add(this.gizmo.getHelper());
+    // Navigation façon Maya : Alt + clic gauche / milieu / droit = tourner / déplacer / zoom, sans sélectionner.
+    // navTool : outil de la barre de navigation ('orbit' | 'pan' | 'zoom' | 'pivot'), le clic gauche fait ce geste.
+    this.navTool = null;
+    this.onFocus = null;      // cadrer la sélection (F, bouton Cadrer), fourni par la page
+    this.home = null;         // vue de départ (maison du ViewCube)
+    canvas.addEventListener('pointerdown', e => {
+      const L = this.navTool === 'pan' ? THREE.MOUSE.PAN : this.navTool === 'zoom' ? THREE.MOUSE.DOLLY : THREE.MOUSE.ROTATE;
+      this.controls.mouseButtons.LEFT = e.altKey ? THREE.MOUSE.ROTATE : L;
+      if (e.altKey || this.navTool) this.controls.enabled = true;
+    }, true);
+    this.nav = createNavUI(this);
 
     // Cibles : couleur HDR + profondeur (MSAA 4x comme le temps réel du moteur), masque de sélection.
     this.hdr = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4, depthTexture: new THREE.DepthTexture(1, 1) });
@@ -188,17 +201,51 @@ export class Viewport {
     if (this.pt) this.pt.pt.renderScale = this.quality === 'pt' ? Math.min(1, 1.25 / this.renderer.getPixelRatio()) : 1;
   }
 
-  // Cadre l'objet depuis une direction (vues caméra), avec une transition douce.
+  // Un clic qui navigue (Alt, ou outil de la barre de navigation) ne sélectionne rien et ne prend pas le gizmo.
+  navBlocks(e) { return !!(e && e.altKey) || !!this.navTool; }
+  setNavTool(t) { this.navTool = t || null; this.canvas.style.cursor = t === 'pivot' ? 'crosshair' : t ? 'grab' : ''; }
+
+  // Cadre l'objet depuis une direction (vues caméra), avec une transition douce. Comme le F de Maya : la boîte de
+  // ce qui est visible (sans les aides), pose courante comprise, tient dans l'écran et devient le centre de rotation.
   frameObject(obj, dir = null, instant = false) {
-    const box = new THREE.Box3().setFromObject(obj);
+    const box = new THREE.Box3();
+    obj.updateWorldMatrix(true, true);
+    obj.traverseVisible(o => {
+      if (!o.isMesh || o.userData.helper || o.userData.rasterOnly) return;
+      if (o.isSkinnedMesh) { o.computeBoundingBox(); box.union(o.boundingBox.clone().applyMatrix4(o.matrixWorld)); return; }
+      if (!o.geometry.boundingBox) o.geometry.computeBoundingBox();
+      box.union(o.geometry.boundingBox.clone().applyMatrix4(o.matrixWorld));
+    });
+    if (box.isEmpty()) box.setFromObject(obj);
     if (box.isEmpty()) return;
-    const c = box.getCenter(new THREE.Vector3()), s = box.getSize(new THREE.Vector3());
-    const d = dir ? dir.clone().normalize() : this.camera.position.clone().sub(this.controls.target).normalize();
-    const fov = THREE.MathUtils.degToRad(this.camera.fov);
-    const dist = Math.max(s.y / 2 / Math.tan(fov / 2), s.x / 2 / Math.tan(fov / 2) / this.camera.aspect) * 1.25 + s.z / 2;
+    if (instant && !this.home) this.home = { obj, dir: dir ? dir.clone() : null };
+    this.frameSphere(box.getBoundingSphere(new THREE.Sphere()), dir, instant);
+  }
+  // Cadre des points (os sélectionnés…), avec un rayon minimal.
+  framePoints(points, minR = 0.05, dir = null) {
+    if (!points.length) return;
+    const s = new THREE.Sphere().setFromPoints(points);
+    s.radius = Math.max(s.radius, minR);
+    this.frameSphere(s, dir);
+  }
+  frameSphere(sph, dir = null, instant = false) {
+    const c = sph.center, d = dir ? dir.clone().normalize() : this.camera.position.clone().sub(this.controls.target).normalize();
+    const vf = THREE.MathUtils.degToRad(this.camera.fov);
+    const hf = 2 * Math.atan(Math.tan(vf / 2) * this.camera.aspect);
+    const dist = THREE.MathUtils.clamp(sph.radius / Math.sin(Math.min(vf, hf) / 2) * 1.05, this.controls.minDistance * 0.3, this.controls.maxDistance);
     const to = c.clone().addScaledVector(d, dist);
     if (instant) { this.camera.position.copy(to); this.controls.target.copy(c); return; }
-    this.camAnim = { t: 0, fromP: this.camera.position.clone(), toP: to, fromT: this.controls.target.clone(), toT: c };
+    this.camAnim = { t: 0, fromP: this.camera.position.clone(), toP: to, fromT: this.controls.target.clone(), toT: c.clone() };
+  }
+  focus() { if (this.onFocus) this.onFocus(); else if (this.home) this.frameObject(this.home.obj); }
+  homeView() { if (this.home) this.frameObject(this.home.obj, this.home.dir || new THREE.Vector3(0.55, 0.25, 1)); }
+  // Vue alignée depuis une direction (ViewCube) : même centre, même distance, rotation en arc de cercle.
+  viewFrom(dir) {
+    const t = this.controls.target, off = this.camera.position.clone().sub(t);
+    const to = dir.clone().normalize();
+    if (Math.abs(to.y) > 0.999) to.z += 0.002 * (to.z >= 0 ? 1 : -1) || 0.002;
+    to.normalize();
+    this.camAnim = { t: 0, orbit: true, from: off.clone(), q: new THREE.Quaternion().setFromUnitVectors(off.clone().normalize(), to), fromT: t.clone(), toT: t.clone() };
   }
 
   // Signature de ce que voit le path tracer : si elle change, la scène est reconstruite quand elle se stabilise.
@@ -324,8 +371,9 @@ export class Viewport {
       const a = this.camAnim;
       a.t = Math.min(1, a.t + dt * 2.5);
       const k = 1 - Math.pow(1 - a.t, 3);
-      this.camera.position.lerpVectors(a.fromP, a.toP, k);
       this.controls.target.lerpVectors(a.fromT, a.toT, k);
+      if (a.orbit) this.camera.position.copy(a.from).applyQuaternion(new THREE.Quaternion().slerp(a.q, k)).add(this.controls.target);
+      else this.camera.position.lerpVectors(a.fromP, a.toP, k);
       if (a.t >= 1) this.camAnim = null;
     }
     this.controls.update();
@@ -366,6 +414,7 @@ export class Viewport {
     r.autoClear = false;
     this.gizmo.update();
     r.render(this.overlay, this.camera);
+    this.nav?.update();
     r.autoClear = true;
   }
 }

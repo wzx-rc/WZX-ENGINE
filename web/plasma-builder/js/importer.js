@@ -492,6 +492,7 @@ function setShade(s) { ui.shade = s; renderBar(); buildPreview(); }
 $('texBtn').addEventListener('click', () => setShade(ui.shade === 'paint' ? 'resin' : 'paint'));
 $('orkBtn').addEventListener('click', () => { ui.ork = !ui.ork; showOrk(); renderBar(); refresh(true); });
 $('frameBtn').addEventListener('click', frameBrick);
+vp.onFocus = frameBrick;
 $('newBtn').addEventListener('click', () => { draft = emptyDraft(); ui.sel = null; refresh(); renderLibrary(); });
 $('pickBtn').addEventListener('click', () => $('fileInput').click());
 $('fileInput').addEventListener('change', e => { takeFiles([...e.target.files]); e.target.value = ''; });
@@ -500,7 +501,7 @@ $('libMenuBtn').addEventListener('click', () => { const m = $('libMenu'); m.hidd
 // Clic sur la brique avec l'outil socket ou plug : un repère au point touché, axes de la scène.
 const ray = new THREE.Raycaster();
 let downAt = null;
-$('vpCanvas').addEventListener('pointerdown', e => { downAt = e.button === 0 ? [e.clientX, e.clientY] : null; });
+$('vpCanvas').addEventListener('pointerdown', e => { downAt = e.button === 0 && !vp.navBlocks(e) ? [e.clientX, e.clientY] : null; });
 $('vpCanvas').addEventListener('pointerup', e => {
   if (!draft || !downAt || Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]) > 4 || vp.gizmo.dragging) return;
   if (ui.tool !== 'socket' && ui.tool !== 'plug') return;
@@ -643,7 +644,7 @@ addEventListener('keydown', e => {
   if (k === 'q') setTool('orbit');
   else if (k === 'w') setTool('translate');
   else if (k === 'e') setTool('rotate');
-  else if (k === 'f') frameBrick();
+  else if (k === 'f') vp.focus();
   else if (k === '4' || k === '5' || k === '6') setShade({ 4: 'wire', 5: 'resin', 6: 'paint' }[k]);
   else if (k === 'escape') { ui.sel = null; setTool('orbit'); }
 });

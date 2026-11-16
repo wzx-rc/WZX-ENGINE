@@ -594,6 +594,12 @@ $('exportMenuBtn').addEventListener('click', () => { const m = $('exportMenu'); 
 $('undoBtn').addEventListener('click', () => travel(-1));
 $('redoBtn').addEventListener('click', () => travel(1));
 $('frameBtn').addEventListener('click', () => model && vp.frameObject(model.root));
+// F et le bouton Cadrer de la barre de navigation : la sélection (brique, ou os en mode Pose), sinon l'ork
+vp.onFocus = () => {
+  if (!model) return;
+  if (ui.mode === 'pose' && poseMode) { poseMode.focus(); return; }
+  vp.frameObject(ui.sel && inst[ui.sel] ? inst[ui.sel].meshes : model.root);
+};
 $('socketsBtn').addEventListener('click', () => { ui.sockets = !ui.sockets; renderSteps(); renderPins(); });
 $('rigBtn').addEventListener('click', () => { ui.rig = !ui.rig; if (skel) skel.visible = ui.rig && ui.mode !== 'pose'; renderSteps(); });
 $('lightBtn').addEventListener('click', () => vp.rotateLight());
@@ -697,7 +703,7 @@ vp.gizmo.addEventListener('mouseUp', () => { if (ui.mode === 'pose') return; com
 // Sélection au clic dans le viewport : une brique posée, ou rien.
 const ray = new THREE.Raycaster();
 let downAt = null;
-$('vpCanvas').addEventListener('pointerdown', e => { downAt = e.button === 0 ? [e.clientX, e.clientY] : null; });
+$('vpCanvas').addEventListener('pointerdown', e => { downAt = e.button === 0 && !vp.navBlocks(e) ? [e.clientX, e.clientY] : null; });
 $('vpCanvas').addEventListener('pointerup', e => {
   if (!model || ui.test || ui.mode === 'pose' || !downAt || Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]) > 4 || vp.gizmo.dragging) return;
   const r = e.target.getBoundingClientRect();
@@ -753,7 +759,7 @@ document.addEventListener('keydown', e => {
   // comme Maya : Q sélection, W déplacer, E tourner, R échelle
   const tool = { q: 'select', w: 'translate', e: 'rotate', r: 'scale' }[k];
   if (tool) { ui.tool = tool; attachGizmo(); renderSteps(); }
-  else if (k === 'f' && model) vp.frameObject(ui.sel && inst[ui.sel] ? inst[ui.sel].meshes : model.root);   // la brique sélectionnée, sinon l'ork
+  else if (k === 'f' && model) vp.focus();   // la brique sélectionnée, sinon l'ork
   // affichage comme Maya : 4 filaire, 5 résine, 6 texture
   else if (k === '4' || k === '5' || k === '6') { ui.shade = { 4: 'wire', 5: 'resin', 6: 'paint' }[k]; applyMaterials(); renderSteps(); }
   else if (k === 'delete' || k === 'backspace') $('removeBtn').click();

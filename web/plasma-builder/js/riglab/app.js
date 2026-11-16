@@ -303,6 +303,7 @@ function pick(ev) {
 let down = null, hoverQueued = null;
 vp.canvas.addEventListener('pointerdown', e => {
   if (e.button !== 0) return;
+  if (vp.navBlocks(e)) { down = null; return; }
   down = { x: e.clientX, y: e.clientY, gizmo: gizmo.dragging || gizmo.axis !== null };
 });
 vp.canvas.addEventListener('pointerup', e => {
@@ -352,6 +353,15 @@ $('shading').addEventListener('click', e => {
 });
 $('lightBtn').addEventListener('click', () => vp.rotateLight());
 $('frameBtn').addEventListener('click', () => vp.frameObject(model.root));
+// F et le bouton Cadrer de la barre de navigation : l'os choisi et ce qu'il porte, sinon tout l'ork
+vp.onFocus = () => {
+  if (!model) return;
+  if (!state.sel) { vp.frameObject(model.root); return; }
+  const pts = [];
+  state.sel.traverse(o => { if (o.isBone) pts.push(o.getWorldPosition(new THREE.Vector3())); });
+  if (state.sel.parent?.isBone && pts.length < 2) pts.push(state.sel.parent.getWorldPosition(new THREE.Vector3()));
+  vp.framePoints(pts, 0.16);
+};
 function toggleCtrls() {
   if (!controls) return;
   controls.visible = !controls.visible;
@@ -483,7 +493,7 @@ addEventListener('keydown', e => {
   if (k === 'q') setTool('select');
   else if (k === 'w') setTool('ik');
   else if (k === 'e') setTool('fk');
-  else if (k === 'f') $('frameBtn').click();
+  else if (k === 'f') vp.focus();
   else if (k === 'b') toggleBones();
   else if (k === 'c') toggleCtrls();
   else if (k === 'h') toggleWeights();
