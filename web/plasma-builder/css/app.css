@@ -376,7 +376,7 @@ body[data-mode="pose"] #poseLib, body[data-mode="pose"] #posePanel { display: fl
 .libbox .rail { flex: 0 0 150px; min-width: 0; padding-right: 10px; border-right: 1px solid var(--line); }
 .libbox .library, .libbox .poselib { flex: 1 1 auto; max-width: none; min-width: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
 .libbox .library h2, .libbox .poselib h2 { font-size: 18px; }
-.libbox .libgrid, .libbox .poselib .posegrid { grid-template-columns: repeat(auto-fill, minmax(var(--thumb), 1fr)); max-height: none; flex: 1 1 auto; min-height: 0; }
+.libbox .libgrid, .libbox .poselib .posegrid { grid-template-columns: repeat(auto-fill, var(--thumb)); justify-content: start; max-height: none; flex: 1 1 auto; min-height: 0; }
 .libbox .libgrid { overflow: auto; }
 .libbox .poselib .posegrid { flex: none; overflow: visible; }
 .libbox .poselib-body { overflow: auto; flex: 1 1 auto; min-height: 0; }
@@ -389,6 +389,8 @@ body[data-mode="pose"] #poseLib, body[data-mode="pose"] #posePanel { display: fl
 .libbox-grip::after { content: ""; position: absolute; left: 4px; top: 50%; width: 3px; height: 44px; margin-top: -22px; border-radius: 2px; background: var(--line2); transition: background .15s; }
 .libbox-grip:hover::after, .libbox-grip.on::after { background: var(--accent); }
 .posestrip { display: none !important; }
+/* colonne des vues caméra à droite du viewport retirée (demande de Wzx) */
+#views { display: none !important; }
 .ui-atelier .libbox { display: contents; }
 .ui-atelier .libbox-head, .ui-atelier .libbox-foot, .ui-atelier .libbox-grip { display: none; }
 .ui-atelier .libbox-body { display: contents; }

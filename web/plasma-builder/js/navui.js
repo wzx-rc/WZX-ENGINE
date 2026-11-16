@@ -139,8 +139,8 @@ export function createNavUI(vp) {
   r3.setClearColor(0x000000, 0);
   const scene = new THREE.Scene();
   const ocam = new THREE.OrthographicCamera(-1.85, 1.85, 1.85, -1.85, 0.1, 20);
-  // brique 2x2 translucide (corps 2 x 1.3 x 2, quatre tenons sur le dessus), comme une brique de construction
-  const HY = 0.65, HALF = new THREE.Vector3(1, HY, 1);
+  // cube translucide, étiquettes sur les faces
+  const HY = 1, HALF = new THREE.Vector3(1, HY, 1);
   const labels = () => fr() ? ['DROITE', 'GAUCHE', 'HAUT', 'BAS', 'FACE', 'DOS'] : ['RIGHT', 'LEFT', 'TOP', 'BOTTOM', 'FRONT', 'BACK'];
   function faceTex(txt, hot, side) {
     const c = document.createElement('canvas'); c.width = 160; c.height = side ? 104 : 160;
@@ -160,16 +160,6 @@ export function createNavUI(vp) {
   const lineMat = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85 });
   const edges = new THREE.LineSegments(new THREE.EdgesGeometry(cube.geometry), lineMat);
   cube.add(edges);
-  // tenons : cylindres translucides, contour en trait
-  const studMat = new THREE.MeshBasicMaterial({ color: 0xc8ccd6, transparent: true, opacity: 0.16, depthWrite: false });
-  const studGeo = new THREE.CylinderGeometry(0.3, 0.3, 0.24, 24);
-  const studEdge = new THREE.EdgesGeometry(studGeo, 30);
-  for (const x of [-0.5, 0.5]) for (const z of [-0.5, 0.5]) {
-    const st = new THREE.Mesh(studGeo, studMat);
-    st.position.set(x, HY + 0.12, z);
-    st.add(new THREE.LineSegments(studEdge, lineMat));
-    cube.add(st);
-  }
   scene.add(cube);
   // repère : petites lignes X / Y / Z au coin arrière-bas-gauche, comme Maya
   const axes = new THREE.Group();
@@ -189,7 +179,7 @@ export function createNavUI(vp) {
     if (lang === lastLang && ac === lastAccent && mats[0].userData.hot === hoverFace) return;
     if (lang !== lastLang) setTips();
     lastLang = lang; lastAccent = ac;
-    labels().forEach((t, i) => { mats[i].map?.dispose(); mats[i].map = faceTex(t, i === hoverFace, i !== 2 && i !== 3); mats[i].needsUpdate = true; });
+    labels().forEach((t, i) => { mats[i].map?.dispose(); mats[i].map = faceTex(t, i === hoverFace, false); mats[i].needsUpdate = true; });
     mats[0].userData.hot = hoverFace;
     hot.material.color.set(ac);
     lineMat.color.set(0xffffff);

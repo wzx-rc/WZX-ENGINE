@@ -92,7 +92,7 @@ background:rgba(30,33,37,.94);color:#e9e6df;border:1px solid rgba(255,255,255,.1
 .mm i{position:absolute;transform:translate(-50%,0);font:11px system-ui,sans-serif;color:rgba(255,255,255,.6);font-style:normal;white-space:nowrap}`;
       document.head.appendChild(st);
     }
-    const R = 140;   // options deux fois plus loin du centre
+    const R = 112;   // options loin du centre (deux fois l'origine, -20 %)
     const x = Math.min(Math.max(e.clientX, R + 70), innerWidth - R - 70), y = Math.min(Math.max(e.clientY, R + 30), innerHeight - R - 50);
     const el = document.createElement('div');
     el.className = 'mm';
