@@ -254,7 +254,8 @@ export class OrkModel {
   // ---------------------------------------------------------------- IK deux os
   // Cible en espace figure. Garde le plan du membre (le coude / genou reste du même côté) et l'orientation
   // monde de l'effecteur (la main ne tourne pas quand on la déplace).
-  solveIK(chainId, target, keepEnd = true) {
+  // pole (facultatif, espace figure) : point vers lequel le coude / genou doit pointer (pole vector Maya).
+  solveIK(chainId, target, keepEnd = true, pole = null) {
     const [a, b, c] = CHAINS[chainId].map(n => this.bone(n));
     this.ork.updateMatrixWorld(true);
     const endQ = this.figureQuat(c);
@@ -268,8 +269,13 @@ export class OrkModel {
     let n = _v2.copy(pb).sub(pa).cross(_v3.copy(pc).sub(pa));
     if (n.lengthSq() < 1e-6) n = b.userData.restW.clone().sub(a.userData.restW).cross(c.userData.restW.clone().sub(a.userData.restW));
     n.normalize();
-    const perp = new THREE.Vector3().crossVectors(n, dir).normalize();
+    let perp = new THREE.Vector3().crossVectors(n, dir).normalize();
     if (perp.dot(_v3.copy(pb).sub(pa)) < 0) perp.negate();
+    if (pole) {
+      const pp = pole.clone().sub(pa);
+      pp.addScaledVector(dir, -pp.dot(dir));
+      if (pp.lengthSq() > 1e-8) perp = pp.normalize();
+    }
     const cosA = THREE.MathUtils.clamp((l1 * l1 + d * d - l2 * l2) / (2 * l1 * d), -1, 1);
     const sinA = Math.sqrt(1 - cosA * cosA);
     const pbNew = pa.clone().addScaledVector(dir, l1 * cosA).addScaledVector(perp, l1 * sinA);
@@ -279,6 +285,24 @@ export class OrkModel {
     this.aim(b, pc2.clone().sub(pb2).normalize(), goal.sub(pb2).normalize());
     if (keepEnd) c.quaternion.copy(this.figureQuat(c.parent).invert().multiply(endQ));
     this.root.updateMatrixWorld(true);
+  }
+
+  // Position du pole vector d'une chaîne (espace figure) : devant le coude / genou, à mi-longueur du membre.
+  polePos(chainId, out = new THREE.Vector3()) {
+    const [a, b, c] = CHAINS[chainId].map(n => this.bone(n));
+    const pa = this.figurePos(a), pb = this.figurePos(b), pc = this.figurePos(c);
+    const l = pa.distanceTo(pb) + pb.distanceTo(pc);
+    const dir = pc.clone().sub(pa).normalize();
+    const off = pb.clone().sub(pa);
+    off.addScaledVector(dir, -off.dot(dir));
+    if (off.lengthSq() < 1e-8) {
+      // membre tendu : le plan du repos, sinon genou vers l'avant, coude vers l'arrière
+      const ra = a.userData.restW, rb = b.userData.restW, rc = c.userData.restW;
+      const rd = rc.clone().sub(ra).normalize();
+      off.copy(rb).sub(ra).addScaledVector(rd, -rb.clone().sub(ra).dot(rd));
+      if (off.lengthSq() < 1e-8) off.set(0, 0, chainId.startsWith('foot') ? 1 : -1);
+    }
+    return out.copy(pb).addScaledVector(off.normalize(), l * 0.55);
   }
 
   // Tourne un os du plus petit arc qui amène la direction `from` sur `to` (espace figure).

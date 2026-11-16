@@ -124,17 +124,28 @@ export function createPoseMode(opts) {
   function attach() {
     gizmo.detach();
     const b = ui.sel;
-    if (!ui.active || !b) return;
+    if (!ui.active || !b || ui.tool === 'select') return;
     const chain = chainOf(b);
     if (ui.tool === 'ik' && (chain || b.name === HIPS)) {
       gizmo.setMode('translate'); gizmo.setSpace('world');
       if (b.name === HIPS) { gizmo.attach(b); return; }
-      model.figurePos(model.bone(CHAINS[chain][2]), ikTarget.position);
       ikTarget.userData.chain = chain;
+      // coude / genou en IK = correcteur (pole vector) : le losange devant l'articulation
+      ikTarget.userData.pole = b.name === CHAINS[chain][1];
+      ikHome();
       gizmo.attach(ikTarget);
       return;
     }
     gizmo.setMode('rotate'); gizmo.setSpace('local'); gizmo.attach(b);
+  }
+  function ikHome() {
+    const { chain, pole } = ikTarget.userData;
+    if (pole) model.polePos(chain, ikTarget.position); else model.figurePos(model.bone(CHAINS[chain][2]), ikTarget.position);
+  }
+  function ikSolve() {
+    const { chain, pole } = ikTarget.userData;
+    if (pole) model.solveIK(chain, model.figurePos(model.bone(CHAINS[chain][2])), true, ikTarget.position);
+    else model.solveIK(chain, ikTarget.position);
   }
   const fingerBone = b => /^joint\d+$/.test(b.name) && !['joint40', 'joint41'].includes(b.name);
   gizmo.addEventListener('mouseDown', () => {
@@ -145,7 +156,7 @@ export function createPoseMode(opts) {
     const b = ui.sel;
     if (!ui.active || !b) return;
     if (gizmo.object === ikTarget) {
-      model.solveIK(ikTarget.userData.chain, ikTarget.position);
+      ikSolve();
       if (ui.sym) model.mirrorBones(CHAINS[ikTarget.userData.chain].map(n => model.bone(n)));
     } else {
       if (ui.sym) model.mirrorBones([b]);
@@ -159,7 +170,7 @@ export function createPoseMode(opts) {
   // une modification de la pose : final = fin du geste (historique, vignettes)
   function changed(final) {
     model.root.updateMatrixWorld(true);
-    if (gizmo.object === ikTarget && !gizmo.dragging && ikTarget.userData.chain) model.figurePos(model.bone(CHAINS[ikTarget.userData.chain][2]), ikTarget.position);
+    if (gizmo.object === ikTarget && !gizmo.dragging && ikTarget.userData.chain) ikHome();
     opts.edited(final);
     if (final) renderPanel(); else syncSliders();
     renderLib();
@@ -216,7 +227,7 @@ export function createPoseMode(opts) {
       highlight(true);
       const r = vp.canvas.getBoundingClientRect();
       tip.hidden = !b;
-      if (b) { tip.textContent = label(b.name) + (c ? (c.mode === 'ik' ? ' · IK' : ' · FK') : ''); tip.style.left = (ev.clientX - r.left) + 'px'; tip.style.top = (ev.clientY - r.top) + 'px'; }
+      if (b) { tip.textContent = label(b.name) + (c ? (c.kind === 'pole' ? tr(' · correcteur', ' · pole') : c.mode === 'ik' ? ' · IK' : ' · FK') : ''); tip.style.left = (ev.clientX - r.left) + 'px'; tip.style.top = (ev.clientY - r.top) + 'px'; }
     });
   });
   vp.canvas.addEventListener('pointerleave', () => { ui.hover = null; ui.hoverCtrl = null; highlight(ui.active); $('vpTip').hidden = true; });
@@ -313,7 +324,7 @@ export function createPoseMode(opts) {
     $('pmMaya').textContent = b ? b.name.replace('QuickRigCharacter_', '') : '';
     $('pmReset').disabled = $('pmMirror').disabled = !b;
     const box = $('pmXf');
-    if (!b) box.innerHTML = `<p class="muted" style="grid-column:1/-1">${tr('Clique un contrôleur : cercle = tourner l\'os, boîte de la main, rectangle du pied ou carré du bassin = déplacer en IK. Tu peux aussi cliquer sur l\'ork ou une boule du squelette. E : rotation, W : IK.', 'Click a controller: circle = rotate the bone, hand box, foot rectangle or hips square = move in IK. You can also click the ork or a skeleton ball. E: rotate, W: IK.')}</p>`;
+    if (!b) box.innerHTML = `<p class="muted" style="grid-column:1/-1">${tr('Clique un contrôleur : boîte de la main ou semelle du pied = déplacer en IK, losange = orienter le coude / genou, anneau à flèches = bassin, anneau de la tête = tourner. Tu peux aussi cliquer sur l\'ork ou une boule du squelette. E : rotation, W : IK.', 'Click a controller: hand box or foot sole = move in IK, diamond = aim the elbow / knee, arrow ring = hips, head ring = rotate. You can also click the ork or a skeleton ball. E: rotate, W: IK.')}</p>`;
     else {
       const e = boneEuler(b);
       box.innerHTML = ['x', 'y', 'z'].map(a => `<span class="ax ${a}">${a.toUpperCase()}</span>
@@ -517,8 +528,10 @@ export function createPoseMode(opts) {
   $('tools').addEventListener('click', e => { const b = e.target.closest('[data-ptool]'); if (b && ui.active) setTool(b.dataset.ptool); });
   function onKey(e) {
     const k = e.key.toLowerCase();
-    if (k === 'w') setTool('ik');
-    else if (k === 'e' || k === 'r') setTool('fk');
+    // comme Maya : Q sélection (sans gizmo), W déplacer (IK), E tourner
+    if (k === 'q') setTool('select');
+    else if (k === 'w') setTool('ik');
+    else if (k === 'e') setTool('fk');
     else if (k === 'escape') select(null);
     else if (k === 'm' && ui.sel) $('pmMirror').click();
     else if (k === 'f') vp.frameObject(model.root);

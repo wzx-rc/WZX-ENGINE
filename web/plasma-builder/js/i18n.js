@@ -152,7 +152,7 @@
     // ---------------------------------------------------------------- Builder
     'Annuler (Ctrl+Z)': 'Undo (Ctrl+Z)', 'Rétablir (Ctrl+Y)': 'Redo (Ctrl+Y)', 'Exporter en STL': 'Export as STL', 'Options d\'export': 'Export options',
     'Équipement de l\'ork': 'Ork gear', 'Catégories': 'Categories', 'Fermer la bibliothèque': 'Close the library', 'Importer des briques': 'Import bricks',
-    'Viewport': 'Viewport', 'Sélection (Q)': 'Select (Q)', 'Déplacer (G)': 'Move (G)', 'Tourner (R)': 'Rotate (R)', 'Échelle (S)': 'Scale (S)',
+    'Viewport': 'Viewport', 'Sélection (Q)': 'Select (Q)', 'Déplacer (W)': 'Move (W)', 'Tourner (E)': 'Rotate (E)', 'Échelle (R)': 'Scale (R)',
     'Étapes': 'Steps', 'Sockets': 'Sockets', 'Squelette': 'Skeleton', 'Outils de la vue': 'View tools', 'Vues caméra': 'Camera views',
     'Peint': 'Painted', 'Tourner la lumière': 'Rotate the light', 'Plein écran': 'Full screen', 'Personnaliser': 'Customize',
     'Retirer la pièce': 'Remove the piece', 'Onglets': 'Tabs', 'Transformation': 'Transform', 'Ork': 'Ork', 'Définition': 'Detail level',
@@ -183,7 +183,7 @@
     'Modèle test introuvable': 'Test model not found', 'Bibliothèque indisponible (stockage du navigateur bloqué)': 'Library unavailable (browser storage blocked)',
 
     // ---------------------------------------------------------------- Rig Lab
-    'Rotation des os (R)': 'Rotate bones (R)', 'Déplacer en IK : mains, pieds, bassin (W)': 'Move in IK: hands, feet, pelvis (W)',
+    'Rotation des os (E)': 'Rotate bones (E)', 'Déplacer en IK : mains, pieds, bassin (W)': 'Move in IK: hands, feet, pelvis (W)',
     'Maillage affiché': 'Displayed mesh', 'Afficher les os (B)': 'Show bones (B)', 'Poids de l\'os (H)': 'Bone weights (H)',
     'Os sélectionné': 'Selected bone', 'Remettre l\'os au repos': 'Reset the bone to rest', 'Copie la rotation de cet os sur l\'os opposé': 'Copy this bone\'s rotation to the opposite bone',
     'Tout remettre au repos': 'Reset everything to rest', 'Échange gauche et droite': 'Swap left and right',

@@ -9,7 +9,7 @@
 // profondeur de la scène.
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { TransformControls } from 'three/addons/controls/TransformControls.js';
+import { MayaGizmo } from './gizmo.js';
 import { Post, Studio } from './render.js';
 import { PathTrace } from './pathtrace.js';
 import { SoftGI, SSAO, HQ_UNIFORMS, hookMaterial } from './hqgi.js';
@@ -82,7 +82,7 @@ export class Viewport {
     this.controls.mouseButtons = { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.PAN, RIGHT: THREE.MOUSE.DOLLY };
     this.controls.touches = { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN };
 
-    this.gizmo = new TransformControls(this.camera, canvas);
+    this.gizmo = new MayaGizmo(this.camera, canvas);   // gizmo façon Maya (gizmo.js)
     this.gizmo.setSize(0.8);
     this.gizmo.setSpace('local');
     this.gizmo.addEventListener('dragging-changed', e => { this.controls.enabled = !e.value; });
@@ -364,6 +364,7 @@ export class Viewport {
       aspect: this.camera.aspect,
     });
     r.autoClear = false;
+    this.gizmo.update();
     r.render(this.overlay, this.camera);
     r.autoClear = true;
   }

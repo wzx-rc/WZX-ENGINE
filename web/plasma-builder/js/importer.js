@@ -642,7 +642,7 @@ addEventListener('keydown', e => {
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   if (k === 'q') setTool('orbit');
   else if (k === 'w') setTool('translate');
-  else if (k === 'e' || k === 'r') setTool('rotate');
+  else if (k === 'e') setTool('rotate');
   else if (k === 'f') frameBrick();
   else if (k === '4' || k === '5' || k === '6') setShade({ 4: 'wire', 5: 'resin', 6: 'paint' }[k]);
   else if (k === 'escape') { ui.sel = null; setTool('orbit'); }

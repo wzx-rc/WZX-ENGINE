@@ -149,17 +149,26 @@ function select(b) {
     if (btn) { btn.closest('details').open = true; btn.scrollIntoView({ block: 'nearest' }); }
   }
 }
+function ikHome() {
+  const { chain, pole } = ikTarget.userData;
+  if (pole) model.polePos(chain, ikTarget.position); else model.figurePos(model.bone(CHAINS[chain][2]), ikTarget.position);
+}
+function ikSolve() {
+  const { chain, pole } = ikTarget.userData;
+  if (pole) model.solveIK(chain, model.figurePos(model.bone(CHAINS[chain][2])), true, ikTarget.position);
+  else model.solveIK(chain, ikTarget.position);
+}
 function attachGizmo() {
   const b = state.sel;
   if (!b && studio?.attach()) return;
   gizmo.detach();
-  if (!b) return;
+  if (!b || state.tool === 'select') return;
   const chain = chainOf(b);
   if (state.tool === 'ik' && (chain || b.name === HIPS)) {
     if (b.name === HIPS) { gizmo.setMode('translate'); gizmo.setSpace('world'); gizmo.attach(b); return; }
-    const end = model.bone(CHAINS[chain][2]);
-    model.figurePos(end, ikTarget.position);
     ikTarget.userData.chain = chain;
+    ikTarget.userData.pole = b.name === CHAINS[chain][1];   // coude / genou en IK = correcteur (pole vector)
+    ikHome();
     gizmo.setMode('translate'); gizmo.setSpace('world'); gizmo.attach(ikTarget);
     return;
   }
@@ -177,7 +186,7 @@ gizmo.addEventListener('objectChange', () => {
   const b = state.sel;
   if (!b) return;
   if (gizmo.object === ikTarget) {
-    model.solveIK(ikTarget.userData.chain, ikTarget.position);
+    ikSolve();
     if ($('symChk').checked) model.mirrorBones(CHAINS[ikTarget.userData.chain].map(n => model.bone(n)));
   } else {
     if ($('symChk').checked) model.mirrorBones([b]);
@@ -188,7 +197,7 @@ gizmo.addEventListener('objectChange', () => {
 
 function afterChange(rebuildPanel = true) {
   model.root.updateMatrixWorld(true);
-  if (gizmo.object === ikTarget && !gizmo.dragging && ikTarget.userData.chain) model.figurePos(model.bone(CHAINS[ikTarget.userData.chain][2]), ikTarget.position);
+  if (gizmo.object === ikTarget && !gizmo.dragging && ikTarget.userData.chain) ikHome();
   if (rebuildPanel) renderBonePanel(); else syncBoneSliders();
   $('curlL').value = state.curl.L; $('curlR').value = state.curl.R;
   $('curlLOut').textContent = Math.round(state.curl.L / 1.6 * 100) + ' %';
@@ -321,7 +330,7 @@ vp.canvas.addEventListener('pointermove', e => {
     setHover(b);
     const tip = $('vpTip'), r = vp.canvas.getBoundingClientRect();
     tip.hidden = !b && !sk;
-    if (b || sk) { tip.textContent = sk ? 'Socket · ' + studio.tipFor(sk) : label(b.name) + (hoverCtrl ? (hoverCtrl.mode === 'ik' ? ' · IK' : ' · FK') : ''); tip.style.left = (ev.clientX - r.left) + 'px'; tip.style.top = (ev.clientY - r.top) + 'px'; }
+    if (b || sk) { tip.textContent = sk ? 'Socket · ' + studio.tipFor(sk) : label(b.name) + (hoverCtrl ? (hoverCtrl.kind === 'pole' ? ' · pole' : hoverCtrl.mode === 'ik' ? ' · IK' : ' · FK') : ''); tip.style.left = (ev.clientX - r.left) + 'px'; tip.style.top = (ev.clientY - r.top) + 'px'; }
   });
 });
 vp.canvas.addEventListener('pointerleave', () => { hoverCtrl = null; setHover(null); $('vpTip').hidden = true; });
@@ -470,9 +479,10 @@ addEventListener('keydown', e => {
   if ((e.ctrlKey || e.metaKey) && k === 'z') { e.preventDefault(); $(e.shiftKey ? 'redoBtn' : 'undoBtn').click(); return; }
   if ((e.ctrlKey || e.metaKey) && k === 'y') { e.preventDefault(); $('redoBtn').click(); return; }
   if (e.ctrlKey || e.metaKey || e.altKey) return;
-  // comme Maya : W déplacer (IK), E ou R tourner
-  if (k === 'w') setTool('ik');
-  else if (k === 'e' || k === 'r') setTool('fk');
+  // comme Maya : Q sélection (sans gizmo), W déplacer (IK), E tourner
+  if (k === 'q') setTool('select');
+  else if (k === 'w') setTool('ik');
+  else if (k === 'e') setTool('fk');
   else if (k === 'f') $('frameBtn').click();
   else if (k === 'b') toggleBones();
   else if (k === 'c') toggleCtrls();

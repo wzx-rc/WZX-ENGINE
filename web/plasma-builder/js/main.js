@@ -750,8 +750,8 @@ document.addEventListener('keydown', e => {
     if (k === '4' || k === '5' || k === '6') { ui.shade = { 4: 'wire', 5: 'resin', 6: 'paint' }[k]; applyMaterials(); renderSteps(); }
     return;
   }
-  // comme Maya et le Rig Lab : W déplacer, E / R tourner, Q sélection, S échelle
-  const tool = { q: 'select', w: 'translate', g: 'translate', e: 'rotate', r: 'rotate', s: 'scale' }[k];
+  // comme Maya : Q sélection, W déplacer, E tourner, R échelle
+  const tool = { q: 'select', w: 'translate', e: 'rotate', r: 'scale' }[k];
   if (tool) { ui.tool = tool; attachGizmo(); renderSteps(); }
   else if (k === 'f' && model) vp.frameObject(ui.sel && inst[ui.sel] ? inst[ui.sel].meshes : model.root);   // la brique sélectionnée, sinon l'ork
   // affichage comme Maya : 4 filaire, 5 résine, 6 texture
