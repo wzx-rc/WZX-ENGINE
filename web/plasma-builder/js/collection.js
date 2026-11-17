@@ -16,7 +16,6 @@ export const STATUS = {
 const img = id => `assets/collection/${id}.webp`;
 export const FIGS = [
   { id: 'boy_infantry_001', name: 'Boy Infantry 001', squad: 'First Squad', faction: 'rose', img: img('boy_infantry_001') },
-  { id: 'boy_infantry_002', name: 'Boy Infantry 002', squad: 'First Squad', faction: 'rose', img: img('boy_infantry_002') },
   { id: 'boy_infantry_003', name: 'Boy Infantry 003', squad: 'First Squad', faction: 'rose', img: img('boy_infantry_003') },
   { id: 'lance', name: 'Lance', squad: 'First Squad', faction: 'rose', img: img('lance') },
   { id: 'grot_bomber', name: 'Grot Bomber', squad: 'Grots', faction: 'rose', img: img('grot_bomber') },
@@ -29,7 +28,7 @@ export const figById = Object.fromEntries(FIGS.map(f => [f.id, f]));
 
 const DEMO = {
   boy_infantry_001: { st: 'printed', prints: 2 }, grot_bomber: { st: 'printed', prints: 1 },
-  boy_infantry_002: { st: 'owned' }, neon_boyz_01: { st: 'owned' }, grot_medic: { st: 'owned' },
+  neon_boyz_01: { st: 'owned' }, grot_medic: { st: 'owned' },
   fat_ork: { st: 'download' },
 };
 function load() {

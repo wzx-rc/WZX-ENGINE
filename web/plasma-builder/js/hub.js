@@ -6,7 +6,8 @@
 // - CATALOGUE : pièces factices (nom + picto de catégorie). À remplacer par les briques de la bibliothèque.
 // - Achats : les boutons [PRIX] ajoutent le pack pour la démo ; le paiement sera branché sur le site.
 // - État du joueur : localStorage 'plasmaork.hub' (à remplacer par le compte en ligne).
-import { $, esc, RULES, RARITY, RCOL, ICON, FACTIONS, NAMES, CATALOG, byId, KIT, catLabel, catSingular, S, save, ownedCount, dupes, pick, draw, commit, sparks, toast, center, setNum, CHESTS, chestImg } from './loot.js';
+import { $, esc, RULES, RARITY, RCOL, ICON, FACTIONS, NAMES, CATALOG, byId, KIT, catLabel, catSingular, S, save, ownedCount, dupes, pick, draw, commit, sparks, toast, center, setNum, CHESTS } from './loot.js';
+import { chestSVG, packSVG } from './chests.js';
 import { FIGS, figById, STEPS, STATUS, statusOf, printsOf, setStatus, addPrint, counts } from './collection.js';
 
 // ---------------------------------------------------------------- tableau de bord
@@ -114,7 +115,7 @@ function cardSlot(p, i, extra = '') {
   const tag = p.isNew ? (p.rk === 'x' ? 'Nouvelle pièce extrême' : 'Nouvelle pièce') : tr(`Doublon · tu en as ${p.count}`, `Duplicate · you have ${p.count}`);
   return `<div class="slot ${extra}" style="animation-delay:${0.25 + i * 0.15}s;--rot:${(i - 1) * 25}deg">
     <button type="button" class="flip" data-i="${i}" aria-label="${tr('Retourner la carte', 'Flip card')} ${i + 1}">
-      <span class="face back"><span class="foil"></span><img src="assets/hub/logo_plasma_ork.png" alt=""><span class="lab" style="position:relative;color:#ffb3d3">Touche pour retourner</span></span>
+      <span class="face back"><img src="assets/brand/logo.svg" alt=""><span class="lab">Touche pour retourner</span></span>
       <span class="face front ${p.rk}"><span class="rar">${RARITY[p.rk]}</span><img src="${ICON[p.cat]}" alt=""><b>${esc(p.name)}</b><small>${catSingular[p.cat]}</small><span class="tag">${tag}</span></span>
     </button></div>`;
 }
@@ -208,7 +209,7 @@ function openChest(tier) {
   $('chestOv').dataset.tier = tier;
   $('chestOvTitle').textContent = def.name;
   $('chestOvSub').textContent = def.blurb;
-  $('chestImg').src = chestImg(tier); $('chestImgOpen').src = chestImg(tier, true);
+  $('chestArt').innerHTML = chestSVG(tier);
   $('chest').className = 'chest'; $('chest').hidden = false; $('beam').hidden = true;
   $('chestHint').hidden = false; $('chestCards').innerHTML = ''; $('chestFoot').hidden = true;
   updateChest();
@@ -233,6 +234,7 @@ $('chest').addEventListener('click', e => {
     commit(chest.tier, chest.got);
     setTimeout(() => {
       c.className = 'chest opened';
+      c.querySelector('.chestsvg').classList.add('open');
       $('beam').hidden = false;
       $('chestHint').hidden = true;
       const [x, y] = center(c);
@@ -260,7 +262,7 @@ function renderStash() {
   $('stash').innerHTML = tiles.map(t => `
     <div class="loot ${t.n ? '' : 'none'}" data-k="${t.k}" style="--lc:${t.col}">
       <button type="button" class="loot-art" data-open="${t.k}" ${t.n ? '' : 'disabled'} aria-label="${esc(tr('Ouvrir', 'Open'))} ${esc(t.name)}">
-        ${t.k === 'pack' ? '<span class="minipack"><span class="shine"></span></span>' : `<img src="${chestImg(t.k)}" alt="">`}
+        ${t.k === 'pack' ? packSVG() : chestSVG(t.k)}
         <span class="loot-n">×${t.n}</span>
       </button>
       <b>${esc(t.name)}</b>
@@ -399,6 +401,7 @@ $('dropBtn').addEventListener('click', () => {
   render(); tickDrop();
 });
 
+document.querySelectorAll('[data-chestico]').forEach(e => { e.style.setProperty('--lc', CHESTS[e.dataset.chestico].col); e.innerHTML = chestSVG(e.dataset.chestico); });
 render();
 tickDrop();
 setInterval(tickDrop, 1000);

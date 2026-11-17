@@ -209,30 +209,34 @@ body.hub {
 .hcard { border-radius: 18px; box-shadow: none; }
 
 /* --- repaire : bannière + ce qui reste à ouvrir --- */
-.lair { position: relative; display: grid; grid-template-columns: minmax(280px, 1fr) minmax(0, 2fr); gap: 28px; align-items: end; min-height: 380px; padding: 34px 34px 26px; border-radius: 22px; overflow: hidden; border: 1px solid var(--ln); margin-bottom: 26px; isolation: isolate; }
-.lair-bg { position: absolute; inset: 0; z-index: -1; background: url(../assets/hub/hub_banner.jpg) center / cover, radial-gradient(120% 90% at 80% 10%, var(--hot-bg), #0e0e10 70%); }
-.lair-bg::after { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg, rgba(10,10,12,.92) 0%, rgba(10,10,12,.7) 34%, rgba(10,10,12,.25) 70%, rgba(10,10,12,.55) 100%), linear-gradient(0deg, rgba(10,10,12,.9) 0%, rgba(10,10,12,0) 55%); }
+.lair { position: relative; display: grid; grid-template-columns: minmax(260px, 1fr) minmax(0, 2.2fr); gap: 32px; align-items: center; padding: 30px 32px; border-radius: 22px; overflow: hidden; border: 1px solid var(--ln); margin-bottom: 26px; isolation: isolate; background: radial-gradient(70% 120% at 0% 0%, var(--hot-deep), transparent 60%), #141417; }
 .lair-txt { align-self: center; display: flex; flex-direction: column; gap: 14px; max-width: 420px; }
-.lair h1 { margin: 0; font-family: var(--disp); font-size: 56px; line-height: .95; font-weight: 700; letter-spacing: -.01em; color: #fff; text-shadow: 0 0 34px var(--hot-glow); }
+.lair h1 { margin: 0; font-family: var(--disp); font-size: 56px; line-height: .95; font-weight: 700; letter-spacing: -.01em; color: #fff; }
 .lair-lead { margin: 0; font-size: 15px; line-height: 1.55; color: #d6d3db; max-width: 38ch; }
 .lair-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-.lair-go { align-self: flex-start; background: rgba(14,14,16,.6); backdrop-filter: blur(6px); text-decoration: none; }
+.lair-go { align-self: flex-start; text-decoration: none; }
 .stash { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; align-items: end; }
-.loot { position: relative; display: flex; flex-direction: column; align-items: center; gap: 4px; text-align: center; padding: 0 6px 14px; border-radius: 18px; background: linear-gradient(180deg, rgba(20,20,24,0) 30%, rgba(20,20,24,.82) 62%); }
-.loot::before { content: ''; position: absolute; left: 8%; right: 8%; top: 46%; height: 30px; border-radius: 50%; background: radial-gradient(closest-side, color-mix(in srgb, var(--lc) 55%, transparent), transparent); filter: blur(4px); z-index: 0; }
-.loot > * { position: relative; z-index: 1; }
-.loot-art { position: relative; width: 100%; aspect-ratio: 1 / 1; max-width: 190px; border: 0; padding: 0; background: radial-gradient(closest-side at 50% 58%, color-mix(in srgb, var(--lc) 30%, transparent), transparent 75%); display: flex; align-items: flex-end; justify-content: center; transition: transform .2s cubic-bezier(.3,1.5,.5,1); }
-.loot-art img { width: 100%; height: 100%; object-fit: contain; filter: drop-shadow(0 18px 18px rgba(0,0,0,.65)); }
-.loot-art:hover:not(:disabled) { transform: translateY(-6px) scale(1.03); }
+.loot { position: relative; display: flex; flex-direction: column; align-items: center; gap: 4px; text-align: center; padding: 16px 10px 16px; border-radius: 16px; background: #1a1b1f; border: 1px solid var(--ln); }
+.loot-art { position: relative; width: 100%; max-width: 180px; aspect-ratio: 6 / 5; border: 0; padding: 0; background: none; display: flex; align-items: flex-end; justify-content: center; transition: transform .2s cubic-bezier(.3,1.5,.5,1); }
+.loot-art .chestsvg { width: 100%; height: auto; }
+.loot-art .packsvg { height: 100%; width: auto; transform: rotate(-5deg); }
+.loot-art:hover:not(:disabled) { transform: translateY(-4px); }
 .loot-art:disabled { cursor: default; }
-.loot-n { position: absolute; right: 8%; top: 10%; min-width: 38px; height: 30px; padding: 0 9px; border-radius: 15px; background: var(--lc); color: #0e0e10; font-family: var(--lab); font-weight: 700; font-size: 14px; display: flex; align-items: center; justify-content: center; box-shadow: 0 0 18px color-mix(in srgb, var(--lc) 60%, transparent); }
-.loot b { font-family: var(--disp); font-size: 17px; line-height: 1.15; color: #fff; }
-.loot-blurb { font-size: 12px; color: #b7b4bd; min-height: 2.6em; line-height: 1.3; }
-.loot-go { min-height: 38px; margin-top: 6px; padding: 0 22px; background: color-mix(in srgb, var(--lc) 22%, #141417); border-color: color-mix(in srgb, var(--lc) 60%, transparent); }
-.loot.none .loot-art img, .loot.none .minipack { filter: grayscale(.9) brightness(.45); }
-.loot.none .loot-n { background: #3a3a42; color: #a29fa8; box-shadow: none; }
+.loot-n { position: absolute; right: 2%; top: 0; min-width: 34px; height: 26px; padding: 0 8px; border-radius: 13px; background: var(--lc); color: #0e0e10; font-family: var(--lab); font-weight: 700; font-size: 13px; display: flex; align-items: center; justify-content: center; }
+.loot b { margin-top: 8px; font-family: var(--disp); font-size: 17px; line-height: 1.15; color: #fff; }
+.loot-blurb { font-size: 12px; color: #a29fa8; min-height: 2.6em; line-height: 1.3; }
+.loot-go { min-height: 38px; margin-top: 6px; padding: 0 22px; background: color-mix(in srgb, var(--lc) 18%, #1a1b1f); border-color: color-mix(in srgb, var(--lc) 55%, transparent); }
+.loot.none .loot-art { opacity: .35; filter: grayscale(1); }
+.loot.none .loot-n { background: #3a3a42; color: #a29fa8; }
 .loot.none .loot-go { background: transparent; border-color: var(--ln); }
-.minipack { position: relative; width: 58%; aspect-ratio: 300 / 440; margin-bottom: 8%; border-radius: 12px; border: 2px solid var(--pink); overflow: hidden; background: url(../assets/hub/pack_art.jpg) center / cover, var(--hot-deep); box-shadow: 0 18px 30px rgba(0,0,0,.6), 0 0 26px var(--hot-glow); transform: rotate(-4deg); }
+/* coffre vectoriel : le couvercle se soulève, la lumière sort */
+.chestsvg .lid, .chestsvg .inside { transition: transform .5s cubic-bezier(.3,1.5,.5,1), opacity .35s; }
+.chestsvg .lid { transform-box: fill-box; transform-origin: 0% 100%; }
+.chestsvg .inside { opacity: 0; }
+.chestsvg.open .lid { transform: translate(-4px, -34px) rotate(-12deg); }
+.chestsvg.open .inside { opacity: 1; }
+.shopico { width: 44px; height: 40px; flex: none; display: flex; align-items: center; }
+.shopico .chestsvg { width: 100%; height: auto; }
 @media (max-width: 1100px) { .lair { grid-template-columns: minmax(0, 1fr); } .lair-txt { max-width: none; } }
 @media (max-width: 640px) { .lair { padding: 22px 16px; } .lair h1 { font-size: 40px; } .stash { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 
@@ -313,9 +317,9 @@ body.hub {
 .shoprow img { width: 40px; height: 40px; }
 
 /* --- cartes de pièces : dos illustré, faces plus travaillées --- */
-.face.back { background: url(../assets/hub/card_back.webp) center / cover, var(--hot-deep); border: 3px solid color-mix(in srgb, var(--pink) 50%, #2a2a30); justify-content: flex-end; }
-.face.back img { display: none; }
-.face.back .lab { padding: 6px 12px; border-radius: 10px; background: rgba(10,10,12,.7); }
+.face.back { background: repeating-linear-gradient(135deg, transparent 0 18px, color-mix(in srgb, var(--pink) 9%, transparent) 18px 20px), var(--hot-deep); border: 3px solid color-mix(in srgb, var(--pink) 55%, #2a2a30); box-shadow: inset 0 0 0 8px var(--hot-deep), inset 0 0 0 10px color-mix(in srgb, var(--pink) 35%, transparent); }
+.face.back img { width: 110px; height: 110px; }
+.face.back .lab { color: var(--pink-soft); }
 .face.front { justify-content: flex-start; padding: 14px; gap: 10px; }
 .face.front img { width: 100%; height: 150px; padding: 26px; object-fit: contain; border-radius: 12px; background: radial-gradient(closest-side, rgba(255,255,255,.08), transparent), #0e0e10; box-sizing: border-box; }
 .face.front.r img { background: radial-gradient(closest-side, rgba(62,142,247,.28), transparent), #0a1020; }
@@ -326,25 +330,24 @@ body.hub {
 .face.front .tag { margin-top: auto; align-self: stretch; text-align: left; padding-top: 10px; border-top: 1px solid rgba(255,255,255,.1); }
 
 /* --- gros pack : l'illustration continue de part et d'autre de la découpe --- */
-.bigpack .flap, .bigpack .pbody { background: url(../assets/hub/pack_art.jpg) 0 0 / 294px 434px no-repeat, var(--hot-deep); }
-.bigpack .pbody { background-position: 0 -100px; justify-content: flex-end; padding-bottom: 18px; }
-.bigpack .pname { position: relative; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 18px; border-radius: 12px; background: rgba(10,10,12,.72); backdrop-filter: blur(4px); }
+.bigpack .flap, .bigpack .pbody { background: linear-gradient(162deg, transparent 0 calc(30% - 12px), var(--pink) calc(30% - 12px) 30%, transparent 30% calc(84% - 6px), var(--pink) calc(84% - 6px) 84%, transparent 84%) 0 0 / 294px 434px no-repeat, var(--hot-deep); }
+.bigpack .pbody { background-position: 0 -100px; justify-content: center; gap: 14px; }
+.bigpack .plogo { width: 130px; height: 130px; position: relative; }
+.bigpack .pname { position: relative; display: flex; flex-direction: column; align-items: center; gap: 2px; }
 .bigpack .pname b { font-family: var(--disp); font-size: 26px; letter-spacing: .08em; }
 .bigpack .pname span { color: var(--pink-soft); font-size: 13px; }
 
 /* --- coffre illustré : 3 coups, la fissure s'allume, il s'ouvre --- */
 .chesthalo { background: radial-gradient(circle, color-mix(in srgb, var(--cc) 22%, transparent) 0%, rgba(11,11,13,0) 65%); }
-.chest { position: relative; width: min(440px, 80vw); aspect-ratio: 1 / 1; border: 0; padding: 0; background: transparent; animation: breathe 2.2s ease-in-out infinite; }
-.chest-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; filter: drop-shadow(0 30px 30px rgba(0,0,0,.7)) drop-shadow(0 0 calc(var(--crack, 0) * 40px) var(--cc)); transition: filter .3s; }
-.chest-img.open { opacity: 0; }
-.chest-crack { position: absolute; left: 20%; right: 20%; top: 46%; height: 8%; border-radius: 50%; background: radial-gradient(closest-side, #fff, var(--cc) 40%, transparent); opacity: calc(var(--crack, 0) * .9); mix-blend-mode: screen; pointer-events: none; transition: opacity .3s; }
+.chest { position: relative; width: min(420px, 80vw); aspect-ratio: 6 / 5; border: 0; padding: 0; background: transparent; animation: breathe 2.2s ease-in-out infinite; }
+.chest-art { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; --lc: var(--cc); }
+.chest-art .chestsvg { width: 100%; height: auto; overflow: visible; filter: drop-shadow(0 0 calc(var(--crack, 0) * 30px) var(--cc)); transition: filter .3s; }
+.chest-crack { position: absolute; left: 16%; right: 16%; top: 44%; height: 6%; border-radius: 50%; background: radial-gradient(closest-side, #fff, var(--cc) 40%, transparent); opacity: calc(var(--crack, 0) * .9); mix-blend-mode: screen; pointer-events: none; transition: opacity .3s; }
 @keyframes breathe { 50% { transform: translateY(-6px); } }
 .chest.hitA { animation: shakeA .45s cubic-bezier(.3,.1,.3,1); } .chest.hitB { animation: shakeB .45s cubic-bezier(.3,.1,.3,1); }
 @keyframes shakeA { 20% { transform: translate(-14px,4px) rotate(-4deg); } 40% { transform: translate(12px,-2px) rotate(3deg); } 60% { transform: translate(-8px,2px) rotate(-2deg); } 80% { transform: translate(4px,0) rotate(1deg); } }
 @keyframes shakeB { 20% { transform: translate(14px,4px) rotate(4deg); } 40% { transform: translate(-12px,-2px) rotate(-3deg); } 60% { transform: translate(8px,2px) rotate(2deg); } 80% { transform: translate(-4px,0) rotate(-1deg); } }
 .chest.opened { animation: popOpen .5s cubic-bezier(.3,1.6,.5,1); cursor: default; }
-.chest.opened .chest-img { opacity: 0; }
-.chest.opened .chest-img.open { opacity: 1; }
 .chest.opened .chest-crack { opacity: 0; }
 @keyframes popOpen { 0% { transform: scale(.94); } 60% { transform: scale(1.06); } 100% { transform: scale(1); } }
 .beam { position: absolute; left: 50%; top: 50%; width: 260px; height: 560px; margin-left: -130px; margin-top: -520px; clip-path: polygon(30% 0, 70% 0, 100% 100%, 0 100%); transform-origin: 50% 100%; animation: beam .9s ease-out forwards; pointer-events: none; background: linear-gradient(180deg, transparent 0%, color-mix(in srgb, var(--cc) 40%, transparent) 70%, color-mix(in srgb, var(--cc) 30%, #fff) 100%); }

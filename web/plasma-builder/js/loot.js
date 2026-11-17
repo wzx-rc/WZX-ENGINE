@@ -24,7 +24,6 @@ export const CHESTS = {
   nob: { name: T('Coffre de Nob'), give: ['c', 'r', 'x'], col: '#3e8ef7', blurb: T('3 pièces, 1 extrême garantie') },
   boss: { name: T('Koffre du Warboss'), give: ['r', 'x', 'x'], col: '#ff2e88', blurb: T('3 pièces, 2 extrêmes garanties') },
 };
-export const chestImg = (tier, open = false) => `assets/hub/chest_${tier}_${open ? 'open' : 'closed'}.webp`;
 export const RARITY = { c: T('Commune'), r: T('Rare'), x: T('Extrême') };
 export const RCOL = { c: '#b9c0c8', r: '#3e8ef7', x: '#ff2e88' };
 export const ICON = { head: 'assets/ui/icon_head.png', weapon: 'assets/ui/icon_weapon.png', back: 'assets/ui/icon_back.png', shoulder: 'assets/ui/icon_shoulder.png', chest: 'assets/ui/icon_chest.png', belt: 'assets/ui/icon_belt.png', base: 'assets/ui/icon_base.png' };
