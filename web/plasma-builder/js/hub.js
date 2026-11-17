@@ -280,7 +280,7 @@ $('stash').addEventListener('click', e => {
 // ---------------------------------------------------------------- collection STL (vitrine)
 const vit = { filter: 'all', sel: null };
 // icônes Recraft (assets/hub/icons), teintées à la couleur du statut par un masque CSS
-const ICO = { locked: 'locked', download: 'download', owned: 'owned', printed: 'printed' };
+const ICO = { locked: 'locked', download: 'download', owned: 'owned', printed: 'printed', soon: 'locked' };
 const stIco = st => `<i class="sico i-${ICO[st]}" aria-hidden="true"></i>`;
 function renderVitrine() {
   const n = counts(), unlocked = n.all - n.locked;
@@ -289,9 +289,10 @@ function renderVitrine() {
       `<b>${unlocked} of ${n.all} figures unlocked</b>, ${n.locked} missing. ${n.download ? `${n.download} to download, ` : ''}${n.printed} already printed.`)
     : tr(`<b>Collection complète : ${n.all} figurines.</b> ${n.printed} imprimée${n.printed > 1 ? 's' : ''}.`, `<b>Complete collection: ${n.all} figures.</b> ${n.printed} printed.`);
   $('vitMeter').innerHTML = ['printed', 'owned', 'download', 'locked'].map(st => n[st] ? `<i style="flex:${n[st]};--sc:${STATUS[st].col}" title="${STATUS[st].label} : ${n[st]}" class="${st}"></i>` : '').join('');
-  const f = [['all', tr('Toutes', 'All')], ['printed', tr('Imprimées', 'Printed')], ['owned', tr('Possédées', 'Owned')], ['download', tr('À télécharger', 'To download')], ['locked', tr('À débloquer', 'To unlock')]];
+  const f = [['all', tr('Toutes', 'All')], ['printed', tr('Imprimées', 'Printed')], ['owned', tr('Possédées', 'Owned')], ['download', tr('À télécharger', 'To download')], ['locked', tr('À débloquer', 'To unlock')], ...(n.soon ? [['soon', tr('À venir', 'Coming soon')]] : [])];
   $('vitFilters').innerHTML = f.map(([k, l]) => `<button type="button" aria-pressed="${vit.filter === k}" data-f="${k}" style="--sc:${STATUS[k]?.col || '#ecebe6'}">${k === 'all' ? '' : stIco(k)}${l}<span>${n[k]}</span></button>`).join('');
   const list = FIGS.filter(fg => vit.filter === 'all' || statusOf(fg.id) === vit.filter);
+  list.sort((a, b) => (a.soon ? 1 : 0) - (b.soon ? 1 : 0));
   $('shelf').innerHTML = list.map(fg => {
     const st = statusOf(fg.id), pr = printsOf(fg.id);
     return `<button type="button" class="fig ${st}" data-fig="${fg.id}" style="--sc:${STATUS[st].col}" aria-label="${esc(fg.name)} : ${STATUS[st].label}">
@@ -320,14 +321,17 @@ function renderFig() {
   $('figName').textContent = fg.name;
   const fac = FACTIONS.find(f => f.id === fg.faction);
   $('figSquad').textContent = `${fac?.label || ''} · ${fg.squad} · 32 mm`;
+  $('figSteps').hidden = st === 'soon';
   $('figSteps').innerHTML = STEPS.map((k, i) => `<li class="${i < at ? 'done' : i === at ? 'cur' : ''}" style="--sc:${STATUS[k].col}"><button type="button" data-step="${k}" aria-current="${i === at ? 'step' : 'false'}">${stIco(k)}<span>${STATUS[k].label}</span></button></li>`).join('');
   $('figState').textContent = {
     locked: tr('Cette figurine n’est pas encore dans ta collection.', 'This figure is not in your collection yet.'),
     download: tr('Débloquée : ses fichiers STL t’attendent.', 'Unlocked: its STL files are waiting for you.'),
     owned: tr('Tu as ses fichiers STL. Pas encore imprimée.', 'You have its STL files. Not printed yet.'),
     printed: tr(`Imprimée ${pr} fois.`, `Printed ${pr} time${pr > 1 ? 's' : ''}.`),
+    soon: tr('À venir : cette figurine n’est pas encore sortie.', 'Coming soon: this figure is not out yet.'),
   }[st];
   const A = {
+    soon: '',
     locked: `<button type="button" class="hbtn pink" data-act="unlock">${tr('Débloquer', 'Unlock')}</button>`,
     download: `<button type="button" class="hbtn pink" data-act="download">${tr('Télécharger les STL', 'Download STL files')}</button>`,
     owned: `<button type="button" class="hbtn gold" data-act="print">${tr('Marquer comme imprimée', 'Mark as printed')}</button><button type="button" class="hbtn ghost" data-act="redl">${tr('Retélécharger les STL', 'Download STL files again')}</button>`,

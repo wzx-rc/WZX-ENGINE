@@ -42,7 +42,7 @@
     'Caisse de ferraille': 'Scrap crate', 'Koffre du Warboss': 'Warboss chest', '3 pièces, 1 rare garantie': '3 pieces, 1 rare guaranteed', '3 pièces, 2 extrêmes garanties': '3 pieces, 2 extremes guaranteed',
     'À ouvrir': 'To open', 'Ma collection STL': 'My STL collection', 'Filtrer par statut': 'Filter by status', 'Statut': 'Status',
     'À débloquer': 'To unlock', 'À télécharger': 'To download', 'STL possédés': 'STL owned', 'Possédée': 'Owned', 'Imprimée': 'Printed', 'Spéciaux': 'Specials',
-    'série 1 · 3 pièces': 'series 1 · 3 pieces',
+    'série 1 · 3 pièces': 'series 1 · 3 pieces', 'À venir': 'Coming soon',
     'Démo : figurine débloquée. Le paiement sera branché sur le site.': 'Demo: figure unlocked. Payment will be wired to the website.',
     'Démo : STL marqués comme téléchargés. Le téléchargement sera branché sur le site.': 'Demo: STL files marked as downloaded. Downloads will be wired to the website.',
     'Le téléchargement sera branché sur le site.': 'Downloads will be wired to the website.',

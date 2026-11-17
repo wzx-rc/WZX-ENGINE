@@ -11,6 +11,8 @@ export const STATUS = {
   download: { label: T('À télécharger'), short: T('À télécharger'), col: '#4caee4' },
   owned: { label: T('STL possédés'), short: T('Possédée'), col: '#7bc67e' },
   printed: { label: T('Imprimée'), short: T('Imprimée'), col: '#f2c230' },
+  // annoncée, pas encore sortie : hors du compte de la collection
+  soon: { label: T('À venir'), short: T('À venir'), col: '#a99bd8' },
 };
 
 const img = id => `assets/collection/${id}.webp`;
@@ -22,13 +24,13 @@ export const FIGS = [
   { id: 'grot_medic', name: 'Grot Medic', squad: 'Grots', faction: 'rose', img: img('grot_medic') },
   { id: 'grot_pistol', name: 'Grot Pistol', squad: 'Grots', faction: 'rose', img: img('grot_pistol') },
   { id: 'fat_ork', name: 'Fat Ork', squad: 'Spéciaux', faction: 'rose', img: img('fat_ork') },
-  { id: 'neon_boyz_01', name: 'Neon Boyz 01', squad: 'Neon Waaagh', faction: 'vert', img: img('neon_boyz_01') },
+  { id: 'neon_boyz_01', name: 'Neon Boyz 01', squad: 'Neon Waaagh', faction: 'vert', img: img('neon_boyz_01'), soon: true },
 ];
 export const figById = Object.fromEntries(FIGS.map(f => [f.id, f]));
 
 const DEMO = {
   boy_infantry_001: { st: 'printed', prints: 2 }, grot_bomber: { st: 'printed', prints: 1 },
-  neon_boyz_01: { st: 'owned' }, grot_medic: { st: 'owned' },
+  grot_medic: { st: 'owned' },
   fat_ork: { st: 'download' },
 };
 function load() {
@@ -39,7 +41,7 @@ function load() {
 }
 export const C = load();
 export const saveC = () => { try { localStorage.setItem(KEY, JSON.stringify(C)); } catch { /* stockage indisponible */ } };
-export const statusOf = id => C.figs[id]?.st || 'locked';
+export const statusOf = id => (figById[id]?.soon ? 'soon' : C.figs[id]?.st || 'locked');
 export const printsOf = id => C.figs[id]?.prints || 0;
 export function setStatus(id, st) {
   const cur = C.figs[id] || {};
@@ -53,7 +55,7 @@ export function addPrint(id, d) {
   else { C.figs[id] = { ...C.figs[id], st: 'printed', prints: n }; saveC(); }
 }
 export function counts() {
-  const n = { all: FIGS.length, locked: 0, download: 0, owned: 0, printed: 0 };
-  for (const f of FIGS) n[statusOf(f.id)]++;
+  const n = { all: 0, locked: 0, download: 0, owned: 0, printed: 0, soon: 0 };
+  for (const f of FIGS) { n[statusOf(f.id)]++; if (!f.soon) n.all++; }
   return n;
 }

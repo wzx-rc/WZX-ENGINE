@@ -280,6 +280,8 @@ body.hub {
 .fig.locked .fig-stage::after { opacity: .35; box-shadow: none; }
 .fig-q { position: absolute; left: 50%; top: 48%; transform: translate(-50%, -50%); font-family: var(--disp); font-size: 44px; font-weight: 700; color: #4a4b53; }
 .fig.locked .fig-name { color: #8e8b94; }
+.fig.soon .fig-stage img { filter: grayscale(1) brightness(.7); opacity: .6; }
+.fig.soon .fig-name { color: #a29fa8; }
 .fig.download .fig-stage img { filter: saturate(.55) brightness(.8); }
 .fig:focus-visible { outline: 2px solid var(--sc); outline-offset: 2px; border-radius: 12px; }
 
