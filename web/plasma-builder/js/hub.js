@@ -252,7 +252,7 @@ $('chestCollect').addEventListener('click', () => collect('chest'));
 
 // ---------------------------------------------------------------- repaire : packs et coffres à ouvrir
 function renderStash() {
-  const tiles = [{ k: 'pack', name: tr('Pack Boyz', 'Boyz Pack'), blurb: tr('1 commune, 1 rare, peut-être une extrême', '1 common, 1 rare, maybe an extreme'), n: S.packs, col: 'var(--pink)' },
+  const tiles = [{ k: 'pack', name: tr('Pack Boyz', 'Boyz Pack'), blurb: tr('1 commune, 1 rare, peut-être une extrême', '1 common, 1 rare, maybe an extreme'), n: S.packs, col: '#6fe0e6' },
     ...['crate', 'nob', 'boss'].map(k => ({ k, name: CHESTS[k].name, blurb: CHESTS[k].blurb, n: S.box[k], col: CHESTS[k].col }))];
   const total = S.packs + S.chests;
   $('lairLead').textContent = total
@@ -261,7 +261,7 @@ function renderStash() {
   $('stash').innerHTML = tiles.map(t => `
     <div class="loot ${t.n ? '' : 'none'}" data-k="${t.k}" style="--lc:${t.col}">
       <button type="button" class="loot-art" data-open="${t.k}" ${t.n ? '' : 'disabled'} aria-label="${esc(tr('Ouvrir', 'Open'))} ${esc(t.name)}">
-        ${t.k === 'pack' ? packSVG() : `<img class="chestimg" src="${chestImg(t.k)}" alt="">`}
+        ${t.k === 'pack' ? '<img class="packimg" src="assets/hub/pack.webp" alt="">' : `<img class="chestimg" src="${chestImg(t.k)}" alt="">`}
         <span class="loot-n">×${t.n}</span>
       </button>
       <b>${esc(t.name)}</b>

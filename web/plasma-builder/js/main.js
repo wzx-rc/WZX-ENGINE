@@ -288,7 +288,7 @@ function renderViews() {
 // Pastilles des sockets dans le viewport (libres : anneau creux ; occupés : plein).
 function renderPins() {
   $('pins').innerHTML = [...sockets.values()].map((s, n) => `<button type="button" class="pin${state.placed[s.id] ? '' : ' free'}" data-socket="${s.id}" aria-pressed="${ui.sel === s.id}" aria-label="${n + 1} · ${esc(s.label)}" title="${esc(SOCKET_TYPES[s.type] || s.type)}"><i></i><b>${n + 1}</b><span>${esc(s.label)}</span></button>`).join('');
-  $('pins').hidden = !ui.sockets || ui.test;
+  $('pins').hidden = true;   // étiquettes de sockets sur le perso retirées (demande du 17/11) ; choix par la liste Équipement
   renderEquip();
 }
 // Interface Atelier : la liste Équipement (un bouton par socket, mêmes numéros que les pastilles).
@@ -694,7 +694,7 @@ $('sceneSel').addEventListener('change', async e => {
   vp.gizmo.detach();
   if (!test) attachGizmo();
   if (skel) skel.visible = !test && ui.rig;
-  $('pins').hidden = test || !ui.sockets;
+  $('pins').hidden = true;
   const target = test ? testModel.root : model.root;
   target.updateMatrixWorld(true);
   vp.frameObject(target, new THREE.Vector3(0.55, 0.2, 1));
@@ -833,7 +833,7 @@ vp.onFrame = dt => {
   hold.update(dt, applySquash);
   poseMode?.update();
   if ((ui.quality === 'pt' || ui.quality === 'bhq') && (infoT += dt) > 0.25) { infoT = 0; renderInfo(); renderGIInfo(); }
-  if (!model || !ui.sockets || ui.mode === 'pose') return;
+  if (!model || $('pins').hidden || ui.mode === 'pose') return;
   const el = $('vp'), w = el.clientWidth, h = el.clientHeight;
   for (const b of $('pins').children) {
     if (!sockets.has(b.dataset.socket)) continue;

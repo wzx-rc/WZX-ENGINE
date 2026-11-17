@@ -364,3 +364,10 @@ body.hub {
   .hub *, .hub *::before, .hub *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
 html:has(> body.hub), body.hub { overflow-x: clip; }
+
+/* Pack Boyz : visuel fourni (assets/hub/pack.webp), découpé en deux le long des pointillés */
+.loot-art .packimg { height: 100%; width: auto; filter: drop-shadow(0 14px 14px rgba(0,0,0,.6)); transform: rotate(-4deg); }
+.bigpack .flap, .bigpack .pbody { border: 0; border-radius: 0; box-shadow: none; background: url(../assets/hub/pack.webp) 0 0 / 300px 440px no-repeat; }
+.bigpack .pbody { background-position: 0 -100px; filter: drop-shadow(0 30px 40px rgba(0,0,0,.6)); }
+.bigpack .pname, .bigpack .plogo, .bigpack .shine { display: none; }
+.cutzone .blade { background: #e9fbff; box-shadow: 0 0 18px #6fe0e6, 0 0 40px #6fe0e6; }
