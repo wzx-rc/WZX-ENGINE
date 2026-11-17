@@ -37,40 +37,38 @@
   </header>
 
   <main class="board" id="board">
-    <div class="board-head">
-      <h1>HUB</h1>
-      <span class="muted2" id="headSub">Da_Big_Boy_01</span>
-      <span class="grow"></span>
-      <div class="factions" role="radiogroup" aria-label="Faction" id="factions"></div>
-    </div>
+    <!-- Repaire : bienvenue + tout ce qui reste à ouvrir -->
+    <section class="lair" aria-labelledby="lairTitle">
+      <div class="lair-bg" aria-hidden="true"></div>
+      <div class="lair-txt">
+        <h1 id="lairTitle">Le repaire</h1>
+        <p class="lair-lead" id="lairLead">Ouvre tes packs et tes coffres pour débloquer des pièces, et suis ta collection de figurines à imprimer.</p>
+        <div class="lair-row">
+          <div class="factions" role="radiogroup" aria-label="Faction" id="factions"></div>
+          <span class="muted2" id="headSub">Da_Big_Boy_01</span>
+        </div>
+        <a href="index.html" class="hbtn ghost lair-go">Ouvrir le Builder</a>
+      </div>
+      <div class="stash" id="stash" aria-label="À ouvrir"></div>
+    </section>
+
+    <!-- Collection STL : la vitrine -->
+    <section class="vitrine" id="vitrine" aria-labelledby="vitTitle">
+      <div class="vit-head">
+        <div class="vit-title">
+          <h2 id="vitTitle">Ma collection STL</h2>
+          <p id="vitSum"></p>
+        </div>
+        <div class="vit-meter" id="vitMeter" aria-hidden="true"></div>
+      </div>
+      <div class="vit-filters" role="group" aria-label="Filtrer par statut" id="vitFilters"></div>
+      <div class="shelf" id="shelf"></div>
+    </section>
 
     <div class="grid">
-      <!-- Mon ork + packs -->
-      <section class="hcard hero" aria-label="Mon ork et packs à ouvrir">
-        <div class="cover">
-          <div class="plate"><b>MON ORK</b><span id="orkSub">Klan rose · 32 mm</span></div>
-          <img src="assets/hub/ork_hero.jpg" alt="Ton ork, pose Waaagh !" class="cover-img">
-          <a href="index.html" class="cover-go">Ouvrir le builder<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
-        </div>
-        <div class="packzone brackets">
-          <div class="packstack" id="packStack" aria-hidden="true">
-            <div class="pack mini back2"></div>
-            <div class="pack mini"><div class="foil"></div><div class="shine"></div><img src="assets/hub/faction_rose.png" alt=""><b>PACK BOYZ</b><span>3 pièces</span></div>
-          </div>
-          <div class="packinfo">
-            <span class="lab">À ouvrir</span>
-            <p class="big" id="packTitle">0 pack</p>
-            <p class="lead">Coupe le paquet du doigt : une commune, une rare et peut-être une extrême, rangées dans ta Plasma Library.</p>
-            <button type="button" class="hbtn pink wide" id="openPack">Ouvrir un pack<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
-            <button type="button" class="hbtn gold wide" id="openChest"><span>Ouvrir un coffre (<span id="chestCount">0</span>)</span></button>
-            <div class="legend"><span><i class="r-c"></i>Commune</span><span><i class="r-r"></i>Rare</span><span><i class="r-x"></i>Extrême</span></div>
-          </div>
-        </div>
-      </section>
-
       <!-- Plasma Library -->
       <section class="hcard lib" id="libCard" aria-label="Plasma Library">
-        <div class="row"><span class="lab">Plasma Library</span><span class="grow"></span><a class="link" href="library.html" id="libAll">Tout voir</a></div>
+        <div class="row"><h2 class="ctitle">Plasma Library</h2><span class="grow"></span><a class="link" href="library.html" id="libAll">Tout voir</a></div>
         <div class="libcount"><b id="libOwned">0</b><span>/ <span id="libTotal">0</span> pièces</span><span class="grow"></span><span class="delta" id="libDelta" hidden></span></div>
         <div class="bars">
           <span>Commune</span><div class="bar"><i class="r-c" id="barC"></i></div><b id="numC">0</b>
@@ -78,40 +76,52 @@
           <span>Extrême</span><div class="bar"><i class="r-x" id="barX"></i></div><b id="numX">0</b>
         </div>
         <div class="cats" id="cats"></div>
-        <div class="row dupes"><span id="dupeInfo">0 doublon</span><span class="grow"></span><button type="button" class="hbtn ghost" id="recycle">Recycler en dents</button></div>
-      </section>
-
-      <!-- Dernier loot -->
-      <section class="hcard last" aria-label="Dernier loot">
-        <div class="row"><span class="lab">Dernier loot</span><span class="grow"></span><span class="muted2" id="lastWhen">aucun pour l'instant</span></div>
+        <div class="row lastlab"><span class="muted2">Dernier loot</span><span class="grow"></span><span class="muted2" id="lastWhen">aucun pour l'instant</span></div>
         <div class="lastrow" id="lastRow"></div>
-        <a href="index.html" class="tilelink">Essayer sur mon ork<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
-      </section>
-
-      <!-- Boutique -->
-      <section class="hcard shop" id="shop" aria-label="Boutique">
-        <div class="row"><span class="lab">Boutique</span><span class="grow"></span><span class="muted2">paiement sur le site (à brancher)</span></div>
-        <div class="shoprow"><img src="assets/hub/faction_rose.png" alt=""><div><b>Pack Boyz</b><span>3 pièces, 1 rare minimum</span></div><button type="button" class="price" data-buy="pack">[PRIX]</button></div>
-        <div class="shoprow"><img src="assets/hub/faction_jaune.png" alt=""><div><b>Coffre de Nob</b><span>3 pièces, 1 extrême garantie</span></div><button type="button" class="price" data-buy="chest">[PRIX]</button></div>
-        <div class="shoprow"><span class="ico-dents"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3l5 7 5-7 2 9-7 9-7-9z"/></svg></span><div><b>Pack contre des dents</b><span>échange tes doublons recyclés</span></div><button type="button" class="price" data-buy="dents"><span id="packDentsPrice">300</span> dents</button></div>
-        <div class="shoprow sub"><img src="assets/hub/logo_plasma_ork.png" alt=""><div><b>Waaagh Pass</b><span>1 pack par semaine, soutient le projet</span></div><button type="button" class="price pinkfill" data-buy="sub">[PRIX] / mois</button></div>
+        <div class="row dupes"><span id="dupeInfo">0 doublon</span><span class="grow"></span><button type="button" class="hbtn ghost" id="recycle">Recycler en dents</button></div>
       </section>
 
       <!-- Kit + drop -->
       <section class="hcard side" aria-label="Objectifs">
         <div class="kit">
-          <span class="lab">Kit en cours</span>
+          <h2 class="ctitle">Kit en cours</h2>
           <b id="kitName">Kit Rokkit</b>
           <div class="kitbar" id="kitBar"></div>
           <span class="muted2" id="kitInfo"></span>
         </div>
         <div class="hdrop">
-          <div class="dropring"><svg viewBox="0 0 100 100" aria-hidden="true"><circle cx="50" cy="50" r="44" class="trk"/><circle cx="50" cy="50" r="44" class="prog" id="dropProg"/></svg><div><span class="lab gold">Drop du jour</span><b id="dropTime">--:--</b></div></div>
+          <div class="dropring"><svg viewBox="0 0 100 100" aria-hidden="true"><circle cx="50" cy="50" r="44" class="trk"/><circle cx="50" cy="50" r="44" class="prog" id="dropProg"/></svg><div><span class="droplab">Drop du jour</span><b id="dropTime">--:--</b></div></div>
           <button type="button" class="hbtn gold" id="dropBtn" disabled>Récupérer</button>
         </div>
       </section>
+
+      <!-- Boutique -->
+      <section class="hcard shop" id="shop" aria-label="Boutique">
+        <div class="row"><h2 class="ctitle">Boutique</h2><span class="grow"></span><span class="muted2">paiement sur le site (à brancher)</span></div>
+        <div class="shoprow"><img src="assets/hub/faction_rose.png" alt=""><div><b>Pack Boyz</b><span>3 pièces, 1 rare minimum</span></div><button type="button" class="price" data-buy="pack">[PRIX]</button></div>
+        <div class="shoprow"><img src="assets/hub/chest_crate_closed.png" alt=""><div><b>Caisse de ferraille</b><span>3 pièces, 1 rare garantie</span></div><button type="button" class="price" data-buy="crate">[PRIX]</button></div>
+        <div class="shoprow"><img src="assets/hub/chest_nob_closed.png" alt=""><div><b>Coffre de Nob</b><span>3 pièces, 1 extrême garantie</span></div><button type="button" class="price" data-buy="nob">[PRIX]</button></div>
+        <div class="shoprow"><img src="assets/hub/chest_boss_closed.png" alt=""><div><b>Koffre du Warboss</b><span>3 pièces, 2 extrêmes garanties</span></div><button type="button" class="price" data-buy="boss">[PRIX]</button></div>
+        <div class="shoprow"><span class="ico-dents"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3l5 7 5-7 2 9-7 9-7-9z"/></svg></span><div><b>Pack contre des dents</b><span>échange tes doublons recyclés</span></div><button type="button" class="price" data-buy="dents"><span id="packDentsPrice">300</span> dents</button></div>
+        <div class="shoprow sub"><img src="assets/hub/logo_plasma_ork.png" alt=""><div><b>Waaagh Pass</b><span>1 pack par semaine, soutient le projet</span></div><button type="button" class="price pinkfill" data-buy="sub">[PRIX] / mois</button></div>
+      </section>
     </div>
   </main>
+</div>
+
+<!-- Fiche d'une figurine de la collection -->
+<div class="figov" id="figOv" hidden role="dialog" aria-modal="true" aria-labelledby="figName">
+  <div class="figpanel">
+    <button type="button" class="hbtn ghost icon figclose" data-figclose aria-label="Fermer"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    <div class="figstage" id="figStage"><img id="figImg" alt=""></div>
+    <div class="figbody">
+      <h2 id="figName"></h2>
+      <p class="muted2" id="figSquad"></p>
+      <ol class="steps" id="figSteps" aria-label="Statut"></ol>
+      <p class="figstate" id="figState"></p>
+      <div class="figacts" id="figActs"></div>
+    </div>
+  </div>
 </div>
 
 <!-- Ouverture d'un pack -->
@@ -120,8 +130,8 @@
   <div class="stage">
     <div class="halo pinkhalo"></div>
     <div class="bigpack" id="bigPack">
-      <div class="flap"><div class="foil"></div><div class="shine"></div></div>
-      <div class="pbody"><div class="foil"></div><div class="shine"></div><img src="assets/hub/faction_rose.png" alt=""><b>PACK BOYZ</b><span>série 1</span></div>
+      <div class="flap"><div class="shine"></div></div>
+      <div class="pbody"><div class="shine"></div><span class="pname"><b>PACK BOYZ</b><span>série 1 · 3 pièces</span></span></div>
       <div class="cutzone" id="cutZone" role="slider" tabindex="0" aria-label="Couper le paquet : glisser de gauche à droite, ou Entrée" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span class="dash"></span><span class="blade" id="blade"></span></div>
     </div>
     <div class="hint" id="packHint"><b>Coupe le paquet du doigt</b><span>Glisse le long des pointillés, de gauche à droite.</span><button type="button" class="hbtn ghost" id="cutClick">Ou ouvrir d'un clic</button></div>
@@ -132,16 +142,14 @@
 
 <!-- Ouverture d'un coffre -->
 <div class="overlay" id="chestOv" hidden role="dialog" aria-modal="true" aria-labelledby="chestOvTitle">
-  <div class="ovhead"><button type="button" class="hbtn ghost icon" data-close aria-label="Fermer"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button><b id="chestOvTitle">COFFRE DE NOB</b><span class="muted2">3 pièces, 1 extrême garantie</span></div>
+  <div class="ovhead"><button type="button" class="hbtn ghost icon" data-close aria-label="Fermer"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button><b id="chestOvTitle">Coffre de Nob</b><span class="muted2" id="chestOvSub">3 pièces, 1 extrême garantie</span></div>
   <div class="stage">
-    <div class="halo goldhalo"></div>
+    <div class="halo chesthalo"></div>
     <div class="beam" id="beam" hidden></div>
     <button type="button" class="chest" id="chest" aria-label="Frapper le coffre">
-      <span class="lid"><span class="tx"></span></span>
-      <span class="box"><span class="tx"></span></span>
-      <span class="seam" id="seam"></span>
-      <span class="strap l"></span><span class="strap r"></span>
-      <span class="lock" id="lock"><img src="assets/hub/faction_rose.png" alt=""></span>
+      <img class="chest-img" id="chestImg" alt="">
+      <img class="chest-img open" id="chestImgOpen" alt="">
+      <span class="chest-crack" id="chestCrack"></span>
     </button>
     <div class="hint" id="chestHint"><b id="chestPrompt">Frappe le coffre pour l'ouvrir</b><span class="dots" id="chestDots"><i></i><i></i><i></i></span></div>
     <div class="cards" id="chestCards"></div>

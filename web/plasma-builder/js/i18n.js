@@ -37,6 +37,15 @@
     'Tête': 'Head', 'Arme': 'Weapon', 'Épaulière': 'Shoulder pad', 'Socle': 'Base', 'Épaule': 'Shoulder', 'Main': 'Hand', 'Libre': 'Free',
     'Main gauche': 'Left hand', 'Main droite': 'Right hand', 'Épaule gauche': 'Left shoulder', 'Épaule droite': 'Right shoulder',
     'Ceinture gauche': 'Left belt', 'Ceinture droite': 'Right belt',
+    // ---------------------------------------------------------------- hub : repaire, coffres par rang, collection STL
+    'Le repaire': 'The lair', 'Ouvrir le Builder': 'Open the Builder', 'Ouvre tes packs et tes coffres pour débloquer des pièces, et suis ta collection de figurines à imprimer.': 'Open your packs and chests to unlock pieces, and track your collection of printable figures.',
+    'Caisse de ferraille': 'Scrap crate', 'Koffre du Warboss': 'Warboss chest', '3 pièces, 1 rare garantie': '3 pieces, 1 rare guaranteed', '3 pièces, 2 extrêmes garanties': '3 pieces, 2 extremes guaranteed',
+    'À ouvrir': 'To open', 'Ma collection STL': 'My STL collection', 'Filtrer par statut': 'Filter by status', 'Statut': 'Status',
+    'À débloquer': 'To unlock', 'À télécharger': 'To download', 'STL possédés': 'STL owned', 'Possédée': 'Owned', 'Imprimée': 'Printed', 'Spéciaux': 'Specials',
+    'série 1 · 3 pièces': 'series 1 · 3 pieces',
+    'Démo : figurine débloquée. Le paiement sera branché sur le site.': 'Demo: figure unlocked. Payment will be wired to the website.',
+    'Démo : STL marqués comme téléchargés. Le téléchargement sera branché sur le site.': 'Demo: STL files marked as downloaded. Downloads will be wired to the website.',
+    'Le téléchargement sera branché sur le site.': 'Downloads will be wired to the website.',
     'Faction': 'Faction', 'Klan rose': 'Pink Klan', 'Klan bleu': 'Blue Klan', 'Klan jaune': 'Yellow Klan', 'Klan vert': 'Green Klan',
     'Couleurs de faction': 'Faction colors', 'couleurs de faction': 'faction colors', 'masque faction': 'faction mask',
 

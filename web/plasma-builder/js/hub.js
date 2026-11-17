@@ -6,7 +6,8 @@
 // - CATALOGUE : pièces factices (nom + picto de catégorie). À remplacer par les briques de la bibliothèque.
 // - Achats : les boutons [PRIX] ajoutent le pack pour la démo ; le paiement sera branché sur le site.
 // - État du joueur : localStorage 'plasmaork.hub' (à remplacer par le compte en ligne).
-import { $, esc, RULES, RARITY, RCOL, ICON, FACTIONS, NAMES, CATALOG, byId, KIT, catLabel, catSingular, S, save, ownedCount, dupes, pick, draw, commit, sparks, toast, center, setNum } from './loot.js';
+import { $, esc, RULES, RARITY, RCOL, ICON, FACTIONS, NAMES, CATALOG, byId, KIT, catLabel, catSingular, S, save, ownedCount, dupes, pick, draw, commit, sparks, toast, center, setNum, CHESTS, chestImg } from './loot.js';
+import { FIGS, figById, STEPS, STATUS, statusOf, printsOf, setStatus, addPrint, counts } from './collection.js';
 
 // ---------------------------------------------------------------- tableau de bord
 function pieceCard(p, opts = {}) {
@@ -18,18 +19,13 @@ function render() {
   const faction = FACTIONS.find(f => f.id === S.faction) || FACTIONS[0];
   document.body.style.setProperty('--fc', faction.col);
   $('factions').innerHTML = FACTIONS.map(f => `<button type="button" role="radio" aria-checked="${f.id === faction.id}" aria-label="${f.label}" title="${f.label}" data-faction="${f.id}" style="--fc:${f.col}"><img src="${f.img}" alt=""></button>`).join('');
-  $('orkSub').textContent = faction.label + ' · 32 mm';
   $('headSub').textContent = 'Da_Big_Boy_01 · ' + faction.label;
 
   setNum('dents', S.dents);
-  const packs = S.packs, chests = S.chests;
-  $('packTitle').textContent = packs ? tr(`${packs} pack${packs > 1 ? 's' : ''} t'attend${packs > 1 ? 'ent' : ''}`, `${packs} pack${packs > 1 ? 's' : ''} waiting for you`) : 'Plus de pack à ouvrir';
-  $('openPack').disabled = !packs;
-  $('openChest').disabled = !chests;
-  $('chestCount').textContent = chests;
-  $('packStack').classList.toggle('empty', !packs);
-  const badge = packs + chests;
+  renderStash();
+  const badge = S.packs + S.chests;
   $('navBadge').hidden = !badge; $('navBadge').textContent = badge;
+  renderVitrine();
 
   const total = CATALOG.length, own = ownedCount();
   $('libTotal').textContent = total;
@@ -201,20 +197,26 @@ $('packCards').addEventListener('click', e => {
 });
 $('packCollect').addEventListener('click', () => collect('pack'));
 
-// ---- coffre : trois coups, le couvercle saute, les pièces volent
-const chest = { got: null, collected: false, hits: 0 };
-function openChest() {
-  if (!S.chests) return;
-  Object.assign(chest, { got: null, collected: false, hits: 0 });
+// ---- coffre : trois coups, le couvercle saute, les pièces volent. Trois rangs (caisse, Nob, Warboss).
+const chest = { got: null, collected: false, hits: 0, tier: 'nob' };
+function openChest(tier) {
+  if (!CHESTS[tier]) tier = ['crate', 'nob', 'boss'].find(t => S.box[t] > 0);
+  if (!tier || !S.box[tier]) return;
+  Object.assign(chest, { got: null, collected: false, hits: 0, tier });
+  const def = CHESTS[tier];
+  $('chestOv').style.setProperty('--cc', def.col);
+  $('chestOv').dataset.tier = tier;
+  $('chestOvTitle').textContent = def.name;
+  $('chestOvSub').textContent = def.blurb;
+  $('chestImg').src = chestImg(tier); $('chestImgOpen').src = chestImg(tier, true);
   $('chest').className = 'chest'; $('chest').hidden = false; $('beam').hidden = true;
   $('chestHint').hidden = false; $('chestCards').innerHTML = ''; $('chestFoot').hidden = true;
   updateChest();
   showOverlay('chestOv');
 }
 function updateChest() {
-  const h = chest.hits, glow = [0, 14, 28, 60][Math.min(h, 3)];
-  $('seam').style.boxShadow = `0 0 ${glow}px rgba(242,194,48,.9)`;
-  $('lock').style.boxShadow = `0 0 ${12 + glow}px color-mix(in srgb, var(--pink) 70%, transparent)`;
+  const h = chest.hits;
+  $('chest').style.setProperty('--crack', String([0, .35, .7, 1][Math.min(h, 3)]));
   $('chestPrompt').textContent = ['Frappe le coffre pour l’ouvrir', 'Encore !', 'Une dernière fois !', ''][h];
   $('chestDots').querySelectorAll('i').forEach((d, i) => d.classList.toggle('on', i < h));
   $('chest').setAttribute('aria-label', h < 3 ? tr(`Frapper le coffre (${h} sur 3)`, `Smash the chest (${h} of 3)`) : 'Coffre ouvert');
@@ -222,19 +224,19 @@ function updateChest() {
 $('chest').addEventListener('click', e => {
   if (chest.hits >= 3) return;
   chest.hits++;
-  const c = $('chest');
+  const c = $('chest'), col = CHESTS[chest.tier].col;
   c.className = 'chest ' + (chest.hits % 2 ? 'hitA' : 'hitB');
-  sparks(e.clientX || center(c)[0], e.clientY || center(c)[1], '#f2c230', 10 + chest.hits * 6);
+  sparks(e.clientX || center(c)[0], e.clientY || center(c)[1], col, 10 + chest.hits * 6);
   updateChest();
   if (chest.hits === 3) {
-    chest.got = draw('chest');
-    commit('chest', chest.got);
+    chest.got = draw(chest.tier);
+    commit(chest.tier, chest.got);
     setTimeout(() => {
       c.className = 'chest opened';
       $('beam').hidden = false;
       $('chestHint').hidden = true;
       const [x, y] = center(c);
-      sparks(x, y - 60, '#f2c230', 44);
+      sparks(x, y - 60, col, 44);
     }, 450);
     setTimeout(() => {
       c.hidden = true;
@@ -242,10 +244,115 @@ $('chest').addEventListener('click', e => {
       const slots = [...$('chestCards').querySelectorAll('.slot')];
       slots.forEach((s, i) => setTimeout(() => reveal(s, chest.got[i]), 700 + i * 250));
       setTimeout(() => { $('chestFoot').hidden = false; $('chestCollect').focus(); }, 1700);
-    }, 1300);
+    }, 1500);
   }
 });
 $('chestCollect').addEventListener('click', () => collect('chest'));
+
+// ---------------------------------------------------------------- repaire : packs et coffres à ouvrir
+function renderStash() {
+  const tiles = [{ k: 'pack', name: tr('Pack Boyz', 'Boyz Pack'), blurb: tr('1 commune, 1 rare, peut-être une extrême', '1 common, 1 rare, maybe an extreme'), n: S.packs, col: 'var(--pink)' },
+    ...['crate', 'nob', 'boss'].map(k => ({ k, name: CHESTS[k].name, blurb: CHESTS[k].blurb, n: S.box[k], col: CHESTS[k].col }))];
+  const total = S.packs + S.chests;
+  $('lairLead').textContent = total
+    ? tr(`${total} ouverture${total > 1 ? 's' : ''} t'attend${total > 1 ? 'ent' : ''}. Chaque pack ou coffre range 3 pièces dans ta Plasma Library.`, `${total} to open. Each pack or chest puts 3 pieces in your Plasma Library.`)
+    : tr('Plus rien à ouvrir : passe par la boutique, ou reviens pour le drop du jour.', 'Nothing left to open: visit the shop, or come back for the daily drop.');
+  $('stash').innerHTML = tiles.map(t => `
+    <div class="loot ${t.n ? '' : 'none'}" data-k="${t.k}" style="--lc:${t.col}">
+      <button type="button" class="loot-art" data-open="${t.k}" ${t.n ? '' : 'disabled'} aria-label="${esc(tr('Ouvrir', 'Open'))} ${esc(t.name)}">
+        ${t.k === 'pack' ? '<span class="minipack"><span class="shine"></span></span>' : `<img src="${chestImg(t.k)}" alt="">`}
+        <span class="loot-n">×${t.n}</span>
+      </button>
+      <b>${esc(t.name)}</b>
+      <span class="loot-blurb">${esc(t.blurb)}</span>
+      ${t.n ? `<button type="button" class="hbtn loot-go" data-open="${t.k}">${tr('Ouvrir', 'Open')}</button>` : `<button type="button" class="hbtn ghost loot-go" data-shop>${tr('Obtenir', 'Get more')}</button>`}
+    </div>`).join('');
+}
+$('stash').addEventListener('click', e => {
+  if (e.target.closest('[data-shop]')) return $('shopTop').click();
+  const b = e.target.closest('[data-open]'); if (!b) return;
+  const k = b.dataset.open;
+  if (k === 'pack') openPack(); else openChest(k);
+});
+
+// ---------------------------------------------------------------- collection STL (vitrine)
+const vit = { filter: 'all', sel: null };
+const ICO = {
+  locked: '<path d="M7 11V8a5 5 0 0 1 10 0v3M5 11h14v10H5z"/>',
+  download: '<path d="M12 4v11M7 10l5 5 5-5M4 20h16"/>',
+  owned: '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
+  printed: '<path d="M4 3h16v18H4zM4 7h16M10 7v3l2 2 2-2V7M8 18h8M9.5 18l1-3h3l1 3"/>',
+};
+const stIco = st => `<svg viewBox="0 0 24 24" aria-hidden="true">${ICO[st]}</svg>`;
+function renderVitrine() {
+  const n = counts(), unlocked = n.all - n.locked;
+  $('vitSum').innerHTML = n.locked
+    ? tr(`<b>${unlocked} figurines débloquées sur ${n.all}</b>, il t'en manque ${n.locked}. ${n.download ? `${n.download} à télécharger, ` : ''}${n.printed} déjà imprimée${n.printed > 1 ? 's' : ''}.`,
+      `<b>${unlocked} of ${n.all} figures unlocked</b>, ${n.locked} missing. ${n.download ? `${n.download} to download, ` : ''}${n.printed} already printed.`)
+    : tr(`<b>Collection complète : ${n.all} figurines.</b> ${n.printed} imprimée${n.printed > 1 ? 's' : ''}.`, `<b>Complete collection: ${n.all} figures.</b> ${n.printed} printed.`);
+  $('vitMeter').innerHTML = ['printed', 'owned', 'download', 'locked'].map(st => n[st] ? `<i style="flex:${n[st]};--sc:${STATUS[st].col}" title="${STATUS[st].label} : ${n[st]}" class="${st}"></i>` : '').join('');
+  const f = [['all', tr('Toutes', 'All')], ['printed', tr('Imprimées', 'Printed')], ['owned', tr('Possédées', 'Owned')], ['download', tr('À télécharger', 'To download')], ['locked', tr('À débloquer', 'To unlock')]];
+  $('vitFilters').innerHTML = f.map(([k, l]) => `<button type="button" aria-pressed="${vit.filter === k}" data-f="${k}" style="--sc:${STATUS[k]?.col || '#ecebe6'}">${k === 'all' ? '' : stIco(k)}${l}<span>${n[k]}</span></button>`).join('');
+  const list = FIGS.filter(fg => vit.filter === 'all' || statusOf(fg.id) === vit.filter);
+  $('shelf').innerHTML = list.map(fg => {
+    const st = statusOf(fg.id), pr = printsOf(fg.id);
+    return `<button type="button" class="fig ${st}" data-fig="${fg.id}" style="--sc:${STATUS[st].col}" aria-label="${esc(fg.name)} : ${STATUS[st].label}">
+      <span class="fig-tag">${stIco(st)}${STATUS[st].short}${pr > 1 ? ` ×${pr}` : ''}</span>
+      <span class="fig-stage"><img src="${fg.img}" alt="" loading="lazy">${st === 'locked' ? '<span class="fig-q">?</span>' : ''}</span>
+      <span class="fig-name">${st === 'locked' ? esc(fg.name) : esc(fg.name)}</span>
+      <span class="fig-squad">${esc(fg.squad)}</span>
+    </button>`;
+  }).join('') || `<p class="shelf-empty">${tr('Aucune figurine avec ce statut.', 'No figure with this status.')}</p>`;
+}
+$('vitFilters').addEventListener('click', e => { const b = e.target.closest('[data-f]'); if (b) { vit.filter = b.dataset.f; renderVitrine(); } });
+$('shelf').addEventListener('click', e => { const b = e.target.closest('[data-fig]'); if (b) openFig(b.dataset.fig); });
+
+let figReturn = null;
+function openFig(id) {
+  vit.sel = id; figReturn = document.activeElement;
+  $('figOv').hidden = false; renderFig();
+  $('figOv').querySelector('[data-figclose]').focus();
+}
+function closeFig() { $('figOv').hidden = true; vit.sel = null; renderVitrine(); figReturn?.focus?.(); }
+function renderFig() {
+  const fg = figById[vit.sel], st = statusOf(fg.id), pr = printsOf(fg.id), at = STEPS.indexOf(st);
+  $('figOv').style.setProperty('--sc', STATUS[st].col);
+  $('figOv').dataset.st = st;
+  $('figImg').src = fg.img;
+  $('figName').textContent = fg.name;
+  const fac = FACTIONS.find(f => f.id === fg.faction);
+  $('figSquad').textContent = `${fac?.label || ''} · ${fg.squad} · 32 mm`;
+  $('figSteps').innerHTML = STEPS.map((k, i) => `<li class="${i < at ? 'done' : i === at ? 'cur' : ''}" style="--sc:${STATUS[k].col}"><button type="button" data-step="${k}" aria-current="${i === at ? 'step' : 'false'}">${stIco(k)}<span>${STATUS[k].label}</span></button></li>`).join('');
+  $('figState').textContent = {
+    locked: tr('Cette figurine n’est pas encore dans ta collection.', 'This figure is not in your collection yet.'),
+    download: tr('Débloquée : ses fichiers STL t’attendent.', 'Unlocked: its STL files are waiting for you.'),
+    owned: tr('Tu as ses fichiers STL. Pas encore imprimée.', 'You have its STL files. Not printed yet.'),
+    printed: tr(`Imprimée ${pr} fois.`, `Printed ${pr} time${pr > 1 ? 's' : ''}.`),
+  }[st];
+  const A = {
+    locked: `<button type="button" class="hbtn pink" data-act="unlock">${tr('Débloquer', 'Unlock')}</button>`,
+    download: `<button type="button" class="hbtn pink" data-act="download">${tr('Télécharger les STL', 'Download STL files')}</button>`,
+    owned: `<button type="button" class="hbtn gold" data-act="print">${tr('Marquer comme imprimée', 'Mark as printed')}</button><button type="button" class="hbtn ghost" data-act="redl">${tr('Retélécharger les STL', 'Download STL files again')}</button>`,
+    printed: `<div class="prints"><button type="button" class="hbtn ghost icon" data-act="minus" aria-label="${tr('Une impression de moins', 'One print less')}">−</button><b>${pr}</b><button type="button" class="hbtn ghost icon" data-act="plus" aria-label="${tr('Une impression de plus', 'One more print')}">+</button><span>${tr('impression', 'print')}${pr > 1 ? 's' : ''}</span></div><button type="button" class="hbtn ghost" data-act="redl">${tr('Retélécharger les STL', 'Download STL files again')}</button>`,
+  };
+  $('figActs').innerHTML = A[st];
+}
+$('figOv').addEventListener('click', e => {
+  if (e.target === $('figOv') || e.target.closest('[data-figclose]')) return closeFig();
+  const id = vit.sel; if (!id) return;
+  const step = e.target.closest('[data-step]');
+  if (step) { setStatus(id, step.dataset.step); renderFig(); return; }
+  const a = e.target.closest('[data-act]'); if (!a) return;
+  const act = a.dataset.act, [x, y] = center(a);
+  if (act === 'unlock') { setStatus(id, 'download'); toast('Démo : figurine débloquée. Le paiement sera branché sur le site.'); sparks(x, y, '#4caee4', 24); }
+  else if (act === 'download') { setStatus(id, 'owned'); toast('Démo : STL marqués comme téléchargés. Le téléchargement sera branché sur le site.'); sparks(x, y, '#7bc67e', 20); }
+  else if (act === 'redl') toast('Le téléchargement sera branché sur le site.');
+  else if (act === 'print') { setStatus(id, 'printed'); sparks(x, y, '#f2c230', 30); }
+  else if (act === 'plus') addPrint(id, 1);
+  else if (act === 'minus') addPrint(id, -1);
+  renderFig();
+});
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('figOv').hidden) closeFig(); });
 
 // ---------------------------------------------------------------- boutique, recyclage, drop du jour, factions
 document.querySelector('.shop').addEventListener('click', e => {
@@ -256,7 +363,7 @@ document.querySelector('.shop').addEventListener('click', e => {
     S.dents -= RULES.packInDents; S.packs++; save(); render();
     toast(tr('Pack Boyz échangé contre ' + RULES.packInDents + ' dents', 'Boyz Pack bought for ' + RULES.packInDents + ' teeth'));
   } else if (what === 'pack') { S.packs++; save(); render(); toast('Démo : pack ajouté. Le paiement sera branché sur le site.'); }
-  else if (what === 'chest') { S.chests++; save(); render(); toast('Démo : coffre ajouté. Le paiement sera branché sur le site.'); }
+  else if (CHESTS[what]) { S.box[what]++; save(); render(); toast(tr(`Démo : ${CHESTS[what].name} ajouté. Le paiement sera branché sur le site.`, `Demo: ${CHESTS[what].name} added. Payment will be wired to the website.`)); }
   else toast('Abonnement : à brancher sur le site.');
   const [x, y] = center(b); sparks(x, y, '#f2c230', 12);
 });
@@ -269,8 +376,6 @@ $('recycle').addEventListener('click', () => {
   const [x, y] = center($('dents')); sparks(x, y, '#f2c230', 24);
   toast(tr(`+${gain} dents grâce aux doublons`, `+${gain} teeth from duplicates`));
 });
-$('openPack').addEventListener('click', openPack);
-$('openChest').addEventListener('click', openChest);
 $('factions').addEventListener('click', e => { const b = e.target.closest('[data-faction]'); if (b) { S.faction = b.dataset.faction; save(); window.plasmaSetFaction?.(S.faction); render(); } });
 // thème changé dans les Réglages
 window.addEventListener('plasma-faction', e => { if (S.faction !== e.detail) { S.faction = e.detail; save(); render(); } });
@@ -303,6 +408,6 @@ tickDrop();
 setInterval(tickDrop, 1000);
 // hub.html#pack / #chest (lien depuis la Plasma Library) : ouvre directement
 if (location.hash === '#pack' && S.packs) openPack();
-else if (location.hash === '#chest' && S.chests) openChest();
+else if (location.hash.startsWith('#chest') && S.chests) openChest(location.hash.split('-')[1]);
 else if (location.hash === '#shop') setTimeout(() => $('shopTop').click(), 300);
 if (location.hash) history.replaceState(null, '', location.pathname);

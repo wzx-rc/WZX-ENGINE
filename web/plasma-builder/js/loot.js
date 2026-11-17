@@ -18,6 +18,13 @@ export const RULES = {
   packInDents: 300,
   start: { dents: 120, packs: 3, chests: 1 },
 };
+// Trois rangs de coffre : ce qu'ils donnent (une rareté par carte) et leur couleur de lumière.
+export const CHESTS = {
+  crate: { name: T('Caisse de ferraille'), give: ['c', 'c', 'r'], col: '#9fb4c4', blurb: T('3 pièces, 1 rare garantie') },
+  nob: { name: T('Coffre de Nob'), give: ['c', 'r', 'x'], col: '#3e8ef7', blurb: T('3 pièces, 1 extrême garantie') },
+  boss: { name: T('Koffre du Warboss'), give: ['r', 'x', 'x'], col: '#ff2e88', blurb: T('3 pièces, 2 extrêmes garanties') },
+};
+export const chestImg = (tier, open = false) => `assets/hub/chest_${tier}_${open ? 'open' : 'closed'}.png`;
 export const RARITY = { c: T('Commune'), r: T('Rare'), x: T('Extrême') };
 export const RCOL = { c: '#b9c0c8', r: '#3e8ef7', x: '#ff2e88' };
 export const ICON = { head: 'assets/ui/icon_head.png', weapon: 'assets/ui/icon_weapon.png', back: 'assets/ui/icon_back.png', shoulder: 'assets/ui/icon_shoulder.png', chest: 'assets/ui/icon_chest.png', belt: 'assets/ui/icon_belt.png', base: 'assets/ui/icon_base.png' };
@@ -57,6 +64,11 @@ function load() {
   try { s = JSON.parse(localStorage.getItem(KEY)); } catch { /* stockage indisponible */ }
   if (!s || s.v !== 1) s = fresh();
   s.got ||= {};   // id -> { at, src } : quand et comment la pièce a été obtenue
+  // coffres par rang (avant : un seul compteur S.chests = coffres de Nob)
+  if (!s.box) s.box = { crate: 2, nob: s.chests ?? 1, boss: 1 };
+  delete s.chests;
+  // total des coffres, lu par la Plasma Library ; non enregistré
+  Object.defineProperty(s, 'chests', { get() { return Object.values(this.box).reduce((a, b) => a + b, 0); }, enumerable: false });
   return s;
 }
 export const S = load();
@@ -75,13 +87,22 @@ export function pick(rk) {
   for (let i = 0; i < pool.length; i++) { t -= w[i]; if (t <= 0) return pool[i]; }
   return pool[pool.length - 1];
 }
-export const SOURCE = { pack: T('Pack Boyz'), chest: T('Coffre de Nob'), drop: T('Drop du jour'), start: T('Kit de départ') };
+export const SOURCE = { pack: T('Pack Boyz'), chest: T('Coffre de Nob'), crate: CHESTS.crate.name, nob: CHESTS.nob.name, boss: CHESTS.boss.name, drop: T('Drop du jour'), start: T('Kit de départ') };
+// kind : 'pack' ou un rang de coffre ('crate' | 'nob' | 'boss')
 export function draw(kind) {
-  let third = 'r';
-  if (kind === 'chest') third = 'x';
-  else if (Math.random() < RULES.extremeChance || S.sinceX + 1 >= RULES.pity) third = 'x';
-  S.sinceX = third === 'x' ? 0 : S.sinceX + 1;
-  const got = [pick('c'), pick('r'), pick(third)];
+  let ranks;
+  if (CHESTS[kind]) ranks = CHESTS[kind].give;
+  else {
+    const third = Math.random() < RULES.extremeChance || S.sinceX + 1 >= RULES.pity ? 'x' : 'r';
+    S.sinceX = third === 'x' ? 0 : S.sinceX + 1;
+    ranks = ['c', 'r', third];
+  }
+  const got = [];
+  for (const rk of ranks) {   // pas deux fois la même pièce dans une ouverture si on peut l'éviter
+    let p = pick(rk), n = 0;
+    while (got.some(g => g.id === p.id) && n++ < 8) p = pick(rk);
+    got.push(p);
+  }
   return got.map(p => {
     const before = S.owned[p.id] || 0;
     S.owned[p.id] = before + 1;
@@ -90,7 +111,7 @@ export function draw(kind) {
   });
 }
 export function commit(kind, got) {
-  if (kind === 'pack') S.packs--; else S.chests--;
+  if (kind === 'pack') S.packs--; else S.box[kind]--;
   S.last = got.map(g => g.id); S.lastAt = Date.now();
   save();
 }
