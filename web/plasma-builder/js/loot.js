@@ -22,9 +22,9 @@ export const RULES = {
 // Visuels : assets/hub/chest_<rang>.webp (planche « Loot crates » fournie par l'utilisateur, détourée).
 export const chestImg = tier => `assets/hub/chest_${tier}.webp`;
 export const CHESTS = {
-  crate: { name: T('Caisse de ferraille'), give: ['c', 'c', 'r'], col: '#aab0b8', blurb: T('3 pièces, 1 rare garantie') },
-  nob: { name: T('Coffre de Nob'), give: ['c', 'r', 'x'], col: '#f2b531', blurb: T('3 pièces, 1 extrême garantie') },
-  boss: { name: T('Koffre du Warboss'), give: ['r', 'x', 'x'], col: '#b1ff41', blurb: T('3 pièces, 2 extrêmes garanties') },
+  crate: { name: T('Caisse de ferraille'), give: ['c', 'c', 'r'], col: '#cfe3f0', blurb: T('3 pièces, 1 rare garantie') },
+  nob: { name: T('Coffre de Nob'), give: ['c', 'r', 'x'], col: '#f7a823', blurb: T('3 pièces, 1 extrême garantie') },
+  boss: { name: T('Koffre du Warboss'), give: ['r', 'x', 'x'], col: '#e040fb', blurb: T('3 pièces, 2 extrêmes garanties') },
 };
 export const RARITY = { c: T('Commune'), r: T('Rare'), x: T('Extrême') };
 export const RCOL = { c: '#b9c0c8', r: '#3e8ef7', x: '#ff2e88' };
@@ -33,7 +33,7 @@ export const ICON = { head: 'assets/ui/icon_head.png', weapon: 'assets/ui/icon_w
 export const FACTIONS = [
   { id: 'rose', label: 'Cyber-Boys', img: 'assets/hub/faction_rose.png', col: '#ff2e88' },
   { id: 'bleu', label: 'Plasma Tek', img: 'assets/hub/faction_bleu.png', col: '#4caee4' },
-  { id: 'vert', label: 'Neon', img: 'assets/hub/faction_vert.png', col: '#b1ff41' },
+  { id: 'vert', label: 'Neon', img: 'assets/hub/faction_vert.png', col: '#e040fb' },
   { id: 'jaune', label: 'Rampage', img: 'assets/hub/faction_jaune.png', col: '#fb7e3a' },
 ];
 
