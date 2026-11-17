@@ -6,8 +6,8 @@
 // - CATALOGUE : pièces factices (nom + picto de catégorie). À remplacer par les briques de la bibliothèque.
 // - Achats : les boutons [PRIX] ajoutent le pack pour la démo ; le paiement sera branché sur le site.
 // - État du joueur : localStorage 'plasmaork.hub' (à remplacer par le compte en ligne).
-import { $, esc, RULES, RARITY, RCOL, ICON, FACTIONS, NAMES, CATALOG, byId, KIT, catLabel, catSingular, S, save, ownedCount, dupes, pick, draw, commit, sparks, toast, center, setNum, CHESTS } from './loot.js';
-import { chestSVG, packSVG } from './chests.js';
+import { $, esc, RULES, RARITY, RCOL, ICON, FACTIONS, NAMES, CATALOG, byId, KIT, catLabel, catSingular, S, save, ownedCount, dupes, pick, draw, commit, sparks, toast, center, setNum, CHESTS, chestImg } from './loot.js';
+import { packSVG } from './chests.js';
 import { FIGS, figById, STEPS, STATUS, statusOf, printsOf, setStatus, addPrint, counts } from './collection.js';
 
 // ---------------------------------------------------------------- tableau de bord
@@ -209,7 +209,7 @@ function openChest(tier) {
   $('chestOv').dataset.tier = tier;
   $('chestOvTitle').textContent = def.name;
   $('chestOvSub').textContent = def.blurb;
-  $('chestArt').innerHTML = chestSVG(tier);
+  $('chestArt').innerHTML = `<img class="chestimg" src="${chestImg(tier)}" alt="">`;
   $('chest').className = 'chest'; $('chest').hidden = false; $('beam').hidden = true;
   $('chestHint').hidden = false; $('chestCards').innerHTML = ''; $('chestFoot').hidden = true;
   updateChest();
@@ -234,7 +234,6 @@ $('chest').addEventListener('click', e => {
     commit(chest.tier, chest.got);
     setTimeout(() => {
       c.className = 'chest opened';
-      c.querySelector('.chestsvg').classList.add('open');
       $('beam').hidden = false;
       $('chestHint').hidden = true;
       const [x, y] = center(c);
@@ -262,7 +261,7 @@ function renderStash() {
   $('stash').innerHTML = tiles.map(t => `
     <div class="loot ${t.n ? '' : 'none'}" data-k="${t.k}" style="--lc:${t.col}">
       <button type="button" class="loot-art" data-open="${t.k}" ${t.n ? '' : 'disabled'} aria-label="${esc(tr('Ouvrir', 'Open'))} ${esc(t.name)}">
-        ${t.k === 'pack' ? packSVG() : chestSVG(t.k)}
+        ${t.k === 'pack' ? packSVG() : `<img class="chestimg" src="${chestImg(t.k)}" alt="">`}
         <span class="loot-n">×${t.n}</span>
       </button>
       <b>${esc(t.name)}</b>
@@ -405,7 +404,7 @@ $('dropBtn').addEventListener('click', () => {
   render(); tickDrop();
 });
 
-document.querySelectorAll('[data-chestico]').forEach(e => { e.style.setProperty('--lc', CHESTS[e.dataset.chestico].col); e.innerHTML = chestSVG(e.dataset.chestico); });
+document.querySelectorAll('[data-chestico]').forEach(e => { e.style.setProperty('--lc', CHESTS[e.dataset.chestico].col); e.innerHTML = `<img class="chestimg" src="${chestImg(e.dataset.chestico)}" alt="">`; });
 render();
 tickDrop();
 setInterval(tickDrop, 1000);

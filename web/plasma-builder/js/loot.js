@@ -19,10 +19,12 @@ export const RULES = {
   start: { dents: 120, packs: 3, chests: 1 },
 };
 // Trois rangs de coffre : ce qu'ils donnent (une rareté par carte) et leur couleur de lumière.
+// Visuels : assets/hub/chest_<rang>.webp (planche « Loot crates » fournie par l'utilisateur, détourée).
+export const chestImg = tier => `assets/hub/chest_${tier}.webp`;
 export const CHESTS = {
-  crate: { name: T('Caisse de ferraille'), give: ['c', 'c', 'r'], col: '#9fb4c4', blurb: T('3 pièces, 1 rare garantie') },
-  nob: { name: T('Coffre de Nob'), give: ['c', 'r', 'x'], col: '#3e8ef7', blurb: T('3 pièces, 1 extrême garantie') },
-  boss: { name: T('Koffre du Warboss'), give: ['r', 'x', 'x'], col: '#ff2e88', blurb: T('3 pièces, 2 extrêmes garanties') },
+  crate: { name: T('Caisse de ferraille'), give: ['c', 'c', 'r'], col: '#aab0b8', blurb: T('3 pièces, 1 rare garantie') },
+  nob: { name: T('Coffre de Nob'), give: ['c', 'r', 'x'], col: '#f2b531', blurb: T('3 pièces, 1 extrême garantie') },
+  boss: { name: T('Koffre du Warboss'), give: ['r', 'x', 'x'], col: '#b1ff41', blurb: T('3 pièces, 2 extrêmes garanties') },
 };
 export const RARITY = { c: T('Commune'), r: T('Rare'), x: T('Extrême') };
 export const RCOL = { c: '#b9c0c8', r: '#3e8ef7', x: '#ff2e88' };
