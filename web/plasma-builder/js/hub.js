@@ -277,13 +277,9 @@ $('stash').addEventListener('click', e => {
 
 // ---------------------------------------------------------------- collection STL (vitrine)
 const vit = { filter: 'all', sel: null };
-const ICO = {
-  locked: '<path d="M7 11V8a5 5 0 0 1 10 0v3M5 11h14v10H5z"/>',
-  download: '<path d="M12 4v11M7 10l5 5 5-5M4 20h16"/>',
-  owned: '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
-  printed: '<path d="M4 3h16v18H4zM4 7h16M10 7v3l2 2 2-2V7M8 18h8M9.5 18l1-3h3l1 3"/>',
-};
-const stIco = st => `<svg viewBox="0 0 24 24" aria-hidden="true">${ICO[st]}</svg>`;
+// icônes Recraft (assets/hub/icons), teintées à la couleur du statut par un masque CSS
+const ICO = { locked: 'locked', download: 'download', owned: 'owned', printed: 'printed' };
+const stIco = st => `<i class="sico i-${ICO[st]}" aria-hidden="true"></i>`;
 function renderVitrine() {
   const n = counts(), unlocked = n.all - n.locked;
   $('vitSum').innerHTML = n.locked

@@ -248,7 +248,14 @@ body.hub {
 .vit-meter i.locked { background: repeating-linear-gradient(135deg, #3a3b42 0 4px, #26272c 4px 8px); }
 .vit-filters { display: flex; gap: 8px; flex-wrap: wrap; margin: 20px 0 8px; }
 .vit-filters button { display: inline-flex; align-items: center; gap: 7px; min-height: 38px; padding: 0 14px; border-radius: 19px; border: 1px solid #2e2e35; background: transparent; color: #c9c6ce; font-size: 13.5px; }
-.vit-filters button svg { width: 16px; height: 16px; stroke: var(--sc); }
+.sico { display: inline-block; flex: none; width: 16px; height: 16px; background: var(--sc, currentColor); -webkit-mask: var(--ic) center / contain no-repeat; mask: var(--ic) center / contain no-repeat; }
+.sico.i-printed { --ic: url(../assets/hub/icons/icon_printed.svg); }
+.sico.i-owned { --ic: url(../assets/hub/icons/icon_owned.svg); }
+.sico.i-download { --ic: url(../assets/hub/icons/icon_download.svg); }
+.sico.i-locked { --ic: url(../assets/hub/icons/icon_locked.svg); }
+.sico.i-collection { --ic: url(../assets/hub/icons/icon_collection.svg); }
+.sico.big { width: 40px; height: 40px; margin-right: 12px; vertical-align: -6px; background: var(--hot); }
+.vit-filters button .sico { width: 18px; height: 18px; }
 .vit-filters button span { min-width: 22px; padding: 1px 7px; border-radius: 10px; background: #26262c; font-size: 12px; font-variant-numeric: tabular-nums; color: #ecebe6; }
 .vit-filters button[aria-pressed="true"] { border-color: var(--sc); color: #fff; background: color-mix(in srgb, var(--sc) 12%, transparent); }
 .shelf { display: grid; grid-template-columns: repeat(auto-fill, minmax(176px, 1fr)); gap: 0 14px; }
@@ -263,7 +270,7 @@ body.hub {
 .fig-name { margin-top: 12px; font-family: var(--disp); font-size: 16px; font-weight: 700; color: #ecebe6; }
 .fig-squad { font-size: 12px; color: #8e8b94; }
 .fig-tag { position: absolute; left: 6px; top: 8px; z-index: 2; display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 9px 0 7px; border-radius: 13px; background: color-mix(in srgb, var(--sc) 18%, #121216); border: 1px solid color-mix(in srgb, var(--sc) 55%, transparent); color: color-mix(in srgb, var(--sc) 60%, #fff); font-size: 11.5px; font-weight: 600; white-space: nowrap; }
-.fig-tag svg { width: 14px; height: 14px; stroke: var(--sc); }
+.fig-tag .sico { width: 15px; height: 15px; }
 .fig.locked .fig-stage { background: radial-gradient(60% 75% at 50% 22%, rgba(255,255,255,.04), transparent 70%); }
 .fig.locked .fig-stage img { filter: brightness(0) drop-shadow(0 0 1px rgba(200,205,215,.55)); opacity: .9; }
 .fig.locked .fig-stage::after { opacity: .35; box-shadow: none; }
@@ -286,7 +293,7 @@ body.hub {
 .figbody .muted2 { margin: 0; }
 .steps { list-style: none; margin: 8px 0 0; padding: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
 .steps button { width: 100%; min-height: 64px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; padding: 6px 4px; border-radius: 12px; border: 1px solid var(--ln); background: #1a1a1f; color: #8e8b94; font-size: 11.5px; line-height: 1.15; }
-.steps svg { stroke: currentColor; }
+.steps .sico { width: 22px; height: 22px; background: currentColor; }
 .steps li.done button { color: color-mix(in srgb, var(--sc) 70%, #fff); border-color: color-mix(in srgb, var(--sc) 35%, transparent); }
 .steps li.cur button { color: #0e0e10; background: var(--sc); border-color: var(--sc); font-weight: 700; }
 .figstate { margin: 4px 0 0; font-size: 15px; color: #d6d3db; }
@@ -306,7 +313,7 @@ body.hub {
 .shoprow img { width: 40px; height: 40px; }
 
 /* --- cartes de pièces : dos illustré, faces plus travaillées --- */
-.face.back { background: url(../assets/hub/card_back.jpg) center / cover, var(--hot-deep); border: 3px solid color-mix(in srgb, var(--pink) 50%, #2a2a30); justify-content: flex-end; }
+.face.back { background: url(../assets/hub/card_back.webp) center / cover, var(--hot-deep); border: 3px solid color-mix(in srgb, var(--pink) 50%, #2a2a30); justify-content: flex-end; }
 .face.back img { display: none; }
 .face.back .lab { padding: 6px 12px; border-radius: 10px; background: rgba(10,10,12,.7); }
 .face.front { justify-content: flex-start; padding: 14px; gap: 10px; }
