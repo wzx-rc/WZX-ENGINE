@@ -8,13 +8,15 @@
 #include "lit/LitRenderer.h"
 #include "vp3d/Scene.h"
 
+#include <functional>
 #include <memory>
 #include <string>
 
 namespace player {
 
 struct Options {
-    std::string scene = "studio";    // "studio" (the game), "lookdev" (the parity scene) or "cornell" (the DDGI parity scene)
+    std::string scene = "studio";    // "studio" (the game), "lookdev" (the parity scene), "cornell" (the DDGI parity scene),
+                                     // "game" (game.json of dataDir), a .wzx file, or "empty" (nothing: the WZX Live waiting screen)
     std::string hdri;                // "" = the scene's own (studio: none, lookdev: sky), "sky", "none", or an .hdr / .exr file
     bool sun = false;                // LookDev: scene sun on (as in RTS play), for the parity tests
     bool game = true;                // studio: play the game (graph, houses, HUD)
@@ -49,6 +51,11 @@ public:
     const Game* game() const { return m_game.get(); }
     void setSafeArea(float left, float top, float right, float bottom) { if (m_game) m_game->setSafeArea(left, top, right, bottom); }
 
+    // Drawn inside the ImGui frame, after the game and its HUD (the WZX Live screen and badge).
+    std::function<void()> overlay;
+    // What the loading reported (missing files, prefab warnings), also printed on stderr.
+    const std::vector<std::string>& warnings() const { return m_warnings; }
+
     vp3d::Scene& scene() { return m_scene; }
     const lit::LitRenderer& renderer() const { return m_renderer; }
 
@@ -62,6 +69,7 @@ private:
     ImGuiDiligent m_gui;
     std::unique_ptr<Game> m_game;
     bool m_imgui = false;
+    std::vector<std::string> m_warnings;
 };
 
 } // namespace player

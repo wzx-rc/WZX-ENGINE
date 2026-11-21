@@ -38,6 +38,7 @@ public:
     // Inside an ImGui frame: input, graph, camera, houses, then the HUD.
     void frame(float dt, float viewW, float viewH, const CameraControls& cam);
     const std::deque<std::string>& log() const { return m_rt.log; }   // the graph's messages and errors
+    uint64_t logCount() const { return m_rt.logCount; }                 // lines ever logged (WZX Live sends the new ones)
     // Margins the HUD keeps clear, in pixels (iPhone notch and home indicator).
     void setSafeArea(float left, float top, float right, float bottom) { m_safeL = left; m_safeT = top; m_safeR = right; m_safeB = bottom; }
     void setDevice(int device) { m_device = device; }   // app::RtsDevice (the HUD layout)

@@ -1,8 +1,9 @@
 {
   "format": "wzx-game",
   "platform": "ios",
-  "profile": "windows-release",
+  "profile": "ios-live",
   "title": "WZX Game",
+  "live": true,
   "scene": "scene.wzx",
   "graph": "graph.json"
 }

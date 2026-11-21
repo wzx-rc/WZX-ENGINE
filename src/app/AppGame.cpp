@@ -711,6 +711,7 @@ void GameHost::playInput() {
 
 bool GameHost::beginFrame() {
     handleRequests();
+    liveUpdate();   // WZX Live: sends finished, screenshots, API requests waiting on the device
     ImGuiIO& io = ImGui::GetIO();
     if (!io.WantTextInput) {
         if (!m_player) {
@@ -1056,6 +1057,7 @@ void GameHost::draw() {
     }
     if (m_showBuild) drawBuildWindow();
     if (m_showAi) drawAiWindow();
+    if (m_showLive) drawLiveWindow();
     drawToasts();
 }
 
@@ -1123,6 +1125,7 @@ std::vector<BuildProfile> GameHost::loadProfiles() {
             b.showFps = p["showFps"].b;
             b.commandApi = p["commandApi"].b;
             if (p["zip"].type == Json::Bool) b.zip = p["zip"].b;
+            b.live = p["live"].type == Json::Bool && p["live"].b;
             out.push_back(b);
         }
     if (out.empty()) out.push_back(BuildProfile());
@@ -1137,7 +1140,7 @@ bool GameHost::saveProfiles(const std::vector<BuildProfile>& profiles) {
         const BuildProfile& b = profiles[i];
         f << "    {\"name\": " << jstr(b.name) << ", \"title\": " << jstr(b.title) << ", \"width\": " << b.width << ", \"height\": " << b.height
           << ", \"fullscreen\": " << tf(b.fullscreen) << ", \"pathTracing\": " << tf(b.pathTracing) << ", \"showFps\": " << tf(b.showFps)
-          << ", \"commandApi\": " << tf(b.commandApi) << ", \"zip\": " << tf(b.zip) << "}" << (i + 1 < profiles.size() ? ",\n" : "\n");
+          << ", \"commandApi\": " << tf(b.commandApi) << ", \"zip\": " << tf(b.zip) << ", \"live\": " << tf(b.live) << "}" << (i + 1 < profiles.size() ? ",\n" : "\n");
     }
     f << "  ]\n}\n";
     return (bool)f;
@@ -1227,6 +1230,7 @@ bool GameHost::exportIos(const BuildProfile& bp, std::wstring& outDir, std::stri
     {
         std::ofstream f(out / "game.json", std::ios::binary);
         f << "{\n  \"format\": \"wzx-game\",\n  \"platform\": \"ios\",\n  \"profile\": " << jstr(bp.name) << ",\n  \"title\": " << jstr(bp.title)
+          << ",\n  \"live\": " << (bp.live ? "true" : "false")   // WZX Live in the app (dev builds)
           << ",\n  \"scene\": \"scene.wzx\",\n  \"graph\": \"graph.json\"\n}\n";
         if (!f) { err = "écriture de game.json impossible"; return false; }
     }
@@ -1387,6 +1391,15 @@ void GameHost::drawBuildWindow() {
     ImGui::Checkbox("Show FPS", &p.showFps);
     ImGui::Checkbox("Command API", &p.commandApi);
     help("Keeps the local command API (http://127.0.0.1:7878) in the game, so Claude can drive and test it.\nLeave it off for a game you send.");
+    ImGui::BeginDisabled(m_buildPlatform != 1);
+    ImGui::Checkbox("WZX Live (aperçu depuis l'éditeur)", &p.live);
+    ImGui::EndDisabled();
+    help("iOS : l'app installée attend l'éditeur sur le Wi-Fi (écran d'attente avec un code d'appairage) ;\n"
+         "Tools > Appareils (WZX Live) > « Envoyer sur l'appareil » y lance le jeu en cours d'édition, sans nouvelle IPA.\n"
+         "Il ne faut recompiler l'IPA que si l'éditeur l'annonce (nouveau nœud, nouvelle fonction du moteur).\n"
+         "À désactiver pour un jeu final.");
+    ImGui::SameLine();
+    if (ImGui::SmallButton("Appareils...")) openLiveWindow();
 
     ImGui::SeparatorText("Package");
     ImGui::Checkbox("Create a .zip to send", &p.zip);
@@ -1483,6 +1496,9 @@ static const char* kHelp =
     "\"graph.disconnect\": \"{id, pin, output}\", \"graph.setInput\": \"{id, pin, value}\", "
     "\"graph.save\": \"{}\", \"graph.load\": \"{}\", \"graph.show\": \"{open: true|false, output?: 0|1|2}\", \"graph.compile\": \"{} -> diagnostics\", \"graph.arrange\": \"{} -> nodes deplaces\", "
     "\"build\": \"{profile?, run?, platform?: ios = game/export} -> dossier\", \"build.profiles\": \"{}\", "
+    "\"device.list\": \"{} -> WZX Live devices (this PC, remembered, Bonjour) and the connection\", \"device.connect\": \"{name|id|host, port?, code?} (code remembered after the first time)\", "
+    "\"device.send\": \"{force?} -> exports the game and sends it to the connected device (warnings if its app is too old)\", \"device.check\": \"{} -> warnings only\", "
+    "\"device.screenshot\": \"{maxWidth?} -> JPEG of the device screen (path)\", \"device.log\": \"{lines?}\", \"device.disconnect\": \"{}\", \"device.window\": \"{open?}\", "
     "\"graph.execute\": \"{} -> Execute du Graph (essai a blanc, chemin anime)\", \"screenshot\": \"{window?: true = fenetre entiere} -> fichier PNG (path)\", \"log\": \"{} -> journal du graphe\"}}";
 
 void GameHost::handleRequests() {
@@ -1500,6 +1516,10 @@ void GameHost::handleRequests() {
             if (!Json::parse(r->body, j) || j.type != Json::Object) {
                 status = 400;
                 r->response = "{\"ok\": false, \"error\": \"corps JSON invalide\"}";
+            } else if (j["cmd"].str().rfind("device.", 0) == 0) {
+                if (liveRequest(j, r)) continue;   // waits for the device (completed by liveUpdate)
+                m_server.complete(r);
+                continue;
             } else if (j["cmd"].str() == "screenshot") {
                 // taken in afterDraw(), once this frame (UI included) is complete
                 m_shotReq = r;

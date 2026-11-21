@@ -2,6 +2,7 @@
 // command API. Lives beside App (friend) so the UI files stay untouched.
 #pragma once
 #include "Json.h"
+#include "LiveClient.h"
 #include "RtsPlay.h"
 #include "game/CommandServer.h"
 #include "game/NodeEditor.h"
@@ -27,6 +28,7 @@ struct BuildProfile {
     bool showFps = false;
     bool commandApi = false;     // keep the local command API in the built game
     bool zip = true;             // also pack the game folder into a .zip to send
+    bool live = false;           // iOS: WZX Live in the app (the editor sends the game over Wi-Fi); off for a final game
 };
 
 class GameHost : public game::World {
@@ -53,6 +55,7 @@ public:
     void requestPlay() { m_pendingToolbar = 1; }   // the Play button of the top bar
     void openBuildWindow();                        // the Build button of the top bar, F7
     void openAiWindow() { m_showAi = true; }       // Tools > AI Control (MCP)
+    void openLiveWindow();                         // Tools > Appareils (WZX Live), AppLive.cpp
     void addHoverOutline(std::vector<int>& objects) const;   // the house under the cursor is outlined (its halo)
     void togglePlacement();                  // village mode of the editor (not during Play)
     void resetVillage();                     // a new scene: no houses
@@ -232,6 +235,37 @@ private:
     bool m_buildFailed = false;
     std::shared_ptr<game::CommandRequest> m_shotReq;
     bool m_shotWindow = false;
+
+    // WZX Live (AppLive.cpp): the game sent to an iPhone, an iPad or the Windows player over the local network
+public:
+    struct LiveKnown { std::string id, name, type, host, code; int port = 0; bool found = false; };
+    struct LiveCheck { bool blocked = false; std::vector<std::string> warnings, infos, missingNodes; };
+    // What the app described by info (LiveLink.h, Info) lacks to play the game folder (exported by exportLive).
+    LiveCheck liveCheck(const std::filesystem::path& folder, const Json& info) const;
+    bool exportLive(std::filesystem::path& out, std::string& err);
+    LiveClient* liveClient() { return m_live.get(); }   // (self-test)
+private:
+    void drawLiveWindow();
+    void liveUpdate();
+    bool liveSend(bool force, std::string& err);
+    bool liveRequest(const Json& j, const std::shared_ptr<game::CommandRequest>& r);
+    std::string liveStateJson() const;
+    void liveLoadDevices();
+    void liveSaveDevices();
+    void liveRemember(const Json& info, const std::string& code);
+    std::vector<LiveKnown> liveDevices() const;
+    std::unique_ptr<LiveClient> m_live;
+    std::vector<LiveKnown> m_liveKnown;
+    bool m_showLive = false, m_liveConfirm = false, m_liveChecked = false, m_liveRememberPending = false, m_liveAutoShot = true;
+    LiveCheck m_liveCheck;
+    int m_liveSel = 0;
+    char m_liveCodeBuf[8] = {}, m_liveAddrBuf[64] = {};
+    std::string m_liveCode, m_liveShotPath;
+    uint64_t m_liveSendSerial = 0, m_liveShotSerial = 0, m_liveLogSeen = 0;
+    ImTextureID m_liveShotTex = 0;
+    int m_liveShotW = 0, m_liveShotH = 0;
+    std::shared_ptr<game::CommandRequest> m_liveSendReq, m_liveShotReq, m_liveConnectReq;
+    double m_liveReqTime = 0;
 };
 
 } // namespace app

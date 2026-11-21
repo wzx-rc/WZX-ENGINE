@@ -672,6 +672,7 @@ void App::atlMenuItems(int mi) {
         ImGui::SliderFloat("Camera speed", &m_camSpeed, 0.1f, 5.0f, "%.1f");
         ImGui::Separator();
         if (ImGui::MenuItem("AI Control (MCP)…") && m_game) m_game->openAiWindow();
+        if (ImGui::MenuItem("Appareils (WZX Live)…") && m_game) m_game->openLiveWindow();
     }
     if (mi == 5) {
         if (ImGui::MenuItem("Controls & Shortcuts")) m_showShortcuts = true;

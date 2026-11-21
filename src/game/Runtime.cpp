@@ -50,12 +50,12 @@ void Runtime::start(Graph* g, World* w) {
     messageShown = false;
     lastError.clear();
     for (Node& n : g->nodes) if (!n.def) n.def = findNodeDef(n.type);
-    log.push_back("--- Play ---");
+    pushLog("--- Play ---");
     fire(Op::OnStart);
 }
 
 void Runtime::stop() {
-    if (m_graph) log.push_back("--- Stop ---");
+    if (m_graph) pushLog("--- Stop ---");
     m_graph = nullptr;
     m_world = nullptr;
     m_timers.clear();
@@ -69,8 +69,7 @@ float Runtime::lastRun(int nodeId) const {
 
 void Runtime::error(const std::string& e) {
     lastError = e;
-    log.push_back("Error: " + e);
-    while (log.size() > 200) log.pop_front();
+    pushLog("Error: " + e);
 }
 
 void Runtime::tick(float dt) {
@@ -709,7 +708,7 @@ void Runtime::exec(Node& n) {
         messageTitle = S(1);
         messageText = S(2);
         messageShown = true;
-        log.push_back(messageTitle + (messageText.empty() ? "" : ": " + messageText));
+        pushLog(messageTitle + (messageText.empty() ? "" : ": " + messageText));
         break;
     case Op::SetPartColor: { int o = Ob(1); if (o >= 0) m_world->setPartColor(o, S(2), V(3)); break; }
     case Op::SetPartGlow: { int o = Ob(1); if (o >= 0) m_world->setPartGlow(o, S(2), F(3)); break; }
@@ -729,8 +728,7 @@ void Runtime::exec(Node& n) {
     case Op::SetSun: m_world->setSun(F(1), F(2)); break;
     case Op::Print: {
         std::string s = S(1);
-        log.push_back(s);
-        while (log.size() > 200) log.pop_front();
+        pushLog(s);
         m_world->message(s);
         break;
     }

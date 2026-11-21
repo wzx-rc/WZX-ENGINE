@@ -2,7 +2,9 @@
 // (Vulkan translated to Metal), the game, its HUD and the Lit renderer. No ray tracing on iOS (docs/RENDU_PARITE.md).
 // Touch: one finger = the mouse of the game (tap = click, drag = drag a house, HUD buttons),
 // two fingers = camera (drag to move, pinch to zoom, twist to turn).
+#include "LiveHost.h"
 #include "Player.h"
+#include "app/Json.h"
 #include "imgui.h"
 
 #include "Graphics/GraphicsEngineVulkan/interface/EngineFactoryVk.h"
@@ -15,7 +17,9 @@
 #include <cfloat>
 #include <cmath>
 #include <map>
+#include <memory>
 #include <string>
+#include <sys/utsname.h>
 
 using namespace Diligent;
 
@@ -32,7 +36,15 @@ using namespace Diligent;
 @end
 
 @implementation WZXViewController {
-    player::Player _player;
+    std::unique_ptr<player::Player> _player;   // recreated when WZX Live brings a new game
+    player::Options _opt;
+    IEngineFactoryVk* _factory;
+    std::string _shaders, _bundleDir;
+    // WZX Live (the "live" option of the build profile): the editor sends the game it edits over Wi-Fi
+    player::LiveHost _live;
+    player::LiveConfig _liveCfg;
+    BOOL _liveOn;
+    float _safe[4];
     RefCntAutoPtr<IRenderDevice> _device;
     RefCntAutoPtr<IDeviceContext> _context;
     RefCntAutoPtr<ISwapChain> _swapChain;
@@ -91,6 +103,7 @@ using namespace Diligent;
     SwapChainDesc sc;
     sc.ColorBufferFormat = TEX_FORMAT_BGRA8_UNORM;   // the post pass writes sRGB values itself
     sc.DepthBufferFormat = TEX_FORMAT_UNKNOWN;       // the Lit renderer has its own MSAA depth
+    sc.Usage = SWAP_CHAIN_USAGE_RENDER_TARGET | SWAP_CHAIN_USAGE_COPY_SOURCE;   // WZX Live screenshots read it back
     IOSNativeWindow window{(__bridge void*)layer};
     factory->CreateSwapChainVk(_device, _context, sc, window, &_swapChain);
     if (!_swapChain) {
@@ -99,26 +112,128 @@ using namespace Diligent;
     }
 
     NSString* res = [[NSBundle mainBundle] resourcePath];
-    NSString* shaders = [res stringByAppendingPathComponent:@"shaders"];
+    _factory = factory;
+    _shaders = [res stringByAppendingPathComponent:@"shaders"].UTF8String;
+    _bundleDir = res.UTF8String;
     player::Options opt;
-    opt.dataDir = res.UTF8String;    // game/ and assets/ are copied into the app
+    opt.dataDir = _bundleDir;    // game/ and assets/ are copied into the app
     // the game exported by the editor (game.json, scene.wzx...) when the app has one, else the built-in Studio
-    opt.scene = [[NSFileManager defaultManager] fileExistsAtPath:[res stringByAppendingPathComponent:@"game.json"]] ? "game" : "studio";
+    NSString* gameJson = [res stringByAppendingPathComponent:@"game.json"];
+    const bool bundled = [[NSFileManager defaultManager] fileExistsAtPath:gameJson];
+    opt.scene = bundled ? "game" : "studio";
     opt.uiScale = (float)self.view.contentScaleFactor;
     opt.touch = true;
     // the HUD layout: iPad (Tablet) or iPhone (Phone)
-    opt.device = [UIDevice currentDevice].userInterfaceIdiom == UIUserInterfaceIdiomPad ? 1 : 2;
+    const bool pad = [UIDevice currentDevice].userInterfaceIdiom == UIUserInterfaceIdiomPad;
+    opt.device = pad ? 1 : 2;
+    _opt = opt;
     std::string err;
-    if (!_player.init(_device, _context, factory, _swapChain->GetDesc().ColorBufferFormat, shaders.UTF8String, opt, &err)) {
+
+    // WZX Live: "live": true in game.json (the build profile's option): wait for the editor on the waiting screen
+    if (bundled) {
+        NSData* data = [NSData dataWithContentsOfFile:gameJson];
+        app::Json cfg;
+        if (data) app::Json::parse(std::string((const char*)data.bytes, data.length), cfg);
+        _liveOn = cfg["live"].type == app::Json::Bool && cfg["live"].b;
+    }
+    if (_liveOn) {
+        NSString* docs = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES).firstObject;
+        struct utsname u;
+        uname(&u);
+        _liveCfg.liveDir = [docs stringByAppendingPathComponent:@"live"].UTF8String;
+        _liveCfg.stateFile = [docs stringByAppendingPathComponent:@"wzx_live_device.json"].UTF8String;
+        _liveCfg.deviceType = pad ? "Tablet" : "Phone";
+        _liveCfg.model = u.machine;
+        _liveCfg.name = [UIDevice currentDevice].name.UTF8String;
+        _liveCfg.built = __DATE__ " " __TIME__;
+        _liveCfg.hasBundledGame = true;
+        if (!_live.start(_liveCfg, &err)) {
+            [self showError:[NSString stringWithUTF8String:err.c_str()]];
+            return;
+        }
+        [UIApplication sharedApplication].idleTimerDisabled = YES;   // the waiting screen stays on
+        // back from the background: the listening socket may have been closed by iOS, it is opened again
+        [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(willEnterForeground:)
+                                                     name:UIApplicationWillEnterForegroundNotification object:nil];
+        opt.scene = "empty";
+    }
+    if (![self startGame:opt.scene dataDir:opt.dataDir error:&err]) {
         [self showError:[NSString stringWithUTF8String:err.c_str()]];
         return;
     }
-    ImGui::GetIO().AddMouseSourceEvent(ImGuiMouseSource_TouchScreen);
-    _ready = YES;
-    [self updateSafeArea];
 
     _displayLink = [CADisplayLink displayLinkWithTarget:self selector:@selector(drawFrame:)];
     [_displayLink addToRunLoop:[NSRunLoop mainRunLoop] forMode:NSDefaultRunLoopMode];
+}
+
+- (void)willEnterForeground:(NSNotification*)note {
+    std::string err;
+    if (_liveOn && !_live.connected()) _live.start(_liveCfg, &err);
+}
+
+// (Re)starts the player: "game" of a data folder, or "empty" (the WZX Live waiting screen). The GPU is drained
+// first: the old game's resources go away with its Player.
+- (BOOL)startGame:(const std::string&)scene dataDir:(const std::string&)dataDir error:(std::string*)err {
+    _ready = NO;
+    if (_player) {
+        _context->Flush();
+        _context->WaitForIdle();
+        _player->shutdown();
+        _player.reset();
+    }
+    player::Options o = _opt;
+    o.scene = scene;
+    o.dataDir = dataDir;
+    if (scene == "empty") o.game = false;
+    auto p = std::make_unique<player::Player>();
+    if (_liveOn) {
+        player::LiveHost* live = &_live;
+        const float k = o.uiScale;
+        float* safe = _safe;
+        p->overlay = [live, k, safe] { live->drawOverlay(k, safe[0], safe[1]); };
+    }
+    if (!p->init(_device, _context, _factory, _swapChain->GetDesc().ColorBufferFormat, _shaders, o, err)) {
+        p->shutdown();
+        return NO;
+    }
+    _player = std::move(p);
+    ImGui::GetIO().AddMouseSourceEvent(ImGuiMouseSource_TouchScreen);
+    _live.setPlaying(scene != "empty");
+    _touches.clear();
+    _pending = _mouseDown = _twoFingers = _twoStarted = NO;
+    _lastTime = 0;
+    _ready = YES;
+    [self updateSafeArea];
+    return YES;
+}
+
+static std::string gameTitle(const std::string& dir) {
+    NSData* data = [NSData dataWithContentsOfFile:[NSString stringWithUTF8String:(dir + "/game.json").c_str()]];
+    app::Json j;
+    if (data) app::Json::parse(std::string((const char*)data.bytes, data.length), j);
+    return j["title"].str("WZX Game");
+}
+
+// WZX Live, once per frame after Present: the log of the graph, a game received, the buttons of the waiting screen.
+- (void)liveTick {
+    _live.pumpGameLog(_player ? _player->game() : nullptr);
+    std::string err;
+    const std::string dir = _liveCfg.liveDir;
+    if (_live.takeReload()) {
+        const BOOL ok = [self startGame:"game" dataDir:dir error:&err];
+        _live.reloaded(ok, gameTitle(dir), ok ? _player->warnings() : std::vector<std::string>(), err);
+        if (!ok) [self startGame:"empty" dataDir:dir error:nullptr];
+    }
+    switch (_live.takeAction()) {
+    case player::LiveHost::PlayLast:
+        if (![self startGame:"game" dataDir:dir error:&err]) { _live.reloaded(false, "", {}, err); [self startGame:"empty" dataDir:dir error:nullptr]; }
+        break;
+    case player::LiveHost::PlayBundled:
+        if (![self startGame:"game" dataDir:_bundleDir error:&err]) { _live.reloaded(false, "", {}, err); [self startGame:"empty" dataDir:dir error:nullptr]; }
+        break;
+    case player::LiveHost::ShowWaiting: [self startGame:"empty" dataDir:dir error:nullptr]; break;
+    default: break;
+    }
 }
 
 - (void)showError:(NSString*)text {
@@ -134,7 +249,11 @@ using namespace Diligent;
     if (!_ready) return;
     UIEdgeInsets s = self.view.safeAreaInsets;
     CGFloat k = self.view.contentScaleFactor;
-    _player.setSafeArea((float)(s.left * k), (float)(s.top * k), (float)(s.right * k), (float)(s.bottom * k));
+    _safe[0] = (float)(s.left * k);
+    _safe[1] = (float)(s.top * k);
+    _safe[2] = (float)(s.right * k);
+    _safe[3] = (float)(s.bottom * k);
+    if (_player) _player->setSafeArea(_safe[0], _safe[1], _safe[2], _safe[3]);
 }
 
 - (void)viewSafeAreaInsetsDidChange {
@@ -260,8 +379,10 @@ using namespace Diligent;
     }
 
     const SwapChainDesc& d = _swapChain->GetDesc();
-    _player.frame(_swapChain->GetCurrentBackBufferRTV(), d.Width, d.Height, std::min(dt, 0.1f), cam);
+    _player->frame(_swapChain->GetCurrentBackBufferRTV(), d.Width, d.Height, std::min(dt, 0.1f), cam);
+    if (_liveOn && _live.wantsShot()) _live.captureShot(_device, _context, _swapChain->GetCurrentBackBufferRTV()->GetTexture());
     _swapChain->Present(1);
+    if (_liveOn) [self liveTick];
 }
 
 @end

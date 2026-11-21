@@ -49,7 +49,8 @@ add_library(wzx_engine STATIC
     ${WZX_ROOT}/src/game/Runtime.cpp
     ${WZX_ROOT}/src/game/Grid.cpp
     ${WZX_ROOT}/src/game/Placement.cpp
-    ${WZX_ROOT}/src/game/RtsCamera.cpp)
+    ${WZX_ROOT}/src/game/RtsCamera.cpp
+    ${WZX_ROOT}/src/game/LiveLink.cpp)
 target_include_directories(wzx_engine PUBLIC ${WZX_ROOT}/src ${DILIGENT_CORE_DIR})
 target_compile_definitions(wzx_engine PUBLIC NOMINMAX WIN32_LEAN_AND_MEAN UNICODE _UNICODE)
 target_link_libraries(wzx_engine PUBLIC Diligent-GraphicsEngine Diligent-GraphicsTools)
@@ -135,13 +136,14 @@ endif()
 
 # ---------------------------------------------------------------- windowed player
 if(WIN32)
-    add_executable(WZXPlayer WIN32 src/main_win32.cpp ${WZX_PLAYER_SOURCES})
-    target_link_libraries(WZXPlayer PRIVATE wzx_engine wzx_imgui ${WZX_BACKENDS})
+    add_executable(WZXPlayer WIN32 src/main_win32.cpp src/LiveHost.cpp ${WZX_PLAYER_SOURCES})
+    target_include_directories(WZXPlayer PRIVATE ${DILIGENT_CORE_DIR}/ThirdParty/stb)
+    target_link_libraries(WZXPlayer PRIVATE wzx_engine wzx_imgui ${WZX_BACKENDS} ws2_32 dnsapi)   # WZX Live: sockets, Bonjour
     wzx_copy_shaders(WZXPlayer)
     wzx_copy_data(WZXPlayer)
 elseif(CMAKE_SYSTEM_NAME STREQUAL "iOS")
-    add_executable(WZXPlayer MACOSX_BUNDLE ios/main_ios.mm ${WZX_PLAYER_SOURCES} ${WZX_SHADERS})
-    target_include_directories(WZXPlayer PRIVATE src)
+    add_executable(WZXPlayer MACOSX_BUNDLE ios/main_ios.mm src/LiveHost.cpp ${WZX_PLAYER_SOURCES} ${WZX_SHADERS})
+    target_include_directories(WZXPlayer PRIVATE src ${DILIGENT_CORE_DIR}/ThirdParty/stb)
     set_source_files_properties(${WZX_SHADERS} PROPERTIES MACOSX_PACKAGE_LOCATION shaders)
     wzx_copy_data(WZXPlayer)   # the .app folder: game/ and assets/HOUSE beside the executable (resourcePath)
     set_target_properties(WZXPlayer PROPERTIES

@@ -29,6 +29,12 @@
         <integer>1</integer>
         <integer>2</integer>
     </array>
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>WZX Live : l'éditeur WZX Engine de votre PC envoie le jeu en cours de création sur cet appareil par le réseau local (Wi-Fi).</string>
+    <key>NSBonjourServices</key>
+    <array>
+        <string>_wzx-live._tcp</string>
+    </array>
     <key>UILaunchScreen</key>
     <dict/>
     <key>UIRequiresFullScreen</key>

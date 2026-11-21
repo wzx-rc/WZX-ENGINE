@@ -3,6 +3,10 @@
 // and drag for the game and its houses, the keys of the graph. Esc = quit.
 // LookDev scene: left or right drag = orbit, wheel = zoom, F = default view.
 // Options: --scene studio|lookdev  --hdri sky|none|file.hdr  --backend d3d12|vk  --data folder (game/ and assets/)
+// WZX Live: --live (wait for the editor: it sends the game it edits), --live-dir folder (default
+//   %LOCALAPPDATA%/WZX Engine/live-player/game), --live-port 47800, --live-lan (listen on the network, Bonjour; else this PC only)
+#include "LiveHost.h"
+#include "app/Json.h"
 #include "Player.h"
 #include "imgui.h"
 
@@ -20,13 +24,22 @@
 #include <algorithm>
 #include <cfloat>
 #include <filesystem>
+#include <fstream>
+#include <memory>
+#include <sstream>
 #include <string>
 
 using namespace Diligent;
 
 namespace {
 
-player::Player g_player;
+std::unique_ptr<player::Player> g_player;   // recreated when WZX Live brings a new game
+player::Options g_opt;
+IEngineFactory* g_factory = nullptr;
+std::string g_shaders;
+player::LiveHost g_live;
+bool g_liveOn = false;
+std::string g_liveDir;
 RefCntAutoPtr<IRenderDevice> g_device;
 RefCntAutoPtr<IDeviceContext> g_context;
 RefCntAutoPtr<ISwapChain> g_swapChain;
@@ -91,8 +104,67 @@ void render(HWND hwnd) {
         cam.turn = physKey(0x12) - physKey(0x10);    // E / Q
     }
     const SwapChainDesc& d = g_swapChain->GetDesc();
-    g_player.frame(g_swapChain->GetCurrentBackBufferRTV(), d.Width, d.Height, std::min(dt, 0.1f), cam);
+    g_player->frame(g_swapChain->GetCurrentBackBufferRTV(), d.Width, d.Height, std::min(dt, 0.1f), cam);
+    if (g_liveOn && g_live.wantsShot()) g_live.captureShot(g_device, g_context, g_swapChain->GetCurrentBackBufferRTV()->GetTexture());
     g_swapChain->Present(1);
+}
+
+// (Re)starts the player on a scene: "game" of a data folder, or "empty" (the WZX Live waiting screen). The GPU is
+// drained first: the old game's resources go away with its Player.
+bool startGame(const std::string& scene, const std::string& dataDir, std::string* err) {
+    g_ready = false;
+    if (g_player) {
+        g_context->Flush();
+        g_context->WaitForIdle();
+        g_player->shutdown();
+        g_player.reset();
+    }
+    player::Options o = g_opt;
+    o.scene = scene;
+    o.dataDir = dataDir;
+    if (scene == "empty") o.game = false;
+    auto p = std::make_unique<player::Player>();
+    if (g_liveOn) p->overlay = [] { g_live.drawOverlay(g_opt.uiScale, 0.0f, 0.0f); };
+    const bool ok = p->init(g_device, g_context, g_factory, g_swapChain->GetDesc().ColorBufferFormat, g_shaders, o, err);
+    if (!ok) {
+        p->shutdown();
+        return false;
+    }
+    g_player = std::move(p);
+    g_live.setPlaying(scene != "empty");
+    g_prev.QuadPart = 0;
+    g_ready = true;
+    return true;
+}
+
+std::string gameTitle(const std::string& dir) {
+    std::ifstream f(std::filesystem::u8path(dir) / "game.json", std::ios::binary);
+    std::stringstream ss;
+    ss << f.rdbuf();
+    app::Json j;
+    app::Json::parse(ss.str(), j);
+    return j["title"].str("WZX Game");
+}
+
+// WZX Live, once per frame after Present: the log of the graph, a game received, the buttons of the waiting screen.
+void liveTick() {
+    g_live.pumpGameLog(g_player ? g_player->game() : nullptr);
+    std::string err;
+    if (g_live.takeReload()) {
+        const bool ok = startGame("game", g_liveDir, &err);
+        g_live.reloaded(ok, gameTitle(g_liveDir), ok ? g_player->warnings() : std::vector<std::string>(), err);
+        if (!ok) startGame("empty", g_liveDir, nullptr);
+    }
+    switch (g_live.takeAction()) {
+    case player::LiveHost::PlayLast:
+        if (!startGame("game", g_liveDir, &err)) { g_live.reloaded(false, "", {}, err); startGame("empty", g_liveDir, nullptr); }
+        break;
+    case player::LiveHost::PlayBundled:
+        if (!startGame("game", g_opt.dataDir, &err)) { g_live.reloaded(false, "", {}, err); startGame("empty", g_liveDir, nullptr); }
+        break;
+    case player::LiveHost::ShowWaiting: startGame("empty", g_liveDir, nullptr); break;
+    default: break;
+    }
 }
 
 LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
@@ -123,13 +195,13 @@ LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     case WM_MOUSEMOVE: {
         POINT p = {GET_X_LPARAM(lp), GET_Y_LPARAM(lp)};
         if (gui) ImGui::GetIO().AddMousePosEvent((float)p.x, (float)p.y);
-        if (g_dragging && !g_player.playing()) g_player.orbit((float)(p.x - g_last.x), (float)(p.y - g_last.y));
+        if (g_dragging && g_player && !g_player->playing()) g_player->orbit((float)(p.x - g_last.x), (float)(p.y - g_last.y));
         g_last = p;
         return 0;
     }
     case WM_MOUSEWHEEL:
         if (gui) ImGui::GetIO().AddMouseWheelEvent(0, (float)GET_WHEEL_DELTA_WPARAM(wp) / WHEEL_DELTA);
-        if (!g_player.playing()) g_player.zoom(GET_WHEEL_DELTA_WPARAM(wp) > 0 ? 0.9f : 1.0f / 0.9f);
+        if (g_player && !g_player->playing()) g_player->zoom(GET_WHEEL_DELTA_WPARAM(wp) > 0 ? 0.9f : 1.0f / 0.9f);
         return 0;
     case WM_KEYDOWN:
     case WM_KEYUP:
@@ -145,7 +217,7 @@ LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             if (k != ImGuiKey_None) io.AddKeyEvent(k, down);
         }
         if (down && wp == VK_ESCAPE) DestroyWindow(hwnd);
-        if (down && wp == 'F' && !g_player.playing()) g_player.resetView();
+        if (down && wp == 'F' && g_player && !g_player->playing()) g_player->resetView();
         if (msg == WM_SYSKEYDOWN || msg == WM_SYSKEYUP) break;   // Alt+F4 and the system keys
         return 0;
     }
@@ -171,6 +243,10 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show) {
     player::Options opt;
     opt.dataDir = exeDir();
     std::string backend = "d3d12";
+    int livePort = live::kDefaultPort;
+    bool liveLan = false;
+    std::string liveOld;
+    int liveProtocol = 0;
     int argc = 0;
     wchar_t** argv = CommandLineToArgvW(GetCommandLineW(), &argc);
     for (int i = 1; i < argc; ++i) {
@@ -184,8 +260,21 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show) {
         else if (a == L"--probes" && i + 1 < argc) opt.ddgiProbes = _wtoi(argv[++i]);
         else if (a == L"--show-probes" && i + 1 < argc) opt.showProbes = _wtoi(argv[++i]) != 0;
         else if (a == L"--baked" && i + 1 < argc) opt.bakedProbes = _wtoi(argv[++i]) != 0;
+        else if (a == L"--live") g_liveOn = true;   // WZX Live: the editor sends the game it edits
+        else if (a == L"--live-dir" && i + 1 < argc) g_liveDir = utf8(argv[++i]);
+        else if (a == L"--live-port" && i + 1 < argc) livePort = _wtoi(argv[++i]);
+        else if (a == L"--live-lan") liveLan = true;   // listen on the network too (Windows firewall prompt), Bonjour
+        else if (a == L"--live-simulate-old" && i + 1 < argc) liveOld = utf8(argv[++i]);   // tests: "unit.produce,prefab-clip"
+        else if (a == L"--live-simulate-protocol" && i + 1 < argc) liveProtocol = _wtoi(argv[++i]);
     }
     LocalFree(argv);
+    if (g_liveOn && g_liveDir.empty()) {   // %LOCALAPPDATA%\WZX Engine\live-player\game
+        wchar_t* la = nullptr;
+        size_t n = 0;
+        _wdupenv_s(&la, &n, L"LOCALAPPDATA");
+        g_liveDir = ((la ? std::filesystem::path(la) : std::filesystem::temp_directory_path()) / L"WZX Engine" / L"live-player" / L"game").u8string();
+        free(la);
+    }
     if (opt.scene == "studio" && std::filesystem::exists(std::filesystem::u8path(opt.dataDir) / "game.json"))
         opt.scene = "game";   // an exported game beside the executable
 
@@ -207,6 +296,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show) {
     SwapChainDesc sc;
     sc.ColorBufferFormat = TEX_FORMAT_RGBA8_UNORM;   // the post pass writes sRGB values itself
     sc.DepthBufferFormat = TEX_FORMAT_UNKNOWN;       // the Lit renderer has its own MSAA depth
+    sc.Usage = SWAP_CHAIN_USAGE_RENDER_TARGET | SWAP_CHAIN_USAGE_COPY_SOURCE;   // WZX Live screenshots read it back
     Win32NativeWindow window{hwnd};
     IEngineFactory* factory = nullptr;
 #if VULKAN_SUPPORTED
@@ -235,13 +325,46 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show) {
         return 1;
     }
 
+    g_opt = opt;
+    g_factory = factory;
+    g_shaders = exeDir() + "\\shaders";
     std::string err;
-    if (!g_player.init(g_device, g_context, factory, g_swapChain->GetDesc().ColorBufferFormat, exeDir() + "\\shaders", opt, &err)) {
+    if (g_liveOn) {
+        // WZX Live: listen for the editor (127.0.0.1 only unless --live-lan), start on the waiting screen
+        player::LiveConfig lc;
+        lc.liveDir = g_liveDir;
+        lc.stateFile = (std::filesystem::u8path(g_liveDir).parent_path() / "wzx_live_device.json").u8string();
+        lc.deviceType = "Desktop";
+        lc.model = "PC";
+        wchar_t comp[256] = {};
+        DWORD n = 256;
+        GetComputerNameW(comp, &n);
+        lc.name = "WZX Player (" + utf8(comp) + ")";
+        lc.built = __DATE__ " " __TIME__;
+        lc.port = livePort;
+        lc.loopbackOnly = !liveLan;
+        lc.advertise = liveLan;
+        lc.hasBundledGame = std::filesystem::exists(std::filesystem::u8path(opt.dataDir) / "game.json");
+        for (size_t s = 0; s < liveOld.size();) {
+            size_t e = liveOld.find(',', s);
+            if (e == std::string::npos) e = liveOld.size();
+            if (e > s) lc.simulateMissing.push_back(liveOld.substr(s, e - s));
+            s = e + 1;
+        }
+        lc.simulateProtocol = liveProtocol;
+        if (!g_live.start(lc, &err)) {
+            MessageBoxW(nullptr, std::wstring(err.begin(), err.end()).c_str(), L"WZX Game", MB_ICONERROR);
+            return 1;
+        }
+        SetWindowTextW(hwnd, (L"WZX Game - Live, code " + std::wstring(g_live.code().begin(), g_live.code().end()) + L", port " +
+                              std::to_wstring(g_live.port())).c_str());
+        opt.scene = "empty";
+    }
+    if (!startGame(opt.scene, opt.dataDir, &err)) {
         std::wstring w(err.begin(), err.end());
         MessageBoxW(nullptr, w.c_str(), L"WZX Game", MB_ICONERROR);
         return 1;
     }
-    g_ready = true;
     QueryPerformanceFrequency(&g_freq);
 
     ShowWindow(hwnd, show);
@@ -252,11 +375,15 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show) {
             DispatchMessageW(&msg);
         } else {
             render(hwnd);
+            if (g_liveOn) liveTick();
         }
     }
     g_ready = false;
+    g_live.stop();
     g_context->Flush();
-    g_player.shutdown();
+    g_context->WaitForIdle();
+    if (g_player) g_player->shutdown();
+    g_player.reset();
     g_swapChain.Release();
     g_context.Release();
     g_device.Release();

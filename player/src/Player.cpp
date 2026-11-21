@@ -58,7 +58,7 @@ bool Player::init(Diligent::IRenderDevice* device, Diligent::IDeviceContext* con
             fs::path f = fs::u8path(p);
             return (f.is_relative() ? data / f : f).wstring();
         }, scenePath.stem().u8string(), rd);
-        for (const std::string& w : rd.warnings) std::fprintf(stderr, "%s\n", w.c_str());
+        for (const std::string& w : rd.warnings) { std::fprintf(stderr, "%s\n", w.c_str()); m_warnings.push_back(w); }
         // live prefab instances: their parts from the .prefab files of the data folder (posed at rest until Play)
         m_dataDir = data.u8string();
         m_prefabs.absPath = [this](const std::string& p) {
@@ -66,7 +66,7 @@ bool Player::init(Diligent::IRenderDevice* device, Diligent::IDeviceContext* con
             return (f.is_relative() ? fs::u8path(m_dataDir) / f : f).wstring();
         };
         app::syncPrefabInstances(m_scene, m_prefabs, true);
-        for (const std::string& w : m_prefabs.warnings) std::fprintf(stderr, "%s\n", w.c_str());
+        for (const std::string& w : m_prefabs.warnings) { std::fprintf(stderr, "%s\n", w.c_str()); m_warnings.push_back(w); }
         const app::Json& r = j["render"];   // the editor's raster settings that Lit has
         m_settings.exposure = (float)r["exposure"].num(m_settings.exposure);
         m_settings.vignette = (float)r["vignette"].num(m_settings.vignette);
@@ -85,6 +85,10 @@ bool Player::init(Diligent::IRenderDevice* device, Diligent::IDeviceContext* con
         if (graphText.empty() && j["graph"].type == app::Json::Object) graphText = app::jsonText(j["graph"]);
         if (graphText.empty()) graphText = "{\"format\": \"wzx-graph\", \"version\": 1, \"nodes\": [], \"links\": []}";
         village = j["village"];
+    } else if (options.scene == "empty") {
+        // nothing to show: the WZX Live waiting screen is drawn over a dark background (overlay)
+        m_scene.env.visibleToCamera = false;
+        if (hdri.empty()) hdri = "none";
     } else if (options.scene == "cornell") {
         // Cornell Box with the editor settings for it (App::loadScene): exposure 1, vignette 0.10, ACES, no HDRI.
         app::buildCornellBox(m_scene);
@@ -184,6 +188,7 @@ void Player::frame(Diligent::ITextureView* output, uint32_t width, uint32_t heig
     io.DeltaTime = dt > 0.0f ? dt : 1.0f / 60.0f;
     ImGui::NewFrame();
     if (m_game) m_game->frame(io.DeltaTime, (float)width, (float)height, cam);
+    if (overlay) overlay();
     ImGui::Render();
     m_renderer.render(m_scene, m_settings, output, width, height);
     m_gui.render(ImGui::GetDrawData(), output);

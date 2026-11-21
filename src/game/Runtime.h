@@ -103,6 +103,8 @@ public:
     // Editor feedback: time (in play seconds) a node last ran, for highlighting.
     float lastRun(int nodeId) const;
     std::deque<std::string> log;          // most recent last, capped
+    uint64_t logCount = 0;                // lines ever logged (the device of WZX Live sends the new ones)
+    void pushLog(const std::string& line) { log.push_back(line); ++logCount; while (log.size() > 200) log.pop_front(); }
     std::deque<int> trace;                // ids of the nodes run since Play, most recent last, capped (Execution Trace)
     std::string lastError;
     // Data flow on the links since start (hover info of a connection): last value received by an input pin

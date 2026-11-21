@@ -87,7 +87,7 @@ cl %CFLAGS% /c src\game\*.cpp /Fo:build\obj\game\ || exit /b 1
 echo [5/5] WZX Engine editor
 cl %CFLAGS% /Isrc\app\atelier /c src\app\*.cpp src\app\atelier\*.cpp /Fo:build\obj\app\ || exit /b 1
 rc /nologo /fo build\obj\app\wzx.res src\app\res\wzx.rc || exit /b 1
-link /nologo /OUT:%OUT%\Viewport3D.exe build\obj\app\*.obj build\obj\app\wzx.res build\obj\game\*.obj build\lib\vp3d.lib build\lib\imgui_te_mt.lib %DLSSLIB% ws2_32.lib d3d12.lib dxgi.lib d3dcompiler.lib windowscodecs.lib user32.lib gdi32.lib ole32.lib shell32.lib shcore.lib comdlg32.lib dwmapi.lib /SUBSYSTEM:WINDOWS || exit /b 1
+link /nologo /OUT:%OUT%\Viewport3D.exe build\obj\app\*.obj build\obj\app\wzx.res build\obj\game\*.obj build\lib\vp3d.lib build\lib\imgui_te_mt.lib %DLSSLIB% ws2_32.lib dnsapi.lib d3d12.lib dxgi.lib d3dcompiler.lib windowscodecs.lib user32.lib gdi32.lib ole32.lib shell32.lib shcore.lib comdlg32.lib dwmapi.lib /SUBSYSTEM:WINDOWS || exit /b 1
 
 rem Radiance Cascades viewer (src\rcviewer, branch claude/project-thread-0x1y2n)
 if not exist build\obj\rcviewer mkdir build\obj\rcviewer

@@ -226,6 +226,16 @@ static const McpTool kTools[] = {
     {"wzx_build_profiles", "build.profiles", "Build profiles (Windows).", NOARGS},
     {"wzx_build", "build", "Builds the game: a Windows profile, or platform ios (writes game/export for the iOS workflow). Returns the folder.",
      R"({"type": "object", "properties": {"profile": {"type": "string"}, "run": {"type": "boolean"}, "platform": {"type": "string", "enum": ["windows", "ios"]}}})"},
+    // WZX Live: the game on a real device (iPhone / iPad app built with the WZX Live option, or WZXPlayer.exe --live)
+    {"wzx_device_list", "device.list", "WZX Live: the devices that can play the game being edited (this PC's player, remembered devices, devices seen by Bonjour on the local network) and the current connection with the app version of the device.", NOARGS},
+    {"wzx_device_connect", "device.connect", "WZX Live: connects to a device (name or id from wzx_device_list, or host and port). The 4-digit pairing code shown on the device is needed the first time, then remembered.",
+     R"({"type": "object", "properties": {"name": {"type": "string"}, "id": {"type": "string"}, "host": {"type": "string"}, "port": {"type": "integer"}, "code": {"type": "string"}}})"},
+    {"wzx_device_send", "device.send", "WZX Live: exports the game being edited (scene, graph, prefabs) and sends it to the connected device, which restarts it at once (only the changed files travel). If the app on the device is too old for the content (unknown graph node types, newer features, other protocol), returns the warnings instead: force true sends anyway (never when blocked).",
+     R"({"type": "object", "properties": {"force": {"type": "boolean"}}})"},
+    {"wzx_device_screenshot", "device.screenshot", "WZX Live: screenshot of the connected device's screen (JPEG), to check how the game looks on the iPhone / iPad.",
+     R"({"type": "object", "properties": {"maxWidth": {"type": "integer", "description": "pixels, default 1280"}}})"},
+    {"wzx_device_log", "device.log", "WZX Live: the log of the connected device (loading warnings, graph messages and errors).",
+     R"({"type": "object", "properties": {"lines": {"type": "integer", "description": "last lines, default 100"}}})"},
     // anything else
     {"wzx_command", nullptr, "Any command of the API (see wzx_help): cmd and its arguments.",
      R"({"type": "object", "required": ["cmd"], "properties": {"cmd": {"type": "string"}, "args": {"type": "object"}}})"},
@@ -235,7 +245,8 @@ static const char* kInstructions =
     "WZX Engine is a game editor (RTS games) running on this PC. Start with wzx_scene_get to see the objects; tools take an "
     "object index or name. Positions are scene units with Y up, angles in degrees, colours sRGB 0..1. After a visual change, "
     "check it with wzx_screenshot. Every scene change can be undone with wzx_undo. Gameplay is a node graph "
-    "(wzx_graph_node_types, wzx_graph_add_node, wzx_graph_connect), tested with wzx_play / wzx_input_* / wzx_log / wzx_stop.";
+    "(wzx_graph_node_types, wzx_graph_add_node, wzx_graph_connect), tested with wzx_play / wzx_input_* / wzx_log / wzx_stop. On a real iPhone / iPad (WZX Live): wzx_device_list, "
+    "wzx_device_connect, wzx_device_send, then wzx_device_screenshot and wzx_device_log to check what the device shows.";
 
 static std::string base64(const std::vector<unsigned char>& d) {
     static const char* t = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -392,11 +403,12 @@ private:
         Json r;
         const bool parsed = Json::parse(response, r) && r.type == Json::Object;
         const bool ok = status == 200 && parsed && r["ok"].type == Json::Bool && r["ok"].b;
-        if (name == "wzx_screenshot" && ok) {
+        if ((name == "wzx_screenshot" || name == "wzx_device_screenshot") && ok) {
             std::ifstream f(fromUtf8(r["path"].str()), std::ios::binary);
             std::vector<unsigned char> png((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+            const char* mime = name == "wzx_device_screenshot" ? "image/jpeg" : "image/png";
             if (!png.empty()) {
-                reply(id, "{\"content\": [{\"type\": \"image\", \"data\": \"" + base64(png) + "\", \"mimeType\": \"image/png\"}, {\"type\": \"text\", \"text\": \"" +
+                reply(id, "{\"content\": [{\"type\": \"image\", \"data\": \"" + base64(png) + "\", \"mimeType\": \"" + mime + "\"}, {\"type\": \"text\", \"text\": \"" +
                               jsonEscape(r["path"].str()) + "\"}], \"isError\": false}");
                 return;
             }
