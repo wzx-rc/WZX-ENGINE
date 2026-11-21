@@ -14,6 +14,7 @@ import { exportMerged, exportParts, exportJSON } from './io.js';
 import { brickMenu } from './brickmenu.js';
 import { applyTheme, savedTheme, SOCKET_ICONS } from './atelier.js';
 import { createPoseMode } from './posemode.js';
+import { sfx } from './sfx.js';
 
 // Le path tracing n'est proposé que dans l'app Windows (desktop/ : Electron expose window.plasmaDesktop).
 const DESKTOP = !!window.plasmaDesktop;
@@ -420,6 +421,7 @@ function place(sid, brickId) {
   scheduleFigureThumbs();
 }
 function removeAt(sid) {
+  if (state.placed[sid]) sfx.remove();
   for (const k of Object.keys(state.placed)) if (k === sid || k.startsWith(sid + '>')) delete state.placed[k];
   rebuild();
   commit();
@@ -555,17 +557,20 @@ function startHold(r, auto) {
   const cands = targetsFor(r, auto);
   if (!cands.length) { toast(tr(`Aucun socket « ${SOCKET_TYPES[r.plug.type] || r.plug.type} » pour ${r.name}`, `No "${SOCKET_TYPES[r.plug.type] || r.plug.type}" socket for ${r.name}`)); return; }
   vp.gizmo.detach();
+  sfx.pickup();
+  let picks = 0;
   hold.start({
     candidates: cands, auto,
     object: handObject(r, cands[0]),
     socketOf: socketWorld,
     ghostOf: id => {
+      if (picks++) sfx.hover();
       showHidden();
       if (inst[id]) { hiddenAt = id; inst[id].holder.visible = false; }
       const g = mountBrick(r, sockets.get(id), state.placed[id]?.brick === r.id ? state.placed[id].xf : defaultXf(), hold.ghostMat);
       return [g.holder];
     },
-    onDrop: id => { showHidden(); place(id, r.id); toast(tr(`${r.name} posé sur ${sockets.get(id).label}`, `${r.name} placed on ${sockets.get(id).label}`)); },
+    onDrop: id => { showHidden(); place(id, r.id); sfx.place(r.cat); toast(tr(`${r.name} posé sur ${sockets.get(id).label}`, `${r.name} placed on ${sockets.get(id).label}`)); },
     onCancel: () => { showHidden(); attachGizmo(); },
   });
 }

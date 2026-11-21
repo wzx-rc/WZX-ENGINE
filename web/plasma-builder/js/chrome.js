@@ -56,6 +56,7 @@ if (window.plasmaDesktop) {
 // Interface du Builder : Classique ou Atelier (appliquée par main.js sur la page Builder).
 const MODE_KEY = 'plasmaork.uiMode', THEME_KEY = 'plasmaork.uiTheme';
 const read = (k, d) => { try { return localStorage.getItem(k) || d; } catch { return d; } };
+const SFX_KEY = 'plasmaork.sfx';   // lu par js/sfx.js
 const write = (k, v) => { try { localStorage.setItem(k, v); } catch { /* stockage indisponible */ } };
 const gbtn = document.getElementById('gsetBtn');
 if (gbtn) {
@@ -73,6 +74,9 @@ if (gbtn) {
     <section><h3>Faction</h3>
       <div class="facsel" role="radiogroup" aria-label="Faction">${(window.plasmaFactions || []).map(f => `<button type="button" role="radio" data-gfac="${f.id}" style="--fc:${f.col}"><i></i><span>${f.name}</span></button>`).join('')}</div>
       <p class="muted">La couleur de la faction devient l'accent de toute l'app.</p></section>
+    <section><h3>Sons</h3>
+      <div class="seg" role="radiogroup" aria-label="Sons"><button type="button" role="radio" data-gsfx="on">Activés</button><button type="button" role="radio" data-gsfx="off">Coupés</button></div>
+      <p class="muted">Petits sons quand une pièce s'accroche à l'ork dans le Builder.</p></section>
     <section><h3>Langue</h3>
       <div class="seg" role="radiogroup" aria-label="Langue"><button type="button" role="radio" data-glang="en" lang="en">English</button><button type="button" role="radio" data-glang="fr" lang="fr">Français</button></div>
       <p class="muted">La page se recharge pour changer de langue.</p></section>
@@ -83,6 +87,7 @@ if (gbtn) {
     panel.querySelectorAll('[data-gmode]').forEach(b => b.setAttribute('aria-checked', String(b.dataset.gmode === mode)));
     panel.querySelectorAll('[data-theme]').forEach(b => b.setAttribute('aria-checked', String(b.dataset.theme === theme)));
     panel.querySelectorAll('[data-gfac]').forEach(b => b.setAttribute('aria-checked', String(b.dataset.gfac === window.plasmaFaction?.())));
+    panel.querySelectorAll('[data-gsfx]').forEach(b => b.setAttribute('aria-checked', String(b.dataset.gsfx === read(SFX_KEY, 'on'))));
     panel.querySelectorAll('[data-glang]').forEach(b => b.setAttribute('aria-checked', String(b.dataset.glang === (window.plasmaLang || 'en'))));
   };
   const open = v => { panel.hidden = !v; gbtn.setAttribute('aria-expanded', String(v)); if (v) sync(); };
@@ -91,6 +96,7 @@ if (gbtn) {
     const b = e.target.closest('button'); if (!b) return;
     if (b.hasAttribute('data-gclose')) open(false);
     else if (b.dataset.gfac) window.plasmaSetFaction?.(b.dataset.gfac);
+    else if (b.dataset.gsfx) write(SFX_KEY, b.dataset.gsfx);
     else if (b.dataset.glang) { if (b.dataset.glang !== window.plasmaLang) window.plasmaSetLang?.(b.dataset.glang); }
     else if (b.dataset.gmode) {
       write(MODE_KEY, b.dataset.gmode);
