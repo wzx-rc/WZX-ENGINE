@@ -3,6 +3,8 @@ rem Editor self-test: builds the editor, then checks the manipulators, Advanced 
 rem cube, the menus inside the view, mouse selection, anti-aliasing, the selection glow and the path traced overlay, and
 rem prints the PASS / FAIL report (build\selftest_report.txt). The editor window opens and drives itself for a minute:
 rem leave the mouse and the keyboard alone meanwhile.
+rem WZX Live: the end-to-end send runs against the Windows player WZXPlayer.exe (environment variable WZX_PLAYER, else
+rem build/player/Release/WZXPlayer.exe); without it, only the logic of WZX Live is checked.
 rem Usage: tools\selftest.bat [nobuild] [debug]
 rem   nobuild: the editor already built;  debug: with the DirectX 12 validation layer (Windows optional feature
 rem   "Graphics Tools"), its errors reported as failed checks

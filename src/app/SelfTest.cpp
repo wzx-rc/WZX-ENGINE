@@ -12,10 +12,13 @@
 #define IMGUI_ENABLE_TEST_ENGINE   // declarations of the item hooks in imgui_internal.h
 #include "App.h"
 #include "GameHost.h"
+#include "LiveClient.h"
+#include "game/LiveLink.h"
 #include "imgui_internal.h"
 #include <cstdarg>
 #include <deque>
 #include <filesystem>
+#include <fstream>
 #include <functional>
 #include <unordered_map>
 
@@ -42,6 +45,13 @@ void ImGuiTestEngineHook_Log(ImGuiContext*, const char*, ...) {}
 const char* ImGuiTestEngine_FindItemDebugLabel(ImGuiContext*, ImGuiID) { return nullptr; }
 
 namespace app {
+
+namespace fs = std::filesystem;
+
+static std::string readFile(const fs::path& p) {   // (WZX Live: the pairing code the player wrote)
+    std::ifstream f(p, std::ios::binary);
+    return std::string((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+}
 
 namespace {
 
@@ -157,6 +167,8 @@ struct App::SelfTest {
     std::string graphBytes;
     std::map<std::string, double> v;
     bool flag = false;
+    std::unique_ptr<LiveClient> m_liveClient;   // WZX Live: the editor side, against WZXPlayer.exe --live
+    HANDLE m_livePlayer = nullptr;
 
     void add(const std::string& g, std::function<int()> f) { steps.push_back({g, std::move(f)}); }
     void check(const std::string& name, bool ok, const std::string& info = "") {
@@ -2895,6 +2907,128 @@ void App::SelfTest::build() {
         check("Stop: simulator off, the view of the editor back", !a.m_game->playing() && a.m_game->simDevice() == 0);
         a.m_game->loadSceneGraph(Json());
         return 1;
+    });
+
+    // ---------------------------------------------------------------- WZX Live (LiveLink.h, AppLive.cpp, player LiveHost)
+    add("wzx live", [this] {
+        check("safe paths: relative ones accepted", live::safeRelativePath("scene.wzx") && live::safeRelativePath("assets/HOUSE/house.obj"));
+        check("safe paths: .., absolute, drive, backslash, hidden refused",
+              !live::safeRelativePath("../x") && !live::safeRelativePath("a/../../x") && !live::safeRelativePath("/etc/x") &&
+              !live::safeRelativePath("C:/x") && !live::safeRelativePath("a\\b") && !live::safeRelativePath("") && !live::safeRelativePath(".hidden"));
+        fresh();
+        const bool loaded = a.loadSceneFile((fs::path(a.m_game->projectDir()) / L"game" / L"scenes" / L"mecha_level1.wzx").wstring());
+        check("mecha mission loaded", loaded);
+        fs::path out;
+        std::string err;
+        const bool ok = a.m_game->exportLive(out, err);
+        check("export for the device: game.json, scene.wzx, graph.json, the houses", ok && fs::exists(out / "game.json") && fs::exists(out / "scene.wzx") &&
+              fs::exists(out / "graph.json") && fs::exists(out / "assets" / "HOUSE"), err);
+        graphFile = out.wstring();
+        std::vector<std::string> feats, nodes;
+        live::contentNeeds(out, feats, nodes);
+        check("content needs: the graph's node types and the scene's features", std::find(nodes.begin(), nodes.end(), "unit.produce") != nodes.end() &&
+              std::find(feats.begin(), feats.end(), "prefab-instance") != feats.end(), fmt("%d nodes, %d features", (int)nodes.size(), (int)feats.size()));
+        // the device's description as an up-to-date app sends it, then as older apps
+        auto info = [&](int protocol, int content, const std::string& missing) {
+            Json j;
+            Json::parse("{\"protocol\": " + std::to_string(protocol) + ", \"content\": " + std::to_string(content) + ", \"device\": \"Phone\", \"signature\": \"" +
+                        live::engineSignature() + "\"}", j);
+            Json list;
+            list.type = Json::Array;
+            for (const std::string& n : live::nodeTypes()) if (n != missing) { Json s; s.type = Json::String; s.s = n; list.a.push_back(s); }
+            j.o["nodes"] = list;
+            list.a.clear();
+            for (const std::string& f : live::engineFeatures()) if (f != missing) { Json s; s.type = Json::String; s.s = f; list.a.push_back(s); }
+            j.o["features"] = list;
+            return j;
+        };
+        GameHost::LiveCheck c = a.m_game->liveCheck(out, info(live::kProtocol, live::kContentVersion, ""));
+        check("up-to-date app: no warning, nothing blocked", c.warnings.empty() && !c.blocked);
+        c = a.m_game->liveCheck(out, info(live::kProtocol, live::kContentVersion, "unit.produce"));
+        check("app without a node type: warning naming it (iPhone, rebuild the IPA)", !c.blocked && c.warnings.size() == 1 &&
+              c.warnings[0].find("unit.produce") != std::string::npos && c.warnings[0].find("iPhone") != std::string::npos &&
+              c.warnings[0].find("IPA") != std::string::npos, c.warnings.empty() ? "" : c.warnings[0]);
+        c = a.m_game->liveCheck(out, info(live::kProtocol, live::kContentVersion, "prefab-instance"));
+        check("app without a content feature: warning", !c.blocked && c.warnings.size() == 1 && c.warnings[0].find("prefab") != std::string::npos);
+        c = a.m_game->liveCheck(out, info(live::kProtocol, live::kContentVersion - 1, ""));
+        check("older content version: warning", !c.blocked && c.warnings.size() == 1);
+        c = a.m_game->liveCheck(out, info(live::kProtocol + 1, live::kContentVersion, ""));
+        check("other protocol: blocked", c.blocked);
+        return 2;
+    });
+    // end to end with the Windows player when it is there (tools\selftest.bat: WZX_PLAYER, or build\player\Release)
+    add("wzx live", [this] {
+        std::wstring exe;
+        wchar_t env[MAX_PATH] = {};
+        if (GetEnvironmentVariableW(L"WZX_PLAYER", env, MAX_PATH)) exe = env;
+        if (exe.empty()) exe = (fs::path(a.m_game->projectDir()) / L"build" / L"player" / L"Release" / L"WZXPlayer.exe").wstring();
+        flag = fs::exists(exe);
+        if (!flag) { note("WZXPlayer.exe not found (set WZX_PLAYER): the end-to-end send is not checked"); return 1; }
+        const fs::path dir = fs::temp_directory_path() / L"wzx_live_selftest";
+        std::error_code ec;
+        fs::remove_all(dir, ec);
+        std::wstring cmd = L"\"" + exe + L"\" --live --live-port 47890 --live-dir \"" + (dir / L"game").wstring() + L"\"";
+        STARTUPINFOW si = {sizeof(si)};
+        si.dwFlags = STARTF_USESHOWWINDOW;
+        si.wShowWindow = SW_SHOWNOACTIVATE;
+        PROCESS_INFORMATION pi = {};
+        flag = CreateProcessW(nullptr, &cmd[0], nullptr, nullptr, FALSE, 0, nullptr, fs::path(exe).parent_path().c_str(), &si, &pi) != 0;
+        check("WZXPlayer.exe --live started", flag);
+        if (flag) { CloseHandle(pi.hThread); m_livePlayer = pi.hProcess; }
+        m_liveClient = std::make_unique<LiveClient>();
+        v["t0"] = (double)GetTickCount64();
+        v["connecting"] = 0;
+        return 1;
+    });
+    add("wzx live", [this] {   // its pairing code, then connected
+        if (!flag) return 1;
+        const fs::path state = fs::temp_directory_path() / L"wzx_live_selftest" / L"wzx_live_device.json";
+        if (v["connecting"] == 0) {
+            Json j;
+            if (!Json::parse(readFile(state), j) || j["code"].str().empty()) return GetTickCount64() - v["t0"] < 15000 ? -1 : (check("player wrote its code", false), 1);
+            m_liveClient->connect("127.0.0.1", 47890, j["code"].str());
+            v["connecting"] = 1;
+            return -1;
+        }
+        if (m_liveClient->state() == LiveClient::Connecting) return -1;
+        check("connected with the pairing code", m_liveClient->state() == LiveClient::Connected, m_liveClient->error());
+        if (m_liveClient->state() == LiveClient::Connected) m_liveClient->send(fs::path(graphFile));
+        return 1;
+    });
+    add("wzx live", [this] {   // the mecha mission sent, played, its screenshot back
+        if (!flag || m_liveClient->state() != LiveClient::Connected) return 1;
+        const LiveClient::Progress p = m_liveClient->progress();
+        if (!p.done) return -1;
+        check("mecha mission sent and running on the player", p.ok, fmt("%d files, %.1f MB  ", (int)p.files, p.bytes / 1048576.0) + p.message);
+        m_liveClient->requestShot(640);
+        return 1;
+    });
+    add("wzx live", [this] {
+        if (!flag || m_liveClient->state() != LiveClient::Connected) return 1;
+        if (m_liveClient->shotSerial() == 0) return -1;
+        int w = 0, h = 0;
+        const std::vector<uint8_t> jpg = m_liveClient->shot(w, h);
+        check("screenshot of the device came back (JPEG)", jpg.size() > 5000 && jpg[0] == 0xFF && jpg[1] == 0xD8 && w > 0 && w <= 640 && h > 0, fmt("%dx%d, %d bytes", w, h, (int)jpg.size()));
+        bool reloaded = false;
+        for (const std::string& l : m_liveClient->log()) reloaded |= l.find("Jeu recharg") != std::string::npos;
+        check("the device's log came back (game reloaded)", reloaded);
+        m_liveClient->send(fs::path(graphFile));   // again: nothing changed, nothing sent
+        return 1;
+    });
+    add("wzx live", [this] {
+        if (!flag || m_liveClient->state() != LiveClient::Connected) return 1;
+        const LiveClient::Progress p = m_liveClient->progress();
+        if (!p.done || p.serial < 2) return -1;
+        check("second send: only the changed files (none)", p.ok && p.files == 0, fmt("%d files", (int)p.files));
+        return 1;
+    });
+    add("wzx live", [this] {
+        if (m_liveClient) m_liveClient->disconnect();
+        m_liveClient.reset();
+        if (m_livePlayer) { TerminateProcess(m_livePlayer, 0); WaitForSingleObject(m_livePlayer, 3000); CloseHandle(m_livePlayer); m_livePlayer = nullptr; }
+        a.m_game->loadSceneGraph(Json());
+        fresh();
+        return 2;
     });
 
     add("robustness", [this] { fresh(); a.select(obj("Cube")); return 2; });

@@ -56,6 +56,7 @@ public:
     void openBuildWindow();                        // the Build button of the top bar, F7
     void openAiWindow() { m_showAi = true; }       // Tools > AI Control (MCP)
     void openLiveWindow();                         // Tools > Appareils (WZX Live), AppLive.cpp
+    const std::wstring& projectDir() const { return m_projectDir; }
     void addHoverOutline(std::vector<int>& objects) const;   // the house under the cursor is outlined (its halo)
     void togglePlacement();                  // village mode of the editor (not during Play)
     void resetVillage();                     // a new scene: no houses
