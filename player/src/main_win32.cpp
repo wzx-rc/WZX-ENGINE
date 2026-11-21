@@ -247,6 +247,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show) {
     bool liveLan = false;
     std::string liveOld;
     int liveProtocol = 0;
+    bool liveAdvertise = false;
     int argc = 0;
     wchar_t** argv = CommandLineToArgvW(GetCommandLineW(), &argc);
     for (int i = 1; i < argc; ++i) {
@@ -266,6 +267,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show) {
         else if (a == L"--live-lan") liveLan = true;   // listen on the network too (Windows firewall prompt), Bonjour
         else if (a == L"--live-simulate-old" && i + 1 < argc) liveOld = utf8(argv[++i]);   // tests: "unit.produce,prefab-clip"
         else if (a == L"--live-simulate-protocol" && i + 1 < argc) liveProtocol = _wtoi(argv[++i]);
+        else if (a == L"--live-advertise") liveAdvertise = true;   // tests: Bonjour even on 127.0.0.1
     }
     LocalFree(argv);
     if (g_liveOn && g_liveDir.empty()) {   // %LOCALAPPDATA%\WZX Engine\live-player\game
@@ -343,7 +345,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show) {
         lc.built = __DATE__ " " __TIME__;
         lc.port = livePort;
         lc.loopbackOnly = !liveLan;
-        lc.advertise = liveLan;
+        lc.advertise = liveLan || liveAdvertise;
         lc.hasBundledGame = std::filesystem::exists(std::filesystem::u8path(opt.dataDir) / "game.json");
         for (size_t s = 0; s < liveOld.size();) {
             size_t e = liveOld.find(',', s);

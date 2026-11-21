@@ -2,6 +2,8 @@
 // (Vulkan translated to Metal), the game, its HUD and the Lit renderer. No ray tracing on iOS (docs/RENDU_PARITE.md).
 // Touch: one finger = the mouse of the game (tap = click, drag = drag a house, HUD buttons),
 // two fingers = camera (drag to move, pinch to zoom, twist to turn).
+// WZX Live ("live": true in the bundled game.json, the build profile option): the app waits for the editor on the local
+// network (player/src/LiveHost.cpp, docs/WZX_LIVE.md), plays what it sends from Documents/live, sends back log and screenshots.
 #include "LiveHost.h"
 #include "Player.h"
 #include "app/Json.h"

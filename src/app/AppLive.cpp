@@ -97,7 +97,7 @@ std::vector<GameHost::LiveKnown> GameHost::liveDevices() const {
     auto add = [&](const LiveKnown& d) {
         for (LiveKnown& e : out)
             if ((!d.id.empty() && e.id == d.id) || (e.host == d.host && e.port == d.port)) {
-                if (!d.host.empty()) { e.host = d.host; e.port = d.port; }
+                if (!d.host.empty() && e.host != "127.0.0.1") { e.host = d.host; e.port = d.port; }   // (Bonjour: the current address)
                 if (!d.name.empty()) e.name = d.name;
                 if (e.id.empty()) e.id = d.id;
                 if (e.code.empty()) e.code = d.code;
@@ -369,6 +369,9 @@ bool GameHost::liveRequest(const Json& j, const std::shared_ptr<game::CommandReq
                     break;
                 }
         if (host.empty()) return fail("appareil introuvable : " + want);
+        if (code.empty())   // the code remembered for this address
+            for (const LiveKnown& k : m_liveKnown)
+                if (k.host == host && k.port == port && !k.code.empty()) { code = k.code; break; }
         m_liveCode = code;
         m_liveRememberPending = true;
         m_liveChecked = false;

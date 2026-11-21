@@ -47,7 +47,7 @@ async function cmd(body) {
 }
 
 try {
-  const dev = player(47800);
+  const dev = player(47800, ['--live-advertise']);   // Bonjour too (the address seen is the LAN one: only the discovery is checked)
   const old = player(47810, ['--live-simulate-old', 'unit.produce,prefab-clip']);
   const other = player(47820, ['--live-simulate-protocol', '99']);
   const editor = start(editorExe, []);
@@ -63,6 +63,13 @@ try {
 
   const list = await cmd({ cmd: 'device.list' });
   check('device.list: this PC\'s player listed', list.ok && list.devices.some((d) => d.host === '127.0.0.1' && d.port === 47800));
+  let seen = null;
+  for (let k = 0; k < 20 && !seen; k++) {   // Bonjour (DNS-SD of Windows): the player announced itself
+    const l = await cmd({ cmd: 'device.list' });
+    seen = (l.devices || []).find((d) => d.bonjour && d.port === 47800);
+    if (!seen) await sleep(500);
+  }
+  check('Bonjour: the player found on the network (_wzx-live._tcp)', !!seen, seen ? `${seen.name} ${seen.host}:${seen.port} id ${seen.id}` : '');
 
   // pairing: a wrong code is refused, the right one accepted (and remembered)
   const bad = await cmd({ cmd: 'device.connect', host: '127.0.0.1', port: 47800, code: '99999' });
