@@ -2,8 +2,8 @@
 """Export d'une brique Plasma Builder depuis Maya (à lancer dans le Script Editor, onglet Python).
 
 Sélectionne le groupe de la brique (ou ses objets) puis lance le script. Il écrit, dans le dossier choisi :
-  <nom>_low.obj        les meshes dont le nom contient LOW (ou tous, s'il n'y a ni LOW ni HIGH)
-  <nom>_high.obj       les meshes dont le nom contient HIGH (facultatif)
+  <nom>_low.obj        les autres meshes (BASEMESH, LOW, RETOPO…)
+  <nom>_high.obj       les meshes nommés comme un high pour l'importeur : HIGH, HD, DECIMATED, ZBRUSH, SCULPT… (facultatif)
   <nom>.sockets.json   les locators SOCKET_<type>_<nom> et PLUG_<type> (matrices monde, en cm)
 Dépose ensuite les trois fichiers et la texture dans l'importeur (import.html).
 
@@ -15,8 +15,13 @@ Sinon, un export FBX de la sélection (locators compris) se dépose directement 
 """
 import json
 import os
+import re
 
 import maya.cmds as cmds
+
+
+# Même règle que l'importeur (lodHint de js/importer.js) : DECIMATED est un high, BASEMESH un low.
+_HIGH = re.compile(r'(^|[^a-z])(high|hi|hd|hp|decim\w*|zbrush|sculpt\w*|dense)([^a-z]|$)')
 
 
 def _short(n):
@@ -55,7 +60,7 @@ def export_brick(folder=None, name=None):
         if not res:
             return
         folder = res[0]
-    high = [m for m in meshes if 'HIGH' in _short(m).upper()]
+    high = [m for m in meshes if _HIGH.search(_short(m).lower())]
     low = [m for m in meshes if m not in high]
     unit = cmds.currentUnit(query=True, linear=True)
     out = []

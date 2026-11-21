@@ -3,7 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Importer · Plasma Orks Builder</title>
+  <link rel="icon" type="image/png" href="assets/icon/plasma-orks-256.png">
+<title>Importer · Plasma Orks Builder · Alpha : 0.5.0</title>
+<script src="js/i18n.js"></script>
+<script src="js/theme.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/app.css">
@@ -25,14 +28,15 @@
 
   <header class="topbar">
     <div class="brand">
-      <svg width="40" height="40" viewBox="0 0 40 40" aria-hidden="true"><path class="brand-skull" d="M20 4l4 6 7-4-1 8 7 1-5 6 4 6-8 0-2 8-6-5-6 5-2-8-8 0 4-6-5-6 7-1-1-8 7 4z"/><circle cx="15.5" cy="20" r="2.6" fill="#121316"/><circle cx="24.5" cy="20" r="2.6" fill="#121316"/><path d="M15 26h10l-2 3h-6z" fill="#121316"/></svg>
+      <img class="brand-logo" src="assets/brand/logo.svg" width="44" height="44" alt="">
       <span class="brand-name">PLASMA<br>ORKS</span>
       <button type="button" id="gsetBtn" class="icon gset-btn" aria-label="Réglages" title="Réglages" aria-expanded="false" aria-controls="gset"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>
     </div>
     <nav class="mainnav" aria-label="Navigation">
       <a href="hub.html" title="Hub"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="8" height="8" rx="2"/><rect x="13" y="3" width="8" height="5" rx="2"/><rect x="13" y="10" width="8" height="11" rx="2"/><rect x="3" y="13" width="8" height="8" rx="2"/></svg><span class="navlbl">Hub</span> <span class="navbadge" id="navBadge" hidden></span></a>
       <a href="library.html" title="Library"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h4v14H4zM10 5h4v14h-4zM16 6l3.5-1 3 13.5-3.5 1z"/></svg><span class="navlbl">Library</span></a>
-      <a href="index.html" title="Builder"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20v-2a4 4 0 0 1 4-4h6a4 4 0 0 1 4 4v2M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z"/></svg><span class="navlbl">Builder</span></a>
+      <a href="index.html?mode=build" data-navmode="build" title="Builder"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20v-2a4 4 0 0 1 4-4h6a4 4 0 0 1 4 4v2M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z"/></svg><span class="navlbl">Builder</span></a>
+      <a href="index.html?mode=pose" data-navmode="pose" title="Pose"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="4" r="2"/><path d="M12 6v8M6 9l6 1 6-3M12 14l-4 7M12 14l4 7"/></svg><span class="navlbl">Pose</span></a>
       <a href="rig.html" title="Rig Lab"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="4" r="2"/><path d="M12 6v8M6 9h12M12 14l-4 7M12 14l4 7"/></svg><span class="navlbl">Rig Lab</span></a>
       <a href="import.html" class="active" aria-current="page" title="Importer"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M4 20h16"/></svg><span class="navlbl">Importer</span></a>
     </nav>
@@ -69,9 +73,10 @@
       <div class="vp-main">
         <div class="vp-bar">
           <div class="steps" role="group" aria-label="Affichage">
-            <button type="button" id="orkBtn" aria-pressed="true">Ork</button>
+            <button type="button" id="orkBtn" aria-pressed="false" title="Essayer la brique sur l'ork, accrochée par son plug">Sur l'ork</button>
             <button type="button" data-show="low">Low</button>
             <button type="button" data-show="high">High</button>
+            <button type="button" id="texBtn" class="texbtn" aria-pressed="false" title="Afficher la texture (6) · résine grise (5) · filaire (4)"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 15l5-5 4 4 3-3 6 6M15.5 8.5h.01"/></svg>Texture</button>
           </div>
           <div class="vp-right">
             <div class="btngroup" role="group" aria-label="Affichage" id="shading">
@@ -90,7 +95,7 @@
             <div class="dropzone" id="dropzone">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M4 20h16"/></svg>
               <b>Dépose les fichiers d'une brique</b>
-              <span>Modèle .fbx, .obj, .glb ou .gltf (low et high dans le même fichier ou en deux fichiers), texture .jpg / .png, sockets .json du script Maya.</span>
+              <span id="dropHint">Modèle .fbx, .obj, .glb ou .gltf (low et high dans le même fichier ou en deux fichiers), texture .jpg / .png, sockets .json du script Maya.</span>
               <button type="button" id="pickBtn" class="ghostbtn">Choisir des fichiers…</button>
             </div>
             <div class="drop" id="drop" hidden>Lâche les fichiers pour les ajouter à la brique</div>
@@ -118,14 +123,10 @@
             <label class="check"><input type="checkbox" id="fZup">Z vers le haut</label>
           </div>
 
-          <h3>Placement</h3>
-          <label>Socket de l'ork par défaut<select id="fHome"></select></label>
+          <h3>Plug</h3>
           <label>Type de plug<select id="fPlugType"></select></label>
-          <div class="iradio" role="radiogroup" aria-label="Origine du plug" id="fPlacement">
-            <label class="check"><input type="radio" name="placement" value="inplace">En place : modélisée sur l'ork dans Maya</label>
-            <label class="check"><input type="radio" name="placement" value="plug">Au locator PLUG_ (ou au point cliqué)</label>
-            <label class="check"><input type="radio" name="placement" value="origin">À l'origine de la scène</label>
-          </div>
+          <label class="check"><input type="checkbox" id="fHead">Head : tête complète en place (remplace la tête de l'ork)</label>
+          <p class="muted">La brique reste à l'origine, comme dans Maya. Dans le Builder, elle s'accroche par son plug (locator <code>PLUG_type</code>) au socket où on la pose. « Sur l'ork » l'essaie sur le premier socket de son type. Arme : manche selon Y, PLUG sans rotation au milieu de la prise ; le manche suit l'axe du poing et, en pose de garde, l'arme est orientée comme dans Maya.</p>
 
           <h3>Sockets de la brique</h3>
           <div id="fSockets" class="ilist"></div>

@@ -7,6 +7,8 @@ import { CATEGORIES } from './categories.js';
 export const $ = id => document.getElementById(id);
 export const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 export const KEY = 'plasmaork.hub';
+// Textes affichés : traduits par i18n.js quand l'interface est en anglais (les ids et l'état restent identiques).
+export const T = s => (globalThis.plasmaT ? globalThis.plasmaT(s) : s);
 
 // ---------------------------------------------------------------- réglages (à équilibrer)
 export const RULES = {
@@ -16,14 +18,23 @@ export const RULES = {
   packInDents: 300,
   start: { dents: 120, packs: 3, chests: 1 },
 };
-export const RARITY = { c: 'Commune', r: 'Rare', x: 'Extrême' };
+// Trois rangs de coffre : ce qu'ils donnent (une rareté par carte) et leur couleur de lumière.
+// Visuels : assets/hub/chest_<rang>.webp (planche « Loot crates » fournie par l'utilisateur, détourée).
+export const chestImg = tier => `assets/hub/chest_${tier}.webp`;
+export const CHESTS = {
+  crate: { name: T('Caisse de ferraille'), give: ['c', 'c', 'r'], col: '#cfe3f0', blurb: T('3 pièces, 1 rare garantie') },
+  nob: { name: T('Coffre de Nob'), give: ['c', 'r', 'x'], col: '#f7a823', blurb: T('3 pièces, 1 extrême garantie') },
+  boss: { name: T('Koffre du Warboss'), give: ['r', 'x', 'x'], col: '#e040fb', blurb: T('3 pièces, 2 extrêmes garanties') },
+};
+export const RARITY = { c: T('Commune'), r: T('Rare'), x: T('Extrême') };
 export const RCOL = { c: '#b9c0c8', r: '#3e8ef7', x: '#ff2e88' };
 export const ICON = { head: 'assets/ui/icon_head.png', weapon: 'assets/ui/icon_weapon.png', back: 'assets/ui/icon_back.png', shoulder: 'assets/ui/icon_shoulder.png', chest: 'assets/ui/icon_chest.png', belt: 'assets/ui/icon_belt.png', base: 'assets/ui/icon_base.png' };
+// Les 4 factions = les 4 thèmes de couleur de l'app (theme.js) : choisir sa faction change l'accent partout.
 export const FACTIONS = [
-  { id: 'rose', label: 'Klan rose', img: 'assets/hub/faction_rose.png', col: '#ff2e88' },
-  { id: 'bleu', label: 'Klan bleu', img: 'assets/hub/faction_bleu.png', col: '#3e8ef7' },
-  { id: 'jaune', label: 'Klan jaune', img: 'assets/hub/faction_jaune.png', col: '#f2c230' },
-  { id: 'vert', label: 'Klan vert', img: 'assets/hub/faction_vert.png', col: '#6bbf3a' },
+  { id: 'rose', label: 'Cyber-Boys', img: 'assets/hub/faction_rose.png', col: '#ff2e88' },
+  { id: 'bleu', label: 'Plasma Tek', img: 'assets/hub/faction_bleu.png', col: '#4caee4' },
+  { id: 'vert', label: 'Neon', img: 'assets/hub/faction_vert.png', col: '#e040fb' },
+  { id: 'jaune', label: 'Rampage', img: 'assets/hub/faction_jaune.png', col: '#fb7e3a' },
 ];
 
 // ---------------------------------------------------------------- catalogue provisoire
@@ -36,11 +47,11 @@ export const NAMES = {
   belt: [['Bourse à dents', 'c'], ['Grenades stikk', 'c'], ['Ceinture simple', 'c'], ['Cartouchière', 'c'], ['Pochette', 'c'], ['Chaîne', 'c'], ['Ceinture à crânes', 'r'], ['Trophées', 'r'], ['Boucle du klan', 'r'], ['Ceinture de Mek', 'r'], ['Ceinture de Warboss', 'x'], ['Bombe plasma', 'x']],
   base: [['Socle rond', 'c'], ['Socle en terre', 'c'], ['Socle rocheux', 'c'], ['Socle de ferraille', 'c'], ['Socle en ruines', 'c'], ['Socle de rouille', 'c'], ['Socle de tranchée', 'r'], ['Socle d’épave', 'r'], ['Socle de crânes', 'r'], ['Socle de lave', 'r'], ['Socle plasma', 'x'], ['Trône de Warboss', 'x']],
 };
-export const CATALOG = Object.entries(NAMES).flatMap(([cat, list]) => list.map(([name, rk], i) => ({ id: cat + '_' + i, cat, name, rk })));
+export const CATALOG = Object.entries(NAMES).flatMap(([cat, list]) => list.map(([name, rk], i) => ({ id: cat + '_' + i, cat, name: T(name), rk })));
 export const byId = Object.fromEntries(CATALOG.map(p => [p.id, p]));
-export const KIT = { name: 'Kit Rokkit', pieces: ['back_6', 'shoulder_6', 'chest_9', 'weapon_9', 'belt_1'], reward: 'skin plasma offert' };
+export const KIT = { name: T('Kit Rokkit'), pieces: ['back_6', 'shoulder_6', 'chest_9', 'weapon_9', 'belt_1'], reward: T('skin plasma offert') };
 export const catLabel = id => CATEGORIES.find(c => c.id === id)?.label || id;
-export const catSingular = { head: 'Tête', weapon: 'Arme', back: 'Dos', shoulder: 'Épaulière', chest: 'Torse', belt: 'Ceinture', base: 'Socle' };
+export const catSingular = Object.fromEntries(Object.entries({ head: 'Tête', weapon: 'Arme', back: 'Dos', shoulder: 'Épaulière', chest: 'Torse', belt: 'Ceinture', base: 'Socle' }).map(([k, v]) => [k, T(v)]));
 
 // ---------------------------------------------------------------- état
 export function fresh() {
@@ -54,9 +65,16 @@ function load() {
   try { s = JSON.parse(localStorage.getItem(KEY)); } catch { /* stockage indisponible */ }
   if (!s || s.v !== 1) s = fresh();
   s.got ||= {};   // id -> { at, src } : quand et comment la pièce a été obtenue
+  // coffres par rang (avant : un seul compteur S.chests = coffres de Nob)
+  if (!s.box) s.box = { crate: 2, nob: s.chests ?? 1, boss: 1 };
+  delete s.chests;
+  // total des coffres, lu par la Plasma Library ; non enregistré
+  Object.defineProperty(s, 'chests', { get() { return Object.values(this.box).reduce((a, b) => a + b, 0); }, enumerable: false });
   return s;
 }
 export const S = load();
+// thème choisi ailleurs (Réglages) : la faction du joueur suit
+if (globalThis.plasmaFaction && FACTIONS.some(f => f.id === globalThis.plasmaFaction())) S.faction = globalThis.plasmaFaction();
 export const save = () => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch { /* stockage indisponible */ } };
 export const ownedCount = () => Object.keys(S.owned).filter(k => S.owned[k] > 0).length;
 export const dupes = () => Object.entries(S.owned).reduce((n, [, c]) => n + Math.max(0, c - 1), 0);
@@ -70,13 +88,22 @@ export function pick(rk) {
   for (let i = 0; i < pool.length; i++) { t -= w[i]; if (t <= 0) return pool[i]; }
   return pool[pool.length - 1];
 }
-export const SOURCE = { pack: 'Pack Boyz', chest: 'Coffre de Nob', drop: 'Drop du jour', start: 'Kit de départ' };
+export const SOURCE = { pack: T('Pack Boyz'), chest: T('Coffre de Nob'), crate: CHESTS.crate.name, nob: CHESTS.nob.name, boss: CHESTS.boss.name, drop: T('Drop du jour'), start: T('Kit de départ') };
+// kind : 'pack' ou un rang de coffre ('crate' | 'nob' | 'boss')
 export function draw(kind) {
-  let third = 'r';
-  if (kind === 'chest') third = 'x';
-  else if (Math.random() < RULES.extremeChance || S.sinceX + 1 >= RULES.pity) third = 'x';
-  S.sinceX = third === 'x' ? 0 : S.sinceX + 1;
-  const got = [pick('c'), pick('r'), pick(third)];
+  let ranks;
+  if (CHESTS[kind]) ranks = CHESTS[kind].give;
+  else {
+    const third = Math.random() < RULES.extremeChance || S.sinceX + 1 >= RULES.pity ? 'x' : 'r';
+    S.sinceX = third === 'x' ? 0 : S.sinceX + 1;
+    ranks = ['c', 'r', third];
+  }
+  const got = [];
+  for (const rk of ranks) {   // pas deux fois la même pièce dans une ouverture si on peut l'éviter
+    let p = pick(rk), n = 0;
+    while (got.some(g => g.id === p.id) && n++ < 8) p = pick(rk);
+    got.push(p);
+  }
   return got.map(p => {
     const before = S.owned[p.id] || 0;
     S.owned[p.id] = before + 1;
@@ -85,7 +112,7 @@ export function draw(kind) {
   });
 }
 export function commit(kind, got) {
-  if (kind === 'pack') S.packs--; else S.chests--;
+  if (kind === 'pack') S.packs--; else S.box[kind]--;
   S.last = got.map(g => g.id); S.lastAt = Date.now();
   save();
 }
@@ -93,7 +120,7 @@ export function commit(kind, got) {
 // ---------------------------------------------------------------- petites animations
 export function tween(el, from, to, ms = 900) {
   if (!el) return;
-  const t0 = performance.now(), fmt = n => Math.round(n).toLocaleString('fr-FR');
+  const t0 = performance.now(), fmt = n => Math.round(n).toLocaleString(globalThis.plasmaLang === 'fr' ? 'fr-FR' : 'en-US');
   if (from === to || matchMedia('(prefers-reduced-motion: reduce)').matches) { el.textContent = fmt(to); return; }
   const step = now => {
     const k = Math.min(1, (now - t0) / ms), e = 1 - Math.pow(1 - k, 3);

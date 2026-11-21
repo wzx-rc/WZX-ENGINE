@@ -3,12 +3,25 @@
 const { app, BrowserWindow, protocol, net, shell, Menu, ipcMain } = require('electron');
 const path = require('path');
 const { pathToFileURL } = require('url');
+const pkg = require('./package.json');
+
+// Deux éditions : « dev » (pour Wzx, PC : passerelle Maya, import de scènes .ma / .mb) et « public » (sans ces outils).
+// Réglée par plasmaEdition dans package.json, ou PLASMA_EDITION au lancement.
+const EDITION = (process.env.PLASMA_EDITION || pkg.plasmaEdition || 'public') === 'dev' ? 'dev' : 'public';
+
+// Une seule fenêtre : relancer l'exe (raccourci, ou Maya avec --plasma-import) ramène l'app déjà ouverte.
+if (!app.requestSingleInstanceLock()) { app.quit(); return; }
 
 app.commandLine.appendSwitch('force_high_performance_gpu');
 app.commandLine.appendSwitch('ignore-gpu-blocklist');
 protocol.registerSchemesAsPrivileged([{ scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true } }]);
 
 const ROOT = path.join(__dirname, 'app');
+let mainWin = null;
+const bridge = EDITION === 'dev'
+  ? require('./bridge').setupBridge({ getWindow: () => mainWin, importerUrl: 'app://builder/import.html', version: pkg.version, edition: EDITION })
+  : null;
+if (!bridge) app.on('second-instance', () => { if (mainWin) { if (mainWin.isMinimized()) mainWin.restore(); mainWin.focus(); } });
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -18,9 +31,17 @@ function createWindow() {
     // Barre de titre maison (dessinée par la page, voir js/chrome.js), boutons réduire / agrandir / fermer
     // compris (icônes Recraft) : pas de barre ni de boutons natifs, la fenêtre reste redimensionnable.
     titleBarStyle: 'hidden',
-    webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, sandbox: true },
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'), contextIsolation: true, sandbox: true,
+      additionalArguments: ['--plasma-edition=' + EDITION, '--plasma-version=' + pkg.version],
+    },
   });
-  win.loadURL('app://builder/index.html');
+  mainWin = win;
+  win.on('closed', () => { if (mainWin === win) mainWin = null; });
+  bridge?.attach(win);
+  // lancée par Maya (--plasma-import) : directement sur l'Importeur
+  const startPage = bridge && require('./bridge').argFolder(process.argv) ? 'import.html' : 'index.html';
+  win.loadURL('app://builder/' + startPage);
   const state = () => win.webContents.send('win:state', win.isMaximized());
   win.on('maximize', state); win.on('unmaximize', state);
   win.webContents.on('did-finish-load', state);

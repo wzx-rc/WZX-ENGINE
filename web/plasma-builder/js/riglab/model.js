@@ -1,55 +1,47 @@
-// Ork riggé importé de Maya (assets/ork_boy.glb, produit par tools/mb2glb) : squelette de 60 joints,
-// basemesh low skinné, high-poly avec poids transférés, tête / dents / yeux rigides sur Head.
+// Ork riggé importé de Maya (assets/ork_boy.glb, produit par tools/ma2glb depuis ORK_V3.ma) : squelette du rig
+// (noms dans rigdef.js), basemesh low skinné, high-poly avec poids transférés, tête / dents / yeux rigides sur head.
 // La pose est une rotation locale par joint, relative au repos (bone.quaternion = repos * offset),
 // plus une translation du bassin.
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { applySlots } from './meshslots.js';
 
-const HIPS = 'QuickRigCharacter_Hips';
-const Q = n => 'QuickRigCharacter_' + n;
+import { B, FINGERS, CHAINS, isFinger, migratePose } from './rigdef.js';
+export { FINGERS, CHAINS, isFinger };
 
-// Côté gauche de l'Ork = +x (convention du builder). Les noms QuickRig « Left…1 » sont le côté droit.
+const HIPS = B.hips;
+
 const LABELS = {
-  [Q('Hips')]: 'Bassin', [Q('Spine')]: 'Bas du dos', [Q('Spine1')]: 'Dos', [Q('Spine2')]: 'Torse',
-  [Q('Neck')]: 'Cou', [Q('Head')]: 'Tête',
-  joint40: 'Clavicule', [Q('LeftArm')]: 'Bras', [Q('LeftForeArm')]: 'Avant-bras', [Q('LeftHand')]: 'Poignet',
-  joint41: 'Clavicule', [Q('LeftArm1')]: 'Bras', [Q('LeftForeArm1')]: 'Avant-bras', [Q('LeftHand1')]: 'Poignet',
-  [Q('LeftUpLeg')]: 'Cuisse', [Q('LeftLeg')]: 'Genou', [Q('LeftFoot')]: 'Cheville', [Q('LeftToeBase')]: 'Orteils',
-  [Q('LeftUpLeg1')]: 'Cuisse', [Q('LeftLeg1')]: 'Genou', [Q('LeftFoot1')]: 'Cheville', [Q('LeftToeBase1')]: 'Orteils',
+  [B.hips]: 'Bassin', [B.spine[0]]: 'Bas du dos', [B.spine[1]]: 'Dos', [B.spine[2]]: 'Torse',
+  [B.neck]: 'Cou', [B.head]: 'Tête',
 };
-// Doigts : [pouce, index, majeur, annulaire, auriculaire], joints de la base vers le bout.
-export const FINGERS = {
-  L: [['joint1', 'joint2', 'joint3'], ['joint5', 'joint6', 'joint7', 'joint8'], ['joint9', 'joint10', 'joint11', 'joint12'], ['joint13', 'joint14', 'joint15', 'joint16'], ['joint17', 'joint18', 'joint19', 'joint20']],
-  R: [['joint37', 'joint38', 'joint39'], ['joint33', 'joint34', 'joint35', 'joint36'], ['joint29', 'joint30', 'joint31', 'joint32'], ['joint25', 'joint26', 'joint27', 'joint28'], ['joint21', 'joint22', 'joint23', 'joint24']],
-};
+for (const s of ['L', 'R']) Object.assign(LABELS, {
+  [B.clav(s)]: 'Clavicule', [B.arm(s)]: 'Bras', [B.fore(s)]: 'Avant-bras', [B.hand(s)]: 'Poignet',
+  [B.thigh(s)]: 'Cuisse', [B.calf(s)]: 'Genou', [B.foot(s)]: 'Cheville', [B.toe(s)]: 'Orteils',
+});
 const FINGER_NAMES = ['Pouce', 'Index', 'Majeur', 'Annulaire', 'Auriculaire'];
 
 export const GROUPS = [
-  { id: 'body', label: 'Corps', bones: [Q('Hips'), Q('Spine'), Q('Spine1'), Q('Spine2'), Q('Neck'), Q('Head')] },
-  { id: 'armL', label: 'Bras gauche', bones: ['joint40', Q('LeftArm'), Q('LeftForeArm'), Q('LeftHand')] },
-  { id: 'armR', label: 'Bras droit', bones: ['joint41', Q('LeftArm1'), Q('LeftForeArm1'), Q('LeftHand1')] },
+  { id: 'body', label: 'Corps', bones: [B.hips, ...B.spine, B.neck, B.head] },
+  { id: 'armL', label: 'Bras gauche', bones: [B.clav('L'), ...CHAINS.handL] },
+  { id: 'armR', label: 'Bras droit', bones: [B.clav('R'), ...CHAINS.handR] },
   { id: 'handL', label: 'Main gauche', bones: FINGERS.L.flat() },
   { id: 'handR', label: 'Main droite', bones: FINGERS.R.flat() },
-  { id: 'legL', label: 'Jambe gauche', bones: [Q('LeftUpLeg'), Q('LeftLeg'), Q('LeftFoot'), Q('LeftToeBase')] },
-  { id: 'legR', label: 'Jambe droite', bones: [Q('LeftUpLeg1'), Q('LeftLeg1'), Q('LeftFoot1'), Q('LeftToeBase1')] },
+  { id: 'legL', label: 'Jambe gauche', bones: [...CHAINS.footL, B.toe('L')] },
+  { id: 'legR', label: 'Jambe droite', bones: [...CHAINS.footR, B.toe('R')] },
 ];
 
-// Chaînes IK à deux os : racine, milieu, effecteur.
-export const CHAINS = {
-  handL: [Q('LeftArm'), Q('LeftForeArm'), Q('LeftHand')],
-  handR: [Q('LeftArm1'), Q('LeftForeArm1'), Q('LeftHand1')],
-  footL: [Q('LeftUpLeg'), Q('LeftLeg'), Q('LeftFoot')],
-  footR: [Q('LeftUpLeg1'), Q('LeftLeg1'), Q('LeftFoot1')],
-};
-
+// Libellés traduits par i18n.js (plasmaT) quand l'interface est en anglais ; côté G / D devient L / R.
+const T = s => (globalThis.plasmaT ? globalThis.plasmaT(s) : s);
+const SIDE = globalThis.plasmaLang === 'fr' ? { L: 'G', R: 'D' } : { L: 'L', R: 'R' };
 export function label(name) {
   for (const side of ['L', 'R']) {
     const f = FINGERS[side].findIndex(c => c.includes(name));
-    if (f >= 0) return `${FINGER_NAMES[f]} ${FINGERS[side][f].indexOf(name) + 1} ${side === 'L' ? 'G' : 'D'}`;
+    if (f >= 0) return `${T(FINGER_NAMES[f])} ${FINGERS[side][f].indexOf(name) + 1} ${SIDE[side]}`;
   }
   const g = GROUPS.find(g => g.bones.includes(name));
-  const side = g && /L$/.test(g.id) ? ' G' : g && /R$/.test(g.id) ? ' D' : '';
-  return (LABELS[name] || name) + side;
+  const side = g && /L$/.test(g.id) ? ' ' + SIDE.L : g && /R$/.test(g.id) ? ' ' + SIDE.R : '';
+  return T(LABELS[name] || name) + side;
 }
 
 const _q = new THREE.Quaternion(), _q2 = new THREE.Quaternion(), _v = new THREE.Vector3(), _v2 = new THREE.Vector3(), _v3 = new THREE.Vector3();
@@ -65,7 +57,10 @@ export class OrkModel {
       const bin = Uint8Array.from(atob((await res.text()).trim()), c => c.charCodeAt(0));
       gltf = await loader.parseAsync(bin.buffer, '');
     }
-    return new OrkModel(gltf);
+    const model = new OrkModel(gltf);
+    // meshes remplacés dans le Rig Lab (Meshes) : même rig, autre maillage
+    await applySlots(model);
+    return model;
   }
 
   constructor(gltf) {
@@ -79,6 +74,7 @@ export class OrkModel {
         if (!o.geometry.attributes.normal) o.geometry.computeVertexNormals();   // le GLB n'en stocke pas
         o.castShadow = o.receiveShadow = true;
         o.frustumCulled = false;
+        o.userData.tex = o.material?.name || '';   // body / head : texture peinte de ce morceau
       }
     });
     this.skeleton = this.meshes.BODY_low.skeleton;
@@ -104,6 +100,36 @@ export class OrkModel {
   }
 
   bone(name) { return this.bones[this.index.get(name)]; }
+
+  // Textures peintes (assets/ork/, diffuse de Maya) : corps et tête. L'app Windows prend la 8k du corps si elle
+  // est livrée à côté. Chargées après l'ork (le premier affichage n'attend pas).
+  async loadTextures(desktop = false) {
+    const loader = new THREE.TextureLoader();
+    const first = async files => { for (const f of files) { const t = await loader.loadAsync('assets/ork/' + f).catch(() => null); if (t) return t; } return null; };
+    const [body, head] = await Promise.all([first(desktop ? ['body_8k.jpg', 'body_4k.jpg'] : ['body_4k.jpg']), first(['head_4k.jpg'])]);
+    this.maps = {};
+    for (const [k, t] of [['body', body], ['head', head]]) {
+      if (!t) continue;
+      t.colorSpace = THREE.SRGBColorSpace; t.flipY = false; t.anisotropy = 8;
+      this.maps[k] = t;
+    }
+    return this.maps;
+  }
+
+  // Matériau d'un mesh de l'ork : celui du viewport (résine, peint, filaire) ; en mode peint, avec sa texture.
+  materialFor(vp, name, tag) {
+    const base = vp.material(tag);
+    const map = vp.mode === 'paint' ? this.maps?.[this.meshes[name]?.userData.tex] : null;
+    if (!map) return base;
+    this._mats ||= new Map();
+    const key = base.uuid + ':' + map.uuid;
+    if (!this._mats.has(key)) {
+      const m = base.clone();
+      m.map = map; m.color.set(0xffffff); m.roughness = 0.62; m.sheen = 0;
+      this._mats.set(key, m);
+    }
+    return this._mats.get(key);
+  }
 
   // Échelle viewport : le builder travaille avec une figurine d'environ 2.1 unités de haut, plateau à y = -0.1.
   fit(height = 2.1, floorY = -0.1) {
@@ -161,6 +187,7 @@ export class OrkModel {
   }
 
   setPose(pose) {
+    pose = migratePose(pose, n => this.bone(n)?.userData.restWQ);
     for (const b of this.bones) {
       const o = pose?.rot?.[b.name];
       b.quaternion.copy(b.userData.restQ);
@@ -168,6 +195,15 @@ export class OrkModel {
     }
     this.hips.position.copy(this.hips.userData.restP);
     if (pose?.hips) this.hips.position.add(_v.fromArray(pose.hips));
+    this.root.updateMatrixWorld(true);
+  }
+
+  // Échelle de la tête (et de tout ce qui y est accroché) : un Nob en 40 mm ou un Boss en 50 mm garde une tête un peu
+  // plus petite que le Boy 32 mm agrandi. Pivot = joint head (base du crâne) ; le cou fait la transition (poids).
+  setHeadScale(k = 1) {
+    const h = this.bone(B.head);
+    h.scale.setScalar(k);
+    this.headScale = k;
     this.root.updateMatrixWorld(true);
   }
 
@@ -247,7 +283,8 @@ export class OrkModel {
   // ---------------------------------------------------------------- IK deux os
   // Cible en espace figure. Garde le plan du membre (le coude / genou reste du même côté) et l'orientation
   // monde de l'effecteur (la main ne tourne pas quand on la déplace).
-  solveIK(chainId, target, keepEnd = true) {
+  // pole (facultatif, espace figure) : point vers lequel le coude / genou doit pointer (pole vector Maya).
+  solveIK(chainId, target, keepEnd = true, pole = null) {
     const [a, b, c] = CHAINS[chainId].map(n => this.bone(n));
     this.ork.updateMatrixWorld(true);
     const endQ = this.figureQuat(c);
@@ -261,8 +298,13 @@ export class OrkModel {
     let n = _v2.copy(pb).sub(pa).cross(_v3.copy(pc).sub(pa));
     if (n.lengthSq() < 1e-6) n = b.userData.restW.clone().sub(a.userData.restW).cross(c.userData.restW.clone().sub(a.userData.restW));
     n.normalize();
-    const perp = new THREE.Vector3().crossVectors(n, dir).normalize();
+    let perp = new THREE.Vector3().crossVectors(n, dir).normalize();
     if (perp.dot(_v3.copy(pb).sub(pa)) < 0) perp.negate();
+    if (pole) {
+      const pp = pole.clone().sub(pa);
+      pp.addScaledVector(dir, -pp.dot(dir));
+      if (pp.lengthSq() > 1e-8) perp = pp.normalize();
+    }
     const cosA = THREE.MathUtils.clamp((l1 * l1 + d * d - l2 * l2) / (2 * l1 * d), -1, 1);
     const sinA = Math.sqrt(1 - cosA * cosA);
     const pbNew = pa.clone().addScaledVector(dir, l1 * cosA).addScaledVector(perp, l1 * sinA);
@@ -272,6 +314,24 @@ export class OrkModel {
     this.aim(b, pc2.clone().sub(pb2).normalize(), goal.sub(pb2).normalize());
     if (keepEnd) c.quaternion.copy(this.figureQuat(c.parent).invert().multiply(endQ));
     this.root.updateMatrixWorld(true);
+  }
+
+  // Position du pole vector d'une chaîne (espace figure) : devant le coude / genou, à mi-longueur du membre.
+  polePos(chainId, out = new THREE.Vector3()) {
+    const [a, b, c] = CHAINS[chainId].map(n => this.bone(n));
+    const pa = this.figurePos(a), pb = this.figurePos(b), pc = this.figurePos(c);
+    const l = pa.distanceTo(pb) + pb.distanceTo(pc);
+    const dir = pc.clone().sub(pa).normalize();
+    const off = pb.clone().sub(pa);
+    off.addScaledVector(dir, -off.dot(dir));
+    if (off.lengthSq() < 1e-8) {
+      // membre tendu : le plan du repos, sinon genou vers l'avant, coude vers l'arrière
+      const ra = a.userData.restW, rb = b.userData.restW, rc = c.userData.restW;
+      const rd = rc.clone().sub(ra).normalize();
+      off.copy(rb).sub(ra).addScaledVector(rd, -rb.clone().sub(ra).dot(rd));
+      if (off.lengthSq() < 1e-8) off.set(0, 0, chainId.startsWith('foot') ? 1 : -1);
+    }
+    return out.copy(pb).addScaledVector(off.normalize(), l * 0.55);
   }
 
   // Tourne un os du plus petit arc qui amène la direction `from` sur `to` (espace figure).

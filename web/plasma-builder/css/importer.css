@@ -23,10 +23,10 @@
 .checks li::before { content: ''; width: 9px; height: 9px; margin-top: 4px; border-radius: 50%; background: var(--muted); }
 .checks li.ok::before { background: var(--ok); }
 .checks li.warn::before { background: #e8b14a; }
-.checks li.bad::before { background: var(--accent); }
+.checks li.bad::before { background: var(--danger); }
 .checks li.muted::before { display: none; }
 .checks li.muted { display: block; }
-button.primary-wide { min-height: 42px; border: 0; background: var(--accent); color: #fff; font-family: var(--head); font-size: 18px; font-weight: 700; }
+button.primary-wide { min-height: 42px; border: 0; background: var(--accent); color: var(--on-accent); font-family: var(--head); font-size: 18px; font-weight: 700; }
 button.primary-wide:hover { filter: brightness(1.08); background: var(--accent); }
 button.primary-wide:disabled { background: var(--chip); color: #6b6d74; cursor: default; filter: none; }
 button.ghostbtn { min-height: 38px; padding: 0 14px; border-radius: 8px; border: 1px solid var(--line2); background: var(--raised); color: var(--text); }

@@ -6,13 +6,13 @@ import { $, esc, RULES, RARITY, RCOL, ICON, FACTIONS, NAMES, CATALOG, byId, KIT,
 const ALL = { id: 'all', label: 'Toutes les pièces', short: 'Toutes' };
 const ui = { cat: 'all', state: 'all', rar: new Set(), q: '', kit: false, sel: null };
 const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
-const fmtDate = t => new Date(t).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' });
+const fmtDate = t => new Date(t).toLocaleDateString(window.plasmaLang === 'fr' ? 'fr-FR' : 'en-GB', { day: 'numeric', month: 'long' });
 
 // où trouver une pièce qui manque (texte provisoire, suit RULES)
 const WHERE = {
   c: 'Une commune tombe dans chaque pack, chaque coffre et le drop du jour.',
   r: 'Une rare tombe dans chaque pack et chaque coffre.',
-  x: `Extrême garantie dans les coffres, ${Math.round(RULES.extremeChance * 100)} % de chance par pack (garantie au ${RULES.pity}e pack).`,
+  x: tr(`Extrême garantie dans les coffres, ${Math.round(RULES.extremeChance * 100)} % de chance par pack (garantie au ${RULES.pity}e pack).`, `Extreme guaranteed in chests, ${Math.round(RULES.extremeChance * 100)}% chance per pack (guaranteed by pack ${RULES.pity}).`),
 };
 
 function list() {
@@ -42,7 +42,7 @@ function renderSide() {
     return `<button type="button" class="catbtn" data-cat="${r.id}" aria-pressed="${ui.cat === r.id}">${ico}<span class="cl">${r.short}</span><span class="cn">${n} / ${pool.length}</span><i style="--p:${(n / pool.length * 100).toFixed(1)}%"></i></button>`;
   }).join('');
   const packs = S.packs, chests = S.chests;
-  $('sidePackTitle').textContent = packs ? `${packs} pack${packs > 1 ? 's' : ''} à ouvrir` : chests ? `${chests} coffre${chests > 1 ? 's' : ''} à ouvrir` : 'Plus rien à ouvrir';
+  $('sidePackTitle').textContent = packs ? tr(`${packs} pack${packs > 1 ? 's' : ''} à ouvrir`, `${packs} pack${packs > 1 ? 's' : ''} to open`) : chests ? tr(`${chests} coffre${chests > 1 ? 's' : ''} à ouvrir`, `${chests} chest${chests > 1 ? 's' : ''} to open`) : 'Plus rien à ouvrir';
   $('sidePackGo').textContent = packs || chests ? 'Ouvrir' : 'Boutique';
   $('sidePackGo').href = packs ? 'hub.html#pack' : chests ? 'hub.html#chest' : 'hub.html#shop';
   $('sidePack').classList.toggle('empty', !packs && !chests);
@@ -55,15 +55,15 @@ function renderSide() {
 function renderMain(animate = true) {
   $('libTitle').textContent = ui.kit ? KIT.name : ui.cat === 'all' ? ALL.label : catLabel(ui.cat);
   const d = dupes();
-  $('libSub').textContent = `${ownedCount()} / ${CATALOG.length} débloquées · ${d} doublon${d > 1 ? 's' : ''}`;
+  $('libSub').textContent = tr(`${ownedCount()} / ${CATALOG.length} débloquées · ${d} doublon${d > 1 ? 's' : ''}`, `${ownedCount()} / ${CATALOG.length} unlocked · ${d} duplicate${d > 1 ? 's' : ''}`);
 
   const kitOwn = KIT.pieces.filter(id => S.owned[id]).length;
   $('kitName').textContent = `${KIT.name} · ${kitOwn} / ${KIT.pieces.length}`;
   $('kitSegs').innerHTML = KIT.pieces.map(id => `<i class="${S.owned[id] ? 'on' : ''}"></i>`).join('');
   const miss = KIT.pieces.filter(id => !S.owned[id]).map(id => byId[id]);
   $('kitText').textContent = miss.length
-    ? `Il manque : ${miss.map(p => `${catSingular[p.cat].toLowerCase()} ${RARITY[p.rk].toLowerCase()}`).join(', ')}. Kit complet : ${KIT.reward}.`
-    : `Kit complet : ${KIT.reward} !`;
+    ? tr(`Il manque : ${miss.map(p => `${catSingular[p.cat].toLowerCase()} ${RARITY[p.rk].toLowerCase()}`).join(', ')}. Kit complet : ${KIT.reward}.`, `Missing: ${miss.map(p => `${RARITY[p.rk].toLowerCase()} ${catSingular[p.cat].toLowerCase()}`).join(', ')}. Kit complete: ${KIT.reward}.`)
+    : tr(`Kit complet : ${KIT.reward} !`, `Kit complete: ${KIT.reward}!`);
   $('kitBtn').setAttribute('aria-pressed', String(ui.kit));
   $('kitBtn').textContent = ui.kit ? 'Toutes les pièces' : 'Voir les pièces du kit';
 
@@ -78,7 +78,7 @@ function renderMain(animate = true) {
 function tile(p, i) {
   const c = S.owned[p.id] || 0, locked = !c;
   const sel = p.id === ui.sel, kit = KIT.pieces.includes(p.id);
-  return `<button type="button" role="option" aria-selected="${sel}" class="pc ptile ${locked ? 'locked ' + p.rk + '-l' : p.rk}${sel ? ' sel' : ''}" data-id="${p.id}" style="--i:${Math.min(i, 30)}" aria-label="${locked ? `${RARITY[p.rk]} ${catSingular[p.cat]} pas encore débloquée` : `${esc(p.name)}, ${RARITY[p.rk]}, ×${c}`}">
+  return `<button type="button" role="option" aria-selected="${sel}" class="pc ptile ${locked ? 'locked ' + p.rk + '-l' : p.rk}${sel ? ' sel' : ''}" data-id="${p.id}" style="--i:${Math.min(i, 30)}" aria-label="${locked ? `${tr(`${RARITY[p.rk]} ${catSingular[p.cat]} pas encore débloquée`, `${RARITY[p.rk]} ${catSingular[p.cat]}, not unlocked yet`)}` : `${esc(p.name)}, ${RARITY[p.rk]}, ×${c}`}">
     ${c ? `<span class="cnt">×${c}</span>` : ''}${kit ? '<span class="kitdot" title="Pièce du kit"></span>' : ''}
     <img src="${ICON[p.cat]}" alt=""><b>${locked ? '???' : esc(p.name)}</b><span class="rar">${RARITY[p.rk]}</span>
   </button>`;
@@ -100,7 +100,7 @@ function renderDetail(pop = false) {
   $('dName').textContent = locked ? 'Pièce à débloquer' : p.name;
   $('dMeta').textContent = locked ? `${catSingular[p.cat]} · ${RARITY[p.rk]}` : `${catSingular[p.cat]} · ${fac.label} · low + high`;
   const got = S.got[p.id];
-  $('dGot').textContent = locked ? WHERE[p.rk] : got ? `Obtenue le ${fmtDate(got.at)} · ${SOURCE[got.src] || got.src}` : `Obtenue avec le ${SOURCE.start.toLowerCase()}`;
+  $('dGot').textContent = locked ? WHERE[p.rk] : got ? tr(`Obtenue le ${fmtDate(got.at)} · ${SOURCE[got.src] || got.src}`, `Obtained on ${fmtDate(got.at)} · ${SOURCE[got.src] || got.src}`) : tr(`Obtenue avec le ${SOURCE.start.toLowerCase()}`, `Obtained with the ${SOURCE.start.toLowerCase()}`);
   box.querySelector('.dfac').hidden = locked;
   $('dFac').innerHTML = FACTIONS.map(f => `<button type="button" role="radio" aria-checked="${f.id === fac.id}" aria-label="${f.label}" title="${f.label}" data-faction="${f.id}" style="--fc:${f.col}"><img src="${f.img}" alt=""></button>`).join('');
   const pose = $('dPose');
@@ -109,7 +109,7 @@ function renderDetail(pop = false) {
   $('dStl').disabled = locked;
   const extra = c - 1;
   $('dRecycle').hidden = extra < 1;
-  if (extra > 0) $('dRecycle').textContent = `Recycler ${extra} doublon${extra > 1 ? 's' : ''} · +${extra * RULES.recycle[p.rk]} dents`;
+  if (extra > 0) $('dRecycle').textContent = tr(`Recycler ${extra} doublon${extra > 1 ? 's' : ''} · +${extra * RULES.recycle[p.rk]} dents`, `Recycle ${extra} duplicate${extra > 1 ? 's' : ''} · +${extra * RULES.recycle[p.rk]} teeth`);
   if (pop && !reduced) $('dPrev').animate([{ transform: 'scale(.94)', opacity: 0.4 }, { transform: 'scale(1.02)', opacity: 1, offset: 0.6 }, { transform: 'none' }], { duration: 380, easing: 'cubic-bezier(.2,.8,.3,1)' });
 }
 
@@ -147,7 +147,7 @@ $('pgrid').addEventListener('keydown', e => {
 });
 $('dFac').addEventListener('click', e => {
   const b = e.target.closest('[data-faction]'); if (!b) return;
-  S.faction = b.dataset.faction; save(); renderDetail();
+  S.faction = b.dataset.faction; save(); window.plasmaSetFaction?.(S.faction); renderDetail();
   const [x, y] = center($('dPrev')); sparks(x, y, FACTIONS.find(f => f.id === S.faction).col, 14);
 });
 $('dStl').addEventListener('click', () => toast('Export STL de la pièce : à brancher sur l’exporteur du builder.'));
@@ -156,7 +156,7 @@ $('dRecycle').addEventListener('click', () => {
   const gain = extra * RULES.recycle[p.rk];
   S.owned[p.id] = 1; S.dents += gain; save();
   const [x, y] = center($('dRecycle')); sparks(x, y, '#f2c230', 24);
-  toast(`+${gain} dents : ${extra} « ${p.name} » recyclé${extra > 1 ? 's' : ''}`);
+  toast(tr(`+${gain} dents : ${extra} « ${p.name} » recyclé${extra > 1 ? 's' : ''}`, `+${gain} teeth: ${extra} "${p.name}" recycled`));
   renderSide(); renderMain(false); renderDetail();
 });
 // un autre onglet (le Hub) a ouvert un pack : on se met à jour
@@ -170,3 +170,5 @@ const h = new URLSearchParams(location.hash.slice(1));
 if (h.get('cat') && NAMES[h.get('cat')]) ui.cat = h.get('cat');
 if (h.get('piece') && byId[h.get('piece')]) { ui.sel = h.get('piece'); ui.cat = byId[ui.sel].cat; }
 renderAll();
+// thème changé dans les Réglages
+window.addEventListener('plasma-faction', e => { if (S.faction !== e.detail) { S.faction = e.detail; save(); renderDetail(); } });

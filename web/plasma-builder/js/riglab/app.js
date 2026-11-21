@@ -7,20 +7,28 @@
 import * as THREE from 'three';
 import { Viewport } from '../viewport.js';
 import { exportMerged, exportJSON } from '../io.js';
-import { OrkModel, GROUPS, CHAINS, label } from './model.js';
+import { OrkModel, GROUPS, CHAINS, label, isFinger } from './model.js';
+import { B, scaleOf } from './rigdef.js';
 import { PRESETS, buildPreset, MY_POSES } from './poses.js';
+import { createStudio } from './studio.js';
+import { createControls } from './controls.js';
 
 const $ = id => document.getElementById(id);
 const DEG = THREE.MathUtils.RAD2DEG;
-const ACCENT = new THREE.Color(0xf0435a);
+// couleur d'accent du thème de faction (theme.js) : os sélectionné, surbrillance du maillage
+const cssAccent = () => getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#f0435a';
+const ACCENT = new THREE.Color(cssAccent());
 const STORE = MY_POSES;
-const HIPS = 'QuickRigCharacter_Hips';
+const HIPS = B.hips;
 
 const vp = new Viewport($('vpCanvas'));
 // Comme le builder : le path tracing n'est proposé que dans l'app Windows (desktop/).
 if (!window.plasmaDesktop) $('qualitySel').querySelector('option[value="pt"]').remove();
 vp.controls.target.set(0, 1.0, 0);
 let model = null;
+let studio = null;   // sockets et meshes (studio.js)
+let controls = null; // contrôleurs de pose (controls.js)
+let hoverCtrl = null;
 const state = {
   tool: 'fk', mesh: 'high', shade: 'resin', bones: true, weights: false,
   sel: null, hover: null, curl: { L: 0, R: 0 }, preset: null,
@@ -30,6 +38,7 @@ const state = {
 // Les matériaux du viewport reçoivent deux uniformes partagés : l'os survolé et l'os sélectionné.
 // Le vertex shader lit skinIndex / skinWeight pour connaître le poids de cet os à chaque sommet.
 const HL = { uSel: { value: -1 }, uHov: { value: -1 }, uWeights: { value: 0 }, uAccent: { value: ACCENT.clone().convertSRGBToLinear() } };
+addEventListener('plasma-faction', () => { ACCENT.set(cssAccent()); HL.uAccent.value.copy(ACCENT).convertSRGBToLinear(); });
 function patch(mat) {
   if (mat.userData.riglab) return mat;
   mat.userData.riglab = true;
@@ -61,7 +70,7 @@ function patch(mat) {
 const TAGS = { BODY_high: 'skin', BODY_low: 'skin', HEAD_high: 'skin', HEAD_low: 'skin', TEETH: 'bone', EYES: 'eye' };
 function applyMaterials() {
   vp.setMode(state.shade);
-  for (const [n, m] of Object.entries(model.meshes)) m.material = patch(vp.material(TAGS[n] || 'skin'));
+  for (const [n, m] of Object.entries(model.meshes)) m.material = patch(model.materialFor(vp, n, TAGS[n] || 'skin'));
 }
 function applyMeshes() {
   const high = state.mesh === 'high';
@@ -91,13 +100,14 @@ function buildBoneViz() {
 }
 const _p = new THREE.Vector3(), _p2 = new THREE.Vector3();
 function updateBoneViz() {
+  controls?.update(state.sel, state.tool, hoverCtrl);
   boneViz.visible = state.bones;
   if (!state.bones) return;
   const pos = lines.geometry.attributes.position;
   model.bones.forEach((b, i) => {
     const s = spheres[i];
     b.getWorldPosition(s.position);
-    const finger = /^joint\d+$/.test(b.name) && !['joint40', 'joint41'].includes(b.name);
+    const finger = isFinger(b.name);
     s.scale.setScalar((finger ? 0.008 : 0.018) * (b === state.sel ? 1.5 : b === state.hover ? 1.3 : 1));
     s.material.color.set(b === state.sel ? ACCENT : b === state.hover ? 0xffffff : posed(b) ? 0x7bc67e : 0xb5b7bd);
     const p = b.parent && b.parent.isBone ? b.parent.getWorldPosition(_p2) : s.position;
@@ -129,6 +139,7 @@ function chainOf(b) {
   return null;
 }
 function select(b) {
+  if (b && studio?.sel) studio.selectSocket(null, true);
   state.sel = b;
   HL.uSel.value = b ? model.bones.indexOf(b) : -1;
   attachGizmo();
@@ -139,32 +150,44 @@ function select(b) {
     if (btn) { btn.closest('details').open = true; btn.scrollIntoView({ block: 'nearest' }); }
   }
 }
+function ikHome() {
+  const { chain, pole } = ikTarget.userData;
+  if (pole) model.polePos(chain, ikTarget.position); else model.figurePos(model.bone(CHAINS[chain][2]), ikTarget.position);
+}
+function ikSolve() {
+  const { chain, pole } = ikTarget.userData;
+  if (pole) model.solveIK(chain, model.figurePos(model.bone(CHAINS[chain][2])), true, ikTarget.position);
+  else model.solveIK(chain, ikTarget.position);
+}
 function attachGizmo() {
   const b = state.sel;
+  if (!b && studio?.attach()) return;
   gizmo.detach();
-  if (!b) return;
+  if (!b || state.tool === 'select') return;
   const chain = chainOf(b);
   if (state.tool === 'ik' && (chain || b.name === HIPS)) {
     if (b.name === HIPS) { gizmo.setMode('translate'); gizmo.setSpace('world'); gizmo.attach(b); return; }
-    const end = model.bone(CHAINS[chain][2]);
-    model.figurePos(end, ikTarget.position);
     ikTarget.userData.chain = chain;
+    ikTarget.userData.pole = b.name === CHAINS[chain][1];   // coude / genou en IK = correcteur (pole vector)
+    ikHome();
     gizmo.setMode('translate'); gizmo.setSpace('world'); gizmo.attach(ikTarget);
     return;
   }
   gizmo.setMode('rotate'); gizmo.setSpace('local'); gizmo.attach(b);
 }
 gizmo.addEventListener('mouseDown', () => {
+  if (studio?.isSocket(gizmo.object)) return;
   pushUndo();
   state.preset = null;
   pins = $('pinChk').checked ? { footL: model.figurePos(model.bone(CHAINS.footL[2])), footR: model.figurePos(model.bone(CHAINS.footR[2])) } : null;
 });
-gizmo.addEventListener('mouseUp', () => { pins = null; renderPresets(); });
+gizmo.addEventListener('mouseUp', () => { if (studio?.isSocket(gizmo.object)) { studio.onGizmoUp(); return; } pins = null; renderPresets(); });
 gizmo.addEventListener('objectChange', () => {
+  if (studio?.isSocket(gizmo.object)) { studio.onGizmo(); return; }
   const b = state.sel;
   if (!b) return;
   if (gizmo.object === ikTarget) {
-    model.solveIK(ikTarget.userData.chain, ikTarget.position);
+    ikSolve();
     if ($('symChk').checked) model.mirrorBones(CHAINS[ikTarget.userData.chain].map(n => model.bone(n)));
   } else {
     if ($('symChk').checked) model.mirrorBones([b]);
@@ -175,7 +198,7 @@ gizmo.addEventListener('objectChange', () => {
 
 function afterChange(rebuildPanel = true) {
   model.root.updateMatrixWorld(true);
-  if (gizmo.object === ikTarget && !gizmo.dragging && ikTarget.userData.chain) model.figurePos(model.bone(CHAINS[ikTarget.userData.chain][2]), ikTarget.position);
+  if (gizmo.object === ikTarget && !gizmo.dragging && ikTarget.userData.chain) ikHome();
   if (rebuildPanel) renderBonePanel(); else syncBoneSliders();
   $('curlL').value = state.curl.L; $('curlR').value = state.curl.R;
   $('curlLOut').textContent = Math.round(state.curl.L / 1.6 * 100) + ' %';
@@ -189,7 +212,7 @@ function boneEuler(b) { return new THREE.Euler().setFromQuaternion(model.offset(
 function renderBonePanel() {
   const b = state.sel, box = $('boneXf');
   $('curBone').textContent = b ? label(b.name) : 'Aucun os';
-  $('curMaya').textContent = b ? b.name.replace('QuickRigCharacter_', '') : '';
+  $('curMaya').textContent = b ? b.name : '';
   $('curMaya').title = b ? b.name : '';
   $('resetBoneBtn').disabled = $('mirrorBoneBtn').disabled = !b;
   box.className = 'xf rot';
@@ -198,7 +221,7 @@ function renderBonePanel() {
   box.innerHTML = ['x', 'y', 'z'].map(a => `
     <span class="ax ${a}">${a.toUpperCase()}</span>
     <input type="range" min="-180" max="180" step="0.5" value="${(e[a] * DEG).toFixed(1)}" data-ax="${a}" aria-label="Rotation ${a.toUpperCase()}">
-    <input type="number" min="-180" max="180" step="1" value="${(e[a] * DEG).toFixed(1)}" data-axn="${a}" aria-label="Rotation ${a.toUpperCase()} en degrés">`).join('');
+    <input type="number" min="-180" max="180" step="1" value="${(e[a] * DEG).toFixed(1)}" data-axn="${a}" aria-label="${tr(`Rotation ${a.toUpperCase()} en degrés`, `${a.toUpperCase()} rotation in degrees`)}">`).join('');
   box.querySelectorAll('input').forEach(inp => {
     inp.addEventListener('pointerdown', () => pushUndo());
     inp.addEventListener('focus', () => { if (inp.type === 'number') pushUndo(); });
@@ -229,7 +252,7 @@ $('mirrorBoneBtn').addEventListener('click', () => {
   const chain = chainOf(state.sel);
   model.mirrorBones(chain && state.tool === 'ik' ? CHAINS[chain].map(n => model.bone(n)) : [state.sel]);
   afterChange();
-  toast(`${label(state.sel.name)} copié sur ${label(model.mirror.get(state.sel).name)}`);
+  toast(tr(`${label(state.sel.name)} copié sur ${label(model.mirror.get(state.sel).name)}`, `${label(state.sel.name)} copied to ${label(model.mirror.get(state.sel).name)}`));
 });
 
 // ---------------------------------------------------------------- arbre des os
@@ -275,18 +298,25 @@ function pick(ev) {
   const hits = ray.intersectObjects(targets, false);
   if (!hits.length) return null;
   const h = hits[0];
-  if (h.object.name === 'HEAD_low') return model.bone('QuickRigCharacter_Head');
+  if (h.object.name === 'HEAD_low') return model.bone(B.head);
   return model.boneAtFace(h.face, h.barycoord);
 }
 let down = null, hoverQueued = null;
 vp.canvas.addEventListener('pointerdown', e => {
   if (e.button !== 0) return;
+  if (vp.navBlocks(e)) { down = null; return; }
   down = { x: e.clientX, y: e.clientY, gizmo: gizmo.dragging || gizmo.axis !== null };
 });
 vp.canvas.addEventListener('pointerup', e => {
   if (!down || e.button !== 0) return;
   const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y) > 5;
-  if (!down.gizmo && !moved && model) select(pick(e));
+  if (!down.gizmo && !moved && model) {
+    const sk = studio?.pickSocket(e);
+    const c = sk ? null : controls?.pick(e);
+    if (sk) { select(null); studio.selectSocket(sk); }
+    else if (c) { studio?.selectSocket(null, true); if (state.tool !== c.mode) setTool(c.mode); select(c.bone); }
+    else { studio?.selectSocket(null, true); select(pick(e)); }
+  }
   down = null;
 });
 vp.canvas.addEventListener('pointermove', e => {
@@ -296,14 +326,16 @@ vp.canvas.addEventListener('pointermove', e => {
   requestAnimationFrame(() => {
     const ev = hoverQueued.e;
     hoverQueued = null;
-    const b = gizmo.axis !== null ? null : pick(ev);
+    const sk = gizmo.axis !== null ? null : studio?.pickSocket(ev);
+    hoverCtrl = gizmo.axis !== null || sk ? null : controls?.pick(ev) || null;
+    const b = gizmo.axis !== null || sk ? null : hoverCtrl ? hoverCtrl.bone : pick(ev);
     setHover(b);
     const tip = $('vpTip'), r = vp.canvas.getBoundingClientRect();
-    tip.hidden = !b;
-    if (b) { tip.textContent = label(b.name); tip.style.left = (ev.clientX - r.left) + 'px'; tip.style.top = (ev.clientY - r.top) + 'px'; }
+    tip.hidden = !b && !sk;
+    if (b || sk) { tip.textContent = sk ? 'Socket · ' + studio.tipFor(sk) : label(b.name) + (hoverCtrl ? (hoverCtrl.kind === 'pole' ? ' · pole' : hoverCtrl.mode === 'ik' ? ' · IK' : ' · FK') : ''); tip.style.left = (ev.clientX - r.left) + 'px'; tip.style.top = (ev.clientY - r.top) + 'px'; }
   });
 });
-vp.canvas.addEventListener('pointerleave', () => { setHover(null); $('vpTip').hidden = true; });
+vp.canvas.addEventListener('pointerleave', () => { hoverCtrl = null; setHover(null); $('vpTip').hidden = true; });
 
 // ---------------------------------------------------------------- outils, affichage
 function setTool(t) {
@@ -322,6 +354,19 @@ $('shading').addEventListener('click', e => {
 });
 $('lightBtn').addEventListener('click', () => vp.rotateLight());
 $('frameBtn').addEventListener('click', () => vp.frameObject(model.root));
+// F et le bouton Cadrer de la barre de navigation : l'os choisi et ce qu'il porte, sinon tout l'ork
+vp.onFocus = () => {
+  if (!model) return;
+  if (!state.sel) { vp.frameObject(model.root); return; }
+  vp.focusAt(state.sel.getWorldPosition(new THREE.Vector3()), model.root);
+};
+function toggleCtrls() {
+  if (!controls) return;
+  controls.visible = !controls.visible;
+  $('ctrlBtn').setAttribute('aria-pressed', controls.visible);
+  try { localStorage.setItem('plasmaork.riglab.ctrls', controls.visible ? '1' : '0'); } catch { /* ignoré */ }
+}
+$('ctrlBtn').addEventListener('click', toggleCtrls);
 function toggleBones() { state.bones = !state.bones; $('bonesBtn').setAttribute('aria-pressed', state.bones); }
 function toggleWeights() {
   state.weights = !state.weights;
@@ -369,7 +414,7 @@ function renderMine() {
   const list = loadMine();
   $('myPoses').innerHTML = list.length ? list.map((p, i) => `
     <div class="row"><button type="button" data-load="${i}">${p.name.replace(/</g, '&lt;')}</button>
-    <button type="button" class="icon tiny" data-del="${i}" aria-label="Supprimer ${p.name.replace(/"/g, '')}" title="Supprimer"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg></button></div>`).join('')
+    <button type="button" class="icon tiny" data-del="${i}" aria-label="${tr('Supprimer', 'Delete')} ${p.name.replace(/"/g, '')}" title="Supprimer"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg></button></div>`).join('')
     : '<span class="empty">Aucune pose enregistrée.</span>';
 }
 $('savePoseBtn').addEventListener('click', () => {
@@ -380,7 +425,7 @@ $('savePoseBtn').addEventListener('click', () => {
   if (i >= 0) list[i] = entry; else list.push(entry);
   saveMine(list);
   renderMine();
-  toast(`Pose « ${name} » enregistrée`);
+  toast(tr(`Pose « ${name} » enregistrée`, `Pose "${name}" saved`));
 });
 $('myPoses').addEventListener('click', e => {
   const l = e.target.closest('[data-load]'), d = e.target.closest('[data-del]');
@@ -418,7 +463,7 @@ $('poseInput').addEventListener('change', async e => {
     if (!data.pose?.rot) throw new Error('pas une pose');
     pushUndo(); restore(data);
     if (data.name) $('poseNameInput').value = data.name;
-    toast(`Pose « ${data.name || f.name} » importée`);
+    toast(tr(`Pose « ${data.name || f.name} » importée`, `Pose "${data.name || f.name}" imported`));
   } catch { toast('Ce fichier n\'est pas une pose du Rig Lab'); }
 });
 // L'échelle est la hauteur des yeux (convention du builder) ; le GLB donne yeux et sol en cm.
@@ -432,7 +477,7 @@ async function exportSTL() {
   await new Promise(r => setTimeout(r, 30));
   const name = ($('poseNameInput').value || 'ork_pose').replace(/[^\w-]+/g, '_');
   const tris = await exportMerged(model.bakedMeshes(names), mmPerUnit(), name);
-  if (tris) toast(`${name}.stl : ${Math.round(tris).toLocaleString('fr-FR')} triangles, ${$('scaleSel').value} mm`);
+  if (tris) toast(`${name}.stl : ${Math.round(tris).toLocaleString(window.plasmaLang === 'fr' ? 'fr-FR' : 'en-US')} triangles, ${$('scaleSel').value} mm`);
 }
 
 // ---------------------------------------------------------------- clavier
@@ -442,14 +487,16 @@ addEventListener('keydown', e => {
   if ((e.ctrlKey || e.metaKey) && k === 'z') { e.preventDefault(); $(e.shiftKey ? 'redoBtn' : 'undoBtn').click(); return; }
   if ((e.ctrlKey || e.metaKey) && k === 'y') { e.preventDefault(); $('redoBtn').click(); return; }
   if (e.ctrlKey || e.metaKey || e.altKey) return;
-  // comme Maya : W déplacer (IK), E ou R tourner
-  if (k === 'w') setTool('ik');
-  else if (k === 'e' || k === 'r') setTool('fk');
-  else if (k === 'f') $('frameBtn').click();
+  // comme Maya : Q sélection (sans gizmo), W déplacer (IK), E tourner
+  if (k === 'q') setTool('select');
+  else if (k === 'w') setTool('ik');
+  else if (k === 'e') setTool('fk');
+  else if (k === 'f') vp.focus();
   else if (k === 'b') toggleBones();
+  else if (k === 'c') toggleCtrls();
   else if (k === 'h') toggleWeights();
   else if (k === 'm' && state.sel) $('mirrorBoneBtn').click();
-  else if (k === 'escape') select(null);
+  else if (k === 'escape') { studio?.selectSocket(null, true); select(null); }
   else if (k === 'arrowup' && state.sel?.parent?.isBone) select(state.sel.parent);
   else if (k === 'arrowdown' && state.sel) { const c = state.sel.children.find(x => x.isBone); if (c) select(c); }
 });
@@ -476,9 +523,22 @@ try {
   model.fit();
   vp.scene.add(model.root);
   model.ork.add(ikTarget);
+  // sockets calculés l'ork au repos, avant de reprendre la pose enregistrée
+  studio = createStudio({
+    vp, model, toast,
+    deselectBone: () => { if (state.sel) select(null); },
+    tool: () => state.tool,
+    changedMeshes: () => { applyMaterials(); applyMeshes(); },
+  });
   applyMaterials();
+  model.loadTextures(!!window.plasmaDesktop).then(applyMaterials);
+  // échelle de figurine : tête un peu plus petite en Nob / Boss (comme dans le Builder)
+  $('scaleSel').addEventListener('change', () => { model.setHeadScale(scaleOf(+$('scaleSel').value).head); updateBoneViz(); });
   applyMeshes();
   buildBoneViz();
+  controls = createControls(model, vp);
+  try { controls.visible = localStorage.getItem('plasmaork.riglab.ctrls') !== '0'; } catch { controls.visible = true; }
+  $('ctrlBtn').setAttribute('aria-pressed', controls.visible);
   renderTree();
   try {
     const cur = JSON.parse(localStorage.getItem(STORE + '.current') || 'null');
@@ -487,8 +547,8 @@ try {
   afterChange();
   vp.frameObject(model.root, new THREE.Vector3(0.45, 0.2, 1), true);
   $('loading').hidden = true;
-  $('vpInfo').textContent = `${model.bones.length} joints · skin Maya ${model.meshes.BODY_low.geometry.attributes.position.count.toLocaleString('fr-FR')} sommets · high ${(model.meshes.BODY_high.geometry.index.count / 3).toLocaleString('fr-FR')} triangles`;
-  window.riglab = { model, vp, state, select, applyPreset: id => applyPreset(PRESETS.find(p => p.id === id)) };
+  $('vpInfo').textContent = `${model.bones.length} joints · ${tr('skin Maya', 'Maya skin')} ${model.meshes.BODY_low.geometry.attributes.position.count.toLocaleString(window.plasmaLang === 'fr' ? 'fr-FR' : 'en-US')} ${tr('sommets', 'vertices')} · high ${(model.meshes.BODY_high.geometry.index.count / 3).toLocaleString(window.plasmaLang === 'fr' ? 'fr-FR' : 'en-US')} triangles`;
+  window.riglab = { model, vp, state, select, studio, get controls() { return controls; }, applyPreset: id => applyPreset(PRESETS.find(p => p.id === id)) };
 } catch (err) {
   console.error(err);
   const l = $('loading');

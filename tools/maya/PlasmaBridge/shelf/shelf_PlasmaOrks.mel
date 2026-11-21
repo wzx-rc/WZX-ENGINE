@@ -1,0 +1,74 @@
+global proc shelf_PlasmaOrks () {
+    global string $gBuffStr;
+    global string $gBuffStr0;
+    global string $gBuffStr1;
+
+    shelfButton
+        -enableCommandRepeat 1
+        -enable 1
+        -width 35
+        -height 34
+        -manage 1
+        -visible 1
+        -annotation "Plasma Bridge : verifier la brique selectionnee et l envoyer a l Importer"
+        -label "Plasma Bridge"
+        -imageOverlayLabel ""
+        -image "C:/Users/wzx/Documents/maya/2027/scripts/PlasmaBridge/icons/shelf_bridge.png"
+        -image1 "C:/Users/wzx/Documents/maya/2027/scripts/PlasmaBridge/icons/shelf_bridge.png"
+        -style "iconOnly"
+        -command "import importlib, PlasmaBridge.core as c, PlasmaBridge.ui as u\nimportlib.reload(c); importlib.reload(u)\nu.show()"
+        -sourceType "python"
+        -commandRepeatable 1
+        -flat 1
+    ;    shelfButton
+        -enableCommandRepeat 1
+        -enable 1
+        -width 35
+        -height 34
+        -manage 1
+        -visible 1
+        -annotation "Envoi rapide : envoie la selection a l Importer, sans fenetre"
+        -label "Envoi rapide"
+        -imageOverlayLabel ""
+        -image "C:/Users/wzx/Documents/maya/2027/scripts/PlasmaBridge/icons/shelf_send.png"
+        -image1 "C:/Users/wzx/Documents/maya/2027/scripts/PlasmaBridge/icons/shelf_send.png"
+        -style "iconOnly"
+        -command "import PlasmaBridge.ui as u\nu.quick_send()"
+        -sourceType "python"
+        -commandRepeatable 1
+        -flat 1
+    ;    shelfButton
+        -enableCommandRepeat 1
+        -enable 1
+        -width 35
+        -height 34
+        -manage 1
+        -visible 1
+        -annotation "Ajoute un locator PLUG_grip au centre de la selection (Shift+clic : fenetre)"
+        -label "PLUG grip"
+        -imageOverlayLabel ""
+        -image "C:/Users/wzx/Documents/maya/2027/scripts/PlasmaBridge/icons/shelf_plug.png"
+        -image1 "C:/Users/wzx/Documents/maya/2027/scripts/PlasmaBridge/icons/shelf_plug.png"
+        -style "iconOnly"
+        -command "import PlasmaBridge.core as c\nimport maya.cmds as cmds\nsel = cmds.ls(selection=True, long=True)\nroot = sel[0].split('.')[0] if sel else None\nwhile root and cmds.listRelatives(root, parent=True, fullPath=True): root = cmds.listRelatives(root, parent=True, fullPath=True)[0]\nc.add_plug('grip', root)"
+        -sourceType "python"
+        -commandRepeatable 1
+        -flat 1
+    ;    shelfButton
+        -enableCommandRepeat 1
+        -enable 1
+        -width 35
+        -height 34
+        -manage 1
+        -visible 1
+        -annotation "Ouvre Plasma Orks Builder"
+        -label "Plasma Orks Builder"
+        -imageOverlayLabel ""
+        -image "C:/Users/wzx/Documents/maya/2027/scripts/PlasmaBridge/icons/shelf_app.png"
+        -image1 "C:/Users/wzx/Documents/maya/2027/scripts/PlasmaBridge/icons/shelf_app.png"
+        -style "iconOnly"
+        -command "import PlasmaBridge.core as c\nc.open_in_app()"
+        -sourceType "python"
+        -commandRepeatable 1
+        -flat 1
+    ;}

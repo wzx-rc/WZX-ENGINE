@@ -69,7 +69,8 @@ async function save(files, zipName) {
   a.download = files.length === 1 ? files[0].name : zipName + '.zip';
   document.body.appendChild(a);
   a.click();
-  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  // délai long : dans l'app Windows, le blob doit rester valide tant que la fenêtre « Enregistrer sous » est ouverte
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 120000);
   return true;
 }
 
